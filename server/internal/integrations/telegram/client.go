@@ -177,6 +177,22 @@ func (c *BotClient) SendMessage(ctx context.Context, chatID, text string) error 
 	return c.sendMessage(ctx, sendMessageRequest{ChatID: chatID, Text: text})
 }
 
+// DeleteMessage removes one message from a chat. Telegram permits a bot to
+// delete its own outgoing group messages without making the requesting human
+// a group admin; callers still own authorization and target validation.
+func (c *BotClient) DeleteMessage(ctx context.Context, chatID string, messageID int64) error {
+	if strings.TrimSpace(chatID) == "" {
+		return errors.New("telegram: chat id required")
+	}
+	if messageID <= 0 {
+		return errors.New("telegram: message id required")
+	}
+	return c.call(ctx, "deleteMessage", struct {
+		ChatID    string `json:"chat_id"`
+		MessageID int64  `json:"message_id"`
+	}{ChatID: chatID, MessageID: messageID})
+}
+
 // SendMessageWithButton delivers an HTML-formatted message plus a single inline
 // URL button (used by push DMs to deep-link into the Mini App). The text is
 // parsed as Telegram HTML (parse_mode=HTML), so callers MUST HTML-escape any

@@ -109,6 +109,30 @@
       "granted": "Bu brauzer bildirishnoma bannerlarini ko‘rsata oladi.",
       "denied": "Brauzeringiz tomonidan bloklangan. Brauzer sozlamalarida ushbu sayt uchun bildirishnomalarni yoqing.",
       "enabled_badge": "Yoqilgan"
+    },
+    "telegram": {
+      "title": "Telegram",
+      "description": "Kiruvchilar bilan bir xil hodisalarni Telegram DM sifatida oling — tayinlovlar, izohlar, holat o‘zgarishi va agent yakunlari (commit / PR yangilanishlari bilan).",
+      "dm_label": "Shaxsiy DMlar",
+      "loading": "Ulash holati tekshirilmoqda…",
+      "linked_hint": "Telegram hisobingiz ulangani. Yangi kiruvchilar DM sifatida ham yuboriladi.",
+      "unlinked_hint": "Kiruvchi yangilanishlarini bot DMlari orqali olish uchun Telegramni ulang. Botni oching, keyin yuborilgan kodni kiriting.",
+      "connect": "Telegramni ulash",
+      "unlink": "Uzish",
+      "groups_hint": "Agent ishni tugatganda Telegram guruhiga yozish uchun Integratsiyalar ostida bot ulang va guruh qo‘shing.",
+      "groups_link": "Integratsiyalar → Telegramni ochish",
+      "dialog_title": "Telegramni ulash",
+      "dialog_description": "Botni oching, Start bosing, keyin 6 xonali kodni shu yerga joylashtiring. Bu sizni chiqarmasdan joriy Agora hisobiga Telegramni bog‘laydi.",
+      "open_bot": "Telegram botini ochish",
+      "code_label": "Telegramdagi kod",
+      "cancel": "Bekor qilish",
+      "verify": "Hisobni bog‘lash",
+      "start_failed": "Telegram ulashni boshlab bo‘lmadi",
+      "toast_linked": "Kiruvchi bildirishnomalar uchun Telegram ulangani",
+      "toast_verify_failed": "Noto‘g‘ri yoki muddati o‘tgan kod. Yangi havola yarating va qayta urinib ko‘ring.",
+      "toast_conflict": "Bu Telegram akkaunti boshqa Agora foydalanuvchisiga allaqachon ulangani",
+      "toast_unlinked": "Telegram uzildi",
+      "toast_unlink_failed": "Telegramni uzib bo‘lmadi"
     }
   },
   "tokens": {
@@ -438,7 +462,7 @@
     },
     "telegram": {
       "name": "Telegram",
-      "description": "Agentga o'z botini bering — guruhda javob bera olsin."
+      "description": "Chat va ish yangilanishlari uchun agent botlari va guruhlarni ulang. Shaxsiy kiruvchi DMlar Bildirishnomalar bo‘limida bog‘lanadi."
     }
   },
   "figma": {
@@ -648,7 +672,7 @@
     }
   },
   "telegram": {
-    "page_description": "Agentga o'z Telegram botini bering — guruhda o'z nomidan gapiradi va unga javob berish mumkin bo'ladi.",
+    "page_description": "Agentga o'z Telegram botini bering — guruhda o'z nomidan gapiradi, buyruq oladi va ish tugaganda yozadi. Shaxsiy kiruvchi DMlar uchun Sozlamalar → Bildirishnomalar orqali Telegramni ulang.",
     "connect_button": "Bot ulash",
     "loading": "Ulangan botlar yuklanmoqda…",
     "not_configured_title": "Telegram botlar mavjud emas",

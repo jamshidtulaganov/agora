@@ -145,20 +145,24 @@ type orchestrationPlanEditRequest struct {
 }
 
 type orchestrationRouting struct {
-	OwnerType        string
-	OwnerID          pgtype.UUID
-	ControllerAgent  pgtype.UUID
-	DevelopmentAgent pgtype.UUID
-	ExecutionMode    string
+	OwnerType          string
+	OwnerID            pgtype.UUID
+	ControllerAgent    pgtype.UUID
+	DevelopmentAgent   pgtype.UUID
+	ExecutionMode      string
+	ExplicitController bool
 }
 
 type orchestrationPlannerMember struct {
-	AgentID      pgtype.UUID
-	Name         string
-	Role         string
-	Description  string
-	Instructions string
-	IsLeader     bool
+	AgentID            pgtype.UUID
+	Name               string
+	Role               string
+	Description        string
+	Instructions       string
+	IsLeader           bool
+	Model              string
+	ThinkingLevel      string
+	MaxConcurrentTasks int32
 }
 
 type orchestrationStepResponse struct {
@@ -170,6 +174,7 @@ type orchestrationStepResponse struct {
 	Position           int32           `json:"position"`
 	AgentID            string          `json:"agent_id,omitempty"`
 	Model              string          `json:"model,omitempty"`
+	ThinkingLevel      *string         `json:"thinking_level,omitempty"`
 	TaskID             string          `json:"task_id,omitempty"`
 	QuestionID         string          `json:"question_id,omitempty"`
 	ApprovalRequired   bool            `json:"approval_required"`
@@ -532,6 +537,7 @@ func (h *Handler) orchestrationRouting(ctx context.Context, issue db.Issue) orch
 	if explicit := metadataAgentID(issue, "orchestrator_agent_id"); explicit.Valid {
 		routing.ControllerAgent = explicit
 		routing.ExecutionMode = "orchestrated"
+		routing.ExplicitController = true
 	}
 	return routing
 }
@@ -540,13 +546,51 @@ func inferExecutionStrategy(routing orchestrationRouting, customPlan bool) strin
 	if customPlan {
 		return "custom"
 	}
-	if routing.OwnerType == "member" || routing.OwnerType == "unassigned" {
+	// Strategy follows the issue assignee. An agent assignee owns one persisted
+	// solo work step; a squad assignee fans out through the persisted squad DAG.
+	switch routing.OwnerType {
+	case "member", "unassigned":
 		return "human"
-	}
-	if routing.OwnerType == "squad" || routing.ExecutionMode != "direct" {
+	case "squad":
 		return "squad"
+	case "agent":
+		return "solo"
+	default:
+		return "solo"
 	}
-	return "solo"
+}
+
+// resolveExecutionStrategy picks the run shape when the request omits
+// execution_strategy. Agent/squad assignees win over a conflicting project
+// pin so one-click "Start execution plan" stays assignee-correct. Project
+// defaults control progression/review/concurrency, not ownership topology;
+// Customize (an explicit request strategy) can still override.
+func resolveExecutionStrategy(routing orchestrationRouting, projectStrategy string, customPlan bool) string {
+	_ = projectStrategy // compatibility read; no longer an ownership input
+	if customPlan {
+		return "custom"
+	}
+	return inferExecutionStrategy(routing, false)
+}
+
+// applySoloAgentRouting keeps a solo run owned by the assigned agent. An
+// agent that happens to belong to a squad still has that squad's leader as
+// the issue-level orchestrator for QA-fail routing, but a solo execution
+// plan must not hand planning/release to that leader's roster.
+func applySoloAgentRouting(routing orchestrationRouting) orchestrationRouting {
+	if routing.OwnerType != "agent" || !routing.OwnerID.Valid {
+		return routing
+	}
+	agentID := routing.DevelopmentAgent
+	if !agentID.Valid {
+		agentID = routing.OwnerID
+	}
+	routing.DevelopmentAgent = agentID
+	if !routing.ExplicitController {
+		routing.ControllerAgent = agentID
+		routing.ExecutionMode = "direct"
+	}
+	return routing
 }
 
 func progressionPolicyForIssue(issue db.Issue, requested, legacyMode, projectDefault string) string {
@@ -601,7 +645,7 @@ func setManualOrchestrationDispatchAuthorization(
 }
 
 func defaultOrchestrationSteps(issue db.Issue, routing orchestrationRouting, strategy string) []orchestrationStepRequest {
-	return defaultOrchestrationStepsWithMembers(issue, routing, strategy, nil)
+	return defaultOrchestrationStepsWithMembers(issue, routing, strategy, nil, 3)
 }
 
 func plannerCapability(member orchestrationPlannerMember) string {
@@ -869,6 +913,8 @@ func (h *Handler) validateOrchestrationAgentRoute(
 	member := orchestrationPlannerMember{
 		AgentID: agent.ID, Name: agent.Name, Description: agent.Description,
 		Instructions: agent.Instructions, IsLeader: agent.ID == squad.LeaderID,
+		Model: agent.Model.String, ThinkingLevel: agent.ThinkingLevel.String,
+		MaxConcurrentTasks: agent.MaxConcurrentTasks,
 	}
 	if !member.IsLeader {
 		members, memberErr := h.Queries.ListSquadMembers(ctx, squadID)
@@ -1090,7 +1136,210 @@ func capabilityWork(capability string) (title, instructions string) {
 
 const controllerPlanInstructions = "Analyze the issue, acceptance criteria, repository boundaries, and the persisted capability split. Post one concise PLAN handoff that assigns a non-overlapping outcome to each development branch, records cross-branch contracts and risks, and names the checks integration must run. If a persisted route is unsafe or mismatched, recommend the exact reroute for human acceptance; do not create side tasks, @mention workers, or start later stages."
 
-func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember) []orchestrationStepRequest {
+func plannerMemberByID(members []orchestrationPlannerMember, id pgtype.UUID) (orchestrationPlannerMember, bool) {
+	if !id.Valid {
+		return orchestrationPlannerMember{}, false
+	}
+	for _, member := range members {
+		if member.AgentID == id {
+			return member, true
+		}
+	}
+	return orchestrationPlannerMember{}, false
+}
+
+func plannerMemberModel(member orchestrationPlannerMember) string {
+	return strings.TrimSpace(member.Model)
+}
+
+func plannerMemberThinking(member orchestrationPlannerMember) string {
+	return strings.TrimSpace(member.ThinkingLevel)
+}
+
+// orchestrationExecutionSnapshot freezes both execution knobs when a step is
+// created or rerouted. Valid=true with an empty value is intentional: it pins
+// provider-default/no model or thinking instead of falling back to mutable
+// agent configuration at claim time.
+func orchestrationExecutionSnapshot(
+	ctx context.Context,
+	queries *db.Queries,
+	workspaceID, agentID pgtype.UUID,
+	requestedModel string,
+) (pgtype.Text, pgtype.Text, error) {
+	model := strings.TrimSpace(requestedModel)
+	if !agentID.Valid {
+		return pgtype.Text{String: model, Valid: model != ""}, pgtype.Text{}, nil
+	}
+	agent, err := queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: agentID, WorkspaceID: workspaceID,
+	})
+	if err != nil {
+		return pgtype.Text{}, pgtype.Text{}, err
+	}
+	if model == "" {
+		model = strings.TrimSpace(agent.Model.String)
+	}
+	return pgtype.Text{String: model, Valid: true}, pgtype.Text{
+		String: strings.TrimSpace(agent.ThinkingLevel.String), Valid: true,
+	}, nil
+}
+
+func plannerMemberConcurrency(member orchestrationPlannerMember) int {
+	if member.MaxConcurrentTasks < 1 {
+		return 1
+	}
+	return int(member.MaxConcurrentTasks)
+}
+
+// squadRosterPolicyEntry is persisted on the run policy so controllers and
+// clients see each squad agent's role and creation-time configuration.
+// Generated steps independently persist model and thinking execution pins;
+// max concurrency remains a global-capacity snapshot.
+type squadRosterPolicyEntry struct {
+	AgentID            string `json:"agent_id"`
+	Name               string `json:"name"`
+	Role               string `json:"role"`
+	Capability         string `json:"capability"`
+	Model              string `json:"model,omitempty"`
+	ThinkingLevel      string `json:"thinking_level,omitempty"`
+	MaxConcurrentTasks int    `json:"max_concurrent_tasks"`
+	IsLeader           bool   `json:"is_leader,omitempty"`
+}
+
+func buildSquadRosterPolicy(members []orchestrationPlannerMember) []squadRosterPolicyEntry {
+	roster := make([]squadRosterPolicyEntry, 0, len(members))
+	seen := map[string]bool{}
+	for _, member := range members {
+		agentID := uuidToString(member.AgentID)
+		if agentID == "" || seen[agentID] {
+			continue
+		}
+		seen[agentID] = true
+		roster = append(roster, squadRosterPolicyEntry{
+			AgentID:            agentID,
+			Name:               member.Name,
+			Role:               strings.TrimSpace(member.Role),
+			Capability:         plannerCapability(member),
+			Model:              plannerMemberModel(member),
+			ThinkingLevel:      plannerMemberThinking(member),
+			MaxConcurrentTasks: plannerMemberConcurrency(member),
+			IsLeader:           member.IsLeader,
+		})
+	}
+	return roster
+}
+
+func controllerPlanInstructionsWithRoster(members []orchestrationPlannerMember, parallelWorkers, maxConcurrency int) string {
+	roster := buildSquadRosterPolicy(members)
+	if len(roster) == 0 {
+		return controllerPlanInstructions
+	}
+	var b strings.Builder
+	b.WriteString(controllerPlanInstructions)
+	b.WriteString("\n\nSquad roster snapshot for this run (role + pinned model/think mode + observed global capacity). Assign each branch to the matching specialist; do not treat agents as interchangeable:\n")
+	for _, entry := range roster {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" {
+			name = entry.AgentID
+		}
+		role := entry.Role
+		if role == "" {
+			role = entry.Capability
+		}
+		model := entry.Model
+		if model == "" {
+			model = "agent-default"
+		}
+		thinking := entry.ThinkingLevel
+		if thinking == "" {
+			thinking = "none"
+		}
+		fmt.Fprintf(&b, "- %s [%s / %s]: model=%s thinking=%s max_concurrent_tasks=%d agent_id=%s\n",
+			name, role, entry.Capability, model, thinking, entry.MaxConcurrentTasks, entry.AgentID)
+	}
+	if parallelWorkers < 1 {
+		parallelWorkers = 1
+	}
+	if maxConcurrency < 1 {
+		maxConcurrency = parallelWorkers
+	}
+	fmt.Fprintf(&b, "Parallel development branches in this plan: %d. Run concurrency cap: %d (independent agents may run together; the same agent stays serial within the run).\n",
+		parallelWorkers, maxConcurrency)
+	return b.String()
+}
+
+// squadParallelBudget returns the useful width of the generated graph. Agent
+// max_concurrent_tasks is global capacity; Agora deliberately serializes the
+// same agent within one issue, so each distinct routed agent contributes at
+// most one slot to this run.
+func squadParallelBudget(workers []orchestrationPlannerMember, qaAgent, reviewAgent pgtype.UUID, configured int) int {
+	if configured < 1 {
+		configured = 3
+	}
+	workerIDs := map[string]struct{}{}
+	for _, worker := range workers {
+		if id := uuidToString(worker.AgentID); id != "" {
+			workerIDs[id] = struct{}{}
+		}
+	}
+	developmentWidth := len(workerIDs)
+	if developmentWidth < 1 {
+		developmentWidth = 1
+	}
+	verificationIDs := map[string]struct{}{}
+	for _, id := range []pgtype.UUID{qaAgent, reviewAgent} {
+		if value := uuidToString(id); value != "" {
+			verificationIDs[value] = struct{}{}
+		}
+	}
+	budget := developmentWidth
+	if len(verificationIDs) > budget {
+		budget = len(verificationIDs)
+	}
+	if configured < budget {
+		return configured
+	}
+	return budget
+}
+
+// squadPlanParallelWidth derives the persisted scheduler cap from the actual
+// routes in the plan. Development branches and the QA/review fork are the two
+// parallel regions in the generated graph; repeated use of one agent counts
+// once because same-issue work is serialized per agent.
+func squadPlanParallelWidth(steps []orchestrationStepRequest, configured int) (int, int) {
+	developmentAgents := map[string]struct{}{}
+	verificationAgents := map[string]struct{}{}
+	for _, step := range steps {
+		agentID := strings.TrimSpace(step.AgentID)
+		if agentID == "" {
+			continue
+		}
+		switch step.Stage {
+		case "dev":
+			if step.Kind != "integration" {
+				developmentAgents[agentID] = struct{}{}
+			}
+		case "qa", "review":
+			verificationAgents[agentID] = struct{}{}
+		}
+	}
+	width := len(developmentAgents)
+	if len(verificationAgents) > width {
+		width = len(verificationAgents)
+	}
+	if width < 1 {
+		width = 1
+	}
+	if configured < 1 {
+		configured = 3
+	}
+	if configured < width {
+		width = configured
+	}
+	return width, len(developmentAgents)
+}
+
+func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember, configuredConcurrency int) []orchestrationStepRequest {
 	controller := routing.ControllerAgent
 	development := routing.DevelopmentAgent
 	if !development.Valid {
@@ -1106,6 +1355,9 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		}
 	}
 	if strategy == "solo" {
+		// Solo / single-agent assignee: one agent owns the work unit. Runtime-
+		// native child agents are intentionally unsupported inside an Agora run;
+		// all observable parallel work must be represented as persisted DAG steps.
 		return []orchestrationStepRequest{
 			{Key: "work", Title: "Implement and verify the change", Stage: "dev", Capability: "implementation", AgentID: uuidToString(development), MaxAttempts: 2},
 			{
@@ -1171,9 +1423,24 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		workers = []orchestrationPlannerMember{{AgentID: development, Role: "implementation"}}
 	}
 
+	controllerModel := ""
+	if member, ok := plannerMemberByID(members, controller); ok {
+		controllerModel = plannerMemberModel(member)
+	}
+	qaModel := ""
+	if member, ok := plannerMemberByID(members, qaAgent); ok {
+		qaModel = plannerMemberModel(member)
+	}
+	reviewModel := ""
+	if member, ok := plannerMemberByID(members, reviewAgent); ok {
+		reviewModel = plannerMemberModel(member)
+	}
+	maxConcurrency := squadParallelBudget(workers, qaAgent, reviewAgent, configuredConcurrency)
+
 	steps := []orchestrationStepRequest{{
 		Key: "plan", Title: "Plan the work", Stage: "plan", Capability: "coordination", AgentID: uuidToString(controller),
-		MaxAttempts: 2, SquadID: squadID, Instructions: controllerPlanInstructions,
+		Model: controllerModel, MaxAttempts: 2, SquadID: squadID,
+		Instructions: controllerPlanInstructionsWithRoster(members, len(workers), maxConcurrency),
 	}}
 	capabilityCounts := map[string]int{}
 	developmentKeys := make([]string, 0, len(workers))
@@ -1189,7 +1456,8 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		title, instructions := capabilityWork(capability)
 		steps = append(steps, orchestrationStepRequest{
 			Key: key, Title: title, Stage: "dev", Capability: capability, AgentID: uuidToString(worker.AgentID),
-			Instructions: instructions, MaxAttempts: 2, DependsOnKeys: []string{"plan"}, ParentKey: "plan", SquadID: squadID,
+			Model: plannerMemberModel(worker), Instructions: instructions, MaxAttempts: 2,
+			DependsOnKeys: []string{"plan"}, ParentKey: "plan", SquadID: squadID,
 		})
 		developmentKeys = append(developmentKeys, key)
 	}
@@ -1201,13 +1469,13 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 	if len(developmentKeys) > 1 {
 		steps = append(steps, orchestrationStepRequest{
 			Key: "integrate", Title: "Integrate implementation branches", Stage: "dev", Kind: "integration", Capability: "integration",
-			AgentID: uuidToString(integrationAgent), MaxAttempts: 2, DependsOnKeys: developmentKeys, SquadID: squadID,
+			AgentID: uuidToString(integrationAgent), Model: controllerModel, MaxAttempts: 2, DependsOnKeys: developmentKeys, SquadID: squadID,
 		})
 		verificationDependencies = []string{"integrate"}
 	}
 	steps = append(steps,
-		orchestrationStepRequest{Key: "qa", Title: "Verify the completed result", Stage: "qa", Capability: "qa", AgentID: uuidToString(qaAgent), MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
-		orchestrationStepRequest{Key: "review", Title: "Review the completed result", Stage: "review", Capability: "review", AgentID: uuidToString(reviewAgent), MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
+		orchestrationStepRequest{Key: "qa", Title: "Verify the completed result", Stage: "qa", Capability: "qa", AgentID: uuidToString(qaAgent), Model: qaModel, MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
+		orchestrationStepRequest{Key: "review", Title: "Review the completed result", Stage: "review", Capability: "review", AgentID: uuidToString(reviewAgent), Model: reviewModel, MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
 		orchestrationStepRequest{
 			// UNROUTED ON PURPOSE. A release step that carries an agent_id is
 			// dispatched by the scheduler like any other step — BEFORE the human
@@ -1252,6 +1520,8 @@ func (h *Handler) orchestrationPlannerMembers(ctx context.Context, issue db.Issu
 		result = append(result, orchestrationPlannerMember{
 			AgentID: agent.ID, Name: agent.Name, Role: member.Role, Description: agent.Description,
 			Instructions: agent.Instructions, IsLeader: agent.ID == routing.ControllerAgent,
+			Model: agent.Model.String, ThinkingLevel: agent.ThinkingLevel.String,
+			MaxConcurrentTasks: agent.MaxConcurrentTasks,
 		})
 	}
 	return result
@@ -1293,10 +1563,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	hasCustomPlan := len(req.Steps) > 0
 	executionStrategy := strings.ToLower(strings.TrimSpace(req.ExecutionStrategy))
 	if executionStrategy == "" {
-		executionStrategy = projectDefaults.ExecutionStrategy
-		if executionStrategy == "automatic" || executionStrategy == "" {
-			executionStrategy = inferExecutionStrategy(routing, hasCustomPlan)
-		}
+		executionStrategy = resolveExecutionStrategy(routing, projectDefaults.ExecutionStrategy, hasCustomPlan)
 	}
 	if !validExecutionStrategy(executionStrategy) {
 		writeError(w, http.StatusBadRequest, "execution_strategy must be human, solo, squad, or custom")
@@ -1348,10 +1615,18 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			ExecutionMode:    "squad",
 		}
 	}
+	if executionStrategy == "solo" && routing.OwnerType == "agent" {
+		routing = applySoloAgentRouting(routing)
+	}
+	if executionStrategy == "solo" && !routing.DevelopmentAgent.Valid {
+		writeError(w, http.StatusBadRequest, "solo execution requires an agent-assigned issue")
+		return
+	}
 	if executionStrategy == "squad" && routing.OwnerType != "squad" {
 		writeError(w, http.StatusBadRequest, "squad_id is required when the issue is not assigned to a squad")
 		return
 	}
+	plannerMembers := []orchestrationPlannerMember(nil)
 	if executionStrategy == "squad" {
 		leader, leaderErr := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
 			ID: routing.ControllerAgent, WorkspaceID: issue.WorkspaceID,
@@ -1369,9 +1644,19 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusConflict, "squad leader is not ready: "+reason)
 			return
 		}
+		plannerMembers = h.orchestrationPlannerMembers(r.Context(), issue, routing, executionStrategy)
+	}
+	configuredConcurrency := 3
+	if projectDefaults.MaxConcurrency > 0 {
+		configuredConcurrency = projectDefaults.MaxConcurrency
+	}
+	if req.Policy != nil {
+		if configured, ok := req.Policy["max_concurrency"].(float64); ok && configured >= 1 && configured <= 10 {
+			configuredConcurrency = int(configured)
+		}
 	}
 	if !hasCustomPlan {
-		req.Steps = defaultOrchestrationStepsWithMembers(issue, routing, executionStrategy, h.orchestrationPlannerMembers(r.Context(), issue, routing, executionStrategy))
+		req.Steps = defaultOrchestrationStepsWithMembers(issue, routing, executionStrategy, plannerMembers, configuredConcurrency)
 	}
 	if len(req.Steps) > 20 {
 		writeError(w, http.StatusBadRequest, "plan cannot exceed 20 steps")
@@ -1470,18 +1755,23 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	if artifactLocation != "" {
 		req.Policy[orchestrationArtifactLocationPolicyKey] = artifactLocation
 	}
-	if routing.OwnerType == "squad" {
+	if executionStrategy == "squad" && routing.OwnerType == "squad" {
 		req.Policy["squad_id"] = uuidToString(routing.OwnerID)
+		if roster := buildSquadRosterPolicy(plannerMembers); len(roster) > 0 {
+			req.Policy["squad_roster"] = roster
+		}
 	}
 	// Compatibility field for old clients; never read as the new source of
 	// truth after the run row is created.
 	req.Policy["execution_mode"] = legacyExecutionMode(executionStrategy)
-	if _, configured := req.Policy["max_concurrency"]; !configured {
-		if projectDefaults.MaxConcurrency > 0 {
-			req.Policy["max_concurrency"] = projectDefaults.MaxConcurrency
-		} else {
-			req.Policy["max_concurrency"] = 3
-		}
+	if executionStrategy == "squad" {
+		// Always overwrite a client-supplied cap with the actual plan width. The
+		// controller prompt and dispatcher must enforce the same value.
+		width, parallelWorkers := squadPlanParallelWidth(req.Steps, configuredConcurrency)
+		req.Policy["max_concurrency"] = width
+		req.Policy["parallel_workers"] = parallelWorkers
+	} else if _, configured := req.Policy["max_concurrency"]; !configured {
+		req.Policy["max_concurrency"] = configuredConcurrency
 	}
 	autoStart := true
 	if req.AutoStart != nil {
@@ -1625,10 +1915,21 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			}
 			parentStepID = parent.ID
 		}
+		snapshotAgentID := agentID
+		if !snapshotAgentID.Valid {
+			snapshotAgentID = controllerAgentID
+		}
+		modelOverride, thinkingLevelOverride, snapshotErr := orchestrationExecutionSnapshot(
+			r.Context(), qtx, issue.WorkspaceID, snapshotAgentID, input.Model,
+		)
+		if snapshotErr != nil {
+			writeError(w, http.StatusBadRequest, "step agent not found in workspace")
+			return
+		}
 		step, createErr := qtx.CreateOrchestrationStep(r.Context(), db.CreateOrchestrationStepParams{
 			RunID: run.ID, StepKey: input.Key, Title: input.Title, Stage: input.Stage,
 			Position: int32(index), AgentID: agentID,
-			ModelOverride:   pgtype.Text{String: strings.TrimSpace(input.Model), Valid: strings.TrimSpace(input.Model) != ""},
+			ModelOverride: modelOverride, ThinkingLevelOverride: thinkingLevelOverride,
 			DependsOnStepID: legacyDependency, ApprovalRequired: input.ApprovalRequired,
 			MaxAttempts: input.MaxAttempts, Instructions: strings.TrimSpace(input.Instructions),
 			ParentStepID: parentStepID, SquadID: squadID, ControllerAgentID: controllerAgentID,
@@ -1727,6 +2028,10 @@ func (h *Handler) writeIssueOrchestration(w http.ResponseWriter, r *http.Request
 			WorktreeBranch: step.WorktreeBranch.String, BaseSHA: step.BaseSha.String, HeadSHA: step.HeadSha.String, MergeStatus: step.MergeStatus, ConflictFiles: step.ConflictFiles,
 			Kind: step.StepKind, Capability: step.Capability, IntegrationStatus: step.IntegrationStatus, IntegratedHeadSHAs: step.IntegratedHeadShas, MissingHeadSHAs: step.MissingHeadShas,
 		}
+		if step.ThinkingLevelOverride.Valid {
+			thinkingLevel := step.ThinkingLevelOverride.String
+			item.ThinkingLevel = &thinkingLevel
+		}
 		for _, dependency := range dependencies {
 			if dependency.StepID == step.ID {
 				item.DependsOnStepIDs = append(item.DependsOnStepIDs, uuidToString(dependency.DependsOnStepID))
@@ -1795,6 +2100,7 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var agentID pgtype.UUID
+	var rerouteModel, rerouteThinkingLevel pgtype.Text
 	var extraDependencies []pgtype.UUID
 	var integrationJoinID pgtype.UUID
 	var insertPosition int32
@@ -1815,6 +2121,13 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 			step.ControllerAgentID, agentID, step.Capability,
 		); routeErr != nil {
 			writeError(w, http.StatusBadRequest, routeErr.Error())
+			return
+		}
+		rerouteModel, rerouteThinkingLevel, err = orchestrationExecutionSnapshot(
+			r.Context(), h.Queries, issue.WorkspaceID, agentID, req.Model,
+		)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "step agent not found in workspace")
 			return
 		}
 	} else if req.Operation == "add_child" {
@@ -1984,7 +2297,10 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Operation == "reroute" {
-		_, err = qtx.ReroutePendingOrchestrationStep(r.Context(), db.ReroutePendingOrchestrationStepParams{ID: step.ID, AgentID: agentID, ModelOverride: pgtype.Text{String: strings.TrimSpace(req.Model), Valid: strings.TrimSpace(req.Model) != ""}, Instructions: req.Instructions})
+		_, err = qtx.ReroutePendingOrchestrationStep(r.Context(), db.ReroutePendingOrchestrationStepParams{
+			ID: step.ID, AgentID: agentID, ModelOverride: rerouteModel,
+			ThinkingLevelOverride: rerouteThinkingLevel, Instructions: req.Instructions,
+		})
 	} else if req.Operation == "retire" {
 		_, err = qtx.RetirePendingOrchestrationStep(r.Context(), db.RetirePendingOrchestrationStepParams{ID: step.ID, RetiredInVersion: pgtype.Int4{Int32: advanced.PlanVersion, Valid: true}})
 	} else {
@@ -2000,25 +2316,32 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 		} else if shiftErr = qtx.FinishOrchestrationStepPositionShift(r.Context(), run.ID); shiftErr != nil {
 			err = shiftErr
 		} else {
-			created, createErr := qtx.CreateOrchestrationStep(r.Context(), db.CreateOrchestrationStepParams{
-				RunID: run.ID, StepKey: strings.TrimSpace(child.Key), Title: strings.TrimSpace(child.Title), Stage: child.Stage,
-				Position: insertPosition, AgentID: agentID, ModelOverride: pgtype.Text{String: strings.TrimSpace(child.Model), Valid: strings.TrimSpace(child.Model) != ""},
-				DependsOnStepID: step.ID, ApprovalRequired: child.ApprovalRequired, MaxAttempts: maxAttempts, Instructions: strings.TrimSpace(child.Instructions),
-				ParentStepID: step.ID, SquadID: step.SquadID, ControllerAgentID: step.ControllerAgentID, IntroducedInVersion: advanced.PlanVersion, StepKind: child.Kind,
-				Capability: child.Capability,
-			})
-			if createErr != nil {
-				err = createErr
+			childModel, childThinkingLevel, snapshotErr := orchestrationExecutionSnapshot(
+				r.Context(), qtx, issue.WorkspaceID, agentID, child.Model,
+			)
+			if snapshotErr != nil {
+				err = snapshotErr
 			} else {
-				err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: created.ID, DependsOnStepID: step.ID})
-				for _, dependencyID := range extraDependencies {
-					if err != nil {
-						break
+				created, createErr := qtx.CreateOrchestrationStep(r.Context(), db.CreateOrchestrationStepParams{
+					RunID: run.ID, StepKey: strings.TrimSpace(child.Key), Title: strings.TrimSpace(child.Title), Stage: child.Stage,
+					Position: insertPosition, AgentID: agentID, ModelOverride: childModel, ThinkingLevelOverride: childThinkingLevel,
+					DependsOnStepID: step.ID, ApprovalRequired: child.ApprovalRequired, MaxAttempts: maxAttempts, Instructions: strings.TrimSpace(child.Instructions),
+					ParentStepID: step.ID, SquadID: step.SquadID, ControllerAgentID: step.ControllerAgentID, IntroducedInVersion: advanced.PlanVersion, StepKind: child.Kind,
+					Capability: child.Capability,
+				})
+				if createErr != nil {
+					err = createErr
+				} else {
+					err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: created.ID, DependsOnStepID: step.ID})
+					for _, dependencyID := range extraDependencies {
+						if err != nil {
+							break
+						}
+						err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: created.ID, DependsOnStepID: dependencyID})
 					}
-					err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: created.ID, DependsOnStepID: dependencyID})
-				}
-				if err == nil {
-					err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: integrationJoinID, DependsOnStepID: created.ID})
+					if err == nil {
+						err = qtx.AddOrchestrationStepDependency(r.Context(), db.AddOrchestrationStepDependencyParams{StepID: integrationJoinID, DependsOnStepID: created.ID})
+					}
 				}
 			}
 		}
@@ -2978,7 +3301,10 @@ func (h *Handler) queueOrchestrationStepAtomically(
 		}
 		return db.AgentTaskQueue{}, db.OrchestrationEvent{}, err
 	}
-	task, err := h.TaskService.CreateOrchestrationTaskInTx(ctx, qtx, issue, current.AgentID, current.ID, current.ModelOverride)
+	task, err := h.TaskService.CreateOrchestrationTaskInTx(
+		ctx, qtx, issue, current.AgentID, current.ID,
+		current.ModelOverride, current.ThinkingLevelOverride,
+	)
 	if err != nil {
 		return db.AgentTaskQueue{}, db.OrchestrationEvent{}, err
 	}
@@ -2998,6 +3324,7 @@ func (h *Handler) queueOrchestrationStepAtomically(
 	}
 	details, _ := json.Marshal(map[string]any{
 		"task_id": uuidToString(task.ID), "model": current.ModelOverride.String,
+		"thinking_level": current.ThinkingLevelOverride.String,
 	})
 	event, err := qtx.CreateOrchestrationEvent(ctx, db.CreateOrchestrationEventParams{
 		RunID: lockedRun.ID, StepID: current.ID, Kind: "step_queued", ActorType: "agent",

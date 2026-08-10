@@ -61,7 +61,14 @@ func (h *Handler) processTelegramUpdate(ctx context.Context, update telegramUpda
 
 func (h *Handler) processBotMessage(ctx context.Context, update telegramUpdate) {
 	msg := update.Message
-	if msg == nil || msg.From == nil || msg.Chat == nil || msg.Chat.Type != "private" {
+	if msg == nil || msg.From == nil || msg.Chat == nil {
+		return
+	}
+	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+		h.processTelegramFixtureDelete(ctx, update)
+		return
+	}
+	if msg.Chat.Type != "private" {
 		return
 	}
 	text := strings.TrimSpace(msg.Text)
@@ -97,6 +104,54 @@ func (h *Handler) processBotMessage(ctx context.Context, update telegramUpdate) 
 		}
 		h.botSend(ctx, tgID, botT(lang, "help"))
 	}
+}
+
+// processTelegramFixtureDelete lets a group member clean up bot-authored E2E
+// notices without admin rights. It is deliberately narrower than a generic
+// delete command: the reply target must be from this exact bot and must carry
+// a known Playwright fixture title. Telegram itself then enforces that the bot
+// owns the target message when the bot is not a group admin.
+func (h *Handler) processTelegramFixtureDelete(ctx context.Context, update telegramUpdate) {
+	chatID, targetID, commandID, ok := telegramFixtureDeleteTarget(update, telegramBotUsername())
+	if !ok {
+		return
+	}
+	if err := h.telegramBot.DeleteMessage(ctx, chatID, targetID); err != nil {
+		slog.Warn("telegram fixture cleanup: delete failed", "chat_id", chatID, "message_id", targetID, "error", err)
+		return
+	}
+	// Best-effort: an ordinary bot cannot delete the human's command unless it
+	// is an admin. The fixture notice is already gone, which is the objective.
+	_ = h.telegramBot.DeleteMessage(ctx, chatID, commandID)
+	slog.Info("telegram fixture cleanup: deleted", "chat_id", chatID, "message_id", targetID)
+}
+
+func telegramFixtureDeleteTarget(update telegramUpdate, botUsername string) (chatID string, targetID, commandID int64, ok bool) {
+	msg := update.Message
+	if msg == nil || msg.Chat == nil || msg.ReplyToMessage == nil || msg.ReplyToMessage.From == nil {
+		return "", 0, 0, false
+	}
+	if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
+		return "", 0, 0, false
+	}
+	cmd, _ := splitCommand(strings.TrimSpace(msg.Text))
+	if cmd != "/delete_test" {
+		return "", 0, 0, false
+	}
+	target := msg.ReplyToMessage
+	username := strings.TrimPrefix(strings.TrimSpace(botUsername), "@")
+	if username == "" || !target.From.IsBot || !strings.EqualFold(strings.TrimPrefix(target.From.Username, "@"), username) {
+		return "", 0, 0, false
+	}
+	if !isTelegramTestFixtureNotice(target.Text) || target.MessageID <= 0 || msg.MessageID <= 0 {
+		return "", 0, 0, false
+	}
+	return strconv.FormatInt(msg.Chat.ID, 10), target.MessageID, msg.MessageID, true
+}
+
+func isTelegramTestFixtureNotice(text string) bool {
+	text = strings.ToLower(text)
+	return strings.Contains(text, "e2e ") || strings.Contains(text, "qa report ui demo")
 }
 
 func (h *Handler) processBotCallback(ctx context.Context, update telegramUpdate) {

@@ -10,6 +10,7 @@ import { Switch } from "@agora/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";
+import { TelegramNotificationSetting } from "./telegram-notification-setting";
 
 // Inbox event groups rendered in the per-event toggle list. `system_notifications`
 // is a sibling preference key but lives in its own section below.
@@ -116,6 +117,8 @@ export function NotificationsTab() {
             desktop (OS-native delivery) or where the Notification API is absent. */}
         <BrowserNotificationSetting />
       </section>
+
+      <TelegramNotificationSetting />
     </div>
   );
 }

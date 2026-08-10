@@ -12,7 +12,7 @@ This page is for **both** engineers and agents working on squad behavior. It is 
 
 ## The one rule
 
-A squad is a **workspace routing and coordination object**, not an agent. It never runs work by itself. Every path that could "trigger a squad" resolves the squad's `leader_id` and enqueues **exactly one leader task**. There is no member fan-out anywhere in the codebase — assigning, mentioning, autopiloting, or signalling child-done to a squad fires the leader and only the leader.
+A squad is a **workspace routing and coordination object**, not an agent. Ordinary assignment, mention, autopilot, and child-done entry paths resolve the squad's `leader_id` and enqueue **exactly one leader task**. The explicit exception is a human-started persisted orchestration run: its versioned DAG routes ready steps to capability-matched squad members and remains the sole dispatcher.
 
 The leader then *coordinates* by delegating to members via `@mention` comments. Those mentions are ordinary mention triggers — they are not a squad mechanism. The squad's only job is: resolve to a leader, hand the leader a briefing, stay out of the way.
 

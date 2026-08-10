@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_user_external_identity_telegram_user;

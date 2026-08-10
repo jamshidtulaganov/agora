@@ -60,10 +60,11 @@ func TestReroutePendingOrchestrationStepCoversWaitingApproval(t *testing.T) {
 			stepID := createRerouteTestStep(t, ctx, runID, fromAgentID, tc.status)
 
 			_, err := testHandler.Queries.ReroutePendingOrchestrationStep(ctx, db.ReroutePendingOrchestrationStepParams{
-				ID:            util.MustParseUUID(stepID),
-				AgentID:       util.MustParseUUID(toAgentID),
-				ModelOverride: pgtype.Text{},
-				Instructions:  "rerouted",
+				ID:                    util.MustParseUUID(stepID),
+				AgentID:               util.MustParseUUID(toAgentID),
+				ModelOverride:         pgtype.Text{},
+				ThinkingLevelOverride: pgtype.Text{},
+				Instructions:          "rerouted",
 			})
 
 			var gotAgentID string

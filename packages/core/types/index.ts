@@ -92,6 +92,8 @@ export type {
   OrchestrationHandoff,
   OrchestrationMessage,
   OrchestrationQuestion,
+  OrchestrationPolicy,
+  SquadRosterPolicyEntry,
   CreateOrchestrationRequest,
   CreateOrchestrationStepRequest,
   OrchestrationPlanRevision,
@@ -166,6 +168,11 @@ export type {
   SetTelegramAccessRequest,
   AutopilotTelegramDestination,
 } from "./telegram";
+export type {
+  ExternalIdentityLink,
+  ListExternalIdentityLinksResponse,
+  TelegramLinkStartResponse,
+} from "./external-identity";
 export type {
   Autopilot,
   AutopilotStatus,

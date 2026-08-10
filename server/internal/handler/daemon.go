@@ -1483,12 +1483,20 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// the agent default. Normal tasks may still be adjusted by cost-tier
 			// labels below; orchestration routes are explicit human/planner
 			// decisions and therefore remain authoritative.
-			if resp.Agent != nil && task.ModelOverride.Valid && task.ModelOverride.String != "" {
+			if resp.Agent != nil && task.ModelOverride.Valid {
 				slog.Info("per-task model override applied",
 					"task_id", uuidToString(task.ID),
 					"from_model", resp.Agent.Model, "to_model", task.ModelOverride.String,
 				)
 				resp.Agent.Model = task.ModelOverride.String
+			}
+			if resp.Agent != nil && task.ThinkingLevelOverride.Valid {
+				slog.Info("per-task thinking override applied",
+					"task_id", uuidToString(task.ID),
+					"from_thinking", resp.Agent.ThinkingLevel,
+					"to_thinking", task.ThinkingLevelOverride.String,
+				)
+				resp.Agent.ThinkingLevel = task.ThinkingLevelOverride.String
 			}
 
 			// Per-task cost tiering: override the agent's model/thinking for

@@ -50,10 +50,14 @@ test.describe("Comments", () => {
       .first()
       .click();
 
-    // Comment should appear in the activity section
-    await expect(page.locator(`text=${commentText}`)).toBeVisible({
-      timeout: 5000,
-    });
+    // Comment should appear in the virtualized activity list. The responsive
+    // detail layout keeps a second copy mounted, so scope the assertion to the
+    // visible activity tree instead of using a page-wide strict text locator.
+    await expect(
+      page
+        .getByTestId("virtuoso-item-list")
+        .getByText(commentText, { exact: true }),
+    ).toBeVisible({ timeout: 5000 });
   });
 
   test("comment submit button is disabled when empty", async ({ page }) => {

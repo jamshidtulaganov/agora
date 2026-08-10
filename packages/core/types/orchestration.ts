@@ -53,6 +53,8 @@ export interface OrchestrationStep {
   position: number;
   agent_id?: string;
   model?: string;
+  /** Persisted execution pin; empty string means provider-default/no thinking. */
+  thinking_level?: string;
   task_id?: string;
   question_id?: string;
   approval_required: boolean;
@@ -132,6 +134,27 @@ export interface OrchestrationMessage {
   created_at: string;
 }
 
+export interface SquadRosterPolicyEntry {
+  agent_id: string;
+  name: string;
+  role: string;
+  capability: OrchestrationCapability;
+  /** Execution-pinned on each generated step when non-empty. */
+  model?: string;
+  /** Creation-time source copied into each generated step's execution pin. */
+  thinking_level?: string;
+  /** Global agent capacity, not additional slots inside this issue run. */
+  max_concurrent_tasks: number;
+  is_leader?: boolean;
+}
+
+export interface OrchestrationPolicy extends Record<string, unknown> {
+  max_concurrency?: number;
+  parallel_workers?: number;
+  squad_id?: string;
+  squad_roster?: SquadRosterPolicyEntry[];
+}
+
 export interface OrchestrationRun {
   id: string;
   issue_id: string;
@@ -140,7 +163,7 @@ export interface OrchestrationRun {
   mode: "auto" | "manual";
   execution_strategy: ExecutionStrategy;
   progression_policy: ProgressionPolicy;
-  policy: Record<string, unknown>;
+  policy: OrchestrationPolicy;
   owner_type: "agent" | "squad" | "member" | "unassigned";
   owner_id?: string;
   controller_agent_id?: string;

@@ -468,6 +468,24 @@ features.multi_agent = true
 	}
 }
 
+func TestEnsureCodexMultiAgentConfigOrchestrationOverridesEscapeHatch(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("features.multi_agent = true\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	t.Setenv(AgoraCodexMultiAgentEnv, "1")
+
+	if err := ensureCodexMultiAgentConfigWithPolicy(configPath, true, nil); err != nil {
+		t.Fatalf("force orchestration policy: %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	requireMultiAgentDisabled(t, parseTOML(t, string(data)))
+}
+
 func TestCodexMultiAgentEnabledTruthy(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "On"} {
 		t.Run(v, func(t *testing.T) {

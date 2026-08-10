@@ -109,6 +109,30 @@
       "granted": "This browser can show notification banners.",
       "denied": "Blocked by your browser. Enable notifications for this site in your browser settings.",
       "enabled_badge": "Enabled"
+    },
+    "telegram": {
+      "title": "Telegram",
+      "description": "Get the same inbox events as a Telegram DM — assignments, comments, status changes, and agent completions (including commit / PR updates).",
+      "dm_label": "Personal DMs",
+      "loading": "Checking link status…",
+      "linked_hint": "Your Telegram account is linked. New inbox items are also sent as DMs.",
+      "unlinked_hint": "Link Telegram to receive inbox updates as bot DMs. Open the bot, then enter the code it sends.",
+      "connect": "Connect Telegram",
+      "unlink": "Disconnect",
+      "groups_hint": "To post into a Telegram group when an agent finishes work, connect a bot under Integrations and add the group.",
+      "groups_link": "Open Integrations → Telegram",
+      "dialog_title": "Connect Telegram",
+      "dialog_description": "Open the bot, tap Start, then paste the 6-digit code here. This links Telegram to your current Agora account without signing you out.",
+      "open_bot": "Open Telegram bot",
+      "code_label": "Code from Telegram",
+      "cancel": "Cancel",
+      "verify": "Link account",
+      "start_failed": "Could not start Telegram linking",
+      "toast_linked": "Telegram linked for inbox notifications",
+      "toast_verify_failed": "Invalid or expired code. Generate a new link and try again.",
+      "toast_conflict": "That Telegram account is already linked to another Agora user",
+      "toast_unlinked": "Telegram disconnected",
+      "toast_unlink_failed": "Could not disconnect Telegram"
     }
   },
   "tokens": {
@@ -438,7 +462,7 @@
     },
     "telegram": {
       "name": "Telegram",
-      "description": "Give an agent its own bot so it can answer in a group."
+      "description": "Connect per-agent bots and groups for chat and work updates. Personal inbox DMs are linked under Notifications."
     }
   },
   "figma": {
@@ -648,7 +672,7 @@
     }
   },
   "telegram": {
-    "page_description": "Give an agent its own Telegram bot so it can speak in a group under its own name and be replied to.",
+    "page_description": "Give an agent its own Telegram bot so it can speak in a group under its own name, take instructions, and post when work finishes. For personal inbox DMs (assign, comment, done), link Telegram under Settings → Notifications.",
     "connect_button": "Connect a bot",
     "loading": "Loading connected bots…",
     "not_configured_title": "Telegram bots are not available",

@@ -102,6 +102,33 @@ func TestSendMessageTelegramError(t *testing.T) {
 	}
 }
 
+func TestDeleteMessageHitsMockServer(t *testing.T) {
+	var (
+		gotPath string
+		gotBody struct {
+			ChatID    string `json:"chat_id"`
+			MessageID int64  `json:"message_id"`
+		}
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"result":true}`)
+	}))
+	defer srv.Close()
+
+	c := NewBotClient("TESTTOKEN")
+	c.BaseURL = srv.URL
+	c.HTTPClient = srv.Client()
+	if err := c.DeleteMessage(context.Background(), "-100123", 77); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+	if gotPath != "/botTESTTOKEN/deleteMessage" || gotBody.ChatID != "-100123" || gotBody.MessageID != 77 {
+		t.Fatalf("delete request = path %q body %+v", gotPath, gotBody)
+	}
+}
+
 func TestSetWebhookHitsMockServer(t *testing.T) {
 	var (
 		gotPath string

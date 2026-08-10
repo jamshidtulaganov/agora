@@ -268,10 +268,11 @@ func TestCreateRetryTaskKeepsOrdinaryTimeoutSession(t *testing.T) {
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, status, priority,
 			started_at, completed_at, session_id, work_dir, failure_reason,
-			attempt, max_attempts
+			attempt, max_attempts, model_override, thinking_level_override
 		)
 		VALUES ($1, $2, $3, 'failed', 0, now() - interval '1 minute', now() - interval '1 minute',
-		        'ORDINARY-TIMEOUT-SESSION', '/tmp/ordinary-timeout', 'timeout', 1, 2)
+		        'ORDINARY-TIMEOUT-SESSION', '/tmp/ordinary-timeout', 'timeout', 1, 2,
+		        'model-pinned', 'high')
 		RETURNING id
 	`, agentID, runtimeID, issueID).Scan(&parentID); err != nil {
 		t.Fatalf("insert ordinary timeout parent task: %v", err)
@@ -293,6 +294,10 @@ func TestCreateRetryTaskKeepsOrdinaryTimeoutSession(t *testing.T) {
 	}
 	if child.Attempt != 2 {
 		t.Fatalf("expected attempt 2, got %d", child.Attempt)
+	}
+	if !child.ModelOverride.Valid || child.ModelOverride.String != "model-pinned" ||
+		!child.ThinkingLevelOverride.Valid || child.ThinkingLevelOverride.String != "high" {
+		t.Fatalf("retry child lost execution pins: model=%+v thinking=%+v", child.ModelOverride, child.ThinkingLevelOverride)
 	}
 }
 

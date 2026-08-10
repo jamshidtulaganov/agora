@@ -1,5 +1,13 @@
 package protocol
 
+// Event payload keys shared by publishers and in-process listeners.
+const (
+	// EventPayloadSuppressExternalNotifications marks a dev/test event that
+	// must still reach websocket/cache subscribers but must not fan out to
+	// external systems such as Telegram. Production HTTP requests never set it.
+	EventPayloadSuppressExternalNotifications = "suppress_external_notifications"
+)
+
 // Event types for WebSocket communication between server, web clients, and daemon.
 const (
 	// Issue events

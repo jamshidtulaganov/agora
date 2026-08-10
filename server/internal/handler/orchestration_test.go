@@ -105,16 +105,17 @@ func TestSquadOrchestrationBuildsCapabilityAwareParallelBranches(t *testing.T) {
 	reviewer := orchestrationTestUUID(t, "55555555-5555-4555-8555-555555555555")
 	squad := orchestrationTestUUID(t, "66666666-6666-4666-8666-666666666666")
 	issue := db.Issue{AssigneeType: pgtype.Text{String: "squad", Valid: true}, AssigneeID: squad, Metadata: []byte(`{}`)}
+	members := []orchestrationPlannerMember{
+		{AgentID: leader, Name: "Lead", Role: "leader", IsLeader: true, Model: "claude-opus-4", ThinkingLevel: "high", MaxConcurrentTasks: 1},
+		{AgentID: backend, Name: "API", Role: "Backend engineer", Model: "claude-sonnet-5", ThinkingLevel: "low", MaxConcurrentTasks: 1},
+		{AgentID: frontend, Name: "Web", Role: "Frontend engineer", Model: "gpt-5", ThinkingLevel: "medium", MaxConcurrentTasks: 2},
+		{AgentID: qa, Name: "QA", Role: "QA engineer", Model: "claude-haiku", ThinkingLevel: "", MaxConcurrentTasks: 1},
+		{AgentID: reviewer, Name: "Review", Role: "Security reviewer", Model: "claude-sonnet-5", ThinkingLevel: "high", MaxConcurrentTasks: 1},
+	}
 	steps := defaultOrchestrationStepsWithMembers(issue, orchestrationRouting{
 		OwnerType: "squad", OwnerID: squad, ControllerAgent: leader,
 		DevelopmentAgent: leader, ExecutionMode: "squad",
-	}, "squad", []orchestrationPlannerMember{
-		{AgentID: leader, Role: "leader", IsLeader: true},
-		{AgentID: backend, Role: "Backend engineer"},
-		{AgentID: frontend, Role: "Frontend engineer"},
-		{AgentID: qa, Role: "QA engineer"},
-		{AgentID: reviewer, Role: "Security reviewer"},
-	})
+	}, "squad", members, 3)
 
 	if len(steps) != 7 {
 		t.Fatalf("capability-aware squad plan has %d steps, want 7: %#v", len(steps), steps)
@@ -125,6 +126,12 @@ func TestSquadOrchestrationBuildsCapabilityAwareParallelBranches(t *testing.T) {
 	}
 	if byKey["dev-backend"].AgentID != uuidToString(backend) || byKey["dev-frontend"].AgentID != uuidToString(frontend) {
 		t.Fatalf("specialist branches were not routed by capability: backend=%#v frontend=%#v", byKey["dev-backend"], byKey["dev-frontend"])
+	}
+	if byKey["dev-backend"].Model != "claude-sonnet-5" || byKey["dev-frontend"].Model != "gpt-5" {
+		t.Fatalf("specialist branches must pin each agent's model: backend=%q frontend=%q", byKey["dev-backend"].Model, byKey["dev-frontend"].Model)
+	}
+	if byKey["plan"].Model != "claude-opus-4" || byKey["qa"].Model != "claude-haiku" || byKey["review"].Model != "claude-sonnet-5" {
+		t.Fatalf("stage agents must pin their models: plan=%q qa=%q review=%q", byKey["plan"].Model, byKey["qa"].Model, byKey["review"].Model)
 	}
 	if got := byKey["integrate"].DependsOnKeys; len(got) != 2 || got[0] != "dev-backend" || got[1] != "dev-frontend" {
 		t.Fatalf("integration must join both independent branches, got %v", got)
@@ -137,6 +144,19 @@ func TestSquadOrchestrationBuildsCapabilityAwareParallelBranches(t *testing.T) {
 	}
 	if !strings.Contains(byKey["plan"].Instructions, "non-overlapping outcome") || !strings.Contains(byKey["plan"].Instructions, "recommend the exact reroute") {
 		t.Fatalf("controller plan step lacks an actionable worker handoff contract: %q", byKey["plan"].Instructions)
+	}
+	if !strings.Contains(byKey["plan"].Instructions, "model=claude-sonnet-5") ||
+		!strings.Contains(byKey["plan"].Instructions, "thinking=medium") ||
+		!strings.Contains(byKey["plan"].Instructions, "max_concurrent_tasks=2") ||
+		!strings.Contains(byKey["plan"].Instructions, "Backend engineer") {
+		t.Fatalf("controller plan must expose role/model/think/concurrency roster: %q", byKey["plan"].Instructions)
+	}
+	roster := buildSquadRosterPolicy(members)
+	if len(roster) != 5 {
+		t.Fatalf("roster has %d entries, want 5", len(roster))
+	}
+	if roster[2].Model != "gpt-5" || roster[2].ThinkingLevel != "medium" || roster[2].MaxConcurrentTasks != 2 {
+		t.Fatalf("roster lost frontend multi-model contract: %#v", roster[2])
 	}
 	if byKey["release"].AgentID != "" || !byKey["release"].ApprovalRequired {
 		t.Fatalf("release must stay unrouted until approval binds the controller: %#v", byKey["release"])
@@ -153,7 +173,7 @@ func TestSquadOrchestrationKeepsDuplicateCapabilitiesAsDistinctBranches(t *testi
 	}, "squad", []orchestrationPlannerMember{
 		{AgentID: first, Role: "Backend API"},
 		{AgentID: second, Role: "Database backend"},
-	})
+	}, 3)
 	keys := map[string]bool{}
 	for _, step := range steps {
 		keys[step.Key] = true
@@ -177,7 +197,7 @@ func TestSquadPlannerExcludesInstructionIncompatibleWorkerAndUsesDeveloperLead(t
 			AgentID: knowledge, Name: "KB Synthesizer", Role: "Implementation engineer",
 			Instructions: "You are the knowledge synthesizer. Never start work beyond completed-issue knowledge capture.",
 		},
-	})
+	}, 3)
 
 	devAgents := map[string]bool{}
 	for _, step := range steps {
@@ -382,11 +402,77 @@ func TestExecutionStrategyInference(t *testing.T) {
 	if got := inferExecutionStrategy(orchestrationRouting{OwnerType: "agent", ExecutionMode: "direct"}, false); got != "solo" {
 		t.Fatalf("direct agent strategy = %q, want solo", got)
 	}
+	// An agent that belongs to a squad still self-orchestrates when the issue
+	// is assigned to that agent — membership must not force a squad run.
+	if got := inferExecutionStrategy(orchestrationRouting{OwnerType: "agent", ExecutionMode: "orchestrated"}, false); got != "solo" {
+		t.Fatalf("agent-in-squad strategy = %q, want solo", got)
+	}
 	if got := inferExecutionStrategy(orchestrationRouting{OwnerType: "squad", ExecutionMode: "squad"}, false); got != "squad" {
 		t.Fatalf("squad strategy = %q, want squad", got)
 	}
 	if got := inferExecutionStrategy(orchestrationRouting{OwnerType: "agent", ExecutionMode: "direct"}, true); got != "custom" {
 		t.Fatalf("explicit plan strategy = %q, want custom", got)
+	}
+}
+
+func TestResolveExecutionStrategyPrefersAssignee(t *testing.T) {
+	agent := orchestrationRouting{OwnerType: "agent", ExecutionMode: "orchestrated"}
+	if got := resolveExecutionStrategy(agent, "squad", false); got != "solo" {
+		t.Fatalf("agent assignee must stay solo despite project squad pin: %q", got)
+	}
+	squad := orchestrationRouting{OwnerType: "squad", ExecutionMode: "squad"}
+	if got := resolveExecutionStrategy(squad, "solo", false); got != "squad" {
+		t.Fatalf("squad assignee must stay squad despite project solo pin: %q", got)
+	}
+	if got := resolveExecutionStrategy(orchestrationRouting{OwnerType: "member"}, "solo", false); got != "human" {
+		t.Fatalf("human-owned issue must remain human despite project pin: %q", got)
+	}
+	if got := resolveExecutionStrategy(orchestrationRouting{OwnerType: "unassigned"}, "automatic", false); got != "human" {
+		t.Fatalf("automatic on unassigned = %q, want human", got)
+	}
+}
+
+func TestApplySoloAgentRoutingKeepsAssigneeAsController(t *testing.T) {
+	agent := orchestrationTestUUID(t, "11111111-1111-1111-1111-111111111111")
+	leader := orchestrationTestUUID(t, "22222222-2222-2222-2222-222222222222")
+	routing := applySoloAgentRouting(orchestrationRouting{
+		OwnerType: "agent", OwnerID: agent, ControllerAgent: leader,
+		DevelopmentAgent: agent, ExecutionMode: "orchestrated",
+	})
+	if routing.ControllerAgent != agent || routing.DevelopmentAgent != agent || routing.ExecutionMode != "direct" {
+		t.Fatalf("solo routing must keep the assignee as controller: %#v", routing)
+	}
+}
+
+func TestApplySoloAgentRoutingPreservesExplicitController(t *testing.T) {
+	agent := orchestrationTestUUID(t, "11111111-1111-1111-1111-111111111111")
+	controller := orchestrationTestUUID(t, "22222222-2222-2222-2222-222222222222")
+	routing := applySoloAgentRouting(orchestrationRouting{
+		OwnerType: "agent", OwnerID: agent, ControllerAgent: controller,
+		DevelopmentAgent: agent, ExecutionMode: "orchestrated", ExplicitController: true,
+	})
+	if routing.ControllerAgent != controller || routing.DevelopmentAgent != agent || routing.ExecutionMode != "orchestrated" {
+		t.Fatalf("explicit controller must survive solo normalization: %#v", routing)
+	}
+}
+
+func TestSquadParallelBudgetCountsDistinctSameIssueAgents(t *testing.T) {
+	workerA := orchestrationTestUUID(t, "11111111-1111-1111-1111-111111111111")
+	workerB := orchestrationTestUUID(t, "22222222-2222-2222-2222-222222222222")
+	qa := orchestrationTestUUID(t, "33333333-3333-3333-3333-333333333333")
+	review := orchestrationTestUUID(t, "44444444-4444-4444-4444-444444444444")
+	workers := []orchestrationPlannerMember{
+		{AgentID: workerA, MaxConcurrentTasks: 1},
+		{AgentID: workerB, MaxConcurrentTasks: 5},
+	}
+	if got := squadParallelBudget(workers, qa, review, 10); got != 2 {
+		t.Fatalf("budget = %d, want two distinct agents", got)
+	}
+	if got := squadParallelBudget(workers[:1], qa, qa, 10); got != 1 {
+		t.Fatalf("one worker and one verification agent at separate stages has width 1, got %d", got)
+	}
+	if got := squadParallelBudget(workers, qa, review, 1); got != 1 {
+		t.Fatalf("configured cap must bound the budget, got %d", got)
 	}
 }
 

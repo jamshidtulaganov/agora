@@ -124,6 +124,8 @@ type AgentTaskQueue struct {
 	InitiatorUserID     pgtype.UUID        `json:"initiator_user_id"`
 	ModelOverride       pgtype.Text        `json:"model_override"`
 	OrchestrationStepID pgtype.UUID        `json:"orchestration_step_id"`
+	// Per-task reasoning snapshot copied from an orchestration step and preserved across retry/failover.
+	ThinkingLevelOverride pgtype.Text `json:"thinking_level_override"`
 }
 
 type Attachment struct {
@@ -751,6 +753,8 @@ type OrchestrationStep struct {
 	GitStates           []byte             `json:"git_states"`
 	// Stable responsibility category used by the squad planner, rerouting validation, and Active Work UI.
 	Capability string `json:"capability"`
+	// Creation/reroute-time reasoning snapshot for this persisted step. Empty string explicitly pins provider-default/no thinking.
+	ThinkingLevelOverride pgtype.Text `json:"thinking_level_override"`
 }
 
 type OrchestrationStepDependency struct {

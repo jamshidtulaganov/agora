@@ -140,10 +140,13 @@ import type {
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
   AutopilotTelegramDestination,
+  ExternalIdentityLink,
+  ListExternalIdentityLinksResponse,
   ListTelegramInstallationsResponse,
   SetTelegramAccessRequest,
   TelegramBindLinkResponse,
   TelegramInstallation,
+  TelegramLinkStartResponse,
   BeginLarkInstallResponse,
   LarkInstallStatusResponse,
   RedeemLarkBindingTokenResponse,
@@ -317,9 +320,14 @@ import {
   EMPTY_TELEGRAM_BIND_LINK,
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_TELEGRAM_INSTALLATIONS,
+  EMPTY_EXTERNAL_IDENTITY_LINKS,
+  EMPTY_TELEGRAM_LINK_START,
+  ListExternalIdentityLinksSchema,
   ListTelegramInstallationsSchema,
   TelegramBindLinkSchema,
   TelegramInstallationSchema,
+  TelegramLinkStartSchema,
+  ExternalIdentityLinkSchema,
   EMPTY_MCP_CREDENTIAL_STATUS,
   ReleaseIntegrationListSchema,
   EMPTY_RELEASE_INTEGRATIONS,
@@ -663,6 +671,36 @@ export class ApiClient {
       method: "DELETE",
       body: JSON.stringify({ confirmation }),
     });
+  }
+
+  async listMyExternalLinks(): Promise<ListExternalIdentityLinksResponse> {
+    const raw = await this.fetch<unknown>("/api/me/links");
+    return parseWithFallback(raw, ListExternalIdentityLinksSchema, EMPTY_EXTERNAL_IDENTITY_LINKS, {
+      endpoint: "GET /api/me/links",
+    });
+  }
+
+  async startTelegramLink(): Promise<TelegramLinkStartResponse> {
+    const raw = await this.fetch<unknown>("/api/me/links/telegram/start", {
+      method: "POST",
+    });
+    return parseWithFallback(raw, TelegramLinkStartSchema, EMPTY_TELEGRAM_LINK_START, {
+      endpoint: "POST /api/me/links/telegram/start",
+    });
+  }
+
+  async verifyTelegramLink(nonce: string, code: string): Promise<ExternalIdentityLink> {
+    const raw = await this.fetch<unknown>("/api/me/links/telegram/verify", {
+      method: "POST",
+      body: JSON.stringify({ nonce, code }),
+    });
+    return parseWithFallback(raw, ExternalIdentityLinkSchema, { provider: "", external_id: "" }, {
+      endpoint: "POST /api/me/links/telegram/verify",
+    });
+  }
+
+  async unlinkTelegramIdentity(): Promise<void> {
+    await this.fetch("/api/me/links/telegram", { method: "DELETE" });
   }
 
   // Issues

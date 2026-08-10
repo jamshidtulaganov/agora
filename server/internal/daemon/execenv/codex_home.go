@@ -41,6 +41,9 @@ type CodexHomeOptions struct {
 	// Empty means use runtime.GOOS. Primarily exists so tests can exercise
 	// both macOS and Linux paths deterministically.
 	GOOS string
+	// DisableNativeSubagents is mandatory for persisted orchestration steps:
+	// Agora must observe every unit of parallel work as a durable DAG step.
+	DisableNativeSubagents bool
 }
 
 // prepareCodexHome is a thin wrapper around prepareCodexHomeWithOpts kept for
@@ -120,8 +123,9 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	// Disable Codex native multi-agent inside daemon-managed task sessions
 	// so the parent thread's `turn/completed` is not interpreted as task
 	// completion while spawned subagents are still running. See
-	// codex_multi_agent.go for the full rationale and escape hatch.
-	if err := ensureCodexMultiAgentConfig(filepath.Join(codexHome, "config.toml"), logger); err != nil {
+	// codex_multi_agent.go for the full rationale. Orchestration steps force
+	// this off even when the daemon-wide experimental escape hatch is enabled.
+	if err := ensureCodexMultiAgentConfigWithPolicy(filepath.Join(codexHome, "config.toml"), opts.DisableNativeSubagents, logger); err != nil {
 		logger.Warn("execenv: codex-home ensure multi-agent config failed", "error", err)
 	}
 

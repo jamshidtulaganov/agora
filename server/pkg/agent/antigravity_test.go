@@ -284,3 +284,20 @@ func TestAntigravityModelError(t *testing.T) {
 		t.Error("near-miss model (dropped suffix) should be rejected")
 	}
 }
+
+// TestResolveThenValidateAntigravitySlug is the execute-path regression for
+// agents that still store the agy TSV slug: resolve maps it to the display
+// name, then validation accepts the catalog hit (instead of white-screening
+// with "model is not available from agy models").
+func TestResolveThenValidateAntigravitySlug(t *testing.T) {
+	t.Parallel()
+
+	catalog := parseAntigravityModels("gemini-3.6-flash-medium\tGemini 3.6 Flash (Medium)\n")
+	resolved := resolveAntigravityModel("gemini-3.6-flash-medium", catalog)
+	if resolved != "Gemini 3.6 Flash (Medium)" {
+		t.Fatalf("resolve = %q, want %q", resolved, "Gemini 3.6 Flash (Medium)")
+	}
+	if err := antigravityModelError(resolved, catalog); err != nil {
+		t.Fatalf("resolved slug should validate: %v", err)
+	}
+}

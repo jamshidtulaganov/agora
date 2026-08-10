@@ -63,7 +63,7 @@ var Registry = []Def{
 
 	// ---- Reporting -------------------------------------------------------
 	{Key: "AGORA_TELEGRAM_PROGRESS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Telegram progress updates", Description: "Relay an agent's own PROGRESS: headline to the autopilot's Telegram chat while a long run is still going. Silent for the first 5 minutes and at most one update per 5 minutes, so an ordinary run still produces exactly one message \u2014 its report. Off by default: posting into a team group is outward-facing. Project-scoped.", ProjectScoped: true},
-	{Key: "AGORA_TELEGRAM_REPORT_CHAT_ID", Kind: KindString, Category: "Automation", Label: "Telegram report chat", Description: "Telegram chat the bot posts autopilot reports to when a run completes. Group ids are negative (e.g. -1001234567890) \u2014 add the bot to the group first. Empty disables posting. Project-scoped, so different projects can report to different chats.", ProjectScoped: true},
+	{Key: "AGORA_TELEGRAM_REPORT_CHAT_ID", Kind: KindString, Category: "Automation", Label: "Telegram report chat", Description: "Telegram chat the platform bot posts team notices to: new-issue create notifications and completed autopilot reports. Group ids are negative (e.g. -1001234567890) \u2014 add the bot to the group first. Empty disables posting. Project-scoped, so different projects can report to different chats.", ProjectScoped: true},
 
 	// ---- Docs / knowledge ----------------------------------------------
 	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync.", ProjectScoped: true},

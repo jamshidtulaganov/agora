@@ -88,7 +88,6 @@ import type { PinnedItem } from "@agora/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useT } from "../i18n";
-import { NotificationCenter } from "./notification-center";
 
 // Top-level nav items stay active when the user is on a child route
 // (e.g. "Projects" stays lit on /:slug/projects/:id). Pinned items keep
@@ -532,11 +531,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         {/* Workspace Switcher */}
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
-            <SidebarMenuItem className="relative">
+            <SidebarMenuItem>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
-                    <SidebarMenuButton className="pr-10">
+                    <SidebarMenuButton>
                       <span className="relative">
                         <WorkspaceAvatar name={workspace?.name ?? "M"} avatarUrl={workspace?.avatar_url} size="sm" />
                         {myInvitations.length > 0 && (
@@ -649,9 +648,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="absolute right-0 top-0 z-10">
-                <NotificationCenter items={visibleInboxItems} />
-              </div>
             </SidebarMenuItem>
           </SidebarMenu>
           <SidebarMenu>

@@ -7,10 +7,7 @@ import { toast } from "sonner";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useUpdateProject } from "@agora/core/projects/mutations";
 import { useWorkspaceId } from "@agora/core/hooks";
-import type {
-  ProjectExecutionStrategy,
-  ProjectOrchestrationDefaults,
-} from "@agora/core/types";
+import type { ProjectOrchestrationDefaults } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Input } from "@agora/ui/components/ui/input";
@@ -34,24 +31,22 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
   const updateProject = useUpdateProject();
   const [open, setOpen] = useState(false);
   const saved = project?.settings.orchestration ?? BUILT_IN_DEFAULTS;
-  const [strategy, setStrategy] = useState<ProjectExecutionStrategy>(saved.execution_strategy);
   const [progression, setProgression] = useState<ProjectOrchestrationDefaults["progression_policy"]>(saved.progression_policy);
   const [maxConcurrency, setMaxConcurrency] = useState(saved.max_concurrency);
   const [reviewPlanFirst, setReviewPlanFirst] = useState(saved.review_plan_first);
 
   useEffect(() => {
-    setStrategy(saved.execution_strategy);
     setProgression(saved.progression_policy);
     setMaxConcurrency(saved.max_concurrency);
     setReviewPlanFirst(saved.review_plan_first);
-  }, [saved.execution_strategy, saved.progression_policy, saved.max_concurrency, saved.review_plan_first]);
-
-  const squadDefaultUnavailable = strategy === "squad" && !project?.squad_id;
+  }, [saved.progression_policy, saved.max_concurrency, saved.review_plan_first]);
 
   const save = async () => {
-    if (!project || squadDefaultUnavailable) return;
+    if (!project) return;
     const orchestration: ProjectOrchestrationDefaults = {
-      execution_strategy: strategy,
+      // Kept for wire compatibility. Run topology is derived from the issue
+      // assignee (agent=solo, squad=squad, member/unassigned=human).
+      execution_strategy: "automatic",
       progression_policy: progression,
       max_concurrency: Math.min(10, Math.max(1, maxConcurrency)),
       review_plan_first: reviewPlanFirst,
@@ -95,32 +90,6 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
           <p className="text-[10px] leading-relaxed text-muted-foreground">
             {t(($) => $.execution_defaults.description)}
           </p>
-
-          <fieldset>
-            <legend className="text-[10px] font-medium text-muted-foreground">
-              {t(($) => $.execution_defaults.strategy)}
-            </legend>
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {(["automatic", "solo", "squad", "human"] as const).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={cn("h-7 px-2 text-[11px]", strategy === option && ACTIVE_SEGMENT)}
-                  onClick={() => setStrategy(option)}
-                  aria-pressed={strategy === option}
-                >
-                  {t(($) => $.execution_defaults[`strategy_${option}`])}
-                </Button>
-              ))}
-            </div>
-            {squadDefaultUnavailable && (
-              <p className="mt-1.5 text-[10px] text-warning">
-                {t(($) => $.execution_defaults.squad_required)}
-              </p>
-            )}
-          </fieldset>
 
           <fieldset>
             <legend className="text-[10px] font-medium text-muted-foreground">
@@ -176,7 +145,7 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
           <Button
             size="sm"
             className="h-7"
-            disabled={updateProject.isPending || squadDefaultUnavailable}
+            disabled={updateProject.isPending}
             onClick={() => void save()}
           >
             {t(($) => $.execution_defaults.save)}

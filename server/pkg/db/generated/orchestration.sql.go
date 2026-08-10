@@ -74,7 +74,7 @@ SET agent_id = COALESCE(agent_id, controller_agent_id),
     completed_at = CASE WHEN COALESCE(agent_id, controller_agent_id) IS NULL THEN now() ELSE NULL END,
     updated_at = now()
 WHERE id = $1 AND status = 'waiting_approval'
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type ApproveOrchestrationStepParams struct {
@@ -126,6 +126,7 @@ func (q *Queries) ApproveOrchestrationStep(ctx context.Context, arg ApproveOrche
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -142,7 +143,7 @@ WHERE orchestration_step.id = $1
       ORDER BY created_at DESC, id DESC
       LIMIT 1
   )
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type AttachTaskToOrchestrationStepParams struct {
@@ -194,6 +195,7 @@ func (q *Queries) AttachTaskToOrchestrationStep(ctx context.Context, arg AttachT
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -203,7 +205,7 @@ UPDATE orchestration_step
 SET status = 'blocked', output = $2, completed_at = NULL, updated_at = now()
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND status IN ('queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type BlockOrchestrationStepParams struct {
@@ -255,6 +257,7 @@ func (q *Queries) BlockOrchestrationStep(ctx context.Context, arg BlockOrchestra
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -264,7 +267,7 @@ UPDATE orchestration_step
 SET status = 'cancelled', completed_at = now(), updated_at = now(), error = 'cancelled by user'
 WHERE id = $1
   AND status IN ('pending', 'queued', 'running', 'waiting_approval', 'waiting_input', 'blocked')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) CancelOrchestrationStep(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -311,6 +314,7 @@ func (q *Queries) CancelOrchestrationStep(ctx context.Context, id pgtype.UUID) (
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -320,7 +324,7 @@ UPDATE orchestration_step
 SET status = 'cancelled', completed_at = now(), updated_at = now(), error = 'cancelled by user'
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND orchestration_step.status IN ('queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) CancelOrchestrationStepByTask(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -367,6 +371,7 @@ func (q *Queries) CancelOrchestrationStepByTask(ctx context.Context, id pgtype.U
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -378,7 +383,7 @@ SET status = CASE WHEN approval_required AND approved_at IS NULL THEN 'waiting_a
     updated_at = now()
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND status IN ('queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type CompleteOrchestrationStepParams struct {
@@ -430,6 +435,7 @@ func (q *Queries) CompleteOrchestrationStep(ctx context.Context, arg CompleteOrc
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -656,33 +662,35 @@ func (q *Queries) CreateOrchestrationRun(ctx context.Context, arg CreateOrchestr
 const createOrchestrationStep = `-- name: CreateOrchestrationStep :one
 INSERT INTO orchestration_step (
     run_id, step_key, title, stage, position, agent_id, model_override,
+    thinking_level_override,
     depends_on_step_id, approval_required, max_attempts, instructions,
     parent_step_id, squad_id, controller_agent_id, introduced_in_version,
     step_kind, integration_status, capability
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-    CASE WHEN $16 = 'integration' THEN 'pending' ELSE 'not_required' END, $17)
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+    CASE WHEN $17 = 'integration' THEN 'pending' ELSE 'not_required' END, $18)
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type CreateOrchestrationStepParams struct {
-	RunID               pgtype.UUID `json:"run_id"`
-	StepKey             string      `json:"step_key"`
-	Title               string      `json:"title"`
-	Stage               string      `json:"stage"`
-	Position            int32       `json:"position"`
-	AgentID             pgtype.UUID `json:"agent_id"`
-	ModelOverride       pgtype.Text `json:"model_override"`
-	DependsOnStepID     pgtype.UUID `json:"depends_on_step_id"`
-	ApprovalRequired    bool        `json:"approval_required"`
-	MaxAttempts         int32       `json:"max_attempts"`
-	Instructions        string      `json:"instructions"`
-	ParentStepID        pgtype.UUID `json:"parent_step_id"`
-	SquadID             pgtype.UUID `json:"squad_id"`
-	ControllerAgentID   pgtype.UUID `json:"controller_agent_id"`
-	IntroducedInVersion int32       `json:"introduced_in_version"`
-	StepKind            string      `json:"step_kind"`
-	Capability          string      `json:"capability"`
+	RunID                 pgtype.UUID `json:"run_id"`
+	StepKey               string      `json:"step_key"`
+	Title                 string      `json:"title"`
+	Stage                 string      `json:"stage"`
+	Position              int32       `json:"position"`
+	AgentID               pgtype.UUID `json:"agent_id"`
+	ModelOverride         pgtype.Text `json:"model_override"`
+	ThinkingLevelOverride pgtype.Text `json:"thinking_level_override"`
+	DependsOnStepID       pgtype.UUID `json:"depends_on_step_id"`
+	ApprovalRequired      bool        `json:"approval_required"`
+	MaxAttempts           int32       `json:"max_attempts"`
+	Instructions          string      `json:"instructions"`
+	ParentStepID          pgtype.UUID `json:"parent_step_id"`
+	SquadID               pgtype.UUID `json:"squad_id"`
+	ControllerAgentID     pgtype.UUID `json:"controller_agent_id"`
+	IntroducedInVersion   int32       `json:"introduced_in_version"`
+	StepKind              string      `json:"step_kind"`
+	Capability            string      `json:"capability"`
 }
 
 func (q *Queries) CreateOrchestrationStep(ctx context.Context, arg CreateOrchestrationStepParams) (OrchestrationStep, error) {
@@ -694,6 +702,7 @@ func (q *Queries) CreateOrchestrationStep(ctx context.Context, arg CreateOrchest
 		arg.Position,
 		arg.AgentID,
 		arg.ModelOverride,
+		arg.ThinkingLevelOverride,
 		arg.DependsOnStepID,
 		arg.ApprovalRequired,
 		arg.MaxAttempts,
@@ -747,6 +756,7 @@ func (q *Queries) CreateOrchestrationStep(ctx context.Context, arg CreateOrchest
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -759,7 +769,7 @@ SET status = 'pending',
     error = NULL,
     updated_at = now()
 WHERE id = $1 AND status = 'queued' AND task_id IS NULL
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) DeferOrchestrationStepDispatch(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -806,6 +816,7 @@ func (q *Queries) DeferOrchestrationStepDispatch(ctx context.Context, id pgtype.
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -815,7 +826,7 @@ UPDATE orchestration_step
 SET status = 'failed', error = $2, updated_at = now()
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND status IN ('queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type FailOrchestrationStepParams struct {
@@ -867,6 +878,7 @@ func (q *Queries) FailOrchestrationStep(ctx context.Context, arg FailOrchestrati
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -875,7 +887,7 @@ const failOrchestrationStepByID = `-- name: FailOrchestrationStepByID :one
 UPDATE orchestration_step
 SET status = 'failed', error = $2, updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type FailOrchestrationStepByIDParams struct {
@@ -927,6 +939,7 @@ func (q *Queries) FailOrchestrationStepByID(ctx context.Context, arg FailOrchest
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -945,7 +958,7 @@ WHERE orchestration_step.id = (
 )
   AND status IN ('queued', 'running')
   AND $1 IN ('completed', 'blocked')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type FinalizeOrchestrationStepAfterTerminalRunParams struct {
@@ -1007,6 +1020,7 @@ func (q *Queries) FinalizeOrchestrationStepAfterTerminalRun(ctx context.Context,
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -1158,7 +1172,7 @@ func (q *Queries) GetLatestOrchestrationRunForIssue(ctx context.Context, issueID
 }
 
 const getLatestTaskForOrchestrationStep = `-- name: GetLatestTaskForOrchestrationStep :one
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id FROM agent_task_queue
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override FROM agent_task_queue
 WHERE orchestration_step_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT 1
@@ -1197,12 +1211,13 @@ func (q *Queries) GetLatestTaskForOrchestrationStep(ctx context.Context, orchest
 		&i.InitiatorUserID,
 		&i.ModelOverride,
 		&i.OrchestrationStepID,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
 
 const getNextRunnableOrchestrationStep = `-- name: GetNextRunnableOrchestrationStep :one
-SELECT s.id, s.run_id, s.step_key, s.title, s.stage, s.status, s.position, s.agent_id, s.model_override, s.task_id, s.depends_on_step_id, s.approval_required, s.approved_by, s.approved_at, s.attempt, s.max_attempts, s.instructions, s.output, s.error, s.started_at, s.completed_at, s.created_at, s.updated_at, s.parent_step_id, s.introduced_in_version, s.retired_in_version, s.supersedes_step_id, s.squad_id, s.controller_agent_id, s.worktree_branch, s.base_sha, s.head_sha, s.merge_status, s.conflict_files, s.step_kind, s.integration_status, s.integrated_head_shas, s.missing_head_shas, s.git_states, s.capability FROM orchestration_step s
+SELECT s.id, s.run_id, s.step_key, s.title, s.stage, s.status, s.position, s.agent_id, s.model_override, s.task_id, s.depends_on_step_id, s.approval_required, s.approved_by, s.approved_at, s.attempt, s.max_attempts, s.instructions, s.output, s.error, s.started_at, s.completed_at, s.created_at, s.updated_at, s.parent_step_id, s.introduced_in_version, s.retired_in_version, s.supersedes_step_id, s.squad_id, s.controller_agent_id, s.worktree_branch, s.base_sha, s.head_sha, s.merge_status, s.conflict_files, s.step_kind, s.integration_status, s.integrated_head_shas, s.missing_head_shas, s.git_states, s.capability, s.thinking_level_override FROM orchestration_step s
 LEFT JOIN orchestration_step dependency ON dependency.id = s.depends_on_step_id
 WHERE s.run_id = $1
   AND s.status = 'pending'
@@ -1255,6 +1270,7 @@ func (q *Queries) GetNextRunnableOrchestrationStep(ctx context.Context, runID pg
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -1398,7 +1414,7 @@ func (q *Queries) GetOrchestrationRunByStep(ctx context.Context, id pgtype.UUID)
 }
 
 const getOrchestrationStep = `-- name: GetOrchestrationStep :one
-SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability FROM orchestration_step WHERE id = $1
+SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override FROM orchestration_step WHERE id = $1
 `
 
 func (q *Queries) GetOrchestrationStep(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -1445,12 +1461,13 @@ func (q *Queries) GetOrchestrationStep(ctx context.Context, id pgtype.UUID) (Orc
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
 
 const getOrchestrationStepByTask = `-- name: GetOrchestrationStepByTask :one
-SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability FROM orchestration_step WHERE task_id = $1
+SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override FROM orchestration_step WHERE task_id = $1
 `
 
 func (q *Queries) GetOrchestrationStepByTask(ctx context.Context, taskID pgtype.UUID) (OrchestrationStep, error) {
@@ -1497,15 +1514,16 @@ func (q *Queries) GetOrchestrationStepByTask(ctx context.Context, taskID pgtype.
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
 
 const listOrchestrationBranchSteps = `-- name: ListOrchestrationBranchSteps :many
 WITH RECURSIVE branch AS (
-    SELECT orchestration_step.id, orchestration_step.run_id, orchestration_step.step_key, orchestration_step.title, orchestration_step.stage, orchestration_step.status, orchestration_step.position, orchestration_step.agent_id, orchestration_step.model_override, orchestration_step.task_id, orchestration_step.depends_on_step_id, orchestration_step.approval_required, orchestration_step.approved_by, orchestration_step.approved_at, orchestration_step.attempt, orchestration_step.max_attempts, orchestration_step.instructions, orchestration_step.output, orchestration_step.error, orchestration_step.started_at, orchestration_step.completed_at, orchestration_step.created_at, orchestration_step.updated_at, orchestration_step.parent_step_id, orchestration_step.introduced_in_version, orchestration_step.retired_in_version, orchestration_step.supersedes_step_id, orchestration_step.squad_id, orchestration_step.controller_agent_id, orchestration_step.worktree_branch, orchestration_step.base_sha, orchestration_step.head_sha, orchestration_step.merge_status, orchestration_step.conflict_files, orchestration_step.step_kind, orchestration_step.integration_status, orchestration_step.integrated_head_shas, orchestration_step.missing_head_shas, orchestration_step.git_states, orchestration_step.capability FROM orchestration_step WHERE orchestration_step.id = $1
+    SELECT orchestration_step.id, orchestration_step.run_id, orchestration_step.step_key, orchestration_step.title, orchestration_step.stage, orchestration_step.status, orchestration_step.position, orchestration_step.agent_id, orchestration_step.model_override, orchestration_step.task_id, orchestration_step.depends_on_step_id, orchestration_step.approval_required, orchestration_step.approved_by, orchestration_step.approved_at, orchestration_step.attempt, orchestration_step.max_attempts, orchestration_step.instructions, orchestration_step.output, orchestration_step.error, orchestration_step.started_at, orchestration_step.completed_at, orchestration_step.created_at, orchestration_step.updated_at, orchestration_step.parent_step_id, orchestration_step.introduced_in_version, orchestration_step.retired_in_version, orchestration_step.supersedes_step_id, orchestration_step.squad_id, orchestration_step.controller_agent_id, orchestration_step.worktree_branch, orchestration_step.base_sha, orchestration_step.head_sha, orchestration_step.merge_status, orchestration_step.conflict_files, orchestration_step.step_kind, orchestration_step.integration_status, orchestration_step.integrated_head_shas, orchestration_step.missing_head_shas, orchestration_step.git_states, orchestration_step.capability, orchestration_step.thinking_level_override FROM orchestration_step WHERE orchestration_step.id = $1
     UNION
-    SELECT child.id, child.run_id, child.step_key, child.title, child.stage, child.status, child.position, child.agent_id, child.model_override, child.task_id, child.depends_on_step_id, child.approval_required, child.approved_by, child.approved_at, child.attempt, child.max_attempts, child.instructions, child.output, child.error, child.started_at, child.completed_at, child.created_at, child.updated_at, child.parent_step_id, child.introduced_in_version, child.retired_in_version, child.supersedes_step_id, child.squad_id, child.controller_agent_id, child.worktree_branch, child.base_sha, child.head_sha, child.merge_status, child.conflict_files, child.step_kind, child.integration_status, child.integrated_head_shas, child.missing_head_shas, child.git_states, child.capability
+    SELECT child.id, child.run_id, child.step_key, child.title, child.stage, child.status, child.position, child.agent_id, child.model_override, child.task_id, child.depends_on_step_id, child.approval_required, child.approved_by, child.approved_at, child.attempt, child.max_attempts, child.instructions, child.output, child.error, child.started_at, child.completed_at, child.created_at, child.updated_at, child.parent_step_id, child.introduced_in_version, child.retired_in_version, child.supersedes_step_id, child.squad_id, child.controller_agent_id, child.worktree_branch, child.base_sha, child.head_sha, child.merge_status, child.conflict_files, child.step_kind, child.integration_status, child.integrated_head_shas, child.missing_head_shas, child.git_states, child.capability, child.thinking_level_override
     FROM orchestration_step child
     JOIN branch parent ON child.parent_step_id = parent.id
        OR EXISTS (
@@ -1513,50 +1531,51 @@ WITH RECURSIVE branch AS (
            WHERE d.step_id = child.id AND d.depends_on_step_id = parent.id
        )
 )
-SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability FROM branch ORDER BY position, created_at
+SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override FROM branch ORDER BY position, created_at
 `
 
 type ListOrchestrationBranchStepsRow struct {
-	ID                  pgtype.UUID        `json:"id"`
-	RunID               pgtype.UUID        `json:"run_id"`
-	StepKey             string             `json:"step_key"`
-	Title               string             `json:"title"`
-	Stage               string             `json:"stage"`
-	Status              string             `json:"status"`
-	Position            int32              `json:"position"`
-	AgentID             pgtype.UUID        `json:"agent_id"`
-	ModelOverride       pgtype.Text        `json:"model_override"`
-	TaskID              pgtype.UUID        `json:"task_id"`
-	DependsOnStepID     pgtype.UUID        `json:"depends_on_step_id"`
-	ApprovalRequired    bool               `json:"approval_required"`
-	ApprovedBy          pgtype.UUID        `json:"approved_by"`
-	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
-	Attempt             int32              `json:"attempt"`
-	MaxAttempts         int32              `json:"max_attempts"`
-	Instructions        string             `json:"instructions"`
-	Output              []byte             `json:"output"`
-	Error               pgtype.Text        `json:"error"`
-	StartedAt           pgtype.Timestamptz `json:"started_at"`
-	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	ParentStepID        pgtype.UUID        `json:"parent_step_id"`
-	IntroducedInVersion int32              `json:"introduced_in_version"`
-	RetiredInVersion    pgtype.Int4        `json:"retired_in_version"`
-	SupersedesStepID    pgtype.UUID        `json:"supersedes_step_id"`
-	SquadID             pgtype.UUID        `json:"squad_id"`
-	ControllerAgentID   pgtype.UUID        `json:"controller_agent_id"`
-	WorktreeBranch      pgtype.Text        `json:"worktree_branch"`
-	BaseSha             pgtype.Text        `json:"base_sha"`
-	HeadSha             pgtype.Text        `json:"head_sha"`
-	MergeStatus         string             `json:"merge_status"`
-	ConflictFiles       []byte             `json:"conflict_files"`
-	StepKind            string             `json:"step_kind"`
-	IntegrationStatus   string             `json:"integration_status"`
-	IntegratedHeadShas  []byte             `json:"integrated_head_shas"`
-	MissingHeadShas     []byte             `json:"missing_head_shas"`
-	GitStates           []byte             `json:"git_states"`
-	Capability          string             `json:"capability"`
+	ID                    pgtype.UUID        `json:"id"`
+	RunID                 pgtype.UUID        `json:"run_id"`
+	StepKey               string             `json:"step_key"`
+	Title                 string             `json:"title"`
+	Stage                 string             `json:"stage"`
+	Status                string             `json:"status"`
+	Position              int32              `json:"position"`
+	AgentID               pgtype.UUID        `json:"agent_id"`
+	ModelOverride         pgtype.Text        `json:"model_override"`
+	TaskID                pgtype.UUID        `json:"task_id"`
+	DependsOnStepID       pgtype.UUID        `json:"depends_on_step_id"`
+	ApprovalRequired      bool               `json:"approval_required"`
+	ApprovedBy            pgtype.UUID        `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	Attempt               int32              `json:"attempt"`
+	MaxAttempts           int32              `json:"max_attempts"`
+	Instructions          string             `json:"instructions"`
+	Output                []byte             `json:"output"`
+	Error                 pgtype.Text        `json:"error"`
+	StartedAt             pgtype.Timestamptz `json:"started_at"`
+	CompletedAt           pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	ParentStepID          pgtype.UUID        `json:"parent_step_id"`
+	IntroducedInVersion   int32              `json:"introduced_in_version"`
+	RetiredInVersion      pgtype.Int4        `json:"retired_in_version"`
+	SupersedesStepID      pgtype.UUID        `json:"supersedes_step_id"`
+	SquadID               pgtype.UUID        `json:"squad_id"`
+	ControllerAgentID     pgtype.UUID        `json:"controller_agent_id"`
+	WorktreeBranch        pgtype.Text        `json:"worktree_branch"`
+	BaseSha               pgtype.Text        `json:"base_sha"`
+	HeadSha               pgtype.Text        `json:"head_sha"`
+	MergeStatus           string             `json:"merge_status"`
+	ConflictFiles         []byte             `json:"conflict_files"`
+	StepKind              string             `json:"step_kind"`
+	IntegrationStatus     string             `json:"integration_status"`
+	IntegratedHeadShas    []byte             `json:"integrated_head_shas"`
+	MissingHeadShas       []byte             `json:"missing_head_shas"`
+	GitStates             []byte             `json:"git_states"`
+	Capability            string             `json:"capability"`
+	ThinkingLevelOverride pgtype.Text        `json:"thinking_level_override"`
 }
 
 func (q *Queries) ListOrchestrationBranchSteps(ctx context.Context, id pgtype.UUID) ([]ListOrchestrationBranchStepsRow, error) {
@@ -1609,6 +1628,7 @@ func (q *Queries) ListOrchestrationBranchSteps(ctx context.Context, id pgtype.UU
 			&i.MissingHeadShas,
 			&i.GitStates,
 			&i.Capability,
+			&i.ThinkingLevelOverride,
 		); err != nil {
 			return nil, err
 		}
@@ -1910,7 +1930,7 @@ func (q *Queries) ListOrchestrationStepMessages(ctx context.Context, stepID pgty
 }
 
 const listOrchestrationSteps = `-- name: ListOrchestrationSteps :many
-SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability FROM orchestration_step WHERE run_id = $1 ORDER BY position, created_at
+SELECT id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override FROM orchestration_step WHERE run_id = $1 ORDER BY position, created_at
 `
 
 func (q *Queries) ListOrchestrationSteps(ctx context.Context, runID pgtype.UUID) ([]OrchestrationStep, error) {
@@ -1963,6 +1983,7 @@ func (q *Queries) ListOrchestrationSteps(ctx context.Context, runID pgtype.UUID)
 			&i.MissingHeadShas,
 			&i.GitStates,
 			&i.Capability,
+			&i.ThinkingLevelOverride,
 		); err != nil {
 			return nil, err
 		}
@@ -1975,7 +1996,7 @@ func (q *Queries) ListOrchestrationSteps(ctx context.Context, runID pgtype.UUID)
 }
 
 const listRunnableOrchestrationSteps = `-- name: ListRunnableOrchestrationSteps :many
-SELECT s.id, s.run_id, s.step_key, s.title, s.stage, s.status, s.position, s.agent_id, s.model_override, s.task_id, s.depends_on_step_id, s.approval_required, s.approved_by, s.approved_at, s.attempt, s.max_attempts, s.instructions, s.output, s.error, s.started_at, s.completed_at, s.created_at, s.updated_at, s.parent_step_id, s.introduced_in_version, s.retired_in_version, s.supersedes_step_id, s.squad_id, s.controller_agent_id, s.worktree_branch, s.base_sha, s.head_sha, s.merge_status, s.conflict_files, s.step_kind, s.integration_status, s.integrated_head_shas, s.missing_head_shas, s.git_states, s.capability
+SELECT s.id, s.run_id, s.step_key, s.title, s.stage, s.status, s.position, s.agent_id, s.model_override, s.task_id, s.depends_on_step_id, s.approval_required, s.approved_by, s.approved_at, s.attempt, s.max_attempts, s.instructions, s.output, s.error, s.started_at, s.completed_at, s.created_at, s.updated_at, s.parent_step_id, s.introduced_in_version, s.retired_in_version, s.supersedes_step_id, s.squad_id, s.controller_agent_id, s.worktree_branch, s.base_sha, s.head_sha, s.merge_status, s.conflict_files, s.step_kind, s.integration_status, s.integrated_head_shas, s.missing_head_shas, s.git_states, s.capability, s.thinking_level_override
 FROM orchestration_step s
 WHERE s.run_id = $1
   AND s.status = 'pending'
@@ -2038,6 +2059,7 @@ func (q *Queries) ListRunnableOrchestrationSteps(ctx context.Context, runID pgty
 			&i.MissingHeadShas,
 			&i.GitStates,
 			&i.Capability,
+			&i.ThinkingLevelOverride,
 		); err != nil {
 			return nil, err
 		}
@@ -2173,7 +2195,7 @@ UPDATE orchestration_step
 SET status = 'queued', attempt = attempt + 1,
     error = NULL, started_at = COALESCE(started_at, now()), updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'failed') AND attempt < max_attempts
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) QueueOrchestrationStep(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -2220,22 +2242,25 @@ func (q *Queries) QueueOrchestrationStep(ctx context.Context, id pgtype.UUID) (O
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
 
 const reroutePendingOrchestrationStep = `-- name: ReroutePendingOrchestrationStep :one
 UPDATE orchestration_step
-SET agent_id = $2, model_override = $3, instructions = $4, updated_at = now()
+SET agent_id = $2, model_override = $3, thinking_level_override = $4,
+    instructions = $5, updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'waiting_approval')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type ReroutePendingOrchestrationStepParams struct {
-	ID            pgtype.UUID `json:"id"`
-	AgentID       pgtype.UUID `json:"agent_id"`
-	ModelOverride pgtype.Text `json:"model_override"`
-	Instructions  string      `json:"instructions"`
+	ID                    pgtype.UUID `json:"id"`
+	AgentID               pgtype.UUID `json:"agent_id"`
+	ModelOverride         pgtype.Text `json:"model_override"`
+	ThinkingLevelOverride pgtype.Text `json:"thinking_level_override"`
+	Instructions          string      `json:"instructions"`
 }
 
 // "Pending" here means "execution is still ahead of it", which covers
@@ -2261,6 +2286,7 @@ func (q *Queries) ReroutePendingOrchestrationStep(ctx context.Context, arg Rerou
 		arg.ID,
 		arg.AgentID,
 		arg.ModelOverride,
+		arg.ThinkingLevelOverride,
 		arg.Instructions,
 	)
 	var i OrchestrationStep
@@ -2305,6 +2331,7 @@ func (q *Queries) ReroutePendingOrchestrationStep(ctx context.Context, arg Rerou
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2316,7 +2343,7 @@ SET status = 'pending', task_id = NULL, error = NULL,
     updated_at = now()
 WHERE id = $1 AND status IN ('failed', 'blocked')
   AND (status = 'blocked' OR attempt < max_attempts)
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) ResetOrchestrationStepForRetry(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -2363,6 +2390,7 @@ func (q *Queries) ResetOrchestrationStepForRetry(ctx context.Context, id pgtype.
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2405,7 +2433,7 @@ UPDATE orchestration_step
 SET status = 'pending', task_id = NULL, error = NULL,
     attempt = GREATEST(attempt - 1, 0), updated_at = now()
 WHERE id = $1 AND status = 'waiting_input'
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) ResumeOrchestrationStepAfterInput(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -2452,6 +2480,7 @@ func (q *Queries) ResumeOrchestrationStepAfterInput(ctx context.Context, id pgty
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2460,7 +2489,7 @@ const retirePendingOrchestrationStep = `-- name: RetirePendingOrchestrationStep 
 UPDATE orchestration_step
 SET status = 'skipped', retired_in_version = $2, completed_at = now(), updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'waiting_approval')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type RetirePendingOrchestrationStepParams struct {
@@ -2512,6 +2541,7 @@ func (q *Queries) RetirePendingOrchestrationStep(ctx context.Context, arg Retire
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2608,7 +2638,7 @@ const setOrchestrationStepRunning = `-- name: SetOrchestrationStepRunning :one
 UPDATE orchestration_step SET status = 'running', updated_at = now()
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND status = 'queued'
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) SetOrchestrationStepRunning(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -2655,6 +2685,7 @@ func (q *Queries) SetOrchestrationStepRunning(ctx context.Context, id pgtype.UUI
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2756,7 +2787,7 @@ const waitOrchestrationStepApproval = `-- name: WaitOrchestrationStepApproval :o
 UPDATE orchestration_step
 SET status = 'waiting_approval', approved_by = NULL, approved_at = NULL, updated_at = now()
 WHERE id = $1 AND status = 'pending' AND approval_required
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 func (q *Queries) WaitOrchestrationStepApproval(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
@@ -2803,6 +2834,7 @@ func (q *Queries) WaitOrchestrationStepApproval(ctx context.Context, id pgtype.U
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }
@@ -2812,7 +2844,7 @@ UPDATE orchestration_step
 SET status = 'waiting_input', output = $2, completed_at = NULL, updated_at = now()
 WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
   AND status IN ('queued', 'running')
-RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability, thinking_level_override
 `
 
 type WaitOrchestrationStepInputParams struct {
@@ -2864,6 +2896,7 @@ func (q *Queries) WaitOrchestrationStepInput(ctx context.Context, arg WaitOrches
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+		&i.ThinkingLevelOverride,
 	)
 	return i, err
 }

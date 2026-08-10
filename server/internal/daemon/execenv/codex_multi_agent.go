@@ -26,9 +26,11 @@ import (
 // The override only touches the per-task `CODEX_HOME/config.toml`; the
 // user's global `~/.codex/config.toml` is never modified.
 //
-// Users who explicitly want Codex native subagents inside a Agora task
+// Users who explicitly want Codex native subagents in ordinary Agora tasks
 // (and accept the lifecycle risk) can keep the feature enabled by setting
-// `AGORA_CODEX_MULTI_AGENT=1` in the daemon environment.
+// `AGORA_CODEX_MULTI_AGENT=1` in the daemon environment. Persisted
+// orchestration steps always disable them: child work must be a durable DAG
+// step whose lifecycle and output Agora can observe.
 //
 // Layout note
 //
@@ -192,7 +194,11 @@ func injectManagedBlockIntoFeaturesTable(content string) string {
 // not supported: the per-task config is short-lived (recreated per task),
 // so users should set the var once at daemon start.
 func ensureCodexMultiAgentConfig(configPath string, logger *slog.Logger) error {
-	if codexMultiAgentEnabled() {
+	return ensureCodexMultiAgentConfigWithPolicy(configPath, false, logger)
+}
+
+func ensureCodexMultiAgentConfigWithPolicy(configPath string, forceDisabled bool, logger *slog.Logger) error {
+	if codexMultiAgentEnabled() && !forceDisabled {
 		if logger != nil {
 			logger.Info("codex multi-agent: leaving Codex native multi-agent untouched per AGORA_CODEX_MULTI_AGENT",
 				"config_path", configPath,

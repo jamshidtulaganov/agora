@@ -2525,13 +2525,78 @@ func TestCompleteTask_AssignmentTriggered_DoesNotSuppressTrivialDoneOutput(t *te
 }
 
 type claimRuntimeGuardTask struct {
-	ID                                string   `json:"id"`
-	PriorSessionID                    string   `json:"prior_session_id"`
-	PriorWorkDir                      string   `json:"prior_work_dir"`
-	PriorSessionSameOrchestrationStep bool     `json:"prior_session_same_orchestration_step"`
-	ChatMessage                       string   `json:"chat_message"`
-	ThreadName                        string   `json:"thread_name"`
-	QuickCreateAttachmentIDs          []string `json:"quick_create_attachment_ids"`
+	ID                                string         `json:"id"`
+	PriorSessionID                    string         `json:"prior_session_id"`
+	PriorWorkDir                      string         `json:"prior_work_dir"`
+	PriorSessionSameOrchestrationStep bool           `json:"prior_session_same_orchestration_step"`
+	ChatMessage                       string         `json:"chat_message"`
+	ThreadName                        string         `json:"thread_name"`
+	QuickCreateAttachmentIDs          []string       `json:"quick_create_attachment_ids"`
+	Agent                             *TaskAgentData `json:"agent"`
+}
+
+func TestClaimTaskByRuntimeUsesPinnedOrchestrationThinking(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	agentID, runtimeID, daemonID := createRuntimeGuardAgent(t, ctx)
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET model = 'agent-later', thinking_level = 'low' WHERE id = $1`, agentID); err != nil {
+		t.Fatalf("configure mutable agent defaults: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":         fmt.Sprintf("Pinned thinking claim %d", time.Now().UnixNano()),
+		"assignee_type": "agent", "assignee_id": agentID,
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create issue: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var issueResponse IssueResponse
+	if err := json.NewDecoder(w.Body).Decode(&issueResponse); err != nil {
+		t.Fatalf("decode issue: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueResponse.ID)
+	})
+
+	var runID, stepID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_run (workspace_id, issue_id, status, mode, policy, created_by)
+		VALUES ($1, $2, 'running', 'auto', '{}'::jsonb, $3) RETURNING id
+	`, testWorkspaceID, issueResponse.ID, testUserID).Scan(&runID); err != nil {
+		t.Fatalf("create orchestration run: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_step (
+			run_id, step_key, title, stage, status, position, agent_id,
+			model_override, thinking_level_override, instructions
+		) VALUES ($1, 'work', 'Work', 'dev', 'queued', 0, $2, 'model-pinned', 'high', '')
+		RETURNING id
+	`, runID, agentID).Scan(&stepID); err != nil {
+		t.Fatalf("create orchestration step: %v", err)
+	}
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(issueResponse.ID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	if err := testHandler.TaskService.CancelTasksForIssue(ctx, issue.ID); err != nil {
+		t.Fatalf("clear ordinary assignment task before orchestration enqueue: %v", err)
+	}
+	if _, err := testHandler.TaskService.EnqueueOrchestrationTask(
+		ctx, issue, parseUUID(agentID), parseUUID(stepID),
+		pgtype.Text{String: "model-pinned", Valid: true},
+		pgtype.Text{String: "high", Valid: true},
+	); err != nil {
+		t.Fatalf("enqueue orchestration task: %v", err)
+	}
+
+	claimed := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if claimed.Agent == nil || claimed.Agent.Model != "model-pinned" || claimed.Agent.ThinkingLevel != "high" {
+		t.Fatalf("claim used mutable agent defaults instead of step pins: %#v", claimed.Agent)
+	}
 }
 
 func claimTaskForRuntimeGuard(t *testing.T, runtimeID, daemonID string) *claimRuntimeGuardTask {
@@ -2986,7 +3051,7 @@ func TestClaimTask_OrchestrationSessionLineage(t *testing.T) {
 	queueStepTask := func(targetStepID string) {
 		t.Helper()
 		task, err := testHandler.TaskService.EnqueueOrchestrationTask(
-			ctx, issue, parseUUID(agentID), parseUUID(targetStepID), pgtype.Text{},
+			ctx, issue, parseUUID(agentID), parseUUID(targetStepID), pgtype.Text{}, pgtype.Text{},
 		)
 		if err != nil {
 			t.Fatalf("setup: queue orchestration task: %v", err)

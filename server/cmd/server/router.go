@@ -601,6 +601,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)
+		// Link Telegram to the current account for inbox DMs (Settings →
+		// Notifications). Distinct from /auth/telegram/* which issues a session.
+		r.With(handler.RequireHumanActor).Post("/api/me/links/telegram/start", h.StartTelegramLink)
+		r.With(handler.RequireHumanActor).Post("/api/me/links/telegram/verify", h.VerifyTelegramLink)
+		r.With(handler.RequireHumanActor).Delete("/api/me/links/telegram", h.UnlinkTelegramIdentity)
 		// Instance configuration (Settings → Configs). Owner-only (enforced in
 		// the handler); mutations are human-only so an agent's task token can
 		// never flip a global feature flag.

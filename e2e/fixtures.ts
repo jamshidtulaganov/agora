@@ -166,6 +166,11 @@ export class TestApiClient {
   private async authedFetch(path: string, init?: RequestInit) {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      // The local server converts this into a dev-only event marker so these
+      // real issue rows still exercise websocket invalidation without leaking
+      // fixture notifications into a configured Telegram report room.
+      "X-Client-Platform": "e2e",
+      "X-Client-Version": "playwright",
       ...((init?.headers as Record<string, string>) ?? {}),
     };
     if (this.token) headers["Authorization"] = `Bearer ${this.token}`;

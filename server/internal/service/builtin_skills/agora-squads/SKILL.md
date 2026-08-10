@@ -362,7 +362,9 @@ API. Draft edits stay draft until the explicit Start action. Every accepted
 route is readiness- and capability-checked against the run controller or the
 step's squad before it becomes a versioned plan revision. Neither controller
 nor worker may treat an issue comment as proof that Git handoff or integration
-succeeded—the daemon/server verify commits; new runs inherit `project.settings.orchestration` unless explicitly overridden, and a started run remains the sole dispatcher through recovery.
+succeeded—the daemon/server verify commits. The assignee selects topology (agent=solo,
+squad=squad, otherwise human); project defaults only tune run behavior. Native
+subagents are unsupported: use DAG steps. A started run is the sole dispatcher.
 
 **Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
 squads per unit of work — one dev squad, one QA squad — each with its own
@@ -383,8 +385,8 @@ even if today only one agent exists to do the work. This keeps the leader in
 the loop on every task by construction, so it can decide delegation instead
 of being bypassed.
 
-**Leaders create and archive their own subagents at runtime.** A running
-agent's task-token authenticates the same `agora agent` CLI a human uses —
+**Outside a run, leaders may manage persistent Agora agents.** This is roster management,
+not native child threads. Their task token authenticates the same `agora agent` CLI —
 there is no separate "leader" capability tier. A leader can:
 
 ```bash
@@ -398,15 +400,13 @@ agora agent update <agent-id> --archived true    # retire a subagent once its ta
 
 See `agora-creating-agents` for the full field contract (what's validated,
 what the daemon actually reads, env/secret handling). A leader choosing to
-spin up a subagent should: pick skills via `agent skills set` (workspace
-skills bound explicitly — creation does not bind any), pick an MCP config via
-`--mcp-config-*` if the task needs external tools, add the new agent to its
-own squad as a member so it's covered by the same routing/roster, and archive
-it when the task is done rather than leaving idle agents around.
+create an agent should: pick skills via `agent skills set` (creation binds none),
+pick an MCP config when external tools are needed, add it to its squad, and archive
+it when done. Inside a run, use versioned DAG routes instead.
 
 **Model/difficulty selection — label the issue or set the agent directly.**
-`applyIssueCostTier` (`server/internal/handler/daemon.go`) resolves a task's
-model+thinking from the issue's tier labels at claim time:
+`applyIssueCostTier` (`server/internal/handler/daemon.go`) resolves an ordinary
+task's model+thinking from issue tier labels at claim time:
 
 - `tier:trivial` → haiku, no thinking
 - `tier:light` → sonnet, no thinking
@@ -419,9 +419,9 @@ subagent the lead creates fresh, set the agent directly — both `agora agent
 create` and `agora agent update` take `--model` AND `--thinking-level`
 (e.g. `--model claude-opus-4-8 --thinking-level high` for the hardest work,
 `--model claude-sonnet-5` for fast execution). Note the timing: model and
-thinking are read at task CLAIM time, so a change applies to the subagent's
-NEXT task, never mid-run — tier the issue/agent BEFORE delegating, not while
-a task is running.
+thinking are read at ordinary-task CLAIM time. Persisted orchestration snapshots
+both per step and preserves them through retry/failover/reroute — configure the
+roster BEFORE creating its run.
 
 ## Autopilot behavior
 

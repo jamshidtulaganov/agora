@@ -190,9 +190,11 @@ func (h *Handler) TelegramStart(w http.ResponseWriter, r *http.Request) {
 type telegramUpdate struct {
 	UpdateID int64 `json:"update_id"`
 	Message  *struct {
-		Text string `json:"text"`
-		From *struct {
+		MessageID int64  `json:"message_id"`
+		Text      string `json:"text"`
+		From      *struct {
 			ID           int64  `json:"id"`
+			IsBot        bool   `json:"is_bot"`
 			FirstName    string `json:"first_name"`
 			Username     string `json:"username"`
 			LanguageCode string `json:"language_code"`
@@ -201,6 +203,15 @@ type telegramUpdate struct {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
+		ReplyToMessage *struct {
+			MessageID int64  `json:"message_id"`
+			Text      string `json:"text"`
+			From      *struct {
+				ID       int64  `json:"id"`
+				IsBot    bool   `json:"is_bot"`
+				Username string `json:"username"`
+			} `json:"from"`
+		} `json:"reply_to_message"`
 	} `json:"message"`
 	// CallbackQuery is sent when a user taps an inline button (the "/new" create
 	// wizard). Only the subset we consume is modeled.

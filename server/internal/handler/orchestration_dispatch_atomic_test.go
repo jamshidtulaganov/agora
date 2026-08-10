@@ -96,6 +96,7 @@ func addAtomicDispatchStep(t *testing.T, runID, agentID string, position int32, 
 		MaxAttempts:         2,
 		IntroducedInVersion: 1,
 		StepKind:            "task",
+		Capability:          "implementation",
 	})
 	if err != nil {
 		t.Fatalf("add atomic dispatch step %q: %v", key, err)

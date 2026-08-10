@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/jamshidtulaganov/agora/server/internal/events"
 	"github.com/jamshidtulaganov/agora/server/internal/handler"
@@ -63,6 +64,48 @@ func derefString(v any) string {
 		return *p
 	}
 	return ""
+}
+
+// registerIssueCreatedTelegramListener posts a short "new issue" notice to the
+// configured Telegram report chat (AGORA_TELEGRAM_REPORT_CHAT_ID). Hangs off
+// EventIssueCreated so every create path (web, CLI, bot, sync) shares one fan-out.
+// Distinct from inbox DMs: this is a room broadcast, not a per-member push.
+func registerIssueCreatedTelegramListener(bus *events.Bus, h *handler.Handler) {
+	if !h.TelegramPushEnabled() {
+		return
+	}
+	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
+		payload, ok := e.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		if issueCreatedExternalNotificationsSuppressed(payload) {
+			return
+		}
+		issueID := issueCreatedEventID(payload)
+		if strings.TrimSpace(issueID) == "" || strings.TrimSpace(e.WorkspaceID) == "" {
+			return
+		}
+		h.SendIssueCreatedGroupNotifyByID(context.Background(), e.WorkspaceID, issueID)
+	})
+}
+
+func issueCreatedExternalNotificationsSuppressed(payload map[string]any) bool {
+	suppressed, _ := payload[protocol.EventPayloadSuppressExternalNotifications].(bool)
+	return suppressed
+}
+
+func issueCreatedEventID(payload map[string]any) string {
+	issueID, _ := payload["issue_id"].(string)
+	switch issue := payload["issue"].(type) {
+	case handler.IssueResponse:
+		issueID = issue.ID
+	case map[string]any:
+		if value, ok := issue["id"].(string); ok {
+			issueID = value
+		}
+	}
+	return strings.TrimSpace(issueID)
 }
 
 // registerAutopilotReportListener posts a completed autopilot run's write-up to

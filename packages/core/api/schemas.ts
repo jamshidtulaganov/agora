@@ -24,8 +24,10 @@ import type {
   IssueArtifactResponse,
   Squad,
   AutopilotTelegramDestination,
+  ListExternalIdentityLinksResponse,
   TelegramBindLinkResponse,
   TelegramInstallation,
+  TelegramLinkStartResponse,
   TimelineEntry,
   User,
   WebhookDelivery,
@@ -40,6 +42,7 @@ const OrchestrationStepSchema = z.object({
   position: z.number(),
   agent_id: z.string().optional(),
   model: z.string().optional(),
+  thinking_level: z.string().optional(),
   task_id: z.string().optional(),
   question_id: z.string().optional(),
   approval_required: z.boolean().default(false),
@@ -99,6 +102,24 @@ const OrchestrationPlanRevisionSchema = z.object({
   reason: z.string(), patch: z.record(z.string(), z.unknown()).default({}), created_at: z.string(),
 }).loose();
 
+const SquadRosterPolicyEntrySchema = z.object({
+  agent_id: z.string(),
+  name: z.string().default(""),
+  role: z.string().default(""),
+  capability: z.enum(["coordination", "implementation", "backend", "frontend", "mobile", "infrastructure", "documentation", "integration", "qa", "review", "release"]),
+  model: z.string().optional(),
+  thinking_level: z.string().optional(),
+  max_concurrent_tasks: z.number().default(1),
+  is_leader: z.boolean().optional(),
+}).loose();
+
+const OrchestrationPolicySchema = z.object({
+  max_concurrency: z.number().optional(),
+  parallel_workers: z.number().optional(),
+  squad_id: z.string().optional(),
+  squad_roster: z.array(SquadRosterPolicyEntrySchema).optional(),
+}).catchall(z.unknown());
+
 export const OrchestrationRunSchema = z.object({
   id: z.string(),
   issue_id: z.string(),
@@ -106,7 +127,7 @@ export const OrchestrationRunSchema = z.object({
   mode: z.string(),
   execution_strategy: z.enum(["human", "solo", "squad", "custom"]).default("custom"),
   progression_policy: z.enum(["automatic", "gated", "manual"]).default("automatic"),
-  policy: z.record(z.string(), z.unknown()).default({}),
+  policy: OrchestrationPolicySchema.default({}),
   owner_type: z.enum(["agent", "squad", "member", "unassigned"]).default("unassigned"),
   owner_id: z.string().optional(),
   controller_agent_id: z.string().optional(),
@@ -1942,4 +1963,27 @@ export const AutopilotTelegramDestinationSchema = z.object({
 export const EMPTY_AUTOPILOT_TELEGRAM_DESTINATION: AutopilotTelegramDestination = {
   delivers: false,
   from_project_config: false,
+};
+
+export const ExternalIdentityLinkSchema = z.object({
+  provider: z.string().default(""),
+  external_id: z.string().default(""),
+}).loose();
+
+export const ListExternalIdentityLinksSchema = z.object({
+  links: z.array(ExternalIdentityLinkSchema).catch([]),
+}).loose();
+
+export const EMPTY_EXTERNAL_IDENTITY_LINKS: ListExternalIdentityLinksResponse = {
+  links: [],
+};
+
+export const TelegramLinkStartSchema = z.object({
+  nonce: z.string().default(""),
+  deep_link: z.string().default(""),
+}).loose();
+
+export const EMPTY_TELEGRAM_LINK_START: TelegramLinkStartResponse = {
+  nonce: "",
+  deep_link: "",
 };

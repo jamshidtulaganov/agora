@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // External identity providers. A Agora user is mapped to their id on these
@@ -172,4 +175,136 @@ func (h *Handler) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"links": links})
+}
+
+// unlinkExternalIdentity removes every mapping of provider for userID. Used
+// when rebinding Telegram so a user keeps at most one telegram identity
+// (telegramIDByUserID returns LIMIT 1).
+func (h *Handler) unlinkExternalIdentity(ctx context.Context, provider, userID string) error {
+	_, err := h.DB.Exec(ctx,
+		`DELETE FROM user_external_identity WHERE provider = $1 AND user_id = $2::uuid`,
+		provider, userID)
+	return err
+}
+
+// replaceTelegramIdentity atomically swaps the caller's Telegram mapping. The
+// delete and guarded insert live in one transaction, so a losing concurrent
+// claim cannot erase a previously valid link.
+func (h *Handler) replaceTelegramIdentity(ctx context.Context, telegramID, userID string) error {
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx,
+		`DELETE FROM user_external_identity WHERE provider = $1 AND user_id = $2::uuid`,
+		providerTelegram, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx,
+		`INSERT INTO user_external_identity (provider, external_id, user_id)
+		 VALUES ($1, $2, $3::uuid)
+		 ON CONFLICT (provider, external_id)
+		 DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = now()
+		 WHERE user_external_identity.user_id = EXCLUDED.user_id`,
+		providerTelegram, telegramID, userID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return errExternalIdentityClaimed
+		}
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errExternalIdentityClaimed
+	}
+	return tx.Commit(ctx)
+}
+
+// StartTelegramLink mints a bot-OTP nonce for linking Telegram to the
+// already-authenticated account (Settings → Notifications). Same deep-link
+// shape as login, but verify attaches the identity to the current user instead
+// of issuing a new session.
+// POST /api/me/links/telegram/start
+func (h *Handler) StartTelegramLink(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	if !h.telegramLoginEnabled() || h.telegramLogins == nil {
+		writeError(w, http.StatusServiceUnavailable, "Telegram login is not configured")
+		return
+	}
+
+	nonce, err := generateLoginNonce()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start telegram link")
+		return
+	}
+	if err := h.startTelegramLogin(r.Context(), nonce); err != nil {
+		slog.Error("telegram link: failed to persist nonce", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to start telegram link")
+		return
+	}
+
+	deepLink := fmt.Sprintf("https://t.me/%s?start=login_%s", telegramBotUsername(), nonce)
+	writeJSON(w, http.StatusOK, telegramStartResponse{Nonce: nonce, DeepLink: deepLink})
+}
+
+// VerifyTelegramLink consumes a nonce+OTP and binds the Telegram id to the
+// authenticated user. Unlike TelegramVerify it does NOT create a synthetic
+// user or issue a session — that would steal the caller away from their email
+// account. Conflict when the Telegram id is already owned by someone else.
+// POST /api/me/links/telegram/verify
+func (h *Handler) VerifyTelegramLink(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if h.telegramLogins == nil {
+		writeError(w, http.StatusServiceUnavailable, "Telegram login is not configured")
+		return
+	}
+
+	var req telegramVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	nonce := strings.TrimSpace(req.Nonce)
+	code := strings.TrimSpace(req.Code)
+	if nonce == "" || code == "" {
+		writeError(w, http.StatusBadRequest, "nonce and code are required")
+		return
+	}
+
+	telegramID, _, okVerify := h.verifyTelegramLogin(r.Context(), nonce, code)
+	if !okVerify {
+		writeError(w, http.StatusUnauthorized, "invalid or expired code")
+		return
+	}
+
+	if err := h.replaceTelegramIdentity(r.Context(), telegramID, userID); err != nil {
+		if errors.Is(err, errExternalIdentityClaimed) {
+			writeError(w, http.StatusConflict, "telegram account already linked to another Agora user")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to link identity")
+		return
+	}
+	writeJSON(w, http.StatusOK, externalLinkResponse{Provider: providerTelegram, ExternalID: telegramID})
+}
+
+// UnlinkTelegramIdentity removes the authenticated user's Telegram mapping so
+// inbox push stops. Does not touch per-agent bot installations.
+// DELETE /api/me/links/telegram
+func (h *Handler) UnlinkTelegramIdentity(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.unlinkExternalIdentity(r.Context(), providerTelegram, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unlink identity")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

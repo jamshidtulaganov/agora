@@ -18,6 +18,7 @@ import (
 // (Codex) with attribution.
 func writeTestExecutable(tb testing.TB, path string, content []byte) {
 	tb.Helper()
+	reserveTestExecutableSlot(tb)
 	if err := os.WriteFile(path, content, 0o755); err != nil {
 		tb.Fatalf("write test executable %s: %v", path, err)
 	}

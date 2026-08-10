@@ -13,11 +13,15 @@ import {
   EMPTY_LIST_TEST_CASES,
   EMPTY_TEST_CASE,
   EMPTY_AUTOPILOT_TELEGRAM_DESTINATION,
+  EMPTY_EXTERNAL_IDENTITY_LINKS,
   EMPTY_TELEGRAM_INSTALLATIONS,
+  EMPTY_TELEGRAM_LINK_START,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
   AutopilotTelegramDestinationSchema,
+  ListExternalIdentityLinksSchema,
   ListTelegramInstallationsSchema,
+  TelegramLinkStartSchema,
   McpCredentialStatusSchema,
   McpCredentialListSchema,
   EMPTY_MCP_CREDENTIAL_STATUS,
@@ -1300,6 +1304,31 @@ describe("OrchestrationRunSchema — execution semantics", () => {
     expect(parsed.controller_agent_id).toBe("agent-lead");
   });
 
+  it("parses the squad roster policy contract", () => {
+    const parsed = OrchestrationRunSchema.parse({
+      ...baseRun,
+      policy: {
+        max_concurrency: 2,
+        squad_roster: [{
+          agent_id: "agent-1",
+          name: "Frontend",
+          role: "Frontend engineer",
+          capability: "frontend",
+          model: "gpt-5",
+          thinking_level: "medium",
+          max_concurrent_tasks: 4,
+        }],
+      },
+      steps: [{
+        id: "step-1", key: "work", title: "Work", stage: "dev", status: "pending", position: 0,
+        model: "gpt-5", thinking_level: "", approval_required: false, depends_on_step_ids: [],
+      }],
+    });
+    expect(parsed.policy.max_concurrency).toBe(2);
+    expect(parsed.policy.squad_roster?.[0]?.model).toBe("gpt-5");
+    expect(parsed.steps[0]?.thinking_level).toBe("");
+  });
+
   it("keeps an older server response readable during the compatibility window", () => {
     const parsed = OrchestrationRunSchema.parse(baseRun);
     expect(parsed.execution_strategy).toBe("custom");
@@ -1420,6 +1449,49 @@ describe("ListTelegramInstallationsSchema", () => {
       { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
     );
     expect(parsed.installations[0]?.allowed_chat_ids?.[0]).toBe("-1004336001519");
+  });
+});
+
+describe("ListExternalIdentityLinksSchema", () => {
+  it("parses linked providers", () => {
+    const parsed = parseWithFallback(
+      { links: [{ provider: "telegram", external_id: "42" }] },
+      ListExternalIdentityLinksSchema,
+      EMPTY_EXTERNAL_IDENTITY_LINKS,
+      { endpoint: "GET /api/me/links" },
+    );
+    expect(parsed.links[0]?.provider).toBe("telegram");
+    expect(parsed.links[0]?.external_id).toBe("42");
+  });
+
+  it("falls back on malformed bodies", () => {
+    expect(
+      parseWithFallback(null, ListExternalIdentityLinksSchema, EMPTY_EXTERNAL_IDENTITY_LINKS, {
+        endpoint: "GET /api/me/links",
+      }),
+    ).toEqual(EMPTY_EXTERNAL_IDENTITY_LINKS);
+  });
+});
+
+describe("TelegramLinkStartSchema", () => {
+  it("parses nonce and deep_link", () => {
+    const parsed = parseWithFallback(
+      { nonce: "abc", deep_link: "https://t.me/bot?start=login_abc" },
+      TelegramLinkStartSchema,
+      EMPTY_TELEGRAM_LINK_START,
+      { endpoint: "POST /api/me/links/telegram/start" },
+    );
+    expect(parsed.nonce).toBe("abc");
+    expect(parsed.deep_link).toContain("t.me");
+  });
+
+  it("falls back on malformed bodies", () => {
+    expect(parseWithFallback(
+      { nonce: 42, deep_link: [] },
+      TelegramLinkStartSchema,
+      EMPTY_TELEGRAM_LINK_START,
+      { endpoint: "POST /api/me/links/telegram/start" },
+    )).toEqual(EMPTY_TELEGRAM_LINK_START);
   });
 });
 

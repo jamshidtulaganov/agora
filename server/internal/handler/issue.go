@@ -2288,6 +2288,13 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// Prefix is workspace-level; pre-compute once so both the broadcast
 	// payload builder and the HTTP response share the same value.
 	prefix := h.getIssuePrefix(r.Context(), wsUUID)
+	clientPlatform, _, _ := middleware.ClientMetadataFromContext(r.Context())
+	// Local Playwright creates real rows and must exercise the normal websocket
+	// event path, but it must never flood a developer's configured Telegram
+	// report room. The marker is accepted only on a non-production server with
+	// the explicit local verification-code switch enabled; client metadata is
+	// never trusted for this decision in production.
+	suppressExternalNotifications := suppressExternalNotificationsForClient(clientPlatform)
 
 	// Analytics agent ID: assignee agent when the issue is being assigned
 	// to an agent, otherwise the creator agent for agent-authored issues.
@@ -2332,11 +2339,15 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,
-		Platform:         func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
+		Platform:         clientPlatform,
 		BroadcastPayload: func(issue db.Issue, atts []db.Attachment) map[string]any {
 			payload := issueToResponse(issue, prefix)
 			payload.Attachments = buildAttachmentResponses(atts)
-			return map[string]any{"issue": payload}
+			eventPayload := map[string]any{"issue": payload}
+			if suppressExternalNotifications {
+				eventPayload[protocol.EventPayloadSuppressExternalNotifications] = true
+			}
+			return eventPayload
 		},
 	})
 
@@ -2370,6 +2381,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	resp := issueToResponse(issue, prefix)
 	resp.Attachments = buildAttachmentResponses(res.Attachments)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+func suppressExternalNotificationsForClient(platform string) bool {
+	return strings.EqualFold(strings.TrimSpace(platform), "e2e") &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") &&
+		strings.TrimSpace(os.Getenv("AGORA_DEV_VERIFICATION_CODE")) != ""
 }
 
 type UpdateIssueRequest struct {

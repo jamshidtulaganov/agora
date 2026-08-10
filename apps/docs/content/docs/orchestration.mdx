@@ -48,26 +48,28 @@ When an issue has an orchestrator, the issue detail shows an **"Orchestrated by 
 
 ## Orchestration runs
 
-An **orchestration run** is the opt-in pipeline. You start it from the **execution panel** on an issue — the empty state has a **Build and run** button and a **Customize** disclosure. Only a human can start, approve, retry, or cancel a run; agents cannot.
+An **orchestration run** is the opt-in pipeline. On an issue with no run yet, the execution surface stays quiet: a muted **Start execution plan** action derives its shape from the assignee and inherits the project's progression/review/concurrency defaults. **Customize** is the exception path for a single-run override. Only a human can start, approve, retry, or cancel a run; agents cannot.
 
 A run turns the issue into a **DAG** — a graph of steps where each step waits on the ones before it. Agora dispatches steps as their dependencies complete, runs independent branches in parallel, and pauses at approval gates.
 
 ### Choosing a strategy
 
-Set the normal policy once in the project's **Execution defaults** section. New runs inherit its strategy, progression, parallel-worker limit, and whether plans need review. The issue's **Customize** panel is a one-run override for exceptions; it does not rewrite the project. A project that defaults to `squad` must be bound to that squad.
+Set progression, Squad DAG concurrency, and plan-review policy once in the project's **Execution defaults** section. The run shape follows the assignee rules below unless **Customize** explicitly overrides it.
 
 The **Customize** panel offers four strategies:
 
 | Strategy | Shape of the run |
 | --- | --- |
-| **`solo`** | Two steps: **work → release**. No plan, no QA, no review. The fast path for a small, self-contained change. |
+| **`solo`** | Two steps: **work → release**. No plan, no QA, no review. Requires an agent-assigned issue. The worker must not spawn runtime-native child agents; parallel work belongs in persisted Squad DAG steps. |
 | **`squad`** | The full pipeline: **plan → N parallel dev branches → integrate → (QA ∥ review) → release**. |
 | **`human`** | A single **human-work** step with an approval gate — a checkpoint you tick off yourself, no agent. |
-| **`automatic`** | Agora infers `solo` or `squad` from the issue's assignment. |
+| **`automatic`** | Agora infers from the issue's **assignee**: agent → `solo`, squad → `squad`, human/unassigned → `human`. An agent that merely belongs to a squad still gets `solo` — membership does not force a squad run. |
+
+One-click **Start execution plan** (empty body) always follows that assignee rule. **Customize** with an explicit strategy still overrides; explicit Squad runs require a selected squad, and explicit Solo runs require an agent assignee.
 
 Other options on the panel:
 
-- **Parallel workers** — how many dev branches a squad run fans out into (default **3**, capped 1–10). The actual count is also bounded by how many squad members are *ready* at start time; zero eligible workers collapses to a single dev step.
+- **Squad DAG concurrency** — requested number of persisted steps a squad run may keep in flight (default **3**, capped 1–10). Agora further bounds it to the actual parallel width and distinct routed agents; one agent never contributes multiple same-issue slots. `squad_roster` records role, model, thinking, and global capacity as a creation-time snapshot. Model and thinking are copied onto every generated step and remain pinned through dispatch, retry, failover, and reroute.
 - **Progression** — `automatic` (steps advance on their own), or `manual` (the run pauses after each batch and waits for you to **Continue**).
 - **Review plan first** — creates the run as a **draft** so you can inspect the generated plan before anything runs, instead of starting it immediately.
 
@@ -125,7 +127,7 @@ Other states you may see on a run:
 
 - **waiting_approval** — a step is an approval gate awaiting a human.
 - An **agent that's busy** is treated as backpressure, not failure: the step stays pending and no attempt is consumed until the agent frees up.
-- **Concurrency** defaults to 3 (configurable 1–10), and one agent holds at most one active step per run.
+- **Squad DAG concurrency** requests 3 by default (configurable 1–10) and is bounded to the actual graph width; one agent holds at most one active step per run.
 - **Cancelling a task** cancels its step and fails the run; cancelling a single **branch** can still let the rest converge to a release.
 
 ## Configuration & defaults
@@ -144,7 +146,7 @@ Everything else is **off** unless you enable it — don't assume these are runni
 - **Sprint modes** — shared sprint branch (`AGORA_SPRINT_PR_MODE`), sprint worktrees, sprint auto-merge — all **off**. The default dev flow is a per-task fork and a PR you merge yourself.
 - **Squad failure recovery**, **QA gate enforcement**, **risk-tier gates** — all **off**.
 
-Instance and project flags live in **Settings → Configs** (a project value overrides the instance value where a flag allows it). Workspace `labs.*` toggles live in **Settings → Labs**. Execution strategy, progression, concurrency, and plan review live under the project's **Execution defaults**; the issue execution panel can override them for one run. Stage casting remains issue-specific.
+Instance and project flags live in **Settings → Configs** (a project value overrides the instance value where a flag allows it). Workspace `labs.*` toggles live in **Settings → Labs**. Progression, Squad DAG concurrency, and plan review live under the project's **Execution defaults**; topology follows the assignee and the issue execution panel can explicitly override it for one run. Stage casting remains issue-specific.
 
 <Callout type="warning">
 Because so much is opt-in, an out-of-the-box Agora runs the **simple** flow: assign → agent works → PR → you review and merge. Orchestration runs, auto-QA, and sprint modes are things you reach for deliberately as a team grows into them — not defaults you have to configure around.

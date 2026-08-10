@@ -61,12 +61,13 @@ RETURNING *;
 -- name: CreateOrchestrationStep :one
 INSERT INTO orchestration_step (
     run_id, step_key, title, stage, position, agent_id, model_override,
+    thinking_level_override,
     depends_on_step_id, approval_required, max_attempts, instructions,
     parent_step_id, squad_id, controller_agent_id, introduced_in_version,
     step_kind, integration_status, capability
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-    CASE WHEN $16 = 'integration' THEN 'pending' ELSE 'not_required' END, $17)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+    CASE WHEN $17 = 'integration' THEN 'pending' ELSE 'not_required' END, $18)
 RETURNING *;
 
 -- name: StageOrchestrationStepPositionShift :exec
@@ -476,6 +477,7 @@ RETURNING *;
 -- make reroute silently no-op at the one moment a human is looking at the gate.
 -- Pinned by TestReroutePendingOrchestrationStepCoversWaitingApproval.
 UPDATE orchestration_step
-SET agent_id = $2, model_override = $3, instructions = $4, updated_at = now()
+SET agent_id = $2, model_override = $3, thinking_level_override = $4,
+    instructions = $5, updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'waiting_approval')
 RETURNING *;

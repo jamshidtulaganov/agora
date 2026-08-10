@@ -109,6 +109,30 @@
       "granted": "当前浏览器可以弹出通知横幅。",
       "denied": "已被浏览器拦截。请在浏览器设置中为本站点开启通知权限。",
       "enabled_badge": "已启用"
+    },
+    "telegram": {
+      "title": "Telegram",
+      "description": "把与收件箱相同的事件发到 Telegram 私信——分配、评论、状态变更，以及智能体完成（含 commit / PR 更新）。",
+      "dm_label": "个人私信",
+      "loading": "正在检查绑定状态…",
+      "linked_hint": "已绑定 Telegram。新的收件箱条目也会以私信发送。",
+      "unlinked_hint": "绑定 Telegram 后即可通过机器人私信接收收件箱更新。打开机器人，然后输入它发送的验证码。",
+      "connect": "连接 Telegram",
+      "unlink": "断开连接",
+      "groups_hint": "若要在智能体完成工作时向 Telegram 群组发消息，请在「集成」中连接机器人并添加群组。",
+      "groups_link": "打开 集成 → Telegram",
+      "dialog_title": "连接 Telegram",
+      "dialog_description": "打开机器人，点击 Start，然后将 6 位验证码粘贴到此处。这会把 Telegram 绑定到当前 Agora 账号，而不会让你退出登录。",
+      "open_bot": "打开 Telegram 机器人",
+      "code_label": "Telegram 验证码",
+      "cancel": "取消",
+      "verify": "绑定账号",
+      "start_failed": "无法开始绑定 Telegram",
+      "toast_linked": "已绑定 Telegram，可用于收件箱通知",
+      "toast_verify_failed": "验证码无效或已过期。请重新生成链接后再试。",
+      "toast_conflict": "该 Telegram 账号已绑定到其他 Agora 用户",
+      "toast_unlinked": "已断开 Telegram",
+      "toast_unlink_failed": "无法断开 Telegram"
     }
   },
   "tokens": {
@@ -438,7 +462,7 @@
     },
     "telegram": {
       "name": "Telegram",
-      "description": "为智能体配置专属机器人，使其能在群组中回复。"
+      "description": "连接智能体机器人与群组，用于对话和工作更新。个人收件箱私信请在「通知」中绑定。"
     }
   },
   "figma": {
@@ -648,7 +672,7 @@
     }
   },
   "telegram": {
-    "page_description": "为智能体配置专属 Telegram 机器人，让它以自己的名义在群组中发言并接受回复。",
+    "page_description": "为智能体配置专属 Telegram 机器人，让它以自己的名义在群组中发言、接受指令，并在工作完成时发消息。个人收件箱私信请在 设置 → 通知 中绑定 Telegram。",
     "connect_button": "连接机器人",
     "loading": "正在加载已连接的机器人…",
     "not_configured_title": "Telegram 机器人不可用",

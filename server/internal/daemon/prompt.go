@@ -61,7 +61,7 @@ func BuildPrompt(task Task, provider string) string {
 
 func buildOrchestrationPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are executing one step in a persisted multi-agent orchestration. Complete only this step and do not start a later stage yourself. The orchestration engine owns issue status, assignment, QA/review dispatch, and release: do not change the issue status or assignee, invoke run_qa/run_review/release actions, create side tasks, or @mention another agent to start work.\n\n")
+	b.WriteString("You are executing one step in a persisted multi-agent orchestration. Complete only this step and do not start a later stage yourself. The orchestration engine owns issue status, assignment, QA/review dispatch, and release: do not change the issue status or assignee, invoke run_qa/run_review/release actions, create side tasks, @mention another agent to start work, or spawn runtime-native subagents. All parallel work must be represented by persisted orchestration steps.\n\n")
 	fmt.Fprintf(&b, "Issue ID: %s\n", task.IssueID)
 	fmt.Fprintf(&b, "Orchestration step: %s\n", task.OrchestrationStepTitle)
 	fmt.Fprintf(&b, "Stage: %s\n\n", task.OrchestrationStage)

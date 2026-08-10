@@ -29,7 +29,7 @@ This sidecar traces every load-bearing claim on the `models-and-thinking` page t
 | ACP handshake: initialize id=1, session/new id=2, temp cwd, empty mcpServers | `func discoverACPModels` (~L854-974) |
 | `parseACPSessionNewModels`: availableModels/currentModelId, Default match, nil-on-missing, camel+snake | `func parseACPSessionNewModels` (~L993-1043) |
 | copilot `--acp`, fallback `copilotStaticModels`, `inferCopilotProvider` | `discoverCopilotModels`/`inferCopilotProvider` (~L332-345, L812-828) |
-| antigravity `agy models`, no static fallback | `discoverAntigravityModels` (~L1065-1083) |
+| antigravity `agy models`, TSV slug→Aliases, no static fallback | `discoverAntigravityModels` / `parseAntigravityModels` / `resolveAntigravityModel` |
 | cursor `--list-models`, fallback `cursorStaticModels` (auto) | `discoverCursorModels`/`cursorStaticModels` (~L287-291, L1115-1138) |
 | openclaw enumerates agents (model binding at agent level) | `discoverOpenclawAgents` (~L1207-1245) |
 | codebuddy `--help` parse + `codebuddyStaticModels` fallback | `discoverCodebuddyModels`/`codebuddyStaticModels` (~L1390-1406, L1479-1487) |

@@ -30,6 +30,8 @@ async function createDockerSession() {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        "X-Client-Platform": "e2e",
+        "X-Client-Version": "playwright",
         Authorization: `Bearer ${login.token}`,
         ...(workspaceSlug ? { "X-Workspace-Slug": workspaceSlug } : {}),
         ...((init?.headers as Record<string, string>) ?? {}),

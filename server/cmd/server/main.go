@@ -342,6 +342,7 @@ func main() {
 	// mention, comment, …) with a Mini App deep link. No-op when the bot is
 	// unconfigured. Registered after h exists; shares the same bus instance.
 	registerTelegramPushListeners(bus, h)
+	registerIssueCreatedTelegramListener(bus, h)
 	registerAutopilotReportListener(bus, h)
 	registerAutopilotProgressListener(bus, h)
 	registerAgentChatReplyListener(bus, h)

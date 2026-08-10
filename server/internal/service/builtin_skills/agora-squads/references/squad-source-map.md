@@ -494,14 +494,15 @@ Source:
 server/migrations/160_issue_orchestration.up.sql
 server/migrations/169_orchestration_run_base_git_states.up.sql
 server/migrations/170_orchestration_step_capability.up.sql
+server/migrations/187_orchestration_thinking_override.up.sql
 server/pkg/db/queries/orchestration.sql
 server/internal/handler/orchestration.go
-server/internal/service/task.go              # orchestration terminal callback
-server/internal/handler/daemon.go             # authoritative per-step model route
+server/internal/service/task.go              # orchestration task snapshot + terminal callback
+server/internal/handler/daemon.go             # authoritative per-step model/thinking route
 server/internal/daemon/prompt.go              # per-step handoff contract
 server/internal/daemon/local_worktree.go      # pinned bases, detached verification worktrees, Git evidence
 packages/views/issues/components/issue-execution.tsx # status bar, Active Work, advanced execution drawer
-packages/views/projects/components/project-execution-section.tsx # inherited project execution defaults
+packages/views/projects/components/project-execution-section.tsx # project progression/concurrency/review defaults
 packages/core/types/project.ts                  # project.settings.orchestration contract
 docs/orchestration-worktree-smoke.md                  # real Git branch→integration→QA/review smoke
 server/internal/handler/orchestration_squad_selection_test.go # capability proposal/reroute integration test
@@ -524,13 +525,16 @@ Contracts:
   dependency so proposal edits cannot create an orphan branch;
 - `agent_task_queue.orchestration_step_id` is written in the task INSERT, so a
   fast daemon cannot complete before the task-to-step relationship exists;
-- explicit orchestration `model_override` is authoritative and is not replaced
-  by issue cost-tier labels;
+- explicit orchestration model/thinking snapshots are authoritative, copied to
+  each queued task, and not replaced by issue cost-tier labels;
 - orchestration owns retry for linked tasks, preventing the generic task retry
   and fallback paths from creating a second competing attempt; stale sweeps
   and daemon orphan recovery re-enter the orchestration terminal callback;
-- project-level execution defaults are inherited at run creation, while
-  explicit issue-run fields remain one-run overrides;
+- run topology follows the issue assignee; project defaults supply progression,
+  Squad DAG concurrency, and plan review, while explicit issue-run fields remain
+  one-run overrides;
+- runtime-native subagents are forbidden inside persisted runs; parallel work
+  is observable only when represented by versioned DAG steps;
 - a started run is the sole dispatcher: issue reassignment, backlog promotion,
   QA/review reflexes, and child-done notifications do not enqueue ordinary
   tasks beside its DAG; cancelling the issue first cancels the run and steps;

@@ -562,7 +562,7 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 // Unlike EnqueueTaskForIssue, this takes an explicit agent ID rather than
 // deriving it from the issue assignee.
 func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
 }
 
 // EnqueueTaskForMentionWithModel is EnqueueTaskForMention with a per-task model
@@ -571,20 +571,20 @@ func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue,
 // issue cost-tier labels. Used by knowledge-capture to escalate a large-thread
 // distillation from the synthesizer's cheap default model to a bigger one.
 func (s *TaskService) EnqueueTaskForMentionWithModel(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, modelOverride pgtype.Text) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, modelOverride, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, modelOverride, pgtype.Text{}, pgtype.UUID{})
 }
 
 // EnqueueOrchestrationTask dispatches one persisted orchestration step through
 // the normal issue-task queue. The step id is stored on the task at INSERT
 // time, so even a very fast daemon completion can be reconciled without a
 // task-created/step-linked race.
-func (s *TaskService) EnqueueOrchestrationTask(ctx context.Context, issue db.Issue, agentID, stepID pgtype.UUID, modelOverride pgtype.Text) (db.AgentTaskQueue, error) {
+func (s *TaskService) EnqueueOrchestrationTask(ctx context.Context, issue db.Issue, agentID, stepID pgtype.UUID, modelOverride, thinkingLevelOverride pgtype.Text) (db.AgentTaskQueue, error) {
 	// Orchestration is not a manual rerun. A waiting_input continuation or an
 	// infrastructure retry should keep the provider conversation when the
 	// claim/runtime safety checks can prove the lineage is compatible. Manual
 	// issue reruns remain the only ordinary path that deliberately forces a
 	// fresh session.
-	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, stepID)
+	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, thinkingLevelOverride, stepID)
 }
 
 // CreateOrchestrationTaskInTx inserts an orchestration task through the
@@ -596,10 +596,10 @@ func (s *TaskService) CreateOrchestrationTaskInTx(
 	queries *db.Queries,
 	issue db.Issue,
 	agentID, stepID pgtype.UUID,
-	modelOverride pgtype.Text,
+	modelOverride, thinkingLevelOverride pgtype.Text,
 ) (db.AgentTaskQueue, error) {
 	txService := &TaskService{Queries: queries}
-	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, stepID, false)
+	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, thinkingLevelOverride, stepID, false)
 }
 
 // EnqueueTaskForSquadLeader is the leader-role variant of EnqueueTaskForMention.
@@ -609,14 +609,14 @@ func (s *TaskService) CreateOrchestrationTaskInTx(
 // as a worker (do not skip). This matters for agents that are simultaneously
 // the leader and a worker of the same squad — see migration 090.
 func (s *TaskService) EnqueueTaskForSquadLeader(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, false, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
 }
 
-func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride pgtype.Text, orchestrationStepID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.createMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, forceFreshSession, modelOverride, orchestrationStepID, true)
+func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID) (db.AgentTaskQueue, error) {
+	return s.createMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, forceFreshSession, modelOverride, thinkingLevelOverride, orchestrationStepID, true)
 }
 
-func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride pgtype.Text, orchestrationStepID pgtype.UUID, publish bool) (db.AgentTaskQueue, error) {
+func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID, publish bool) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("mention task enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -632,16 +632,17 @@ func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, age
 	}
 
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:             agentID,
-		RuntimeID:           agent.RuntimeID,
-		IssueID:             issue.ID,
-		Priority:            priorityToInt(issue.Priority),
-		TriggerCommentID:    triggerCommentID,
-		TriggerSummary:      s.buildCommentTriggerSummary(ctx, triggerCommentID),
-		IsLeaderTask:        pgtype.Bool{Bool: isLeader, Valid: isLeader},
-		ForceFreshSession:   pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
-		ModelOverride:       modelOverride,
-		OrchestrationStepID: orchestrationStepID,
+		AgentID:               agentID,
+		RuntimeID:             agent.RuntimeID,
+		IssueID:               issue.ID,
+		Priority:              priorityToInt(issue.Priority),
+		TriggerCommentID:      triggerCommentID,
+		TriggerSummary:        s.buildCommentTriggerSummary(ctx, triggerCommentID),
+		IsLeaderTask:          pgtype.Bool{Bool: isLeader, Valid: isLeader},
+		ForceFreshSession:     pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
+		ModelOverride:         modelOverride,
+		ThinkingLevelOverride: thinkingLevelOverride,
+		OrchestrationStepID:   orchestrationStepID,
 	})
 	if err != nil {
 		slog.Error("mention task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -1920,7 +1921,7 @@ func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agen
 		util.UUIDToString(issue.AssigneeID) == util.UUIDToString(agentID) {
 		return s.enqueueIssueTask(ctx, issue, triggerCommentID, true)
 	}
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, true, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, true, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
 }
 
 // HandleFailedTasks runs the post-failure side effects for a batch of

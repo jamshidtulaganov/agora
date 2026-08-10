@@ -565,7 +565,10 @@ function DraftRouteControl({ run, step, agents }: { run: OrchestrationRun; step:
   ) {
     return null;
   }
-  const candidates = agents.filter((agent) => !agent.archived_at);
+  const rosterAgentIDs = new Set(run.policy.squad_roster?.map((entry) => entry.agent_id) ?? []);
+  const candidates = agents.filter((agent) =>
+    !agent.archived_at && (rosterAgentIDs.size === 0 || rosterAgentIDs.has(agent.id)),
+  );
   return (
     <label className="mt-2 flex items-center justify-between gap-3 border-t pt-2 text-[10px] text-muted-foreground">
       <span>{t(($) => $.execution_surface.route_step)}</span>
@@ -578,6 +581,7 @@ function DraftRouteControl({ run, step, agents }: { run: OrchestrationRun; step:
         onChange={(event) => {
           const agentId = event.target.value;
           if (!agentId || agentId === step.agent_id) return;
+          const model = candidates.find((agent) => agent.id === agentId)?.model;
           editPlan.mutate(
             {
               issueId: run.issue_id,
@@ -587,6 +591,7 @@ function DraftRouteControl({ run, step, agents }: { run: OrchestrationRun; step:
                 operation: "reroute",
                 step_id: step.id,
                 agent_id: agentId,
+                ...(model ? { model } : {}),
                 instructions: step.instructions,
               },
             },
@@ -640,6 +645,7 @@ function AdvancedStep({ run, step, stepByID, agents }: { run: OrchestrationRun; 
         {dependencies && <p className="mt-1 text-[10px] text-muted-foreground">{t(($) => $.detail.orchestration_after, { steps: dependencies })}</p>}
         <dl className="mt-2 grid gap-x-3 gap-y-1 text-[10px] sm:grid-cols-2">
           {step.model && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.model)}</dt><dd className="inline break-all font-mono">{step.model}</dd></div>}
+          {step.thinking_level !== undefined && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.thinking_snapshot)} · </dt><dd className="inline break-all font-mono">{step.thinking_level || t(($) => $.execution_surface.no_thinking)}</dd></div>}
           {step.worktree_branch && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.branch)}</dt><dd className="inline break-all font-mono">{step.worktree_branch}</dd></div>}
           {step.base_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.base)}</dt><dd className="inline font-mono">{step.base_sha.slice(0, 12)}</dd></div>}
           {step.head_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.head)}</dt><dd className="inline font-mono">{step.head_sha.slice(0, 12)}</dd></div>}
@@ -657,6 +663,7 @@ function ExecutionDrawer({ run, open, onOpenChange, agents }: { run: Orchestrati
     ...run.events.map((value) => ({ kind: "event" as const, id: value.id, createdAt: value.created_at, value })),
     ...run.revisions.map((value) => ({ kind: "revision" as const, id: value.id, createdAt: value.created_at, value })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const roster = run.policy.squad_roster ?? [];
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(94vw,42rem)] gap-0 sm:max-w-2xl">
@@ -665,6 +672,31 @@ function ExecutionDrawer({ run, open, onOpenChange, agents }: { run: Orchestrati
           <SheetDescription>{t(($) => $.execution_surface.drawer_description, { version: run.plan_version, strategy: strategyLabel(run.execution_strategy, t), progression: progressionLabel(run.progression_policy, t) })}</SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+          {roster.length > 0 && (
+            <section className="mb-5" aria-labelledby={`roster-${run.id}`}>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 id={`roster-${run.id}`} className="text-xs font-semibold">{t(($) => $.execution_surface.squad_roster)}</h2>
+                <span className="text-[10px] text-muted-foreground">
+                  {t(($) => $.execution_surface.dag_concurrency, { count: run.policy.max_concurrency ?? 1 })}
+                </span>
+              </div>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {roster.map((entry) => (
+                  <li key={entry.agent_id} className="rounded-lg border bg-muted/15 px-3 py-2 text-[10px]">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-xs font-medium">{entry.name || entry.agent_id}</span>
+                      {entry.is_leader && <Badge variant="outline" className="h-4 px-1 text-[9px]">{t(($) => $.execution_surface.squad_leader)}</Badge>}
+                    </div>
+                    <p className="mt-1 text-muted-foreground">{entry.role || entry.capability} · {entry.capability}</p>
+                    <p className="mt-1 break-all font-mono text-muted-foreground">
+                      {entry.model || t(($) => $.execution_surface.agent_default_model)}
+                      {` · ${t(($) => $.execution_surface.thinking_snapshot)} ${entry.thinking_level || t(($) => $.execution_surface.no_thinking)}`}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <section aria-labelledby={`full-plan-${run.id}`}>
             <div className="mb-3 flex items-center justify-between">
               <h2 id={`full-plan-${run.id}`} className="text-xs font-semibold">{t(($) => $.execution_surface.full_plan)}</h2>
@@ -716,9 +748,9 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   const [reviewPlanFirst, setReviewPlanFirst] = useState(false);
   const { data: run, isLoading } = useQuery(issueOrchestrationOptions(issueId));
   const wsId = useWorkspaceId();
-  const { data: issue } = useQuery(issueDetailOptions(wsId, issueId));
+  const { data: issue, isLoading: issueLoading } = useQuery(issueDetailOptions(wsId, issueId));
   const projectId = issue?.project_id ?? "";
-  const { data: project } = useQuery({
+  const { data: project, isLoading: projectLoading } = useQuery({
     ...projectDetailOptions(wsId, projectId),
     enabled: !!projectId,
   });
@@ -730,24 +762,21 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   // them as having no project defaults instead of breaking the issue surface.
   const projectDefaults = project?.settings?.orchestration;
   useEffect(() => {
-    setStrategy(projectDefaults?.execution_strategy ?? "automatic");
+    setStrategy("automatic");
     setProgression(projectDefaults?.progression_policy ?? "automatic");
     setMaxConcurrency(projectDefaults?.max_concurrency ?? 3);
     setReviewPlanFirst(projectDefaults?.review_plan_first ?? false);
   }, [
-    projectDefaults?.execution_strategy,
     projectDefaults?.progression_policy,
     projectDefaults?.max_concurrency,
     projectDefaults?.review_plan_first,
   ]);
   useEffect(() => {
-    const inheritedSquadId = projectDefaults?.execution_strategy === "squad"
-      ? project?.squad_id ?? assignedSquadId
-      : assignedSquadId;
+    const inheritedSquadId = assignedSquadId;
     if (!squadId && inheritedSquadId && activeSquads.some((squad) => squad.id === inheritedSquadId)) {
       setSquadId(inheritedSquadId);
     }
-  }, [activeSquads, assignedSquadId, project?.squad_id, projectDefaults?.execution_strategy, squadId]);
+  }, [activeSquads, assignedSquadId, squadId]);
   const { data: tasks = [] } = useQuery({
     queryKey: issueKeys.tasks(issueId),
     queryFn: () => api.listTasksByIssue(issueId),
@@ -778,7 +807,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
           ...(strategy === "automatic" ? {} : { execution_strategy: strategy }),
           ...(strategy === "squad" && squadId ? { squad_id: squadId } : {}),
           progression_policy: progression,
-          policy: { max_concurrency: maxConcurrency },
+          ...(usesSquadDAG ? { policy: { max_concurrency: maxConcurrency } } : {}),
         },
       },
       {
@@ -792,41 +821,55 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   };
 
   const squadSelectionMissing = strategy === "squad" && !squadId;
+  const soloSelectionMissing = strategy === "solo" && issue?.assignee_type !== "agent";
+  const usesSquadDAG = strategy === "squad" || (strategy === "automatic" && issue?.assignee_type === "squad");
+  const defaultsLoading = issueLoading || (!!projectId && projectLoading);
 
   if (isLoading) return <div className="h-24 animate-pulse rounded-xl border bg-muted/30 motion-reduce:animate-none" aria-hidden />;
 
+  // Most issues never start an orchestration run. Keep the idle surface quiet:
+  // One-click start derives topology from the assignee and inherits only the
+  // project's progression/review/concurrency defaults. Customize is the
+  // exception path for a single-run override.
   if (!run) {
     return (
-      <section className="overflow-hidden rounded-xl border border-dashed">
-        <div className="flex flex-col items-start justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold">{t(($) => $.detail.orchestration_title)}</h2>
-            <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">{t(($) => $.detail.orchestration_empty)}</p>
-            {projectId && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {t(($) => $.execution_surface.project_defaults_hint)}
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {onOpenWork && (
-              <Button size="sm" variant="ghost" onClick={onOpenWork}>
-                <ListTree aria-hidden />
-                {t(($) => $.execution_surface.open_work)}
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => setCustomizing((open) => !open)} aria-expanded={customizing}>
-              {t(($) => $.execution_surface.customize)}
-              <ChevronDown className={cn("transition-transform motion-reduce:transition-none", customizing && "rotate-180")} aria-hidden />
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-muted-foreground hover:text-foreground"
+            disabled={createRun.isPending}
+            onClick={createInherited}
+          >
+            {createRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
+            {t(($) => $.execution_surface.start_opt_in)}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-muted-foreground hover:text-foreground"
+            disabled={defaultsLoading}
+            onClick={() => setCustomizing((open) => !open)}
+            aria-expanded={customizing}
+          >
+            {t(($) => $.execution_surface.customize)}
+            <ChevronDown className={cn("transition-transform motion-reduce:transition-none", customizing && "rotate-180")} aria-hidden />
+          </Button>
+          {onOpenWork && (
+            <Button size="sm" variant="ghost" className="h-8 text-muted-foreground hover:text-foreground" onClick={onOpenWork}>
+              <ListTree aria-hidden />
+              {t(($) => $.execution_surface.open_work)}
             </Button>
-            <Button size="sm" disabled={createRun.isPending} onClick={createInherited}>
-              {createRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
-              {t(($) => $.detail.orchestration_start)}
-            </Button>
-          </div>
+          )}
         </div>
         {customizing && (
-          <div className="grid gap-5 border-t bg-muted/15 px-4 py-4 sm:grid-cols-2">
+          <div className="grid gap-5 overflow-hidden rounded-xl border bg-muted/15 px-4 py-4 sm:grid-cols-2">
+            <p className="text-[11px] leading-relaxed text-muted-foreground sm:col-span-2">
+              {projectId
+                ? t(($) => $.execution_surface.project_defaults_hint)
+                : t(($) => $.detail.orchestration_empty)}
+            </p>
             <fieldset>
               <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.strategy_legend)}</legend>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -837,6 +880,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
                     size="sm"
                     variant="outline"
                     className={cn("h-7 capitalize", strategy === option && SEGMENT_ACTIVE_CLASS)}
+                    disabled={option === "solo" && issue?.assignee_type !== "agent"}
                     onClick={() => setStrategy(option)}
                     aria-pressed={strategy === option}
                   >
@@ -893,7 +937,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
               <p className="mt-2 text-[11px] text-muted-foreground">{t(($) => $.execution_surface.progression_hint)}</p>
             </fieldset>
 
-            <label className="flex items-center justify-between gap-4 text-xs">
+            {usesSquadDAG && <label className="flex items-center justify-between gap-4 text-xs">
               <span>
                 <span className="font-medium">{t(($) => $.execution_surface.parallel_workers)}</span>
                 <span className="mt-0.5 block text-[11px] text-muted-foreground">{t(($) => $.execution_surface.parallel_workers_hint)}</span>
@@ -907,7 +951,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
                 onChange={(event) => setMaxConcurrency(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
                 className="w-16 text-right font-mono text-xs tabular-nums"
               />
-            </label>
+            </label>}
 
             <div className="flex flex-col justify-between gap-3 sm:items-end">
               <label className="flex cursor-pointer items-center gap-2 text-xs">
@@ -918,7 +962,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
                 />
                 {t(($) => $.execution_surface.review_plan_first)}
               </label>
-              <Button size="sm" disabled={createRun.isPending || squadSelectionMissing} onClick={createWithOptions}>
+              <Button size="sm" disabled={createRun.isPending || defaultsLoading || squadSelectionMissing || soloSelectionMissing} onClick={createWithOptions}>
                 {createRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : reviewPlanFirst ? <ListTree aria-hidden /> : <Play aria-hidden />}
                 {reviewPlanFirst ? t(($) => $.execution_surface.create_proposal) : t(($) => $.execution_surface.build_and_run)}
               </Button>

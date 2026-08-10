@@ -26,6 +26,9 @@ func TestCreateIssueOrchestrationUsesExplicitSquadRoster(t *testing.T) {
 	frontendID := createHandlerTestAgent(t, "Frontend engineer", []byte("[]"))
 	qaID := createHandlerTestAgent(t, "QA engineer", []byte("[]"))
 	reviewerID := createHandlerTestAgent(t, "Security reviewer", []byte("[]"))
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET model = 'gpt-reroute-snapshot', thinking_level = 'high' WHERE id = $1`, leaderID); err != nil {
+		t.Fatalf("set leader model: %v", err)
+	}
 	var offlineRuntimeID, offlineAgentID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_runtime (
@@ -185,7 +188,9 @@ func TestCreateIssueOrchestrationUsesExplicitSquadRoster(t *testing.T) {
 	for _, step := range run.Steps {
 		byKey[step.Key] = step
 	}
-	if run.PlanVersion != 2 || byKey["dev-backend"].AgentID != leaderID || len(run.Revisions) != 1 || run.Revisions[0].ActorType != "member" {
+	if run.PlanVersion != 2 || byKey["dev-backend"].AgentID != leaderID || byKey["dev-backend"].Model != "gpt-reroute-snapshot" ||
+		byKey["dev-backend"].ThinkingLevel == nil || *byKey["dev-backend"].ThinkingLevel != "high" ||
+		len(run.Revisions) != 1 || run.Revisions[0].ActorType != "member" {
 		t.Fatalf("accepted reroute was not versioned: version=%d step=%#v revisions=%#v", run.PlanVersion, byKey["dev-backend"], run.Revisions)
 	}
 

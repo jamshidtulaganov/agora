@@ -41,6 +41,12 @@ type Model struct {
 	// ("code" | "search" | "test" | "docs") so the picker can recommend
 	// the right base for a purpose-built agent. Empty for non-Agora models.
 	Category string `json:"category,omitempty"`
+	// Aliases are alternate IDs that resolve to this model at execute
+	// time. Antigravity populates them from the `agy models` TSV slug
+	// column (e.g. "gemini-3.6-flash-medium") so agents that persisted
+	// the slug before the display-name fix keep working. Not exposed as
+	// separate picker rows — the wire remap drops them.
+	Aliases []string `json:"aliases,omitempty"`
 	// Thinking advertises the runtime's reasoning/effort catalog for this
 	// model. nil means the runtime/model has no thinking-level control
 	// (or the daemon couldn't discover one); the UI hides its picker. The
@@ -1089,26 +1095,73 @@ func discoverAntigravityModels(ctx context.Context, executablePath string) ([]Mo
 // emitted the display name alone. `--model` wants the display string either
 // way, so ID and Label are always the display name — never the slug, and
 // never the raw TSV line (shipping the tab-joined form makes agy exit 1 with
-// "invalid model selection"). Blank lines, status chatter
-// ("Fetching available models..."), and duplicates are skipped.
+// "invalid model selection"). The TSV slug is retained on Aliases so
+// resolveAntigravityModel can map legacy persisted agent.model values.
+// Blank lines, status chatter ("Fetching available models..."), and
+// duplicates are skipped.
 func parseAntigravityModels(output string) []Model {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var models []Model
-	seen := map[string]bool{}
+	seen := map[string]int{} // display name → index in models
 	for scanner.Scan() {
-		name := antigravityModelDisplayName(scanner.Text())
-		if name == "" || seen[name] {
+		slug, name := parseAntigravityModelLine(scanner.Text())
+		if name == "" {
 			continue
 		}
-		seen[name] = true
-		models = append(models, Model{
+		if idx, ok := seen[name]; ok {
+			// Same display seen again — attach a new slug alias if present.
+			if slug != "" && slug != name {
+				models[idx].Aliases = appendAntigravityAlias(models[idx].Aliases, slug)
+			}
+			continue
+		}
+		seen[name] = len(models)
+		m := Model{
 			ID:       name,
 			Label:    name,
 			Provider: "antigravity",
-		})
+		}
+		if slug != "" && slug != name {
+			m.Aliases = []string{slug}
+		}
+		models = append(models, m)
 	}
 	return models
+}
+
+// parseAntigravityModelLine splits one `agy models` line into
+// (slug, display). Slug is empty for legacy bare-display catalogs.
+// Status chatter yields ("", "").
+func parseAntigravityModelLine(raw string) (slug, display string) {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return "", ""
+	}
+	lower := strings.ToLower(line)
+	if strings.HasPrefix(lower, "fetching ") || strings.HasPrefix(lower, "available models") {
+		return "", ""
+	}
+	if i := strings.IndexByte(line, '\t'); i >= 0 {
+		slug = strings.TrimSpace(line[:i])
+		display = strings.TrimSpace(line[i+1:])
+		if display == "" {
+			// Degenerate `slug\t` — treat the slug as the only token.
+			return "", slug
+		}
+		return slug, display
+	}
+	return "", line
+}
+
+// appendAntigravityAlias adds slug to aliases if not already present.
+func appendAntigravityAlias(aliases []string, slug string) []string {
+	for _, a := range aliases {
+		if strings.EqualFold(a, slug) {
+			return aliases
+		}
+	}
+	return append(aliases, slug)
 }
 
 // antigravityModelDisplayName extracts the human display string `--model`
@@ -1119,27 +1172,43 @@ func parseAntigravityModels(output string) []Model {
 //   - legacy bare display name → unchanged
 //   - already-persisted buggy values that stored the whole TSV cell
 //   - status lines like "Fetching available models..." → ""
+//
+// Bare slugs (e.g. "gemini-3.6-flash-medium") pass through unchanged —
+// resolveAntigravityModel maps those via catalog Aliases.
 func antigravityModelDisplayName(raw string) string {
-	line := strings.TrimSpace(raw)
-	if line == "" {
-		return ""
+	_, display := parseAntigravityModelLine(raw)
+	return display
+}
+
+// resolveAntigravityModel maps a persisted/env model value onto the
+// display name `--model` accepts.
+//
+// Accepts, in order:
+//  1. exact catalog display ID (current picker values)
+//  2. TSV cell `slug\tDisplay Name` (briefly-persisted parser bug)
+//  3. bare TSV slug (e.g. "gemini-3.6-flash-medium") via Model.Aliases
+//
+// When no mapping is found the trimmed input is returned unchanged so
+// antigravityModelError can reject it with an actionable catalog list.
+// An empty catalog leaves the value alone (fail-open discovery path).
+func resolveAntigravityModel(raw string, available []Model) string {
+	name := antigravityModelDisplayName(raw)
+	if name == "" || len(available) == 0 {
+		return name
 	}
-	// Status / progress chatter on stdout (rare) or a pasted header.
-	if strings.HasPrefix(strings.ToLower(line), "fetching ") {
-		return ""
-	}
-	if strings.HasPrefix(strings.ToLower(line), "available models") {
-		return ""
-	}
-	if i := strings.IndexByte(line, '\t'); i >= 0 {
-		display := strings.TrimSpace(line[i+1:])
-		if display != "" {
-			return display
+	for _, m := range available {
+		if m.ID == name {
+			return m.ID
 		}
-		// Degenerate `slug\t` — fall through to the slug rather than "".
-		line = strings.TrimSpace(line[:i])
 	}
-	return line
+	for _, m := range available {
+		for _, alias := range m.Aliases {
+			if strings.EqualFold(alias, name) {
+				return m.ID
+			}
+		}
+	}
+	return name
 }
 
 // discoverCursorModels runs `cursor-agent --list-models` and parses

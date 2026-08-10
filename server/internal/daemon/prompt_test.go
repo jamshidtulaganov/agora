@@ -15,7 +15,7 @@ func TestBuildOrchestrationPromptCarriesStepContract(t *testing.T) {
 		OrchestrationStage:        "qa",
 		OrchestrationInstructions: "Run the browser suite and report failing cases.",
 	}, "codex")
-	for _, want := range []string{"Verify authentication", "Stage: qa", "Run the browser suite", "Stage contract", "verdict to pass or fail", "engine owns issue status", "do not change the issue status", "run_qa", "@mention another agent", "inspect the issue", "durable orchestration messages", "Do not guess", "outcome `waiting_input`", "one precise durable `question`", "```agora-handoff"} {
+	for _, want := range []string{"Verify authentication", "Stage: qa", "Run the browser suite", "Stage contract", "verdict to pass or fail", "engine owns issue status", "do not change the issue status", "run_qa", "@mention another agent", "spawn runtime-native subagents", "inspect the issue", "durable orchestration messages", "Do not guess", "outcome `waiting_input`", "one precise durable `question`", "```agora-handoff"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("orchestration prompt missing %q:\n%s", want, out)
 		}

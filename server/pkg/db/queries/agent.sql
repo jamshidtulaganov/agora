@@ -135,21 +135,21 @@ WHERE agent_id = $1
 ORDER BY created_at DESC;
 
 -- name: CreateAgentTask :one
--- model_override (nullable): per-task model escalation set at enqueue time
--- (e.g. KB capture on a large thread). At claim it wins over the agent's
--- configured model but loses to issue cost-tier labels — see
--- applyIssueCostTier and migration 146.
+-- model_override / thinking_level_override (nullable): per-task execution
+-- snapshots set at enqueue time. Orchestration values remain authoritative;
+-- ordinary task model overrides may still lose to issue cost-tier labels.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     trigger_summary, force_fresh_session, is_leader_task, model_override,
-    orchestration_step_id
+    thinking_level_override, orchestration_step_id
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
-    sqlc.narg('model_override'), sqlc.narg('orchestration_step_id')
+    sqlc.narg('model_override'), sqlc.narg('thinking_level_override'),
+    sqlc.narg('orchestration_step_id')
 )
 RETURNING *;
 
@@ -187,7 +187,7 @@ INSERT INTO agent_task_queue (
     status, priority, trigger_comment_id, trigger_summary, context,
     session_id, work_dir,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    model_override
+    model_override, thinking_level_override
 )
 SELECT
     p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -197,7 +197,7 @@ SELECT
     p.attempt + 1, p.max_attempts, p.id,
     p.failure_reason IS NOT DISTINCT FROM 'codex_semantic_inactivity',
     p.is_leader_task,
-    p.model_override
+    p.model_override, p.thinking_level_override
 FROM agent_task_queue p
 WHERE p.id = $1
 RETURNING *;
@@ -214,7 +214,7 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, trigger_summary, context,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    model_override
+    model_override, thinking_level_override
 )
 SELECT
     p.agent_id, sqlc.arg('runtime_id'), p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -222,7 +222,7 @@ SELECT
     p.attempt, p.max_attempts, p.id,
     true,
     p.is_leader_task,
-    p.model_override
+    p.model_override, p.thinking_level_override
 FROM agent_task_queue p
 WHERE p.id = sqlc.arg('parent_id')
 RETURNING *;
