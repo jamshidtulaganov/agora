@@ -30,6 +30,10 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      # Seal remote MCP authorization headers at rest. Agent mcp_config keeps
+      # only non-secret server metadata and blank header placeholders.
+      - key: AGORA_MCP_SECRET_KEY
+        generateValue: true
       - key: APP_ENV
         value: production
       - key: ALLOW_SIGNUP
