@@ -214,6 +214,15 @@ describe("estimateCost", () => {
     // exact-match-after-date-strip (no startsWith fallback), so each row
     // must exist on its own.
     expect(
+      estimateCost({ ...zeroUsage, model: "gpt-5.6-sol", input_tokens: 1_000_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(5 + 30, 5);
+    expect(
+      estimateCost({ ...zeroUsage, model: "gpt-5.6-terra", input_tokens: 1_000_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(2 + 12, 5);
+    expect(
+      estimateCost({ ...zeroUsage, model: "gpt-5.6-luna", input_tokens: 1_000_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(0.2 + 1.2, 5);
+    expect(
       estimateCost({ ...zeroUsage, model: "gpt-5.5", input_tokens: 1_000_000 }),
     ).toBeCloseTo(5, 5);
     expect(

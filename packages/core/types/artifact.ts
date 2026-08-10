@@ -72,6 +72,9 @@ export interface ArtifactPreviewResponse {
   needs_command: boolean;
   error?: string;
   log?: string;
+  configuration_source?: string;
+  starting?: boolean;
+  ready?: boolean;
 }
 
 export interface ArtifactChecksResponse {

@@ -69,6 +69,13 @@ type artifactCapabilityRecord struct {
 	DaemonID    string            `json:"daemon_id,omitempty"`
 	SourceRoot  string            `json:"source_root"`
 	Repos       []artifactRepoRef `json:"repos"`
+	// Project-level commands are signed into the grant so the daemon runs the
+	// reviewed project workflow instead of guessing independently for Preview
+	// and Checks. They are non-secret project settings; credentials still come
+	// from the runtime environment and never cross the browser boundary.
+	PreviewCommand string                  `json:"preview_command,omitempty"`
+	CheckCommand   string                  `json:"check_command,omitempty"`
+	RuntimeTargets []artifactRuntimeTarget `json:"runtime_targets,omitempty"`
 	// Live marks a grant that points at a local_directory's LIVE working tree
 	// (no orchestration step, no frozen SHAs). The daemon reads the folder's
 	// uncommitted working state for changes/file and does not require repo
@@ -77,6 +84,56 @@ type artifactCapabilityRecord struct {
 	Live       bool      `json:"live,omitempty"`
 	PreviewURL string    `json:"preview_url,omitempty"`
 	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+type artifactRuntimeTarget struct {
+	Repo             string `json:"repo"`
+	WorkingDirectory string `json:"working_directory,omitempty"`
+	PreviewCommand   string `json:"start_command,omitempty"`
+	CheckCommand     string `json:"test_command,omitempty"`
+}
+
+type artifactProjectRuntimeConfig struct {
+	PreviewCommand string
+	CheckCommand   string
+	Targets        []artifactRuntimeTarget
+}
+
+func (h *Handler) artifactProjectCommands(ctx context.Context, issue db.Issue) artifactProjectRuntimeConfig {
+	if !issue.ProjectID.Valid {
+		return artifactProjectRuntimeConfig{}
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return artifactProjectRuntimeConfig{}
+	}
+	var settings struct {
+		QASmokeCmd     string                  `json:"qa_smoke_cmd"`
+		QATestCmd      string                  `json:"qa_test_cmd"`
+		PreviewTargets []artifactRuntimeTarget `json:"preview_targets"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return artifactProjectRuntimeConfig{}
+	}
+	targets := make([]artifactRuntimeTarget, 0, len(settings.PreviewTargets))
+	seen := make(map[string]bool, len(settings.PreviewTargets))
+	for _, target := range settings.PreviewTargets {
+		target.Repo = strings.TrimSpace(target.Repo)
+		key := strings.ToLower(target.Repo)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		target.WorkingDirectory = strings.TrimSpace(target.WorkingDirectory)
+		target.PreviewCommand = strings.TrimSpace(target.PreviewCommand)
+		target.CheckCommand = strings.TrimSpace(target.CheckCommand)
+		targets = append(targets, target)
+	}
+	return artifactProjectRuntimeConfig{
+		PreviewCommand: strings.TrimSpace(settings.QASmokeCmd),
+		CheckCommand:   strings.TrimSpace(settings.QATestCmd),
+		Targets:        targets,
+	}
 }
 
 const artifactCapabilityAAD = "agora-artifact-capability-v1"
@@ -437,11 +494,14 @@ func (h *Handler) GetIssueArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	runtimeConfig := h.artifactProjectCommands(r.Context(), issue)
 	baseRecord := artifactCapabilityRecord{
 		ArtifactID: selected.ID, WorkspaceID: uuidToString(issue.WorkspaceID),
 		IssueID: uuidToString(issue.ID), RunID: runID, StepID: selected.StepID,
 		RuntimeID: location.RuntimeID, DaemonID: location.DaemonID,
 		SourceRoot: location.WorkDir, Repos: selected.Repos,
+		PreviewCommand: runtimeConfig.PreviewCommand, CheckCommand: runtimeConfig.CheckCommand,
+		RuntimeTargets: runtimeConfig.Targets,
 	}
 	capabilities := make(map[string]string, 4)
 	purposes := []string{"changes", "file"}

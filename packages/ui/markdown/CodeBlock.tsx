@@ -100,8 +100,10 @@ export function CodeBlock({
         const html = await codeToHtml(code, {
           lang,
           themes: {
-            light: 'github-light',
-            dark: 'github-dark',
+            // Match the review surface to familiar editors: VS Code's Light+
+            // palette in light mode and Atom One Dark in dark mode.
+            light: 'light-plus',
+            dark: 'one-dark-pro',
           },
           defaultColor: false,
         })

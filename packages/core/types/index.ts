@@ -104,6 +104,7 @@ export type {
   Project,
   ProjectSettings,
   ProjectOrchestrationDefaults,
+  ProjectPreviewTarget,
   ProjectExecutionStrategy,
   ProjectStatus,
   ProjectPriority,

@@ -29,6 +29,7 @@ import {
   NativeSelectOption,
 } from "@agora/ui/components/ui/native-select";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { CodeBlock } from "@agora/ui/markdown/CodeBlock";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { parseArtifactFileDiff, type ArtifactDiffLine } from "./artifact-diff";
@@ -76,19 +77,40 @@ function DiffLine({ line }: { line: ArtifactDiffLine }) {
   );
 }
 
-function SourceLines({ content, hiddenLabel }: { content: string; hiddenLabel: (count: number) => string }) {
+export function artifactLanguage(path: string): string {
+  const name = path.split("/").at(-1)?.toLowerCase() ?? "";
+  const extension = name.includes(".") ? name.split(".").at(-1) ?? "" : "";
+  const byExtension: Record<string, string> = {
+    js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
+    ts: "typescript", tsx: "tsx", json: "json", jsonc: "jsonc",
+    go: "go", py: "python", rb: "ruby", php: "php", java: "java",
+    css: "css", scss: "scss", less: "less", html: "html", vue: "vue",
+    sh: "bash", zsh: "bash", yml: "yaml", yaml: "yaml", sql: "sql",
+    md: "markdown", mdx: "mdx", xml: "xml", toml: "toml", ini: "ini",
+  };
+  if (name === "dockerfile") return "dockerfile";
+  if (name === "makefile") return "makefile";
+  return byExtension[extension] ?? "text";
+}
+
+function SourceLines({ content, path, hiddenLabel }: { content: string; path: string; hiddenLabel: (count: number) => string }) {
   const lines = content.split("\n");
   const visible = lines.slice(0, MAX_VISIBLE_LINES);
   return (
     <>
-      {visible.map((line, index) => (
-        <div key={index} className="grid min-w-max grid-cols-[4rem_1fr]">
-          <span className="select-none border-r px-3 text-right text-muted-foreground/60" aria-hidden>
-            {index + 1}
-          </span>
-          <span className="whitespace-pre px-3">{line || " "}</span>
+      <div className="grid min-w-max grid-cols-[4rem_minmax(max-content,1fr)]">
+        <div className="select-none border-r border-border/70 bg-muted/15 text-right text-muted-foreground/60 dark:border-white/10 dark:bg-black/10" aria-hidden>
+          {visible.map((_, index) => (
+            <div key={index} className="h-5 px-3">{index + 1}</div>
+          ))}
         </div>
-      ))}
+        <CodeBlock
+          code={visible.join("\n")}
+          language={artifactLanguage(path)}
+          mode="minimal"
+          className="min-w-max px-3 text-[12px] leading-5 [&_pre]:!whitespace-pre [&_pre]:!break-normal [&_pre]:leading-5"
+        />
+      </div>
       {lines.length > visible.length && (
         <div className="border-t bg-muted/40 px-4 py-2 text-muted-foreground">
           {hiddenLabel(lines.length - visible.length)}
@@ -414,7 +436,7 @@ export function ArtifactCodeViewer({
                   </Button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-5" translate="no">
+              <div className="min-h-0 flex-1 overflow-auto bg-white font-mono text-[12px] leading-5 text-[#1f2328] dark:bg-[#282c34] dark:text-[#abb2bf]" translate="no">
                 {view === "diff" ? (
                   diffLines.length > 0 ? (
                     <>
@@ -435,6 +457,7 @@ export function ArtifactCodeViewer({
                     {fileQuery.data?.truncated && <div className="border-b bg-warning/10 px-4 py-2 font-sans text-xs text-warning">{t(($) => $.artifact.truncated_file)}</div>}
                     <SourceLines
                       content={fileQuery.data?.content ?? ""}
+                      path={selectedPath}
                       hiddenLabel={(count) => t(($) => $.artifact.more_lines_hidden, { count })}
                     />
                   </>

@@ -18,6 +18,7 @@ import { Input } from "@agora/ui/components/ui/input";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { ProjectPipelineSection } from "./project-pipeline-section";
+import { ProjectQASection } from "./project-qa-section";
 
 const BUILT_IN_DEFAULTS: ProjectOrchestrationDefaults = {
   execution_strategy: "automatic",
@@ -246,7 +247,9 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
                   {t(($) => $.execution_defaults.save)}
                 </Button>
 
-              <ProjectPipelineSection
+                <ProjectQASection projectId={projectId} embedded />
+
+                <ProjectPipelineSection
                 projectId={projectId}
                 embedded
                 excludeKeys={["AGORA_AUTO_QA_ENABLED", "AGORA_AUTO_REVIEW_ENABLED"]}

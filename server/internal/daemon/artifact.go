@@ -26,17 +26,20 @@ type ArtifactRepoRef struct {
 }
 
 type ArtifactCapabilityGrant struct {
-	ID          string            `json:"id"`
-	ArtifactID  string            `json:"artifact_id"`
-	Purpose     string            `json:"purpose"`
-	WorkspaceID string            `json:"workspace_id"`
-	IssueID     string            `json:"issue_id"`
-	RunID       string            `json:"run_id"`
-	StepID      string            `json:"step_id"`
-	RuntimeID   string            `json:"runtime_id,omitempty"`
-	DaemonID    string            `json:"daemon_id,omitempty"`
-	SourceRoot  string            `json:"source_root"`
-	Repos       []ArtifactRepoRef `json:"repos"`
+	ID             string                  `json:"id"`
+	ArtifactID     string                  `json:"artifact_id"`
+	Purpose        string                  `json:"purpose"`
+	WorkspaceID    string                  `json:"workspace_id"`
+	IssueID        string                  `json:"issue_id"`
+	RunID          string                  `json:"run_id"`
+	StepID         string                  `json:"step_id"`
+	RuntimeID      string                  `json:"runtime_id,omitempty"`
+	DaemonID       string                  `json:"daemon_id,omitempty"`
+	SourceRoot     string                  `json:"source_root"`
+	Repos          []ArtifactRepoRef       `json:"repos"`
+	PreviewCommand string                  `json:"preview_command,omitempty"`
+	CheckCommand   string                  `json:"check_command,omitempty"`
+	RuntimeTargets []ArtifactRuntimeTarget `json:"runtime_targets,omitempty"`
 	// Live: the grant points at a local_directory's LIVE working tree — no
 	// orchestration step, no frozen base/head SHAs. changes/file read the
 	// folder's current (possibly uncommitted) state; preview proxies to
@@ -44,6 +47,65 @@ type ArtifactCapabilityGrant struct {
 	Live       bool      `json:"live,omitempty"`
 	PreviewURL string    `json:"preview_url,omitempty"`
 	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+type ArtifactRuntimeTarget struct {
+	Repo             string `json:"repo"`
+	WorkingDirectory string `json:"working_directory,omitempty"`
+	PreviewCommand   string `json:"start_command,omitempty"`
+	CheckCommand     string `json:"test_command,omitempty"`
+}
+
+func artifactRuntimeTargetFor(grant ArtifactCapabilityGrant, repo string) (ArtifactRuntimeTarget, string) {
+	resolved := ArtifactRuntimeTarget{
+		Repo: repo, PreviewCommand: strings.TrimSpace(grant.PreviewCommand),
+		CheckCommand: strings.TrimSpace(grant.CheckCommand),
+	}
+	source := "auto_detect"
+	if resolved.PreviewCommand != "" || resolved.CheckCommand != "" {
+		source = "project"
+	}
+	for _, target := range grant.RuntimeTargets {
+		if !strings.EqualFold(strings.TrimSpace(target.Repo), strings.TrimSpace(repo)) {
+			continue
+		}
+		if value := strings.TrimSpace(target.WorkingDirectory); value != "" {
+			resolved.WorkingDirectory = value
+		}
+		if value := strings.TrimSpace(target.PreviewCommand); value != "" {
+			resolved.PreviewCommand = value
+		}
+		if value := strings.TrimSpace(target.CheckCommand); value != "" {
+			resolved.CheckCommand = value
+		}
+		source = "project_repository"
+		break
+	}
+	return resolved, source
+}
+
+func artifactRuntimeWorkingDirectory(repoDir, configured string) (string, error) {
+	configured = strings.TrimSpace(configured)
+	if configured == "" || configured == "." {
+		return repoDir, nil
+	}
+	if filepath.IsAbs(configured) {
+		return "", fmt.Errorf("artifact working directory must be relative")
+	}
+	clean := filepath.Clean(configured)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("artifact working directory escapes the repository")
+	}
+	resolved := filepath.Join(repoDir, clean)
+	rel, err := filepath.Rel(repoDir, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("artifact working directory escapes the repository")
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("configured artifact working directory does not exist")
+	}
+	return resolved, nil
 }
 
 type artifactCapabilityRequest struct {
@@ -81,7 +143,7 @@ func (d *Daemon) artifactGrant(w http.ResponseWriter, r *http.Request, purpose s
 		http.Error(w, "invalid or expired artifact capability", http.StatusForbidden)
 		return ArtifactCapabilityGrant{}, req, false
 	}
-	if grant.Purpose != purpose || grant.ArtifactID == "" || grant.SourceRoot == "" || len(grant.Repos) == 0 {
+	if grant.Purpose != purpose || grant.ArtifactID == "" || grant.SourceRoot == "" || (len(grant.Repos) == 0 && !grant.Live) {
 		http.Error(w, "artifact capability is incomplete", http.StatusForbidden)
 		return ArtifactCapabilityGrant{}, req, false
 	}
@@ -481,11 +543,13 @@ func artifactRuntimeRepo(runtime *artifactRuntime, grant ArtifactCapabilityGrant
 }
 
 type artifactPreview struct {
-	key     string
-	repoDir string
-	runtime *artifactRuntime
-	proc    *previewProc
-	once    sync.Once
+	key                 string
+	repoDir             string
+	configurationSource string
+	runtime             *artifactRuntime
+	proc                *previewProc
+	cleanupOnce         sync.Once
+	closeOnce           sync.Once
 }
 
 var artifactPreviews = struct {
@@ -502,16 +566,18 @@ func liveArtifactPreviewJSON(grant ArtifactCapabilityGrant) map[string]any {
 	url := strings.TrimSpace(grant.PreviewURL)
 	if url == "" {
 		return map[string]any{
-			"artifact_id":   grant.ArtifactID,
-			"running":       false,
-			"needs_command": true,
-			"error":         "no dev server configured — set the folder's preview URL to your running dev server (e.g. http://localhost:3000)",
+			"artifact_id":          grant.ArtifactID,
+			"running":              false,
+			"needs_command":        true,
+			"configuration_source": "project_resource",
+			"error":                "no dev server configured — set the folder's preview URL to your running dev server (e.g. http://localhost:3000)",
 		}
 	}
 	return map[string]any{
-		"artifact_id": grant.ArtifactID,
-		"running":     true,
-		"url":         url,
+		"artifact_id":          grant.ArtifactID,
+		"running":              true,
+		"url":                  url,
+		"configuration_source": "project_resource",
 	}
 }
 
@@ -519,21 +585,32 @@ func (d *Daemon) closeArtifactPreview(preview *artifactPreview, kill bool) {
 	if preview == nil {
 		return
 	}
-	preview.once.Do(func() {
+	preview.closeOnce.Do(func() {
 		artifactPreviews.Lock()
 		if artifactPreviews.items[preview.key] == preview {
 			delete(artifactPreviews.items, preview.key)
 		}
 		artifactPreviews.Unlock()
+		if kill && preview.proc != nil {
+			killProcessGroup(preview.proc.cmd)
+		}
+		d.cleanupArtifactPreviewRuntime(preview)
+	})
+}
+
+func (d *Daemon) cleanupArtifactPreviewRuntime(preview *artifactPreview) {
+	if preview == nil {
+		return
+	}
+	preview.cleanupOnce.Do(func() {
 		previewsMu.Lock()
 		if previews[preview.repoDir] == preview.proc {
 			delete(previews, preview.repoDir)
 		}
 		previewsMu.Unlock()
-		if kill && preview.proc != nil {
-			killProcessGroup(preview.proc.cmd)
+		if preview.runtime != nil {
+			preview.runtime.cleanup(context.Background(), d.logger)
 		}
-		preview.runtime.cleanup(context.Background(), d.logger)
 	})
 }
 
@@ -550,13 +627,44 @@ func (d *Daemon) shutdownArtifactPreviews() {
 }
 
 func artifactPreviewJSON(preview *artifactPreview) map[string]any {
+	running := preview.proc.running()
+	log := tailLog(preview.proc.buf.String())
 	response := map[string]any{
 		"artifact_id": strings.Split(preview.key, "\x00")[0],
-		"command":     preview.proc.command, "running": preview.proc.running(),
-		"port": preview.proc.port, "url": previewURL(preview.proc.port),
-		"proxy_path": fmt.Sprintf("/editor/local/%d/", preview.proc.port),
+		"command":     preview.proc.command, "running": running,
+		"configuration_source": preview.configurationSource,
+		"log":                  log,
+	}
+	port := latestDevPort(log)
+	if port > 0 && !previewPortReady(port) {
+		port = 0
+	}
+	if port == 0 && previewPortReady(preview.proc.port) {
+		port = preview.proc.port
+	}
+	if running && port > 0 {
+		response["ready"] = true
+		response["port"] = port
+		response["url"] = previewURL(port)
+		response["proxy_path"] = fmt.Sprintf("/editor/local/%d/", port)
+	} else if running {
+		response["starting"] = true
+	} else {
+		response["error"] = "the dev server exited before it became ready"
 	}
 	return response
+}
+
+func previewPortReady(port int) bool {
+	if port <= 0 {
+		return false
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 80*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
@@ -623,6 +731,9 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 			_ = json.NewEncoder(w).Encode(artifactPreviewJSON(existing))
 			return
 		}
+		if existing != nil {
+			d.closeArtifactPreview(existing, false)
+		}
 
 		runtime, err := d.provisionArtifactRuntime(r.Context(), grant)
 		if err != nil {
@@ -635,17 +746,28 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 			http.Error(w, err.Error(), http.StatusGone)
 			return
 		}
-		command := detectDevCommand(repoDir)
+		target, configurationSource := artifactRuntimeTargetFor(grant, ref.Repo)
+		repoDir, err = artifactRuntimeWorkingDirectory(repoDir, target.WorkingDirectory)
+		if err != nil {
+			runtime.cleanup(context.Background(), d.logger)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "configuration_source": configurationSource, "error": err.Error()})
+			return
+		}
+		command := target.PreviewCommand
+		if command == "" {
+			command = detectDevCommand(repoDir)
+		}
 		if command == "" {
 			runtime.cleanup(context.Background(), d.logger)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"needs_command": true, "artifact_id": grant.ArtifactID})
+			_ = json.NewEncoder(w).Encode(map[string]any{"needs_command": true, "artifact_id": grant.ArtifactID, "configuration_source": configurationSource})
 			return
 		}
 		if depLog, depErr := ensureDeps(repoDir); depErr != nil {
 			runtime.cleanup(context.Background(), d.logger)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "dependency install failed", "log": tailLog(depLog)})
+			_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "command": command, "configuration_source": configurationSource, "error": "dependency install failed", "log": tailLog(depLog)})
 			return
 		}
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -662,7 +784,7 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 			http.Error(w, "failed to start preview: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		preview := &artifactPreview{key: key, repoDir: repoDir, runtime: runtime, proc: proc}
+		preview := &artifactPreview{key: key, repoDir: repoDir, configurationSource: configurationSource, runtime: runtime, proc: proc}
 		artifactPreviews.Lock()
 		if winner := artifactPreviews.items[key]; winner != nil && winner.proc.running() {
 			artifactPreviews.Unlock()
@@ -679,18 +801,9 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		previewsMu.Unlock()
 		go func() {
 			<-proc.done
-			d.closeArtifactPreview(preview, false)
+			d.cleanupArtifactPreviewRuntime(preview)
+			time.AfterFunc(10*time.Minute, func() { d.closeArtifactPreview(preview, false) })
 		}()
-		if realPort := scanPreviewPort(proc, 40*time.Second); realPort != 0 {
-			proc.port = realPort
-		}
-		if !proc.running() {
-			log := tailLog(proc.buf.String())
-			d.closeArtifactPreview(preview, false)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "the dev server exited", "log": log})
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(artifactPreviewJSON(preview))
 	})
@@ -716,11 +829,10 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		artifactPreviews.Lock()
 		preview := artifactPreviews.items[artifactPreviewKey(grant.ArtifactID, ref.Repo)]
 		artifactPreviews.Unlock()
-		response := map[string]any{"artifact_id": grant.ArtifactID, "running": false}
-		if preview != nil && preview.proc.running() {
-			if realPort := latestDevPort(preview.proc.buf.String()); realPort != 0 {
-				preview.proc.port = realPort
-			}
+		target, configurationSource := artifactRuntimeTargetFor(grant, ref.Repo)
+		configuredCommand := target.PreviewCommand
+		response := map[string]any{"artifact_id": grant.ArtifactID, "running": false, "command": configuredCommand, "configuration_source": configurationSource}
+		if preview != nil {
 			response = artifactPreviewJSON(preview)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -779,7 +891,16 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 			http.Error(w, err.Error(), http.StatusGone)
 			return
 		}
-		command := detectTestCommand(repoDir)
+		target, _ := artifactRuntimeTargetFor(grant, ref.Repo)
+		repoDir, err = artifactRuntimeWorkingDirectory(repoDir, target.WorkingDirectory)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		command := target.CheckCommand
+		if command == "" {
+			command = detectTestCommand(repoDir)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if command == "" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "head_sha": ref.HeadSHA, "needs_command": true})

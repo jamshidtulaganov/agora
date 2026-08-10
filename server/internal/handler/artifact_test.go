@@ -125,12 +125,20 @@ func TestVerifyArtifactCapabilityBindsDaemonIdentity(t *testing.T) {
 func TestGetIssueArtifactDoesNotExposeWorkdir(t *testing.T) {
 	ctx := context.Background()
 	agentID := createHandlerTestAgent(t, "Artifact integration agent", nil)
-	var issueID, runID, stepID, taskID string
+	var projectID, issueID, runID, stepID, taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, creator_type, creator_id)
-		VALUES ($1, 'artifact API boundary', 'member', $2)
+		INSERT INTO project (workspace_id, title, settings)
+		VALUES ($1, 'Artifact configured project', '{"qa_smoke_cmd":"pnpm preview","qa_test_cmd":"pnpm test:ci","preview_targets":[{"repo":"app","working_directory":"apps/web","start_command":"pnpm dev:web","test_command":"pnpm test:web"}]}'::jsonb)
 		RETURNING id::text
-	`, testWorkspaceID, testUserID).Scan(&issueID); err != nil {
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1`, projectID) })
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_type, creator_id, project_id)
+		VALUES ($1, 'artifact API boundary', 'member', $2, $3)
+		RETURNING id::text
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID) })
@@ -185,6 +193,12 @@ func TestGetIssueArtifactDoesNotExposeWorkdir(t *testing.T) {
 		record, ok := lookupArtifactCapability(token)
 		if !ok || record.Purpose != purpose || record.SourceRoot != secretWorkdir || record.ArtifactID != response.Artifact.ID {
 			t.Fatalf("capability %q is not bound to the exact hidden artifact: ok=%v record=%+v", purpose, ok, record)
+		}
+		if record.PreviewCommand != "pnpm preview" || record.CheckCommand != "pnpm test:ci" {
+			t.Fatalf("capability %q did not inherit project runtime commands: %+v", purpose, record)
+		}
+		if len(record.RuntimeTargets) != 1 || record.RuntimeTargets[0].Repo != "app" || record.RuntimeTargets[0].WorkingDirectory != "apps/web" {
+			t.Fatalf("capability %q did not inherit per-repository runtime config: %+v", purpose, record.RuntimeTargets)
 		}
 	}
 }

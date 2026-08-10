@@ -49,6 +49,9 @@ const ArtifactPreviewResponseSchema = z.object({
   needs_command: z.boolean().default(false),
   error: z.string().optional(),
   log: z.string().optional(),
+  configuration_source: z.string().optional(),
+  starting: z.boolean().optional(),
+  ready: z.boolean().optional(),
 }).strip();
 
 const ArtifactChecksResponseSchema = z.object({

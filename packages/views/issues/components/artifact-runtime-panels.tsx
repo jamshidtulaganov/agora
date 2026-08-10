@@ -92,7 +92,9 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
       return parsed;
     },
     enabled: Boolean(artifact?.id && capability && data?.daemon_url),
-    refetchInterval: (query) => query.state.data?.running === true ? 3_000 : false,
+    refetchInterval: (query) => query.state.data?.running === true
+      ? query.state.data.ready === true ? 3_000 : 1_000
+      : false,
   });
 
   const start = useMutation({
@@ -134,6 +136,13 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   const url = preview ? artifactPreviewURL(data.daemon_url, preview) : "";
   const error = start.error ?? statusQuery.error;
   const sha = selectedRepo?.head_sha ?? "";
+  const configurationLabel = preview?.configuration_source === "project"
+    ? t(($) => $.dev_workspace.preview_project_config)
+    : preview?.configuration_source === "project_resource"
+      ? t(($) => $.dev_workspace.preview_resource_config)
+      : preview?.configuration_source === "project_repository"
+        ? t(($) => $.dev_workspace.preview_repository_config)
+      : t(($) => $.dev_workspace.preview_auto_detect);
 
   return (
     <section className="flex min-h-[34rem] flex-col overflow-hidden rounded-lg border bg-background" aria-label={t(($) => $.dev_workspace.preview)}>
@@ -144,6 +153,18 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
             <Badge variant="outline" className="font-mono font-normal">{sha.slice(0, 8)}</Badge>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{t(($) => $.dev_workspace.detached_runtime)}</p>
+          {preview && (
+            <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+              <Badge variant="secondary" className="h-5 text-[10px] font-normal">
+                {configurationLabel}
+              </Badge>
+              {preview.command && (
+                <code className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title={preview.command}>
+                  {preview.command}
+                </code>
+              )}
+            </div>
+          )}
         </div>
         {(artifact.repos?.length ?? 0) > 1 && (
           <NativeSelect
@@ -165,10 +186,12 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
                 <ExternalLink aria-hidden />
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>
-              {stop.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Square aria-hidden />}
-              {t(($) => $.dev_workspace.stop_preview)}
-            </Button>
+            {!isLive && (
+              <Button size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>
+                {stop.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Square aria-hidden />}
+                {t(($) => $.dev_workspace.stop_preview)}
+              </Button>
+            )}
           </>
         ) : (
           <Button size="sm" disabled={start.isPending} onClick={() => start.mutate()}>
@@ -178,7 +201,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
         )}
       </header>
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/10">
-        {preview?.running && url ? (
+        {preview?.running && preview.ready !== false && url ? (
           <iframe
             key={iframeKey}
             src={url}
@@ -187,17 +210,28 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
             sandbox="allow-downloads allow-forms allow-modals allow-popups allow-presentation allow-scripts"
             referrerPolicy="no-referrer"
           />
-        ) : start.isPending ? (
-          <div className="max-w-sm px-6 text-center">
+        ) : start.isPending || (preview?.running && !preview.ready) ? (
+          <div className="w-full max-w-2xl px-6 text-center" aria-live="polite">
             <Loader2 className="mx-auto size-5 animate-spin text-brand motion-reduce:animate-none" aria-hidden />
             <p className="mt-3 text-sm font-medium">{t(($) => $.dev_workspace.preparing_preview)}</p>
             <p className="mt-1 text-xs text-muted-foreground">{t(($) => $.dev_workspace.preparing_preview_description)}</p>
+            {preview?.command && (
+              <code className="mt-3 block truncate rounded-md border bg-background px-2 py-1.5 text-[11px] text-muted-foreground" title={preview.command}>
+                {preview.command}
+              </code>
+            )}
+            {preview?.log && (
+              <pre className="mt-3 max-h-48 overflow-auto rounded-lg border bg-[#f6f8fa] p-3 text-left font-mono text-[11px] leading-4 whitespace-pre-wrap text-[#24292f] dark:border-white/10 dark:bg-[#21252b] dark:text-[#abb2bf]" translate="no">
+                {preview.log}
+              </pre>
+            )}
           </div>
         ) : preview?.needs_command ? (
           <div className="max-w-sm px-6 text-center">
             <FlaskConical className="mx-auto size-5 text-muted-foreground" aria-hidden />
             <p className="mt-3 text-sm font-medium">{t(($) => $.dev_workspace.preview_not_configured)}</p>
             <p className="mt-1 text-xs text-muted-foreground">{t(($) => $.dev_workspace.preview_not_configured_description)}</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">{t(($) => $.dev_workspace.preview_config_hint)}</p>
           </div>
         ) : preview?.error || error ? (
           <div className="max-w-lg px-6 text-center">

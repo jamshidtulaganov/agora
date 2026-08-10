@@ -13,6 +13,15 @@ export interface ProjectOrchestrationDefaults {
   review_plan_first: boolean;
 }
 
+export interface ProjectPreviewTarget {
+  // Matches the repository/folder name shown in the artifact Preview selector.
+  repo: string;
+  // Optional relative app root for monorepos (for example apps/web).
+  working_directory?: string;
+  start_command?: string;
+  test_command?: string;
+}
+
 // Per-project preferences blob (project.settings jsonb on the server, mirrors
 // Workspace.settings). Always an object — the server normalizes empty/null to
 // {}. Known keys are typed; the index signature keeps unknown server-side keys
@@ -33,6 +42,9 @@ export interface ProjectSettings {
   // Test-command override used by project QA checks; when
   // unset the daemon auto-detects (package.json / Makefile / go.mod / composer).
   qa_test_cmd?: string;
+  // Per-repository overrides for multi-root projects. The top-level QA command
+  // fields remain the project fallback when no target matches the selected repo.
+  preview_targets?: ProjectPreviewTarget[];
   // Documentation repository for the auto_docs slice action — a SEPARATE repo
   // from the code (e.g. a Docusaurus site). When set, auto_docs writes the docs
   // there and opens a PR against it.

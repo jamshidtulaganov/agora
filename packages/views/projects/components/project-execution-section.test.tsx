@@ -106,4 +106,19 @@ describe("ProjectExecutionSection", () => {
       expect.objectContaining({ onError: expect.any(Function) }),
     );
   });
+
+  it("configures Preview and Checks per repository for multi-root projects", async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(screen.getByRole("button", { name: /workflow/i }));
+    await user.click(await screen.findByRole("button", { name: /advanced orchestration/i }));
+
+    expect(screen.getByText("Preview & checks")).toBeInTheDocument();
+    expect(screen.getByText("Repository / folder overrides")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByRole("textbox", { name: "Repository or folder name" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Working directory inside repository" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Repository start command" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Repository test command" })).toBeInTheDocument();
+  });
 });

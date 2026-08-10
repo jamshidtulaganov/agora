@@ -111,17 +111,17 @@ func TestGeminiStaticModelsExposesAliasesAndGemini3(t *testing.T) {
 	}
 }
 
-func TestCodexStaticModelsExposesGPT55(t *testing.T) {
-	// Codex CLI has no `models list` subcommand so the catalog is
-	// hand-maintained. Regression guard for jamshidtulaganov/agora#2009 —
-	// GPT-5.5 must be selectable, and the badge default must point at
-	// the latest release rather than lagging a version behind.
+func TestCodexStaticModelsExposesGPT56(t *testing.T) {
+	// The fallback remains current even when an older Codex CLI cannot expose
+	// its bundled catalog. GPT-5.6 Sol is the flagship/default entry; Terra and
+	// Luna preserve the user's quality/cost choice.
 	models := codexStaticModels()
 	ids := map[string]Model{}
 	for _, m := range models {
 		ids[m.ID] = m
 	}
 	for _, want := range []string{
+		"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 		"gpt-5.5", "gpt-5.5-mini",
 		"gpt-5.4", "gpt-5.4-mini",
 		"gpt-5.3-codex", "gpt-5",
@@ -131,9 +131,9 @@ func TestCodexStaticModelsExposesGPT55(t *testing.T) {
 			t.Errorf("missing expected Codex model %q in: %+v", want, models)
 		}
 	}
-	latest, ok := ids["gpt-5.5"]
+	latest, ok := ids["gpt-5.6-sol"]
 	if !ok || !latest.Default {
-		t.Errorf("expected `gpt-5.5` to be the default Codex entry, got %+v", latest)
+		t.Errorf("expected `gpt-5.6-sol` to be the default Codex entry, got %+v", latest)
 	}
 	defaults := 0
 	for _, m := range models {
@@ -146,6 +146,38 @@ func TestCodexStaticModelsExposesGPT55(t *testing.T) {
 	}
 	if defaults != 1 {
 		t.Errorf("expected exactly one default Codex entry, got %d", defaults)
+	}
+}
+
+func TestParseCodexModelCatalogUsesVisibleRuntimeModels(t *testing.T) {
+	raw := []byte(`{"models":[
+		{"slug":"gpt-5.6-sol","display_name":"GPT-5.6 Sol","visibility":"list","default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low","description":"Fast"},{"effort":"ultra","description":"Delegates"}]},
+		{"slug":"gpt-5.6-terra","display_name":"GPT-5.6 Terra","visibility":"list","supported_reasoning_levels":[{"effort":"medium"}]},
+		{"slug":"internal-model","display_name":"Internal","visibility":"hidden"}
+	]}`)
+	models, err := parseCodexModelCatalog(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "gpt-5.6-sol" || !models[0].Default || models[1].Default {
+		t.Fatalf("unexpected dynamic Codex catalog: %+v", models)
+	}
+	if models[0].Thinking == nil || len(models[0].Thinking.SupportedLevels) != 2 || models[0].Thinking.SupportedLevels[1].Label != "Ultra" {
+		t.Fatalf("dynamic model lost thinking catalog: %+v", models[0])
+	}
+}
+
+func TestListModelsCodexFallsBackToGPT56(t *testing.T) {
+	path := "/nonexistent/codex-cli"
+	modelCacheMu.Lock()
+	delete(modelCache, discoveryCacheKey("codex", path))
+	modelCacheMu.Unlock()
+	models, err := ListModels(context.Background(), "codex", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) == 0 || models[0].ID != "gpt-5.6-sol" || !models[0].Default {
+		t.Fatalf("Codex fallback did not expose GPT-5.6: %+v", models)
 	}
 }
 

@@ -246,6 +246,26 @@ When set, the issue's **Preview** surface proxies to that server instead of spaw
 
 If your server isn't running when someone opens Preview, the surface simply reports that it can't reach it — nothing is started behind your back.
 
+For a completed orchestration artifact, Preview must run the exact integrated
+HEAD rather than your mutable working tree. Agora creates a disposable detached
+runtime and starts it with the project's **Workflow → Advanced orchestration →
+Preview & checks → Start command** (`qa_smoke_cmd`). The Checks tab uses the
+project's Test command (`qa_test_cmd`). When either field is empty, Agora falls
+back to repository detection. The Preview header shows whether the effective
+command came from the project workflow, a local resource URL, or auto-detection.
+
+Multi-root projects can add **repository / folder overrides** in the same
+section. Each override matches the name in the Preview repository selector and
+can set a relative working directory, start command, and test command. The
+project-level commands remain the fallback for repositories without an
+override. Startup output is streamed into Preview while Agora waits for the
+local port; the iframe is mounted only after that port is reachable.
+
+`PROJECT.md` remains human/agent guidance and can explain the same local setup,
+but Agora never extracts and executes shell commands from prose. Put executable
+commands in the structured project workflow fields so they are explicit,
+reviewable, and signed into the artifact capability.
+
 ### Path rules
 
 The path you attach must clear both an attach-time and a per-task validation. Both are enforced by the daemon that owns the resource — the server validates who may attach and which daemon the ref points at (see above), but never inspects the path itself. A path that breaks any rule fails the task with a typed error and leaves your directory untouched:

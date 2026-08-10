@@ -58,7 +58,7 @@ type Model struct {
 
 // ModelThinking carries the per-model reasoning/effort catalog
 // surfaced by an agent runtime. Values are runtime-native — Codex
-// emits "none|minimal|low|medium|high|xhigh"; Claude emits
+// emits values through "max" and "ultra" on capable models; Claude emits
 // "low|medium|high|xhigh|max". The frontend renders SupportedLevels
 // as-is so what users see matches each CLI's own UI.
 type ModelThinking struct {
@@ -96,14 +96,15 @@ const modelCacheTTL = 60 * time.Second
 
 // ListModels returns the models supported by the given agent provider.
 // For providers with a known static catalog it returns the baked-in
-// list; for providers with a CLI discovery mechanism (opencode, pi,
-// openclaw) it shells out with caching and falls back to the static
-// list on failure.
+// list; for providers with a CLI discovery mechanism (Codex, opencode,
+// pi, openclaw) it shells out with caching and falls back to a static
+// list when the provider has one.
 //
 // For claude, codex, and opencode, the catalog is augmented with per-model
-// thinking-level options discovered from the local CLI. Discovery failures
-// silently leave Thinking == nil on each entry, which the UI treats as
-// "no picker for this model" rather than blocking model selection.
+// thinking-level options discovered from the local CLI. Codex also discovers
+// its visible model rows from the bundled runtime catalog. Discovery failures
+// silently leave Thinking == nil on each fallback entry, which the UI treats
+// as "no picker for this model" rather than blocking model selection.
 //
 // executablePath lets the caller point at a non-default binary; pass
 // "" to use the provider's default name on PATH.
@@ -114,7 +115,16 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 		annotateClaudeThinking(ctx, models, executablePath)
 		return models, nil
 	case "codex":
-		models := codexStaticModels()
+		models, err := cachedDiscovery(discoveryCacheKey(providerType, executablePath), func() ([]Model, error) {
+			return discoverCodexModels(ctx, executablePath)
+		})
+		if err == nil && len(models) > 0 {
+			return models, nil
+		}
+		// Codex before 0.131 does not expose `debug models`; keep the
+		// picker useful on those installs and when discovery is transiently
+		// unavailable. The current family is always present in this fallback.
+		models = codexStaticModels()
 		annotateCodexThinking(ctx, models, executablePath)
 		return models, nil
 	case "gemini":
@@ -248,7 +258,10 @@ func claudeStaticModels() []Model {
 
 func codexStaticModels() []Model {
 	return []Model{
-		{ID: "gpt-5.5", Label: "GPT-5.5", Provider: "openai", Default: true},
+		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol", Provider: "openai", Default: true},
+		{ID: "gpt-5.6-terra", Label: "GPT-5.6 Terra", Provider: "openai"},
+		{ID: "gpt-5.6-luna", Label: "GPT-5.6 Luna", Provider: "openai"},
+		{ID: "gpt-5.5", Label: "GPT-5.5", Provider: "openai"},
 		{ID: "gpt-5.5-mini", Label: "GPT-5.5 mini", Provider: "openai"},
 		{ID: "gpt-5.4", Label: "GPT-5.4", Provider: "openai"},
 		{ID: "gpt-5.4-mini", Label: "GPT-5.4 mini", Provider: "openai"},
@@ -257,6 +270,52 @@ func codexStaticModels() []Model {
 		{ID: "o3", Label: "o3", Provider: "openai"},
 		{ID: "o3-mini", Label: "o3-mini", Provider: "openai"},
 	}
+}
+
+// discoverCodexModels reads the catalog bundled with the installed Codex CLI.
+// This keeps Agora aligned with account/runtime upgrades without waiting for a
+// server release. The static catalog above remains the compatibility fallback.
+func discoverCodexModels(ctx context.Context, executablePath string) ([]Model, error) {
+	if executablePath == "" {
+		executablePath = "codex"
+	}
+	raw, err := runCodexDebugModels(ctx, executablePath)
+	if err != nil {
+		return nil, err
+	}
+	return parseCodexModelCatalog(raw)
+}
+
+func parseCodexModelCatalog(raw []byte) ([]Model, error) {
+	var response codexDebugModelsResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, fmt.Errorf("parse codex model catalog: %w", err)
+	}
+	models := make([]Model, 0, len(response.Models))
+	seen := make(map[string]bool, len(response.Models))
+	for _, entry := range response.Models {
+		id := strings.TrimSpace(entry.Slug)
+		if id == "" || seen[id] || (entry.Visibility != "" && entry.Visibility != "list") {
+			continue
+		}
+		seen[id] = true
+		label := strings.TrimSpace(entry.DisplayName)
+		if label == "" {
+			label = id
+		}
+		models = append(models, Model{
+			ID: id, Label: label, Provider: "openai",
+			Thinking: codexThinkingForDebugModel(entry),
+		})
+	}
+	if len(models) == 0 {
+		return nil, fmt.Errorf("codex model catalog contains no visible models")
+	}
+	// Codex returns the preferred model first (its priority-sorted picker
+	// order). Mirror that single default badge while leaving execution default
+	// resolution to the CLI when the agent has no explicit model.
+	models[0].Default = true
+	return models, nil
 }
 
 // geminiStaticModels lists the values we pass via `gemini -m`. Gemini

@@ -3,9 +3,11 @@ package daemon
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -178,5 +180,88 @@ func TestLiveArtifactPreviewJSON(t *testing.T) {
 	noURL := liveArtifactPreviewJSON(ArtifactCapabilityGrant{ArtifactID: "a", Live: true})
 	if noURL["running"] != false || noURL["needs_command"] != true {
 		t.Fatalf("unset preview should ask for a dev server: %+v", noURL)
+	}
+}
+
+func TestArtifactPreviewJSONReportsProjectConfiguration(t *testing.T) {
+	proc := &previewProc{command: "pnpm preview", buf: &syncBuffer{}, done: make(chan struct{})}
+	preview := &artifactPreview{
+		key: "artifact\x00app", configurationSource: "project", proc: proc,
+	}
+	response := artifactPreviewJSON(preview)
+	if response["command"] != "pnpm preview" || response["configuration_source"] != "project" {
+		t.Fatalf("preview response lost project configuration: %+v", response)
+	}
+	if response["starting"] != true {
+		t.Fatalf("preview without a ready port should remain in startup: %+v", response)
+	}
+}
+
+func TestArtifactPreviewJSONWaitsForAdvertisedPortReadiness(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	proc := &previewProc{command: "pnpm dev", port: port, buf: &syncBuffer{}, done: make(chan struct{})}
+	preview := &artifactPreview{key: "artifact\x00app", proc: proc}
+
+	response := artifactPreviewJSON(preview)
+	if response["ready"] != true || response["port"] != port || response["starting"] != nil {
+		t.Fatalf("listening preview was not marked ready: %+v", response)
+	}
+
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	proc.buf.Write([]byte("Local: http://localhost:" + strconv.Itoa(port)))
+	response = artifactPreviewJSON(preview)
+	if response["ready"] != nil || response["starting"] != true {
+		t.Fatalf("advertised but closed port must remain in startup: %+v", response)
+	}
+}
+
+func TestArtifactPreviewJSONRetainsExitLog(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+	proc := &previewProc{command: "pnpm dev", buf: &syncBuffer{}, done: done}
+	proc.buf.Write([]byte("failed to compile"))
+	response := artifactPreviewJSON(&artifactPreview{key: "artifact\x00app", proc: proc})
+	if response["running"] != false || response["log"] != "failed to compile" || response["error"] == nil {
+		t.Fatalf("terminal preview state lost its diagnostic: %+v", response)
+	}
+}
+
+func TestArtifactRuntimeTargetUsesRepositoryOverride(t *testing.T) {
+	grant := ArtifactCapabilityGrant{
+		PreviewCommand: "pnpm dev", CheckCommand: "pnpm test",
+		RuntimeTargets: []ArtifactRuntimeTarget{{
+			Repo: "web", WorkingDirectory: "apps/web",
+			PreviewCommand: "pnpm dev:web", CheckCommand: "pnpm test:web",
+		}},
+	}
+	target, source := artifactRuntimeTargetFor(grant, "web")
+	if source != "project_repository" || target.WorkingDirectory != "apps/web" || target.PreviewCommand != "pnpm dev:web" || target.CheckCommand != "pnpm test:web" {
+		t.Fatalf("repository override did not win: source=%q target=%+v", source, target)
+	}
+	fallback, source := artifactRuntimeTargetFor(grant, "api")
+	if source != "project" || fallback.PreviewCommand != "pnpm dev" || fallback.CheckCommand != "pnpm test" {
+		t.Fatalf("project fallback changed: source=%q target=%+v", source, fallback)
+	}
+}
+
+func TestArtifactRuntimeWorkingDirectoryStaysInsideRepo(t *testing.T) {
+	repo := t.TempDir()
+	app := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := artifactRuntimeWorkingDirectory(repo, "apps/web"); err != nil || got != app {
+		t.Fatalf("valid working directory: got=%q err=%v", got, err)
+	}
+	for _, invalid := range []string{"../outside", "/tmp/outside", "missing"} {
+		if _, err := artifactRuntimeWorkingDirectory(repo, invalid); err == nil {
+			t.Fatalf("unsafe working directory %q was accepted", invalid)
+		}
 	}
 }

@@ -253,20 +253,26 @@ var codexEffortLabel = map[string]string{
 	"medium":  "Medium",
 	"high":    "High",
 	"xhigh":   "Extra high",
+	"max":     "Max",
+	"ultra":   "Ultra",
 }
 
 // codexDebugModelsResponse mirrors the JSON shape emitted by
 // `codex debug models` (Codex 0.131.0+). Only the fields we
 // consume are typed; unknown keys are ignored.
 type codexDebugModelsResponse struct {
-	Models []struct {
-		Slug                    string `json:"slug"`
-		DefaultReasoningLevel   string `json:"default_reasoning_level"`
-		SupportedReasoningLevel []struct {
-			Effort      string `json:"effort"`
-			Description string `json:"description"`
-		} `json:"supported_reasoning_levels"`
-	} `json:"models"`
+	Models []codexDebugModel `json:"models"`
+}
+
+type codexDebugModel struct {
+	Slug                    string `json:"slug"`
+	DisplayName             string `json:"display_name"`
+	Visibility              string `json:"visibility"`
+	DefaultReasoningLevel   string `json:"default_reasoning_level"`
+	SupportedReasoningLevel []struct {
+		Effort      string `json:"effort"`
+		Description string `json:"description"`
+	} `json:"supported_reasoning_levels"`
 }
 
 // annotateCodexThinking decorates each model entry with its reasoning
@@ -329,33 +335,34 @@ func parseCodexDebugModels(raw []byte) map[string]*ModelThinking {
 		return out
 	}
 	for _, m := range resp.Models {
-		if m.Slug == "" || len(m.SupportedReasoningLevel) == 0 {
-			continue
-		}
-		levels := make([]ThinkingLevel, 0, len(m.SupportedReasoningLevel))
-		for _, lvl := range m.SupportedReasoningLevel {
-			if lvl.Effort == "" {
-				continue
-			}
-			label, ok := codexEffortLabel[lvl.Effort]
-			if !ok {
-				label = strings.Title(lvl.Effort) //nolint:staticcheck
-			}
-			levels = append(levels, ThinkingLevel{
-				Value:       lvl.Effort,
-				Label:       label,
-				Description: lvl.Description,
-			})
-		}
-		if len(levels) == 0 {
-			continue
-		}
-		out[m.Slug] = &ModelThinking{
-			SupportedLevels: levels,
-			DefaultLevel:    m.DefaultReasoningLevel,
+		if thinking := codexThinkingForDebugModel(m); m.Slug != "" && thinking != nil {
+			out[m.Slug] = thinking
 		}
 	}
 	return out
+}
+
+func codexThinkingForDebugModel(model codexDebugModel) *ModelThinking {
+	levels := make([]ThinkingLevel, 0, len(model.SupportedReasoningLevel))
+	for _, level := range model.SupportedReasoningLevel {
+		if level.Effort == "" {
+			continue
+		}
+		label, ok := codexEffortLabel[level.Effort]
+		if !ok {
+			label = strings.Title(level.Effort) //nolint:staticcheck
+		}
+		levels = append(levels, ThinkingLevel{
+			Value: level.Effort, Label: label, Description: level.Description,
+		})
+	}
+	if len(levels) == 0 {
+		return nil
+	}
+	return &ModelThinking{
+		SupportedLevels: levels,
+		DefaultLevel:    model.DefaultReasoningLevel,
+	}
 }
 
 // ── CodeBuddy ────────────────────────────────────────────────────────

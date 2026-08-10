@@ -246,6 +246,12 @@ agora project resource add <project-id> \
 
 打开 Preview 时如果你的服务器没在跑，面板会直接说连不上 —— 不会在你背后偷偷启动任何东西。
 
+对于已完成编排的产物，Preview 必须运行精确的集成 HEAD，而不是可变的本地工作树。Agora 会创建一次性的 detached 运行环境，并使用项目 **Workflow → Advanced orchestration → Preview & checks → Start command**（`qa_smoke_cmd`）启动。Checks 标签使用项目的 Test command（`qa_test_cmd`）。任一字段为空时，Agora 才回退到仓库自动检测。Preview 标题区会明确显示当前命令来自项目工作流、本地资源 URL，还是自动检测。
+
+多根项目可以在同一位置添加 **repository / folder overrides**。每个覆盖项按 Preview 仓库选择器中的名称匹配，并可设置相对工作目录、启动命令和测试命令。没有匹配覆盖项的仓库继续使用项目级默认命令。Agora 等待本地端口时会把启动输出实时显示在 Preview 中；只有端口真正可访问后才挂载 iframe。
+
+`PROJECT.md` 仍可作为人类与 agent 的说明文档来描述本地启动方式，但 Agora 不会从自然语言中抽取并执行 shell 命令。请把可执行命令放在结构化的项目 workflow 字段中，使其明确、可审核，并随 artifact capability 一起签名。
+
 ### 路径规则
 
 挂资源时和每次任务启动时，守护进程都会校验一次路径（服务器负责校验"谁在挂、挂到哪台守护进程"，见上一节，但不检查路径本身）。任何一条不满足的，任务会以一个有类型的错误失败，**不会动你的目录**：

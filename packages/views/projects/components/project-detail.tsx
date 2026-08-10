@@ -47,7 +47,6 @@ import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectConventionsSection } from "./project-conventions-section";
 import { ProjectSquadPicker } from "./project-squad-picker";
-import { ProjectQASection } from "./project-qa-section";
 import { ProjectExecutionSection } from "./project-execution-section";
 import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
@@ -884,9 +883,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Conventions — human-authored coding rules injected into every agent run */}
       <ProjectConventionsSection projectId={projectId} />
-
-      {/* QA smoke configuration (run_qa gate) */}
-      <ProjectQASection projectId={projectId} />
 
       {/* Defaults inherited by every new issue orchestration run */}
       <ProjectExecutionSection projectId={projectId} />

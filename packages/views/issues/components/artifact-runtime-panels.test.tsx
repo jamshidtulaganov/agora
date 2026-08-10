@@ -77,13 +77,27 @@ describe("exact-head artifact runtime panels", () => {
   it("starts a sandboxed preview without accepting a browser command", async () => {
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       const body = url.endsWith("/artifact/preview/status")
-        ? { artifact_id: "artifact-1", running: false }
-        : { artifact_id: "artifact-1", running: true, proxy_path: "/editor/local/3100/" };
+        ? {
+            artifact_id: "artifact-1",
+            running: false,
+            command: "pnpm run preview:mytrion",
+            configuration_source: "project",
+          }
+        : {
+            artifact_id: "artifact-1",
+            running: true,
+            ready: true,
+            proxy_path: "/editor/local/3100/",
+            command: "pnpm run preview:mytrion",
+            configuration_source: "project",
+          };
       return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
     renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
 
+    expect(await screen.findByText("Project workflow")).toBeInTheDocument();
+    expect(screen.getByText("pnpm run preview:mytrion")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Start preview" }));
     const frame = await screen.findByTitle("Integrated product preview");
     expect(frame).toHaveAttribute("src", "http://127.0.0.1:9090/editor/local/3100/");
@@ -99,5 +113,31 @@ describe("exact-head artifact runtime panels", () => {
     expect(body).toEqual({ capability: "preview-token", repo: "agora" });
     expect(body).not.toHaveProperty("command");
     expect(body).not.toHaveProperty("workdir");
+  });
+
+  it("shows command output until the preview port is ready", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const body = url.endsWith("/artifact/preview/status")
+        ? { artifact_id: "artifact-1", running: false, configuration_source: "project_repository" }
+        : {
+            artifact_id: "artifact-1",
+            running: true,
+            starting: true,
+            ready: false,
+            command: "pnpm --filter mytrion dev",
+            configuration_source: "project_repository",
+            log: "VITE starting development server…",
+          };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start preview" }));
+
+    expect(await screen.findByText("Repository override")).toBeInTheDocument();
+    expect(screen.getAllByText("pnpm --filter mytrion dev")).toHaveLength(2);
+    expect(screen.getByText("VITE starting development server…")).toBeInTheDocument();
+    expect(screen.queryByTitle("Integrated product preview")).not.toBeInTheDocument();
   });
 });
