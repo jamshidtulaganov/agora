@@ -104,7 +104,7 @@ type Backend interface {
 
 When a poller claims a task it hands off to `handleTask`, which:
 
-1. Acquires the `local_directory` path lock if the task targets a daemon-pinned `project_resource` (so the server-side status is `dispatched → waiting_local_directory → running`, never backwards).
+1. Acquires every matching `local_directory` path lock in deterministic order if the task targets daemon-pinned project resources (so the server-side status is `dispatched → waiting_local_directory → running`, never backwards and never deadlocked across multi-folder projects).
 2. Marks the env root active so the GC loop never reclaims a live workdir.
 3. Starts `watchTaskCancellation` so a server-side cancel/delete interrupts the run.
 4. Calls `d.runner.run` → `runTask`, which prepares the environment and ultimately calls **`executeAndDrain`** — the function that actually drives an `agent.Backend`.

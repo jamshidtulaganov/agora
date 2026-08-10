@@ -17,6 +17,7 @@ const platformMocks = vi.hoisted(() => ({
   validateLocalDirectory: vi.fn(),
   approveLocalDirectory: vi.fn(),
   callOrder: [] as string[],
+  resources: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("../../platform", () => ({
@@ -41,11 +42,12 @@ vi.mock("../../platform", () => ({
 }));
 
 const mutateAsync = vi.hoisted(() => vi.fn());
+const updateMutateAsync = vi.hoisted(() => vi.fn());
 
 vi.mock("@agora/core/projects", () => ({
   projectResourcesOptions: () => ({
     queryKey: ["project-resources", "test"],
-    queryFn: () => Promise.resolve([]),
+    queryFn: () => Promise.resolve(platformMocks.resources),
   }),
   useCreateProjectResource: () => ({
     mutateAsync: (...args: unknown[]) => {
@@ -54,7 +56,7 @@ vi.mock("@agora/core/projects", () => ({
     },
     isPending: false,
   }),
-  useUpdateProjectResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateProjectResource: () => ({ mutateAsync: updateMutateAsync, isPending: false }),
   useDeleteProjectResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -99,6 +101,7 @@ describe("ProjectResourcesSection local_directory attach flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     platformMocks.callOrder.length = 0;
+    platformMocks.resources = [];
     platformMocks.pickDirectory.mockResolvedValue({
       ok: true,
       path: "/Users/dev/projects/app",
@@ -107,6 +110,7 @@ describe("ProjectResourcesSection local_directory attach flow", () => {
     platformMocks.validateLocalDirectory.mockResolvedValue({ ok: true });
     platformMocks.approveLocalDirectory.mockResolvedValue({ ok: true });
     mutateAsync.mockResolvedValue({ id: "r-new" });
+    updateMutateAsync.mockResolvedValue({ id: "r-updated" });
   });
 
   it("approves after validation and before the resource create", async () => {
@@ -151,5 +155,92 @@ describe("ProjectResourcesSection local_directory attach flow", () => {
     await runAttachFlow(user);
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("allows an additional local folder and inherits the primary worktree mode", async () => {
+    platformMocks.resources = [{
+      id: "r-primary",
+      project_id: "p-1",
+      workspace_id: "ws-1",
+      resource_type: "local_directory",
+      resource_ref: {
+        local_path: "/Users/dev/projects/api",
+        daemon_id: "d-local",
+        isolation: "worktree",
+        access: "write",
+      },
+      label: null,
+      position: 0,
+      created_at: "2026-08-11T00:00:00Z",
+      created_by: "u-1",
+    }];
+    platformMocks.pickDirectory.mockResolvedValue({
+      ok: true,
+      path: "/Users/dev/projects/web",
+      basename: "web",
+    });
+
+    const user = userEvent.setup();
+    renderSection();
+    await runAttachFlow(user);
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync).toHaveBeenCalledWith({
+      resource_type: "local_directory",
+      resource_ref: {
+        local_path: "/Users/dev/projects/web",
+        daemon_id: "d-local",
+        label: "web",
+        isolation: "worktree",
+        access: "write",
+      },
+    });
+  });
+
+  it("promotes an additional folder to the primary working directory", async () => {
+    platformMocks.resources = [
+      {
+        id: "r-primary",
+        project_id: "p-1",
+        workspace_id: "ws-1",
+        resource_type: "local_directory",
+        resource_ref: {
+          local_path: "/Users/dev/projects/api",
+          daemon_id: "d-local",
+          access: "write",
+        },
+        label: null,
+        position: 2,
+        created_at: "2026-08-11T00:00:00Z",
+        created_by: "u-1",
+      },
+      {
+        id: "r-web",
+        project_id: "p-1",
+        workspace_id: "ws-1",
+        resource_type: "local_directory",
+        resource_ref: {
+          local_path: "/Users/dev/projects/web",
+          daemon_id: "d-local",
+          access: "write",
+        },
+        label: null,
+        position: 3,
+        created_at: "2026-08-11T00:00:00Z",
+        created_by: "u-1",
+      },
+    ];
+
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(
+      await screen.findByTitle("Make this the primary working directory"),
+    );
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      resourceId: "r-web",
+      data: { position: -1 },
+    });
   });
 });

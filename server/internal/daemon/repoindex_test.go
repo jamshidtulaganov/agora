@@ -84,6 +84,7 @@ func TestTaskRequiresRepoPackForAccuracyCriticalTurns(t *testing.T) {
 		{"orchestration", Task{IssueID: "i1", OrchestrationStepID: "s1"}, true},
 		{"cold tagged turn", Task{IssueID: "i1", TriggerCommentID: "c1"}, true},
 		{"warm tagged turn", Task{IssueID: "i1", TriggerCommentID: "c1", PriorSessionID: "session-1"}, false},
+		{"project issue always retrieves", Task{IssueID: "i1", ProjectID: "p1"}, true},
 		{"ordinary issue task remains in experiment", Task{IssueID: "i1"}, false},
 	}
 	for _, tc := range cases {

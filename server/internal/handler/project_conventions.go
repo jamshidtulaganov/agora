@@ -141,8 +141,8 @@ func (h *Handler) LearnProjectConventions(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "set an agent as the project lead first")
 		return
 	}
-	if !h.projectHasGithubRepo(r.Context(), project.ID) {
-		writeError(w, http.StatusBadRequest, "connect a repository to this project first")
+	if !h.projectHasCodeResource(r.Context(), project.ID) {
+		writeError(w, http.StatusBadRequest, "connect a repository or local directory to this project first")
 		return
 	}
 	requester, _ := h.parseUserUUIDOrZero(userID)

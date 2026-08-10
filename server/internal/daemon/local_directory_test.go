@@ -103,21 +103,20 @@ func TestFindLocalDirectoryAssignment(t *testing.T) {
 		}
 	})
 
-	t.Run("two local_directory rows on this daemon fail fast", func(t *testing.T) {
-		// Server-side findLocalDirectoryConflict enforces one
-		// local_directory per (project, daemon). If two rows are
-		// somehow present (older API client, direct DB writes), the
-		// daemon must refuse to guess which directory to execute in.
+	t.Run("first local_directory is primary and later rows are additional", func(t *testing.T) {
 		tmp2 := t.TempDir()
-		_, err := findLocalDirectoryAssignment([]ProjectResourceData{
+		got, err := findLocalDirectoryAssignments([]ProjectResourceData{
 			{ID: "r1", ResourceType: localDirectoryResourceType, ResourceRef: mkRef(t, localDirectoryRef{LocalPath: tmp, DaemonID: thisDaemon})},
 			{ID: "r2", ResourceType: localDirectoryResourceType, ResourceRef: mkRef(t, localDirectoryRef{LocalPath: tmp2, DaemonID: thisDaemon})},
 		}, thisDaemon)
-		if err == nil {
-			t.Fatalf("expected error for two local_directory rows pinned to this daemon")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(err.Error(), "multiple local_directory") {
-			t.Errorf("error %q did not mention multiple local_directory", err)
+		if got == nil || len(got.All) != 2 {
+			t.Fatalf("expected two assignments, got %+v", got)
+		}
+		if got.Primary.AbsPath != filepath.Clean(tmp) {
+			t.Errorf("primary = %q, want %q", got.Primary.AbsPath, filepath.Clean(tmp))
 		}
 	})
 

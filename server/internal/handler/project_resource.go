@@ -359,7 +359,7 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to check existing resources")
 		return
 	} else if conflict {
-		writeError(w, http.StatusConflict, "this daemon already has a local_directory attached to the project; remove it before adding another")
+		writeError(w, http.StatusConflict, "this local directory is already attached to the project on this daemon")
 		return
 	}
 
@@ -404,25 +404,26 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 		map[string]any{"resource": resp, "project_id": uuidToString(project.ID)},
 	)
 
-	// First repo attached to the project → kick off the lead agent's background
+	// First code resource attached to the project → kick off the lead agent's background
 	// builds (knowledge base + QA manifest), exactly as project-create does when
-	// it starts with a repo. Only on the FIRST github_repo — later repos would
+	// it starts with source. Only on the FIRST github_repo/local_directory — later
+	// resources would
 	// duplicate in-flight builds; a human re-triggers explicitly via the
-	// knowledge/build and qa-manifest/build endpoints when the repo set grows.
+	// knowledge/build and qa-manifest/build endpoints when the source set grows.
 	// The count-then-fire is read-after-write, so serialize it per project: two
 	// concurrent first-repo attaches could otherwise both see count==2 (drop the
 	// build) or both fire it. The enqueue helpers themselves are idempotent
 	// (no-clobber manifest guard), but the lock makes the count observation
 	// well-defined so exactly the count==1 attach triggers.
-	if req.ResourceType == "github_repo" {
+	if req.ResourceType == "github_repo" || req.ResourceType == "local_directory" {
 		unlock := lockProjectBuild(uuidToString(project.ID))
-		repoCount := 0
+		codeResourceCount := 0
 		for _, row := range h.listProjectResourcesForProject(r.Context(), project.ID) {
-			if row.ResourceType == "github_repo" {
-				repoCount++
+			if row.ResourceType == "github_repo" || row.ResourceType == "local_directory" {
+				codeResourceCount++
 			}
 		}
-		if repoCount == 1 {
+		if codeResourceCount == 1 {
 			h.maybeEnqueueProjectStudy(r.Context(), project, userID)
 			h.maybeEnqueueQAManifestBuild(r.Context(), project, userID)
 		}
@@ -498,7 +499,7 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to check existing resources")
 		return
 	} else if conflict {
-		writeError(w, http.StatusConflict, "another local_directory on this daemon is already attached to the project")
+		writeError(w, http.StatusConflict, "this local directory is already attached to the project on this daemon")
 		return
 	}
 
@@ -554,17 +555,13 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// findLocalDirectoryConflict enforces "at most one local_directory resource
-// per (project, daemon)". The daemon picks the first matching daemon_id row
-// out of a task's resources (findLocalDirectoryAssignment), so letting a
-// project carry two rows for the same daemon would mean the agent silently
-// writes into whichever happens to come back first — a safety hazard for a
-// feature that operates directly on the user's real working directory.
-//
-// The DB-level UNIQUE(project_id, resource_type, resource_ref) constraint
-// alone is not enough here: it only fires on full ref-JSON equality, so a
-// different local_path or even a typoed label on the same daemon would slip
-// through. We do the daemon-scoped check here in application code instead.
+// findLocalDirectoryConflict rejects the same local path being attached twice
+// to one project on one daemon. A project may intentionally carry several
+// different local directories on the same machine: the first position-ordered
+// row is the primary working directory and the remaining rows are additional
+// read/write roots exposed to the task. Comparing daemon_id + local_path (not
+// the full JSONB payload) prevents a changed label/access flag from bypassing
+// duplicate detection.
 //
 // `excludeID` lets the update path ignore the row being edited.
 func (h *Handler) findLocalDirectoryConflict(ctx context.Context, projectID pgtype.UUID, resourceType string, normalizedRef json.RawMessage, excludeID pgtype.UUID) (bool, error) {
@@ -590,11 +587,8 @@ func (h *Handler) findLocalDirectoryConflict(ctx context.Context, projectID pgty
 		if err := json.Unmarshal(row.ResourceRef, &existing); err != nil {
 			continue
 		}
-		// Daemon-scoped uniqueness: one local_directory per daemon per
-		// project. Different daemons can each carry one row (one per
-		// user device); the daemon-side resolver routes each daemon to
-		// its own assignment by daemon_id.
-		if existing.DaemonID == incoming.DaemonID {
+		if existing.DaemonID == incoming.DaemonID &&
+			strings.TrimSpace(existing.LocalPath) == strings.TrimSpace(incoming.LocalPath) {
 			return true, nil
 		}
 	}

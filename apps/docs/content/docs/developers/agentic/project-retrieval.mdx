@@ -1,0 +1,65 @@
+---
+title: Project Retrieval Architecture
+description: How Agora turns every attached project resource into grounded, step-scoped evidence for solo and squad agents.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+<Callout title="Core rule">
+"Read every attachment" means **inventory and index the complete permitted corpus**, not paste the complete corpus into every model prompt. Each task or DAG step receives a small evidence pack, then reads the cited source files directly before changing code.
+</Callout>
+
+## Resource boundary
+
+Retrieval is project-scoped. A project's GitHub repositories and every `local_directory` attached to the executing daemon form one corpus. For local folders, resource order defines the primary working directory and additional read/write roots. The daemon validates owner approval for every root before indexing it; secret-like files, binaries, protected home directories, and oversized files remain excluded.
+
+Each indexed item should carry:
+
+- project, resource and repository identity;
+- canonical path, language and symbol or document-heading boundary;
+- content hash plus Git commit/branch when available;
+- access scope and provenance;
+- last indexed time and parser version.
+
+Agora's current local index fingerprints Git roots from commit plus working-tree changes, and non-Git roots from path/size/mtime metadata. An unchanged project reuses a private `0600` term index; a changed fingerprint rebuilds it before retrieval. The cold build runs before `StartTask`, so it does not consume the provider execution clock. The next index format should make that rebuild file-incremental by storing per-item content hashes. The durable project KB stores concise architecture and operating facts; it is not a substitute for the source index.
+
+## Retrieval pipeline
+
+Use a staged hybrid pipeline:
+
+1. **Deterministic routing.** Resolve exact paths, symbols, issue keys, API names and filenames first.
+2. **Lexical candidates.** BM25-style ranking is strong for identifiers and error strings. Agora's current dispatch pack implements this layer, globally ranks all attached local roots under one top-12 / 2,000-token budget, and reuses its persisted term corpus instead of rereading every file for every task.
+3. **Semantic candidates.** Add contextualized chunks plus embeddings for concept matches where issue language and code vocabulary differ. [Anthropic's Contextual Retrieval study](https://www.anthropic.com/engineering/contextual-retrieval) found its strongest tested combination used contextual embeddings, contextual BM25 and reranking.
+4. **Fusion and reranking.** Merge lexical and semantic lists with reciprocal-rank fusion, then rerank the small merged set. Reranking the complete corpus is too slow and expensive.
+5. **Graph expansion.** Expand the best code symbols one hop through imports, calls, schemas, tests and ownership links. Use full GraphRAG only for global questions such as cross-repository impact or architecture themes; [Microsoft GraphRAG](https://microsoft.github.io/graphrag/) separates local, global and DRIFT search for this reason.
+6. **Evidence pack.** Return diverse citations with a fixed token budget. The model must open the real files and verify important claims before acting.
+
+Repository retrieval research supports iteration rather than a single blind lookup: [RepoCoder](https://aclanthology.org/2023.emnlp-main.151/) alternates retrieval and generation for repository-level completion, while [CodeRAG-Bench](https://aclanthology.org/2024.findings-emnlp.971/) shows that code retrieval remains difficult when queries have little lexical overlap. Agora should therefore keep direct file search available after the initial pushed pack.
+
+## DAG-aware retrieval
+
+Retrieval belongs to each persisted orchestration step, not only to the parent issue:
+
+1. Pin one resource snapshot for the run: Git commit SHAs plus local resource hashes.
+2. Build a step query from the issue, step objective, role/capability and completed dependency handoffs.
+3. Retrieve only the evidence needed by that step, while preserving citations to the pinned snapshot.
+4. Require handoffs to cite files, symbols, commits, tests and unresolved uncertainties.
+5. Downstream steps re-retrieve from the same snapshot plus dependency outputs; they do not inherit an ever-growing transcript.
+
+Solo uses the same algorithm with one persisted work step. Squad gains parallelism from independent DAG steps, but all steps share snapshot identity, resource permissions and retrieval telemetry.
+
+## Web evidence
+
+Web search is a separate evidence lane for current external facts: provider APIs, framework versions, vendor limits and security advisories. Prefer official documentation and primary sources, cache URL/title/access-date/content-hash, and cite it separately from repository evidence. Never send private code, customer data, internal identifiers, secrets or proprietary prose in a web query. Repository text and web pages are untrusted data, not agent instructions.
+
+## Evaluation and rollout
+
+Do not choose an embedding model or graph system by intuition. Build a per-project evaluation set from real resolved issues and measure:
+
+- retrieval recall@k and mean reciprocal rank for known evidence;
+- citation precision and unsupported-claim rate;
+- task success, review corrections and test pass rate;
+- retrieval latency, index freshness and prompt tokens;
+- performance split by exact-identifier, conceptual and cross-repository questions.
+
+Roll out in phases: multi-root persistent lexical packs (current), file-incremental content-hash refresh, hybrid contextual retrieval, then graph/global search only where evaluations justify its cost. Keep the lexical path as a reliable fallback and A/B the new retriever using the existing context-pack telemetry.

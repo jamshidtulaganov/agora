@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,11 +77,12 @@ func taskWantsRepoPack(task Task) bool {
 }
 
 // taskRequiresRepoPack identifies work where code context is part of the
-// correctness contract rather than an experiment: persisted orchestration
-// stages and a newly tagged agent's first issue turn. These tasks always use
-// the treatment arm so a worker is not asked to guess repository structure.
+// correctness contract rather than an experiment: every cold project issue,
+// persisted orchestration stages, and a newly tagged agent's first issue turn.
+// Project tasks must retrieve from the prebuilt corpus instead of rediscovering
+// every attached resource during the paid provider execution window.
 func taskRequiresRepoPack(task Task) bool {
-	return task.OrchestrationStepID != "" || (task.TriggerCommentID != "" && task.PriorSessionID == "")
+	return task.ProjectID != "" || task.OrchestrationStepID != "" || (task.TriggerCommentID != "" && task.PriorSessionID == "")
 }
 
 // packQuery builds the retrieval query from what the claim carried. Title
@@ -137,7 +139,15 @@ func (d *Daemon) buildRepoPack(ctx context.Context, task Task, workDir string, t
 	defer cancel()
 
 	start := time.Now()
-	pack, packStats, err := repoindex.Pack(ctx, workDir, packQuery(task), repoindex.DefaultTokenBudget)
+	roots := []string{workDir}
+	if assignments, resolveErr := findLocalDirectoryAssignments(task.ProjectResources, d.cfg.DaemonID); resolveErr == nil && assignments != nil && !assignments.isWorktreeMode() {
+		roots = assignments.absPaths()
+	}
+	cacheDir := ""
+	if strings.TrimSpace(d.cfg.WorkspacesRoot) != "" {
+		cacheDir = filepath.Join(d.cfg.WorkspacesRoot, ".repo-index")
+	}
+	pack, packStats, err := repoindex.PackRootsCached(ctx, roots, packQuery(task), repoindex.DefaultTokenBudget, cacheDir)
 	elapsed := time.Since(start)
 
 	stats := &TaskContextPackStats{
@@ -153,7 +163,7 @@ func (d *Daemon) buildRepoPack(ctx context.Context, task Task, workDir string, t
 	if err != nil {
 		stats.Degraded = true
 		taskLog.Warn("repo-index: pack build failed (non-fatal, task continues without it)",
-			"error", err, "work_dir", workDir, "elapsed", elapsed)
+			"error", err, "work_dir", workDir, "roots", len(roots), "elapsed", elapsed)
 		return "", stats
 	}
 	if pack == "" {
@@ -165,6 +175,7 @@ func (d *Daemon) buildRepoPack(ctx context.Context, task Task, workDir string, t
 		"files_scanned", packStats.FilesScanned,
 		"files_in_pack", packStats.FilesInPack,
 		"pack_tokens", packStats.PackTokens,
+		"cache_hit", packStats.CacheHit,
 		"elapsed_ms", elapsed.Milliseconds(),
 	)
 	return pack, stats

@@ -107,7 +107,7 @@ Set **`preview_url: http://localhost:3000`**. The issue's Preview surface proxie
 
 A shared project, and each teammate wants agents to run on their own machine.
 
-Each person attaches **their own** `local_directory` — one per (project, daemon), each pointing at their own path on their own host. A task runs on the daemon that owns the receiving agent's runtime, and that daemon picks the row matching its own ID. Nobody's folder is visible to anyone else's daemon.
+Each person attaches **their own** ordered `local_directory` set — a primary folder plus any related folders on their own host. A task runs on the daemon that owns the receiving agent's runtime, and that daemon uses only rows matching its own ID. Nobody's folders are visible to anyone else's daemon.
 
 #### When *not* to use it
 
@@ -154,7 +154,7 @@ Open the project → **Resources** → **Add local directory**. A native folder 
 
 Picking the folder also records your **owner approval** automatically — you're sitting at the machine, so consent is implicit. This is the only route where attach and approve happen in one step.
 
-The button is **disabled with a hint** when this machine's daemon is offline, or when the project already has a `local_directory` on this daemon — so you can see *why* it's unavailable.
+The button is **disabled with a hint** only when this machine's daemon is offline. You can pick it repeatedly to attach a primary folder and any number of related folders on the same machine; every pick also records owner approval.
 
 #### From the CLI
 
@@ -259,29 +259,31 @@ The path you attach must clear both an attach-time and a per-task validation. Bo
 
 The blacklist is intentionally aggressive — picking your home directory would put Agora's runtime files at the root of your account, which is never what you want. Pick a sub-folder (typically your actual project checkout) instead.
 
-### One per (project, daemon)
+### Primary and additional folders per daemon
 
-A project may hold **at most one `local_directory` per daemon**. Attempting to add a second one on the same daemon returns a `409` from the API. Both apps mirror the limit rather than letting you discover it as an error: the Desktop button explains why it's disabled, and the web machine picker simply stops offering a machine that already has a folder on this project.
+A project may hold **multiple `local_directory` resources on the same daemon**. The first position-ordered folder is the **primary** folder: it becomes the task working directory. Later folders are additional project roots that the agent can read and write. Use the star action in Resources to promote any folder to primary. Deleting the primary automatically makes the next folder primary.
 
-Different daemons are independent — a shared project can have one `local_directory` per teammate's machine, each binding the same project to a different folder on a different host. When the daemon claims a task, it picks the row that matches its own ID and ignores the rest.
+The API rejects only a duplicate of the same daemon and path with `409`. Symlink aliases that resolve to the same real directory are rejected by the daemon at task start. Different daemons remain independent, so teammates can attach their own ordered folder sets on their own machines.
 
 ### Mixing resource types, and multiple `local_directory` resources
 
 Two cross-resource configurations show up in practice:
 
 - **`github_repo` + `local_directory` on the same project.** On the daemon that has a matching `local_directory` binding, the local directory **takes precedence**: the agent runs in your folder, and the daemon does not create or use a `github_repo` worktree for that task. The agent's brief is also rewritten for in-place mode — instead of the usual "`agora repo checkout <url>`" guidance it gets a **Working Directory (local, in-place)** section telling it the code is already present and to edit files directly, **not** to run `agora repo checkout` (which would nest a redundant worktree inside your folder). The `github_repo` URLs are still listed for reference in `.agora/project/resources.json` and the brief, marked as "already represented by the directory you're in — do not check them out." On a daemon that has **no** `local_directory` row for this project (different machine, or before that teammate attached one), the task falls back to the usual `github_repo` worktree flow. Effectively the local directory is a per-daemon override of the worktree path.
-- **Two `local_directory` resources on the same project.** Because each `local_directory` is bound to exactly one daemon, this only happens across two different machines (the API rejects two on the same daemon at attach time, see above). Tasks are routed by the agent's runtime assignment, not by which daemon has a local directory: a task lands on the daemon that owns the receiving agent's runtime, that daemon picks the `local_directory` row matching its own ID, and ignores the rest. There is no load-balancing — if you want a specific machine to run a task, dispatch the agent that's bound to that machine's runtime.
+- **Multiple `local_directory` resources on the same project.** A task lands on the daemon that owns the receiving agent's runtime. That daemon uses every matching row as one ordered project corpus, ignores rows for other machines, and starts the agent in the primary folder. This is not load-balancing; choose an agent bound to the machine where the folders exist.
 
 A daemon that has no `local_directory` row for a project that has one bound elsewhere is **not** blocked — its tasks simply proceed via the project's other resources (typically the `github_repo` fallback). The `local_directory` only matters for the daemon it's bound to.
 
 ### Running tasks against a local directory
 
-When a task is dispatched on an issue whose project has a `local_directory` bound to the receiving daemon, the daemon:
+When a task is dispatched on an issue whose project has one or more `local_directory` resources bound to the receiving daemon, the daemon:
 
-1. Re-validates the path (rules above).
-2. Acquires a per-directory lock keyed on the symlink-resolved real path — so two routes to the same folder (one via a symlink, one direct) still serialise.
-3. Writes the agent's `CLAUDE.md` / `AGENTS.md` (and `.agora/project/resources.json`) **into the user's directory**. The agent works there, just as if you'd opened the folder yourself.
+1. Re-validates and owner-approval-checks every path (rules above).
+2. Acquires every per-directory lock in deterministic path order, keyed on symlink-resolved real paths. This prevents overlapping tasks and cross-folder lock deadlocks.
+3. Writes the agent's `CLAUDE.md` / `AGENTS.md` (and `.agora/project/resources.json`) into the **primary** directory. The agent starts there and receives the complete additional-folder list. Codex also receives those paths through its `workspace-write` writable-roots sandbox setting.
 4. Keeps Agora's runtime artefacts (`output/`, `logs/`, `.gc_meta.json`) in a separate envRoot **outside** the user's directory.
+
+If any folder selects `worktree` isolation or read-only access, Agora fail-safely provisions the whole attached set as sibling issue worktrees. Otherwise all folders run in place and all of their locks are held for the task. Repository retrieval ranks files from every attached root under one shared per-task evidence budget.
 
 If a second task for the same directory arrives while the first is running, it parks with status **Waiting for local directory** (等待本地目录释放). The status is visible everywhere the task is — the chat task pill, the agent banner, the execution log, and the activity indicator — and the parked task counts toward the agent's "queued" presence. Cancelling the parked task releases its slot immediately; cancelling the running task lets the next one promote.
 

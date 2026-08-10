@@ -76,6 +76,49 @@ func TestDetectLocalRepos_SingleRepoParent(t *testing.T) {
 	}
 }
 
+func TestProvisionLocalWorktrees_MultipleAttachedRoots(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	mytrion := filepath.Join(root, "mytrion")
+	servercrm := filepath.Join(root, "servercrm")
+	makeRepo(t, mytrion)
+	makeRepo(t, servercrm)
+	workDir := filepath.Join(t.TempDir(), "work")
+
+	run, reused, err := provisionOrReuseWorktreesForRootsAt(
+		context.Background(),
+		[]string{mytrion, servercrm},
+		"issue-multi-root",
+		workDir,
+		nil,
+		false,
+		slog.Default(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupWorktrees(context.Background(), run, slog.Default())
+	if reused {
+		t.Fatal("fresh multi-root provision unexpectedly reused worktrees")
+	}
+	if len(run.worktrees) != 2 {
+		t.Fatalf("expected two worktrees, got %+v", run.worktrees)
+	}
+	for _, name := range []string{"mytrion", "servercrm"} {
+		if !isGitWorkTree(context.Background(), filepath.Join(workDir, name)) {
+			t.Errorf("%s was not provisioned as a sibling worktree", name)
+		}
+	}
+	if got := gitAt(t, mytrion, "symbolic-ref", "--short", "HEAD"); got != "main" {
+		t.Errorf("primary source checkout moved: %q", got)
+	}
+	if got := gitAt(t, servercrm, "symbolic-ref", "--short", "HEAD"); got != "main" {
+		t.Errorf("additional source checkout moved: %q", got)
+	}
+}
+
 func TestProvisionLocalWorktrees_MultiRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

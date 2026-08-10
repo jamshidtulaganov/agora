@@ -22,16 +22,10 @@ const (
 	pathBoost = 4
 )
 
-// ranker scores files against ONE query, streaming.
-//
-// Why streaming and not a persistent inverted index: the push pack serves
-// exactly one query per task, and the query is known before the scan starts.
-// That collapses the whole problem — there is no reason to build, store,
-// invalidate, and garbage-collect an index that will answer a single question.
-// Keeping only query-term frequencies bounds memory to O(matched files ×
-// query terms) instead of O(repo), so a 20k-file monorepo costs kilobytes
-// rather than gigabytes. A persistent store earns its keep only if agents
-// query mid-loop, which measured tool adoption says they do not.
+// ranker scores files against ONE query, streaming. It remains the no-cache
+// fallback and one-shot API. Daemon task dispatch uses PackRootsCached so a
+// project corpus is read once and subsequent task queries score persisted term
+// metadata instead of rereading every source file.
 type ranker struct {
 	qTerms []string
 	qSet   map[string]bool

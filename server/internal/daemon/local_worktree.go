@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -61,6 +62,47 @@ func detectLocalRepos(ctx context.Context, parent string) ([]localRepo, error) {
 	return repos, nil
 }
 
+// detectLocalReposForRoots expands one primary plus any additional local
+// folders into a single stable repository layout. The one-root case preserves
+// the historic "." placement. With several roots every repository gets its
+// basename as a sibling under the managed workdir, so the primary remains the
+// first folder while all attached repos are writable and independently
+// represented in orchestration git evidence.
+func detectLocalReposForRoots(ctx context.Context, roots []string) ([]localRepo, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	if len(roots) == 1 {
+		return detectLocalRepos(ctx, roots[0])
+	}
+	var result []localRepo
+	seenNames := map[string]string{}
+	seenSources := map[string]bool{}
+	for _, root := range roots {
+		repos, err := detectLocalRepos(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		if len(repos) == 0 {
+			return nil, fmt.Errorf("local_directory %q contains no git repositories", root)
+		}
+		for _, repo := range repos {
+			source := filepath.Clean(repo.SrcPath)
+			if seenSources[source] {
+				continue
+			}
+			name := filepath.Base(source)
+			if prior, exists := seenNames[name]; exists && prior != source {
+				return nil, fmt.Errorf("local_directory repositories %q and %q share folder name %q; rename one folder before attaching both", prior, source, name)
+			}
+			seenNames[name] = source
+			seenSources[source] = true
+			result = append(result, localRepo{Name: name, SrcPath: source, RelPath: name})
+		}
+	}
+	return result, nil
+}
+
 // provisionedWorktree records a created worktree so it can be cleaned up.
 type provisionedWorktree struct {
 	SrcRepo string // the developer's checkout the worktree hangs off
@@ -93,6 +135,18 @@ func provisionLocalWorktreesAt(ctx context.Context, parent, issueKey, workDir st
 	if err != nil {
 		return nil, err
 	}
+	return provisionLocalWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log)
+}
+
+func provisionLocalWorktreesForRootsAt(ctx context.Context, roots []string, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, error) {
+	repos, err := detectLocalReposForRoots(ctx, roots)
+	if err != nil {
+		return nil, err
+	}
+	return provisionLocalWorktreesFromReposAt(ctx, repos, strings.Join(roots, string(os.PathListSeparator)), issueKey, workDir, baseRefs, readOnly, log)
+}
+
+func provisionLocalWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, error) {
 	if len(repos) == 0 {
 		return nil, fmt.Errorf("local_directory %q contains no git repositories (worktree isolation needs at least one)", parent)
 	}
@@ -163,6 +217,28 @@ func snapshotLocalRepoHeads(ctx context.Context, parent string) ([]Orchestration
 	}
 	if len(repos) == 0 {
 		return nil, fmt.Errorf("local_directory %q contains no git repositories", parent)
+	}
+	refs := make([]OrchestrationGitHead, 0, len(repos))
+	for _, repo := range repos {
+		head, headErr := gitOutput(ctx, repo.SrcPath, "rev-parse", "HEAD")
+		if headErr != nil {
+			return nil, fmt.Errorf("resolve HEAD for repository %q: %w", repo.Name, headErr)
+		}
+		if head == "" {
+			return nil, fmt.Errorf("resolve HEAD for repository %q: empty commit", repo.Name)
+		}
+		refs = append(refs, OrchestrationGitHead{Repo: repo.Name, HeadSHA: head})
+	}
+	return refs, nil
+}
+
+func snapshotLocalRepoHeadsForRoots(ctx context.Context, roots []string) ([]OrchestrationGitHead, error) {
+	repos, err := detectLocalReposForRoots(ctx, roots)
+	if err != nil {
+		return nil, err
+	}
+	if len(repos) == 0 {
+		return nil, errors.New("local_directory contains no git repositories")
 	}
 	refs := make([]OrchestrationGitHead, 0, len(repos))
 	for _, repo := range repos {
@@ -566,6 +642,18 @@ func provisionOrReuseWorktreesAt(ctx context.Context, parent, issueKey, workDir 
 	if err != nil {
 		return nil, false, err
 	}
+	return provisionOrReuseWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log)
+}
+
+func provisionOrReuseWorktreesForRootsAt(ctx context.Context, roots []string, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, bool, error) {
+	repos, err := detectLocalReposForRoots(ctx, roots)
+	if err != nil {
+		return nil, false, err
+	}
+	return provisionOrReuseWorktreesFromReposAt(ctx, repos, strings.Join(roots, string(os.PathListSeparator)), issueKey, workDir, baseRefs, readOnly, log)
+}
+
+func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, bool, error) {
 	if len(repos) == 0 {
 		return nil, false, fmt.Errorf("local_directory %q contains no git repositories", parent)
 	}
@@ -612,7 +700,7 @@ func provisionOrReuseWorktreesAt(ctx context.Context, parent, issueKey, workDir 
 	for _, repo := range repos {
 		_ = gitRun(ctx, repo.SrcPath, "worktree", "prune")
 	}
-	run, err := provisionLocalWorktreesAt(ctx, parent, issueKey, workDir, baseRefs, readOnly, log)
+	run, err := provisionLocalWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log)
 	if err == nil {
 		touchDir(workDir)
 	}

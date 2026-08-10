@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2316,7 +2317,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// fires only after execenv.Prepare/Reuse has put env.WorkDir on disk,
 	// so consumers that read status==running can resolve the workdir path
 	// without racing the daemon's os.MkdirAll.
-	localRelease, localGit, abort := d.acquireLocalDirectoryLockIfNeeded(ctx, task, taskLog)
+	localRelease, localGits, abort := d.acquireLocalDirectoryLockIfNeeded(ctx, task, taskLog)
 	if abort {
 		return
 	}
@@ -2328,7 +2329,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// could reclaim it mid-task on a long-running issue. Mark the issue worktree
 	// env root active for the whole task (all worktree modes: orchestration steps
 	// nest under it, non-orch reuses it) so sweepWorktreeEnvs skips it while live.
-	if assignment, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID); assignment != nil && assignment.isWorktreeMode() {
+	if assignments, _ := findLocalDirectoryAssignments(task.ProjectResources, d.cfg.DaemonID); assignments != nil && assignments.isWorktreeMode() {
 		issueKey := task.IssueID
 		if issueKey == "" {
 			issueKey = task.ID
@@ -2341,8 +2342,8 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// keep the agent branch when it holds commits). finalizeLocalDirGit is
 	// idempotent, so the explicit calls below on the reported paths win and
 	// this only fires on early returns (e.g. cancellation) that skip them.
-	if localGit != nil {
-		defer finalizeLocalDirGit(ctx, localGit, taskLog)
+	if len(localGits) > 0 {
+		defer finalizeLocalDirGits(ctx, localGits, taskLog)
 	}
 
 	// Hold a process-wide active-root guard for the rest of this task so
@@ -2416,7 +2417,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// Restore the user's branch (or keep the agent branch when it holds
 	// commits) before reporting, so the git summary can ride the result
 	// comment / failure detail. The deferred backstop above becomes a no-op.
-	localGitSummary := finalizeLocalDirGit(ctx, localGit, taskLog)
+	localGitSummary := finalizeLocalDirGits(ctx, localGits, taskLog)
 
 	if err != nil {
 		taskLog.Error("task failed", "error", err)
@@ -2499,11 +2500,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 //     lock, then return the release callback once we win.
 //  4. The blocking wait is cancelled (daemon shutdown, server-side cancel)
 //     — fail the task with the ctx error.
-func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Task, taskLog *slog.Logger) (release func(), localGit *localDirGit, abort bool) {
+func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Task, taskLog *slog.Logger) (release func(), localGits []*localDirGit, abort bool) {
 	if len(task.ProjectResources) == 0 || d.cfg.DaemonID == "" {
 		return nil, nil, false
 	}
-	assignment, err := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID)
+	assignments, err := findLocalDirectoryAssignments(task.ProjectResources, d.cfg.DaemonID)
 	if err != nil {
 		taskLog.Error("local_directory: resolve resource failed", "error", err)
 		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
@@ -2511,28 +2512,27 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		}
 		return nil, nil, true
 	}
-	if assignment == nil {
+	if assignments == nil {
 		return nil, nil, false
 	}
-	taskLog = taskLog.With("local_directory", assignment.AbsPath)
-	if err := validateLocalPath(assignment.AbsPath); err != nil {
-		taskLog.Error("local_directory: path validation failed", "error", err)
-		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
-			taskLog.Error("fail task after local_directory validation error", "error", failErr)
+	taskLog = taskLog.With("local_directory", assignments.Primary.AbsPath, "local_directory_count", len(assignments.All))
+	for _, assignment := range assignments.All {
+		if err := validateLocalPath(assignment.AbsPath); err != nil {
+			taskLog.Error("local_directory: path validation failed", "path", assignment.AbsPath, "error", err)
+			if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
+				taskLog.Error("fail task after local_directory validation error", "error", failErr)
+			}
+			return nil, nil, true
 		}
-		return nil, nil, true
-	}
-	// Consent gate: the server-side resource row is not authoritative — the
-	// machine owner must have approved this exact directory (or an ancestor)
-	// on THIS machine, via the desktop picker, `agora daemon allow-dir`, or
-	// AGORA_LOCAL_DIR_ALLOWLIST. Checked per task so approvals apply without
-	// a daemon restart.
-	if err := checkLocalDirApproved(assignment.AbsPath, assignment.RealPath); err != nil {
-		taskLog.Error("local_directory: path not approved on this machine", "error", err)
-		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
-			taskLog.Error("fail task after local_directory approval error", "error", failErr)
+		// Consent is checked independently for every attached folder. Approving
+		// the primary must never implicitly grant a sibling absolute path.
+		if err := checkLocalDirApproved(assignment.AbsPath, assignment.RealPath); err != nil {
+			taskLog.Error("local_directory: path not approved on this machine", "path", assignment.AbsPath, "error", err)
+			if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
+				taskLog.Error("fail task after local_directory approval error", "error", failErr)
+			}
+			return nil, nil, true
 		}
-		return nil, nil, true
 	}
 	// Isolated worktree tasks don't need the in-place git prep below. An
 	// ORCHESTRATION step gets a unique per-(step,task) worktree dir and branch,
@@ -2546,17 +2546,24 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 	// those for the whole task on the shared worktree env dir — different issues
 	// have different env dirs, so cross-issue parallelism is preserved. No
 	// prepareLocalDirGit: worktree mode never mutates the user's own checkout.
-	worktreeMode := assignment.isWorktreeMode()
+	worktreeMode := assignments.isWorktreeMode()
 	if worktreeMode && task.OrchestrationStepID != "" {
 		return nil, nil, false
 	}
-	lockKey := assignment.RealPath
+	lockKeys := make([]string, 0, len(assignments.All))
+	for _, assignment := range assignments.All {
+		lockKeys = append(lockKeys, assignment.RealPath)
+	}
 	if worktreeMode {
 		issueKey := task.IssueID
 		if issueKey == "" {
 			issueKey = task.ID
 		}
-		lockKey = d.worktreeEnvDir(task.WorkspaceID, issueKey)
+		lockKeys = []string{d.worktreeEnvDir(task.WorkspaceID, issueKey)}
+	} else {
+		// Different projects can list the same roots in different primary
+		// orders. A canonical lock order prevents AB/BA deadlocks.
+		sort.Strings(lockKeys)
 	}
 
 	// While the lock is contended the daemon would otherwise sit blocked on
@@ -2577,8 +2584,9 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		cancelledByPoll <-chan struct{}
 	)
 
+	currentLockPath := assignments.Primary.AbsPath
 	onWait := func(holder string) {
-		reason := fmt.Sprintf("local_directory %s", assignment.AbsPath)
+		reason := fmt.Sprintf("local_directory %s", currentLockPath)
 		if holder != "" {
 			reason = fmt.Sprintf("%s (held by task %s)", reason, shortID(holder))
 		}
@@ -2605,8 +2613,20 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 			}()
 		})
 	}
-	release, err = d.localPathLocks.Acquire(waitCtx, lockKey, task.ID, onWait)
-	if err != nil {
+	var releases []func()
+	releaseAll := func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}
+	for _, lockKey := range lockKeys {
+		currentLockPath = lockKey
+		oneRelease, lockErr := d.localPathLocks.Acquire(waitCtx, lockKey, task.ID, onWait)
+		if lockErr == nil {
+			releases = append(releases, oneRelease)
+			continue
+		}
+		releaseAll()
 		// If the wait was cut short because the server finalized the task
 		// (terminal state) or deleted the row, the row is already in a
 		// terminal state — return silently the same way the run-phase poller
@@ -2620,17 +2640,18 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 			default:
 			}
 		}
-		taskLog.Error("local_directory: lock acquire failed", "error", err)
+		taskLog.Error("local_directory: lock acquire failed", "error", lockErr)
 		failureReason := "local_directory_error"
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(lockErr, context.Canceled) || errors.Is(lockErr, context.DeadlineExceeded) {
 			failureReason = "cancelled"
 		}
-		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory wait cancelled: %s", err.Error()), "", "", failureReason); failErr != nil {
+		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory wait cancelled: %s", lockErr.Error()), "", "", failureReason); failErr != nil {
 			taskLog.Error("fail task after local_directory lock cancel", "error", failErr)
 		}
 		return nil, nil, true
 	}
-	taskLog.Info("local_directory: lock acquired")
+	release = releaseAll
+	taskLog.Info("local_directory: locks acquired", "count", len(lockKeys))
 
 	// Non-orchestration worktree tasks hold the whole-task lock (above) purely to
 	// serialize on the shared per-issue worktree; they never touch the user's
@@ -2648,16 +2669,34 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 	if task.Agent != nil && task.Agent.Name != "" {
 		agentName = task.Agent.Name
 	}
-	localGit, gitErr := prepareLocalDirGit(ctx, assignment.AbsPath, agentName, task.ID, taskLog)
-	if gitErr != nil {
-		taskLog.Error("local_directory: git prepare failed", "error", gitErr)
-		release()
-		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory git setup failed: %s", gitErr.Error()), "", "", "local_directory_error"); failErr != nil {
-			taskLog.Error("fail task after local_directory git prepare error", "error", failErr)
+	for _, assignment := range assignments.All {
+		localGit, gitErr := prepareLocalDirGit(ctx, assignment.AbsPath, agentName, task.ID, taskLog)
+		if gitErr != nil {
+			taskLog.Error("local_directory: git prepare failed", "path", assignment.AbsPath, "error", gitErr)
+			for _, prepared := range localGits {
+				_ = finalizeLocalDirGit(ctx, prepared, taskLog)
+			}
+			release()
+			if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory git setup failed: %s", gitErr.Error()), "", "", "local_directory_error"); failErr != nil {
+				taskLog.Error("fail task after local_directory git prepare error", "error", failErr)
+			}
+			return nil, nil, true
 		}
-		return nil, nil, true
+		if localGit != nil {
+			localGits = append(localGits, localGit)
+		}
 	}
-	return release, localGit, false
+	return release, localGits, false
+}
+
+func finalizeLocalDirGits(ctx context.Context, localGits []*localDirGit, taskLog *slog.Logger) string {
+	var summaries []string
+	for _, localGit := range localGits {
+		if summary := strings.TrimSpace(finalizeLocalDirGit(ctx, localGit, taskLog)); summary != "" {
+			summaries = append(summaries, summary)
+		}
+	}
+	return strings.Join(summaries, "\n\n")
 }
 
 // reportTaskResult writes the final task disposition back to the server.
@@ -2836,10 +2875,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// NOT the developer's checkout — so the local_directory source path must not
 	// reach the agent context (resources.json / brief), or the agent will edit
 	// the source directly and defeat isolation. Strip it for worktree mode.
-	worktreeMode := false
-	if a, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID); a.isWorktreeMode() {
-		worktreeMode = true
-	}
+	localAssignments, _ := findLocalDirectoryAssignments(task.ProjectResources, d.cfg.DaemonID)
+	worktreeMode := localAssignments != nil && localAssignments.isWorktreeMode()
 	task.PreprovisionedWorktree = task.OrchestrationStepID != "" && worktreeMode
 
 	// Prepare isolated execution environment.
@@ -2860,6 +2897,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ProjectID:                        task.ProjectID,
 		ProjectTitle:                     task.ProjectTitle,
 		ProjectResources:                 convertProjectResourcesForEnv(sanitizeResourcesForWorktree(task.ProjectResources, worktreeMode)),
+		LocalWritableDirs:                localWritableDirs(localAssignments, worktreeMode),
 		ChatSessionID:                    task.ChatSessionID,
 		AutopilotRunID:                   task.AutopilotRunID,
 		AutopilotID:                      task.AutopilotID,
@@ -2954,8 +2992,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Resolve any local_directory assignment again here so runTask can plumb
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path; this call is a pure JSON parse over the same task payload.
-	localAssignment, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID)
-	if localAssignment != nil && localAssignment.isWorktreeMode() && task.OrchestrationStepID != "" {
+	var localAssignment *localDirectoryAssignment
+	if localAssignments != nil {
+		localAssignment = localAssignments.Primary
+	}
+	if localAssignment != nil && worktreeMode && task.OrchestrationStepID != "" {
 		issueKey := task.IssueID
 		if issueKey == "" {
 			issueKey = task.ID
@@ -3016,7 +3057,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			Task:            taskCtx,
 		}
 		if localAssignment != nil {
-			if localAssignment.isWorktreeMode() {
+			if worktreeMode {
 				// Worktree isolation: orchestration steps get task-scoped
 				// worktrees from a pinned run base (or the exact integration HEAD
 				// for read-only QA/review). A proven same-step continuation reuses
@@ -3045,7 +3086,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				prepParams.ProvisionWorkDir = func(workDir string) error {
 					baseRefs := append([]OrchestrationGitHead(nil), task.OrchestrationBaseRefs...)
 					if task.OrchestrationStepID != "" && len(baseRefs) == 0 {
-						proposed, snapshotErr := snapshotLocalRepoHeads(ctx, localAssignment.AbsPath)
+						proposed, snapshotErr := snapshotLocalRepoHeadsForRoots(ctx, localAssignments.absPaths())
 						if snapshotErr != nil {
 							return snapshotErr
 						}
@@ -3066,19 +3107,32 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 					// source repository. Serialize only that short lifecycle window;
 					// release before the model session starts so workers run in
 					// parallel in their isolated directories.
-					release, lockErr := d.localPathLocks.Acquire(ctx, localAssignment.RealPath, task.ID, func(holder string) {
-						taskLog.Debug("local_directory: waiting for worktree metadata lock", "holder", shortID(holder))
-					})
-					if lockErr != nil {
-						return fmt.Errorf("acquire worktree metadata lock: %w", lockErr)
+					metadataPaths := make([]string, 0, len(localAssignments.All))
+					for _, assignment := range localAssignments.All {
+						metadataPaths = append(metadataPaths, assignment.RealPath)
 					}
-					defer release()
+					sort.Strings(metadataPaths)
+					var metadataReleases []func()
+					defer func() {
+						for i := len(metadataReleases) - 1; i >= 0; i-- {
+							metadataReleases[i]()
+						}
+					}()
+					for _, metadataPath := range metadataPaths {
+						release, lockErr := d.localPathLocks.Acquire(ctx, metadataPath, task.ID, func(holder string) {
+							taskLog.Debug("local_directory: waiting for worktree metadata lock", "path", metadataPath, "holder", shortID(holder))
+						})
+						if lockErr != nil {
+							return fmt.Errorf("acquire worktree metadata lock: %w", lockErr)
+						}
+						metadataReleases = append(metadataReleases, release)
+					}
 					// Read-only comes from either the orchestration step (QA/review
 					// verify on a detached copy) OR the resource's own access grant
 					// (folder attached read-only). Either forces a detached, no-branch
 					// worktree — nothing lands in the user's checkout.
-					readOnly := task.OrchestrationReadOnly || localAssignment.isReadOnly()
-					run, _, perr := provisionOrReuseWorktreesAt(ctx, localAssignment.AbsPath, isolationKey, workDir, baseRefs, readOnly, taskLog)
+					readOnly := task.OrchestrationReadOnly || localAssignments.isReadOnly()
+					run, _, perr := provisionOrReuseWorktreesForRootsAt(ctx, localAssignments.absPaths(), isolationKey, workDir, baseRefs, readOnly, taskLog)
 					if perr == nil && task.OrchestrationStepID != "" {
 						orchestrationWorktrees = run
 					}
@@ -3099,6 +3153,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		d.markActiveEnvRoot(env.RootDir)
 		defer d.unmarkActiveEnvRoot(env.RootDir)
 	}
+	reused := gateResumeToReusedWorkdir(&task, &taskCtx, env.WorkDir, taskLog)
+
+	// Build/retrieve repository evidence before StartTask begins the provider
+	// execution clock. A cold project pays the full index cost once; unchanged
+	// projects reuse the persisted corpus and open only the selected files.
+	// Either way, indexing time must not consume the agent CLI's execution
+	// budget. Failures stay soft and produce an empty pack.
+	pack, packStats := d.buildRepoPack(ctx, task, env.WorkDir, taskLog)
+	defer func() { taskResult.ContextPack = packStats }()
 
 	// Issue #3999 race A: now that env.WorkDir is on disk, transition the
 	// server-side state machine dispatched (or waiting_local_directory) →
@@ -3115,8 +3178,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, fmt.Errorf("start task failed: %w", err)
 	}
 	_ = d.client.ReportProgress(ctx, task.ID, fmt.Sprintf("Launching %s", provider), 1, 2)
-
-	reused := gateResumeToReusedWorkdir(&task, &taskCtx, env.WorkDir, taskLog)
 
 	// Inject runtime-specific config (meta skill) so the agent discovers .agent_context/.
 	runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
@@ -3159,17 +3220,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Prepend the repo context pack (ranked map of the files most likely to
 	// matter for this issue) so the agent can skip rediscovering the tree.
-	// Fails soft to the empty string: control-arm tasks, non-code tasks, an
-	// unreadable workdir, or a slow scan all leave the prompt untouched.
-	pack, packStats := d.buildRepoPack(ctx, task, env.WorkDir, taskLog)
 	if pack != "" {
 		prompt = pack + "\n\n" + prompt
 	}
-	// Stamp the stats on the way out rather than assigning taskResult here:
-	// every return path below hands back a fresh TaskResult literal, which
-	// would overwrite the named return and silently drop this telemetry (the
-	// A/B would then see zero rows no matter how many tasks ran).
-	defer func() { taskResult.ContextPack = packStats }()
 
 	// Pass the daemon's auth credentials and context so the spawned agent CLI
 	// can call the Agora API and the local daemon (e.g. `agora repo checkout`).
@@ -4145,6 +4198,13 @@ func convertProjectResourcesForEnv(resources []ProjectResourceData) []execenv.Pr
 		}
 	}
 	return result
+}
+
+func localWritableDirs(assignments *localDirectoryAssignments, worktreeMode bool) []string {
+	if assignments == nil || worktreeMode {
+		return nil
+	}
+	return assignments.absPaths()
 }
 
 // markActiveEnvRoot records that a task is currently using the given env root,

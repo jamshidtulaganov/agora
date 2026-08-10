@@ -1467,6 +1467,30 @@ func TestLocalDirectoryBriefSuppressesRepoCheckout(t *testing.T) {
 	}
 }
 
+func TestLocalDirectoryBriefListsAdditionalWritableFolders(t *testing.T) {
+	t.Parallel()
+	ctx := TaskContextForEnv{
+		LocalWorkDir: "/Users/dev/Projects/octane/mytrion",
+		LocalWritableDirs: []string{
+			"/Users/dev/Projects/octane/mytrion",
+			"/Users/dev/Projects/octane/servercrm",
+			"/Users/dev/Projects/octane/zoho-octane",
+		},
+	}
+	out := buildMetaSkillContent("codex", ctx)
+	for _, path := range ctx.LocalWritableDirs {
+		if !strings.Contains(out, path) {
+			t.Errorf("brief does not name approved folder %q", path)
+		}
+	}
+	if !strings.Contains(out, "additional read/write project folders") {
+		t.Error("brief does not explain the multi-folder write grant")
+	}
+	if strings.Contains(out, "Work ONLY inside `/Users/dev/Projects/octane/mytrion` and its subfolders") {
+		t.Error("single-root restriction conflicts with additional writable folders")
+	}
+}
+
 // Without LocalWorkDir the standard checkout guidance stays intact (regression
 // guard for the non-local flow).
 func TestStandardBriefKeepsRepoCheckout(t *testing.T) {

@@ -209,12 +209,12 @@ func TestIsValidGitRepoURL(t *testing.T) {
 		"",
 		"not-a-url",
 		"github.com/jamshidtulaganov/agora", // no scheme, no scp-style colon
-		"https://",                      // empty host
-		"git@github.com",                // missing :path
-		"git@:foo/bar",                  // missing host
-		"git@github.com:",               // missing path
-		"ftp://example.com/repo",        // unsupported scheme
-		"file:///tmp/repo",              // unsupported scheme
+		"https://",                          // empty host
+		"git@github.com",                    // missing :path
+		"git@:foo/bar",                      // missing host
+		"git@github.com:",                   // missing path
+		"ftp://example.com/repo",            // unsupported scheme
+		"file:///tmp/repo",                  // unsupported scheme
 		"some random text with spaces",
 		"github.com:org/repo@branch", // '@' after ':' belongs to the path, not user
 		"foo:bar@baz",                // '@' after ':' with no scheme
@@ -842,12 +842,9 @@ func TestProjectResourceUpdateLifecycle(t *testing.T) {
 	}
 }
 
-// TestProjectResourceLocalDirectoryDaemonScopedConflict pins the project-level
-// conflict check for local_directory: one row per daemon per project. The
-// daemon-side resolver picks the first match by daemon_id, so silently
-// allowing two rows on the same daemon — even at distinct paths — would let
-// the agent write into whichever sorts first. The DB UNIQUE constraint only
-// catches identical ref JSON; this check covers the broader invariant.
+// TestProjectResourceLocalDirectoryDaemonScopedConflict pins the multi-folder
+// contract: distinct paths may coexist on one daemon (first is primary), while
+// the same daemon/path pair cannot be duplicated through label changes.
 func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
@@ -914,9 +911,8 @@ func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 		t.Errorf("same daemon same path create: expected 409, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// A second row on the same daemon at a DIFFERENT path must also 409 —
-	// the daemon-scoped invariant rejects more than one local_directory
-	// per (project, daemon), even if the paths differ.
+	// A second row on the same daemon at a DIFFERENT path is an additional
+	// project folder and must succeed.
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "local_directory",
@@ -928,12 +924,12 @@ func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 	})
 	req = withURLParam(req, "id", project.ID)
 	testHandler.CreateProjectResource(w, req)
-	if w.Code != http.StatusConflict {
-		t.Errorf("same daemon different path create: expected 409, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Errorf("same daemon different path create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Adding the same path on a DIFFERENT daemon is allowed — each daemon
-	// gets to register exactly one local_directory.
+	// Adding the same path on a DIFFERENT daemon is allowed — paths are scoped
+	// to the machine that owns them.
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "local_directory",
@@ -986,11 +982,9 @@ func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 	}
 }
 
-// TestCreateProjectBundledLocalDirectoryDaemonConflict pins the second leg of
-// the daemon-scoped invariant: a single POST /api/projects that bundles two
-// local_directory resources on the same daemon — same path, same daemon
-// with different labels, or different paths on the same daemon — must
-// reject with 400 before any DB work.
+// TestCreateProjectBundledLocalDirectoryDaemonConflict pins bundled-create
+// parity: duplicate daemon/path pairs reject, while distinct paths on the same
+// daemon create an ordered primary + additional folder set.
 func TestCreateProjectBundledLocalDirectoryDaemonConflict(t *testing.T) {
 	// Bundled local_directory refs go through the same daemon ownership
 	// binding as the standalone endpoint (WS1 PR-A), so every daemon_id
@@ -1045,9 +1039,8 @@ func TestCreateProjectBundledLocalDirectoryDaemonConflict(t *testing.T) {
 		}
 	}
 
-	// Two distinct paths on the same daemon must ALSO 400 — the invariant
-	// is "one local_directory per (project, daemon)", not "one per (project,
-	// daemon, path)".
+	// Two distinct paths on the same daemon are a valid primary + additional
+	// folder bundle.
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
 		"title": "Bundled distinct paths same daemon",
@@ -1071,9 +1064,18 @@ func TestCreateProjectBundledLocalDirectoryDaemonConflict(t *testing.T) {
 		},
 	})
 	testHandler.CreateProject(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("distinct-paths same daemon bundle: expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("distinct-paths same daemon bundle: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
+	var multiFolderProject ProjectResponse
+	if err := json.NewDecoder(w.Body).Decode(&multiFolderProject); err != nil {
+		t.Fatalf("decode multi-folder project: %v", err)
+	}
+	defer func() {
+		r := newRequest("DELETE", "/api/projects/"+multiFolderProject.ID, nil)
+		r = withURLParam(r, "id", multiFolderProject.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), r)
+	}()
 
 	// A bundle with one row per daemon is allowed — each daemon owns its
 	// own local_directory.

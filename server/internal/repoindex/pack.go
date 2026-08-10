@@ -68,6 +68,7 @@ type Stats struct {
 	Degraded      bool // nothing useful to say — caller injects nothing
 	Partial       bool // corpus truncated at maxFiles
 	IsGit         bool // enumerated from a git tree rather than a walk
+	CacheHit      bool // corpus metadata came from the persistent project index
 }
 
 // fenceRunRe matches any run of 3+ backticks. Repo text must never be able to
@@ -122,7 +123,73 @@ func Pack(ctx context.Context, repoDir, query string, tokenBudget int) (string, 
 	return render(repoDir, hits, tokenBudget, stats)
 }
 
+// PackRoots ranks several owner-approved project folders as one corpus. Paths
+// are prefixed with each root's basename in the rendered pack, which keeps
+// cross-repository hits unambiguous while preserving one global top-k and one
+// token budget. The single-root case delegates to Pack for byte-for-byte
+// backward compatibility.
+func PackRoots(ctx context.Context, roots []string, query string, tokenBudget int) (string, Stats, error) {
+	if len(roots) == 0 {
+		return "", Stats{Degraded: true}, nil
+	}
+	if len(roots) == 1 {
+		return Pack(ctx, roots[0], query, tokenBudget)
+	}
+	if tokenBudget <= 0 {
+		tokenBudget = DefaultTokenBudget
+	}
+	stats := Stats{Degraded: true}
+	ranker := newRanker(query)
+	if len(ranker.qTerms) == 0 {
+		return "", stats, nil
+	}
+
+	labelCounts := map[string]int{}
+	for _, root := range roots {
+		labelCounts[filepath.Base(filepath.Clean(root))]++
+	}
+	seenLabels := map[string]int{}
+	sources := map[string]string{}
+	for _, root := range roots {
+		base := filepath.Base(filepath.Clean(root))
+		label := base
+		if labelCounts[base] > 1 {
+			seenLabels[base]++
+			label = fmt.Sprintf("%s-%d", base, seenLabels[base])
+		}
+		scan, err := scanRepo(ctx, root, func(relPath, lang, body string) {
+			displayPath := filepath.ToSlash(filepath.Join(label, filepath.FromSlash(relPath)))
+			sources[displayPath] = filepath.Join(root, filepath.FromSlash(relPath))
+			ranker.add(displayPath, lang, body)
+		})
+		stats.FilesScanned += scan.Scanned
+		stats.FilesExcluded += scan.Excluded
+		stats.Partial = stats.Partial || scan.Partial
+		stats.IsGit = stats.IsGit || scan.IsGit
+		if err != nil {
+			return "", stats, err
+		}
+	}
+	hits := ranker.top(maxFilesInPack)
+	if len(hits) == 0 {
+		return "", stats, nil
+	}
+	return renderResolved(hits, tokenBudget, stats, func(hit Hit) (string, bool) {
+		path, ok := sources[hit.Path]
+		if !ok {
+			return "", false
+		}
+		return readTextFile(path)
+	})
+}
+
 func render(repoDir string, hits []Hit, tokenBudget int, stats Stats) (string, Stats, error) {
+	return renderResolved(hits, tokenBudget, stats, func(hit Hit) (string, bool) {
+		return readTextFile(filepath.Join(repoDir, filepath.FromSlash(hit.Path)))
+	})
+}
+
+func renderResolved(hits []Hit, tokenBudget int, stats Stats, read func(Hit) (string, bool)) (string, Stats, error) {
 	var b strings.Builder
 	b.WriteString(PackBeginMarker)
 	b.WriteString("\n")
@@ -138,7 +205,7 @@ func render(repoDir string, hits []Hit, tokenBudget int, stats Stats) (string, S
 		// Re-read only the files that made the cut: the scan streamed bodies
 		// past the ranker without keeping them, so outline and snippets are
 		// resolved here for at most maxFilesInPack files.
-		body, ok := readTextFile(filepath.Join(repoDir, filepath.FromSlash(hit.Path)))
+		body, ok := read(hit)
 		if !ok {
 			continue // deleted or changed under us mid-scan
 		}

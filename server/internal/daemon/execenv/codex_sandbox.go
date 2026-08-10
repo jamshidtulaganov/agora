@@ -38,6 +38,10 @@ type codexSandboxPolicy struct {
 	// NetworkAccess controls `[sandbox_workspace_write] network_access`.
 	// Only meaningful when Mode is "workspace-write".
 	NetworkAccess bool
+	// WritableRoots are additional owner-approved project directories that
+	// Codex may modify while running in workspace-write mode. The primary
+	// project directory is already writable as the process working directory.
+	WritableRoots []string
 	// Reason is a short human-readable label used in warn-level logs.
 	Reason string
 }
@@ -134,6 +138,20 @@ func renderAgoraManagedBlock(policy codexSandboxPolicy) string {
 	b.WriteString(fmt.Sprintf("sandbox_mode = %q\n", policy.Mode))
 	if policy.Mode == "workspace-write" {
 		b.WriteString(fmt.Sprintf("sandbox_workspace_write.network_access = %t\n", policy.NetworkAccess))
+		if len(policy.WritableRoots) > 0 {
+			quoted := make([]string, 0, len(policy.WritableRoots))
+			for _, root := range policy.WritableRoots {
+				if strings.TrimSpace(root) == "" {
+					continue
+				}
+				quoted = append(quoted, strconv.Quote(root))
+			}
+			if len(quoted) > 0 {
+				b.WriteString("sandbox_workspace_write.writable_roots = [")
+				b.WriteString(strings.Join(quoted, ", "))
+				b.WriteString("]\n")
+			}
+		}
 	}
 	b.WriteString(agoraManagedEndMarker)
 	b.WriteString("\n")

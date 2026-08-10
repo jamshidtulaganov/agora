@@ -2283,6 +2283,52 @@ func TestEnsureCodexSandboxConfigCreatesDefaultLinux(t *testing.T) {
 	}
 }
 
+func TestEnsureCodexSandboxConfigAddsApprovedWritableRoots(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	policy := codexSandboxPolicyFor("linux", "0.121.0")
+	policy.WritableRoots = []string{
+		"/workspace/related-api",
+		`/workspace/client "preview"`,
+	}
+	if err := ensureCodexSandboxConfig(configPath, policy, "0.121.0", testLogger()); err != nil {
+		t.Fatalf("ensureCodexSandboxConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config.toml: %v", err)
+	}
+	s := string(data)
+	want := `sandbox_workspace_write.writable_roots = ["/workspace/related-api", "/workspace/client \"preview\""]`
+	if !strings.Contains(s, want) {
+		t.Fatalf("missing escaped writable roots %q, got:\n%s", want, s)
+	}
+	parseTOML(t, s)
+}
+
+func TestEnsureCodexSandboxConfigOmitsWritableRootsOutsideWorkspaceWrite(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	policy := codexSandboxPolicyFor("darwin", "0.121.0")
+	policy.WritableRoots = []string{"/workspace/related-api"}
+	if err := ensureCodexSandboxConfig(configPath, policy, "0.121.0", testLogger()); err != nil {
+		t.Fatalf("ensureCodexSandboxConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config.toml: %v", err)
+	}
+	if strings.Contains(string(data), "writable_roots") {
+		t.Fatalf("danger-full-access must not write workspace-only roots, got:\n%s", data)
+	}
+}
+
 func TestEnsureCodexSandboxConfigDarwinFallsBack(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

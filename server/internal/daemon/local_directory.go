@@ -66,21 +66,66 @@ type localDirectoryAssignment struct {
 	RealPath string // canonical key for the path mutex
 }
 
-// findLocalDirectoryAssignment scans the task's project resources for one of
-// type local_directory whose daemon_id matches this daemon. Returns nil
-// (without error) when no such resource exists — the task takes the regular
-// github_repo / worktree code path. Returns an error only when the matching
-// resource is structurally broken (bad JSON, missing fields) OR when more
-// than one resource is pinned to this daemon — that's a server-side
-// invariant violation, and silently picking the first match would let the
-// agent write into an arbitrary directory the user didn't intend.
-//
-// Server-side `findLocalDirectoryConflict` enforces a single local_directory
-// per (project, daemon), so two matches here means either the constraint
-// was bypassed (older API client) or the data was corrupted. Either way,
-// fail fast rather than guess.
-func findLocalDirectoryAssignment(resources []ProjectResourceData, daemonID string) (*localDirectoryAssignment, error) {
-	var match *localDirectoryAssignment
+// localDirectoryAssignments is the ordered set of folders attached to this
+// daemon. Project resources arrive position-ordered; the first matching folder
+// is therefore the primary working directory and every later folder is an
+// additional task root. Keeping primary selection order-based preserves all
+// existing rows without a migration and mirrors the established multi-repo
+// contract (first resource is primary).
+type localDirectoryAssignments struct {
+	Primary *localDirectoryAssignment
+	All     []*localDirectoryAssignment
+}
+
+func (a *localDirectoryAssignments) isWorktreeMode() bool {
+	if a == nil {
+		return false
+	}
+	// If any folder requests isolation, isolate the whole multi-folder set.
+	// Mixing in-place and worktree roots would otherwise advertise an isolated
+	// folder as an absolute writable path and defeat the user's permission.
+	for _, assignment := range a.All {
+		if assignment.isWorktreeMode() {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *localDirectoryAssignments) isReadOnly() bool {
+	if a == nil {
+		return false
+	}
+	// A mixed read/write worktree set is not representable by the current git
+	// evidence format. Fail closed to a detached, read-only set if any attached
+	// folder is read-only.
+	for _, assignment := range a.All {
+		if assignment.isReadOnly() {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *localDirectoryAssignments) absPaths() []string {
+	if a == nil {
+		return nil
+	}
+	paths := make([]string, 0, len(a.All))
+	for _, assignment := range a.All {
+		paths = append(paths, assignment.AbsPath)
+	}
+	return paths
+}
+
+// findLocalDirectoryAssignments resolves every position-ordered
+// local_directory row owned by this daemon. The first match is primary; later
+// rows remain explicit additional roots. Duplicate real paths fail fast so a
+// symlink alias cannot acquire the same lock twice or provision duplicate git
+// worktrees from the same checkout.
+func findLocalDirectoryAssignments(resources []ProjectResourceData, daemonID string) (*localDirectoryAssignments, error) {
+	matches := &localDirectoryAssignments{}
+	seenRealPaths := map[string]string{}
 	for _, r := range resources {
 		if r.ResourceType != localDirectoryResourceType {
 			continue
@@ -99,17 +144,6 @@ func findLocalDirectoryAssignment(resources []ProjectResourceData, daemonID stri
 			// per daemon, and other daemons will resolve their own row.
 			continue
 		}
-		if match != nil {
-			// Server-side invariant: at most one local_directory per
-			// (project, daemon). Two matches here means the constraint
-			// was bypassed by an older API client or by direct DB writes.
-			// Either way, refuse to guess which directory the user meant.
-			return nil, fmt.Errorf(
-				"local_directory: project has multiple local_directory resources for this daemon (%q and %q); remove the extra in project settings",
-				match.AbsPath,
-				strings.TrimSpace(ref.LocalPath),
-			)
-		}
 		absPath, err := normalizeLocalPath(ref.LocalPath)
 		if err != nil {
 			return nil, err
@@ -118,13 +152,36 @@ func findLocalDirectoryAssignment(resources []ProjectResourceData, daemonID stri
 		if err != nil {
 			return nil, err
 		}
-		match = &localDirectoryAssignment{
+		if prior, duplicate := seenRealPaths[realPath]; duplicate {
+			return nil, fmt.Errorf("local_directory: duplicate folder resolves to %q (%q and %q)", realPath, prior, absPath)
+		}
+		seenRealPaths[realPath] = absPath
+		assignment := &localDirectoryAssignment{
 			Ref:      ref,
 			AbsPath:  absPath,
 			RealPath: realPath,
 		}
+		if matches.Primary == nil {
+			matches.Primary = assignment
+		}
+		matches.All = append(matches.All, assignment)
 	}
-	return match, nil
+	if matches.Primary == nil {
+		return nil, nil
+	}
+	return matches, nil
+}
+
+// findLocalDirectoryAssignment is the compatibility helper for call sites
+// that only need the primary working directory. New validation/provisioning
+// code must use findLocalDirectoryAssignments so additional roots are never
+// skipped.
+func findLocalDirectoryAssignment(resources []ProjectResourceData, daemonID string) (*localDirectoryAssignment, error) {
+	assignments, err := findLocalDirectoryAssignments(resources, daemonID)
+	if err != nil || assignments == nil {
+		return nil, err
+	}
+	return assignments.Primary, nil
 }
 
 // normalizeLocalPath strips whitespace and resolves the path to an absolute

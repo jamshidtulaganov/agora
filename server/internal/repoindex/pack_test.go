@@ -2,9 +2,11 @@ package repoindex
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -47,6 +49,142 @@ func TestPackRanksRelevantFileFirst(t *testing.T) {
 	}
 	if !strings.Contains(pack, "func UpdateIssueStatus") {
 		t.Errorf("pack missing outline signature:\n%s", pack)
+	}
+}
+
+func TestPackRootsSearchesEveryAttachedFolderWithOneBudget(t *testing.T) {
+	primary := writeRepo(t, map[string]string{
+		"routes.ts": "export function listAccounts() {}\n",
+	})
+	additional := writeRepo(t, map[string]string{
+		"jobs/smart-balance.js": "function reconcileSmartBalanceTransactions() {}\n",
+	})
+
+	pack, stats, err := PackRoots(
+		context.Background(),
+		[]string{primary, additional},
+		"reconcile smart balance transactions",
+		DefaultTokenBudget,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.FilesScanned != 2 {
+		t.Fatalf("files scanned = %d, want 2", stats.FilesScanned)
+	}
+	if !strings.Contains(pack, "jobs/smart-balance.js") {
+		t.Fatalf("additional project folder was not retrieved:\n%s", pack)
+	}
+	if strings.Count(pack, PackBeginMarker) != 1 || strings.Count(pack, PackEndMarker) != 1 {
+		t.Fatalf("multi-root pack must be one bounded region:\n%s", pack)
+	}
+}
+
+func TestPackRootsCachedReadsCorpusOnceAndInvalidatesOnChange(t *testing.T) {
+	dir := writeRepo(t, map[string]string{
+		"orders/reconcile.go": "package orders\nfunc ReconcileInvoices() {}\n",
+		"billing/card.go":     "package billing\nfunc ChargeCard() {}\n",
+	})
+	cacheDir := filepath.Join(t.TempDir(), "index")
+
+	firstPack, firstStats, err := PackRootsCached(
+		context.Background(), []string{dir}, "reconcile invoices", DefaultTokenBudget, cacheDir,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstStats.CacheHit {
+		t.Fatal("first retrieval unexpectedly reported a cache hit")
+	}
+	if !strings.Contains(firstPack, "orders/reconcile.go") {
+		t.Fatalf("first pack missed relevant file:\n%s", firstPack)
+	}
+
+	secondPack, secondStats, err := PackRootsCached(
+		context.Background(), []string{dir}, "reconcile invoices", DefaultTokenBudget, cacheDir,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !secondStats.CacheHit {
+		t.Fatal("unchanged corpus should use the persistent term index")
+	}
+	if secondPack != firstPack {
+		t.Fatalf("cached retrieval changed the evidence pack\n--- first ---\n%s\n--- second ---\n%s", firstPack, secondPack)
+	}
+
+	newPath := filepath.Join(dir, "shipping", "invoice_dispatch.go")
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte("package shipping\nfunc DispatchReconciledInvoices() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, changedStats, err := PackRootsCached(
+		context.Background(), []string{dir}, "dispatch reconciled invoices", DefaultTokenBudget, cacheDir,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedStats.CacheHit {
+		t.Fatal("changed corpus must rebuild the index")
+	}
+	if changedStats.FilesScanned != 3 {
+		t.Fatalf("rebuilt corpus scanned %d files, want 3", changedStats.FilesScanned)
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("cache files = %d, want one stable file per root set", len(entries))
+	}
+	info, err := entries[0].Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("cache mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestPackRootsCachedHandlesConcurrentProjectTasks(t *testing.T) {
+	dir := writeRepo(t, map[string]string{
+		"orders/reconcile.go": "package orders\nfunc ReconcileInvoices() {}\n",
+		"orders/refund.go":    "package orders\nfunc RefundInvoice() {}\n",
+		"billing/card.go":     "package billing\nfunc ChargeCard() {}\n",
+	})
+	cacheDir := filepath.Join(t.TempDir(), "index")
+	if _, _, err := PackRootsCached(context.Background(), []string{dir}, "reconcile invoices", DefaultTokenBudget, cacheDir); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 24
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pack, stats, err := PackRootsCached(context.Background(), []string{dir}, "reconcile invoice refund", DefaultTokenBudget, cacheDir)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !stats.CacheHit {
+				errs <- fmt.Errorf("concurrent unchanged retrieval missed cache")
+				return
+			}
+			if !strings.Contains(pack, "orders/") {
+				errs <- fmt.Errorf("concurrent pack missed orders evidence")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }
 

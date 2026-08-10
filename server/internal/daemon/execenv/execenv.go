@@ -131,6 +131,10 @@ type TaskContextForEnv struct {
 	// `agora repo checkout` guidance so the agent edits in place instead of
 	// nesting a worktree. Empty for the standard managed-worktree flow.
 	LocalWorkDir string
+	// LocalWritableDirs is the complete ordered set of owner-approved local
+	// roots for an in-place task. The first entry is LocalWorkDir (primary);
+	// later entries are additional project folders the agent may read/write.
+	LocalWritableDirs []string
 }
 
 // SkillContextForEnv represents a skill to be written into the execution environment.
@@ -282,8 +286,10 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// For Codex, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
 	if params.Provider == "codex" {
 		codexHome := filepath.Join(envRoot, "codex-home")
+		additionalWritableRoots := additionalLocalWritableDirs(params.Task.LocalWritableDirs)
 		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{
 			CodexVersion: params.CodexVersion, DisableNativeSubagents: params.Task.OrchestrationStep,
+			WritableRoots: additionalWritableRoots,
 		}, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
 		}
@@ -443,8 +449,10 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// config (especially sandbox/network access) is up to date.
 	if params.Provider == "codex" {
 		codexHome := filepath.Join(env.RootDir, "codex-home")
+		additionalWritableRoots := additionalLocalWritableDirs(params.Task.LocalWritableDirs)
 		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{
 			CodexVersion: params.CodexVersion, DisableNativeSubagents: params.Task.OrchestrationStep,
+			WritableRoots: additionalWritableRoots,
 		}, logger); err != nil {
 			logger.Warn("execenv: refresh codex-home failed", "error", err)
 		} else {
@@ -495,6 +503,13 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 
 	logger.Info("execenv: reusing env", "workdir", params.WorkDir)
 	return env
+}
+
+func additionalLocalWritableDirs(dirs []string) []string {
+	if len(dirs) <= 1 {
+		return nil
+	}
+	return dirs[1:]
 }
 
 // hydrateCodexSkills populates the per-task CODEX_HOME/skills directory with

@@ -44,6 +44,10 @@ type CodexHomeOptions struct {
 	// DisableNativeSubagents is mandatory for persisted orchestration steps:
 	// Agora must observe every unit of parallel work as a durable DAG step.
 	DisableNativeSubagents bool
+	// WritableRoots are additional owner-approved project folders exposed to
+	// Codex when the task runs in workspace-write mode. The task working
+	// directory itself is implicitly writable and must not be repeated here.
+	WritableRoots []string
 }
 
 // prepareCodexHome is a thin wrapper around prepareCodexHomeWithOpts kept for
@@ -116,6 +120,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	// need to fall back to danger-full-access because of openai/codex#10390;
 	// see codex_sandbox.go for the full rationale.
 	policy := codexSandboxPolicyFor(opts.GOOS, opts.CodexVersion)
+	policy.WritableRoots = opts.WritableRoots
 	if err := ensureCodexSandboxConfig(filepath.Join(codexHome, "config.toml"), policy, opts.CodexVersion, logger); err != nil {
 		logger.Warn("execenv: codex-home ensure sandbox config failed", "error", err)
 	}

@@ -86,7 +86,7 @@ func (h *Handler) maybeEnqueueQAManifestBuild(ctx context.Context, project db.Pr
 	if !project.LeadType.Valid || project.LeadType.String != "agent" || !project.LeadID.Valid {
 		return // manifest build is driven by an agent lead
 	}
-	if !h.projectHasGithubRepo(ctx, project.ID) {
+	if !h.projectHasCodeResource(ctx, project.ID) {
 		return // nothing to derive routes from yet
 	}
 	if projectHasQAManifest(project.Settings) {
@@ -135,8 +135,8 @@ func (h *Handler) BuildProjectQAManifest(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "set an agent as the project lead first")
 		return
 	}
-	if !h.projectHasGithubRepo(r.Context(), project.ID) {
-		writeError(w, http.StatusBadRequest, "connect a repository to this project first")
+	if !h.projectHasCodeResource(r.Context(), project.ID) {
+		writeError(w, http.StatusBadRequest, "connect a repository or local directory to this project first")
 		return
 	}
 	requester, _ := h.parseUserUUIDOrZero(userID)

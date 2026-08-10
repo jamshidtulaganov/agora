@@ -27,7 +27,7 @@ A project groups work and carries durable resources. A resource is not just disp
 Common resource types:
 
 - `github_repo` — durable GitHub repo context, with `resource_ref.url` and optional `default_branch_hint`;
-- `local_directory` — daemon-local path context, with `resource_ref.local_path`, `daemon_id`, and optional label.
+- `local_directory` — daemon-local path context, with `resource_ref.local_path`, `daemon_id`, and optional label/isolation/access/preview settings. A project can attach an ordered set on one daemon: the first row is the primary working directory and later rows are additional roots available to the task.
 
 ## CLI
 
@@ -70,6 +70,14 @@ the user instead of retrying. Browsing a folder in the web picker is **not**
 approval: it is a read-only listing, so a web-attached folder still needs
 `agora daemon allow-dir` before tasks run there.
 
+Multiple folders on the same daemon are intentional. Only the same daemon +
+path duplicate is rejected. Every folder needs its own owner approval. Resource
+position determines the primary; the project Resources UI can promote an
+additional folder with the star action. For in-place runs the agent starts in
+the primary and receives read/write access to every additional approved root.
+If any row requests worktree isolation or read-only access, the daemon
+fail-safely provisions the complete set as sibling issue worktrees.
+
 ## When to add a resource
 
 Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑" — for the last one, `local_directory` is human-only, so guide the user through attaching it instead of calling the API yourself (web 项目面板的 "Add local folder"：先选机器，再浏览目录或直接填绝对路径；桌面端用文件夹选择器；或用 CLI `agora project resource add`).
@@ -81,7 +89,7 @@ is task-local checkout state.
 
 1. `agora project get <project-id> --output json`.
 2. `agora project resource list <project-id> --output json`.
-3. Check `github_repo.resource_ref.url`, `default_branch_hint`, and `local_directory.resource_ref.daemon_id`.
+3. Check `github_repo.resource_ref.url`, `default_branch_hint`, and every ordered `local_directory` path/daemon/access value. The first local row for the executing daemon is primary.
 4. Updating resources is a durable mutation. After an update, listing the
    resource is the verification path.
 5. If resources match the expected task context, inspect runtime/repo checkout
@@ -95,7 +103,7 @@ is task-local checkout state.
 the project, so agents navigate by map instead of exploring.
 
 - Built automatically in the background by the project's lead agent when a
-  project is created with a repo or when the FIRST `github_repo` resource is
+  project is created with source or when the FIRST `github_repo` or `local_directory` resource is
   attached (skipped if a manifest already exists — a curated manifest is never
   clobbered).
 - `qa-manifest build` re-queues the derivation on demand (even when a manifest
@@ -134,6 +142,6 @@ items — you do NOT hand-edit it.
 
 ## Side effects
 
-Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with a repo (or attaching the first repo) also queues background knowledge-base and QA-manifest builds for an agent lead. `local_directory` resources cannot be changed by agents at all — the API returns 403 for machine credentials on create/update/delete; a 403 there is the expected contract, not an error to work around.
+Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with source (or attaching its first GitHub/local source) also queues background knowledge-base and QA-manifest builds for an agent lead. `local_directory` resources cannot be changed by agents at all — the API returns 403 for machine credentials on create/update/delete; a 403 there is the expected contract, not an error to work around.
 
 More source-backed details: `references/projects-and-resources-source-map.md`.

@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   Server,
+  Star,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -117,6 +118,16 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const githubRepos = resources.filter(isGithubRef);
   const githubRepoCount = githubRepos.length;
   const firstGithubRepoId = githubRepos[0]?.id;
+  const localDirectories = resources.filter(isLocalDirectoryRef);
+  const firstLocalIdByDaemon = new Map<string, string>();
+  const localCountByDaemon = new Map<string, number>();
+  for (const resource of localDirectories) {
+    const daemonId = resource.resource_ref.daemon_id;
+    if (!firstLocalIdByDaemon.has(daemonId)) {
+      firstLocalIdByDaemon.set(daemonId, resource.id);
+    }
+    localCountByDaemon.set(daemonId, (localCountByDaemon.get(daemonId) ?? 0) + 1);
+  }
   const createResource = useCreateProjectResource(wsId, projectId);
   const updateResource = useUpdateProjectResource(wsId, projectId);
   const deleteResource = useDeleteProjectResource(wsId, projectId);
@@ -129,7 +140,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     try {
       await api.buildProjectKnowledge(projectId);
       toast.success(
-        "Knowledge build started — the lead agent will study the repos.",
+        "Knowledge build started — the lead agent will study every project resource.",
       );
     } catch (err) {
       toast.error(
@@ -157,30 +168,12 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const attachedUrls = new Set(
     resources.filter(isGithubRef).map((r) => r.resource_ref.url),
   );
-  // Every daemon that already has a local_directory in this project — the web
-  // picker greys these out because the backend allows at most one folder per
-  // (project, daemon).
-  const attachedDaemonIds = new Set(
-    resources
-      .filter(isLocalDirectoryRef)
-      .map((r) => r.resource_ref.daemon_id),
-  );
   const attachedLocalPaths = new Set(
     resources
       .filter(isLocalDirectoryRef)
       .filter((r) => r.resource_ref.daemon_id === localDaemonId)
       .map((r) => r.resource_ref.local_path),
   );
-  // Per (project, daemon) we allow at most one local_directory — the
-  // daemon-side resolver picks the first match by daemon_id, so two rows
-  // on the same daemon would silently route the agent into one of them.
-  // The server enforces this at the API boundary; the UI mirrors the
-  // restriction by hiding the "Add" affordance once a row exists for the
-  // current daemon, otherwise users would only discover the limit on a
-  // 409 toast.
-  const hasLocalDirectoryForCurrentDaemon =
-    localDaemonId !== null && attachedLocalPaths.size > 0;
-
   const repoQuery = repoSearch.trim().toLowerCase();
   const filteredRepos =
     workspace?.repos?.filter((repo) => repo.url.toLowerCase().includes(repoQuery)) ?? [];
@@ -204,13 +197,6 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     try {
       if (!localDaemonId || !daemonStatus.running) {
         toast.error(t(($) => $.resources.toast_local_daemon_not_running));
-        return;
-      }
-      // Race guard: the button gates on this already, but if the picker
-      // is opened while a concurrent resource-create lands the user
-      // would otherwise see a 409. Surface a clearer message instead.
-      if (attachedLocalPaths.size > 0) {
-        toast.error(t(($) => $.resources.toast_local_daemon_already_attached));
         return;
       }
       const picked = await pickDirectory();
@@ -259,12 +245,20 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         );
         return;
       }
+      const primary = localDirectories.find(
+        (resource) => resource.resource_ref.daemon_id === localDaemonId,
+      );
       await createResource.mutateAsync({
         resource_type: "local_directory",
         resource_ref: {
           local_path: path,
           daemon_id: localDaemonId,
           label: fallbackLabel,
+          // Additional folders inherit the primary execution mode. If any
+          // folder is isolated, the daemon safely provisions the whole set as
+          // sibling worktrees rather than leaking one source path in-place.
+          isolation: primary?.resource_ref.isolation,
+          access: primary?.resource_ref.access ?? "write",
         },
       });
       toast.success(t(($) => $.resources.toast_local_attached));
@@ -328,6 +322,28 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         err instanceof Error && err.message
           ? err.message
           : t(($) => $.resources.toast_remove_failed),
+      );
+    }
+  };
+
+  const handleMakeLocalPrimary = async (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => {
+    const minPosition = resources.reduce(
+      (min, item) => Math.min(min, item.position),
+      0,
+    );
+    try {
+      await updateResource.mutateAsync({
+        resourceId: resource.id,
+        data: { position: minPosition - 1 },
+      });
+      toast.success(t(($) => $.resources.toast_local_primary_updated));
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : t(($) => $.resources.toast_local_primary_failed),
       );
     }
   };
@@ -450,6 +466,14 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                     resource.id === firstGithubRepoId
                   }
                   hasMultipleRepos={githubRepoCount > 1}
+                  isPrimaryLocal={
+                    isLocalDirectoryRef(resource) &&
+                    firstLocalIdByDaemon.get(resource.resource_ref.daemon_id) === resource.id
+                  }
+                  hasMultipleLocalDirectories={
+                    isLocalDirectoryRef(resource) &&
+                    (localCountByDaemon.get(resource.resource_ref.daemon_id) ?? 0) > 1
+                  }
                   localDaemonId={localDaemonId}
                   webMode={webMode}
                   daemonLabel={
@@ -465,6 +489,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   onRenameLocalDirectory={handleRenameLocalDirectory}
                   onToggleAccess={handleToggleAccess}
                   onSetPreviewUrl={handleSetPreviewUrl}
+                  onMakeLocalPrimary={handleMakeLocalPrimary}
                 />
               ))}
             </div>
@@ -566,8 +591,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                 disabled={
                   picking ||
                   createResource.isPending ||
-                  !daemonStatus.running ||
-                  hasLocalDirectoryForCurrentDaemon
+                  !daemonStatus.running
                 }
                 onClick={() => {
                   void handleAttachLocalDirectory();
@@ -581,23 +605,21 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   {t(($) => $.resources.local_daemon_offline_hint)}
                 </p>
               )}
-              {daemonStatus.running && hasLocalDirectoryForCurrentDaemon && (
-                <p className="px-2 pt-0.5 text-[10px] text-muted-foreground">
-                  {t(($) => $.resources.local_daemon_already_attached_hint)}
-                </p>
-              )}
             </div>
           )}
           {webMode && (
             <AddLocalDirectoryWebPopover
               wsId={wsId}
               daemonOptions={daemonOptions}
-              attachedDaemonIds={attachedDaemonIds}
               submitting={createResource.isPending}
               onSubmit={handleAttachLocalDirectoryWeb}
             />
           )}
-          {resources.some((r) => r.resource_type === "github_repo") && (
+          {resources.some(
+            (r) =>
+              r.resource_type === "github_repo" ||
+              r.resource_type === "local_directory",
+          ) && (
             <Button
               variant="ghost"
               size="sm"
@@ -629,6 +651,8 @@ interface ResourceRowProps {
   canEdit: boolean;
   isPrimaryRepo?: boolean;
   hasMultipleRepos?: boolean;
+  isPrimaryLocal?: boolean;
+  hasMultipleLocalDirectories?: boolean;
   onRemove: () => void;
   onRenameLocalDirectory: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
@@ -641,6 +665,9 @@ interface ResourceRowProps {
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextUrl: string,
   ) => Promise<void>;
+  onMakeLocalPrimary: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => Promise<void>;
 }
 
 function ResourceRow({
@@ -651,10 +678,13 @@ function ResourceRow({
   canEdit,
   isPrimaryRepo,
   hasMultipleRepos,
+  isPrimaryLocal,
+  hasMultipleLocalDirectories,
   onRemove,
   onRenameLocalDirectory,
   onToggleAccess,
   onSetPreviewUrl,
+  onMakeLocalPrimary,
 }: ResourceRowProps) {
   const { t } = useT("projects");
   if (isGithubRef(resource)) {
@@ -709,6 +739,9 @@ function ResourceRow({
         onRename={onRenameLocalDirectory}
         onToggleAccess={onToggleAccess}
         onSetPreviewUrl={onSetPreviewUrl}
+        isPrimary={Boolean(isPrimaryLocal)}
+        hasMultiple={Boolean(hasMultipleLocalDirectories)}
+        onMakePrimary={onMakeLocalPrimary}
       />
     );
   }
@@ -736,6 +769,8 @@ interface LocalDirectoryRowProps {
   webMode: boolean;
   daemonLabel?: string;
   canEdit: boolean;
+  isPrimary: boolean;
+  hasMultiple: boolean;
   onRemove: () => void;
   onRename: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
@@ -748,6 +783,9 @@ interface LocalDirectoryRowProps {
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextUrl: string,
   ) => Promise<void>;
+  onMakePrimary: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => Promise<void>;
 }
 
 function LocalDirectoryRow({
@@ -756,10 +794,13 @@ function LocalDirectoryRow({
   webMode,
   daemonLabel,
   canEdit,
+  isPrimary,
+  hasMultiple,
   onRemove,
   onRename,
   onToggleAccess,
   onSetPreviewUrl,
+  onMakePrimary,
 }: LocalDirectoryRowProps) {
   const { t } = useT("projects");
   const ref = resource.resource_ref;
@@ -860,6 +901,24 @@ function LocalDirectoryRow({
           <span className="truncate">{daemonLabel}</span>
         </span>
       )}
+      {!editing && hasMultiple && isPrimary && (
+        <span
+          className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary"
+          title={t(($) => $.resources.local_primary_tooltip)}
+        >
+          {t(($) => $.resources.local_primary_badge)}
+        </span>
+      )}
+      {!editing && hasMultiple && !isPrimary && canEdit && !mismatch && (
+        <button
+          type="button"
+          onClick={() => void onMakePrimary(resource)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
+          title={t(($) => $.resources.local_make_primary)}
+        >
+          <Star className="size-3 text-muted-foreground" aria-hidden />
+        </button>
+      )}
       {!editing && (
         <button
           type="button"
@@ -958,13 +1017,11 @@ function LocalDirectoryRow({
 function AddLocalDirectoryWebPopover({
   wsId,
   daemonOptions,
-  attachedDaemonIds,
   submitting,
   onSubmit,
 }: {
   wsId: string;
   daemonOptions: DaemonOption[];
-  attachedDaemonIds: Set<string>;
   submitting: boolean;
   onSubmit: (v: {
     daemonId: string;
@@ -980,10 +1037,7 @@ function AddLocalDirectoryWebPopover({
   const [access, setAccess] = useState<"read" | "write">("write");
   const [previewUrl, setPreviewUrl] = useState("");
 
-  // One folder per (project, daemon), so hide daemons already attached here.
-  const available = daemonOptions.filter(
-    (d) => !attachedDaemonIds.has(d.daemonId),
-  );
+  const available = daemonOptions;
 
   // Default to the first attachable daemon when the popover opens (or the
   // current pick drops out of the list), so a lone daemon needs no selection.
