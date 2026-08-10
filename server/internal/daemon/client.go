@@ -24,7 +24,14 @@ type requestError struct {
 }
 
 func (e *requestError) Error() string {
-	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
+	body := strings.TrimSpace(e.Body)
+	lower := strings.ToLower(body)
+	if strings.Contains(lower, "<title>blocked</title>") {
+		body = "hosted edge blocked the request"
+	} else if len(body) > 512 {
+		body = body[:512] + "..."
+	}
+	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, body)
 }
 
 // isWorkspaceNotFoundError returns true if the error is a 404 with "workspace not found" body.
@@ -212,9 +219,105 @@ type TaskMessageData struct {
 }
 
 func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages []TaskMessageData) error {
-	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/messages", taskID), map[string]any{
-		"messages": messages,
-	}, nil, defaultTaskMessageRetrySchedule)
+	if len(messages) == 0 {
+		return nil
+	}
+	bounded := make([]TaskMessageData, len(messages))
+	for i, message := range messages {
+		bounded[i] = boundTaskMessage(message)
+	}
+	return c.reportTaskMessageBatch(ctx, taskID, bounded)
+}
+
+const (
+	taskMessageContentLimit = 32 * 1024
+	taskMessageDetailLimit  = 8 * 1024
+	taskMessageInputLimit   = 12 * 1024
+	taskMessageBatchLimit   = 48 * 1024
+	edgeOmittedDetail       = "[Task detail omitted because the hosted edge rejected the payload.]"
+)
+
+func boundTaskMessage(message TaskMessageData) TaskMessageData {
+	message.Content = truncateTaskMessageField(message.Content, taskMessageContentLimit)
+	message.Output = truncateTaskMessageField(message.Output, taskMessageDetailLimit)
+	if message.Input != nil {
+		if data, err := json.Marshal(message.Input); err != nil || len(data) > taskMessageInputLimit {
+			message.Input = map[string]any{"detail": "[Tool input omitted because it exceeded the transcript limit.]"}
+		}
+	}
+	return message
+}
+
+func truncateTaskMessageField(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "\n[Transcript detail truncated.]"
+}
+
+// reportTaskMessageBatch keeps one rejected transcript item from blocking all
+// subsequent live output. Large batches are split before they reach the edge;
+// edge-rejected batches are bisected until the offending singleton is found.
+// The singleton keeps its idempotency sequence and type but drops only the
+// detail that triggered the hosted WAF. Arbitrary authorization failures are
+// returned unchanged and never rewritten as content failures.
+func (c *Client) reportTaskMessageBatch(ctx context.Context, taskID string, messages []TaskMessageData) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	if len(messages) > 1 {
+		if data, err := json.Marshal(messages); err == nil && len(data) > taskMessageBatchLimit {
+			mid := len(messages) / 2
+			if err := c.reportTaskMessageBatch(ctx, taskID, messages[:mid]); err != nil {
+				return err
+			}
+			return c.reportTaskMessageBatch(ctx, taskID, messages[mid:])
+		}
+	}
+
+	path := fmt.Sprintf("/api/daemon/tasks/%s/messages", taskID)
+	post := func(batch []TaskMessageData) error {
+		return c.postJSONWithRetry(ctx, path, map[string]any{"messages": batch}, nil, defaultTaskMessageRetrySchedule)
+	}
+	if err := post(messages); err != nil {
+		if !isEdgePayloadRejection(err) {
+			return err
+		}
+		if len(messages) > 1 {
+			mid := len(messages) / 2
+			if splitErr := c.reportTaskMessageBatch(ctx, taskID, messages[:mid]); splitErr != nil {
+				return splitErr
+			}
+			return c.reportTaskMessageBatch(ctx, taskID, messages[mid:])
+		}
+		return post([]TaskMessageData{omitTaskMessageDetail(messages[0])})
+	}
+	return nil
+}
+
+func isEdgePayloadRejection(err error) bool {
+	var reqErr *requestError
+	if !errors.As(err, &reqErr) {
+		return false
+	}
+	if reqErr.StatusCode == http.StatusRequestEntityTooLarge {
+		return true
+	}
+	return reqErr.StatusCode == http.StatusForbidden &&
+		strings.Contains(strings.ToLower(reqErr.Body), "<title>blocked</title>")
+}
+
+func omitTaskMessageDetail(message TaskMessageData) TaskMessageData {
+	omitted := TaskMessageData{Seq: message.Seq, Type: message.Type, Tool: message.Tool}
+	switch message.Type {
+	case "tool_use":
+		omitted.Input = map[string]any{"detail": edgeOmittedDetail}
+	case "tool_result":
+		omitted.Output = edgeOmittedDetail
+	default:
+		omitted.Content = edgeOmittedDetail
+	}
+	return omitted
 }
 
 func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir, baseSHA, headSHA, mergeStatus string, conflictFiles []string, integrationStatus string, integratedHeadSHAs []string, integratedHeads []OrchestrationGitHead, missingHeadSHAs []string, gitStates []RepoGitState) error {

@@ -3781,13 +3781,18 @@ func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend
 		var pendingThinking strings.Builder
 		var batch []TaskMessageData
 		callIDToTool := map[string]string{}
+		var nextFlushAt time.Time
+		flushFailures := 0
 
-		flush := func() error {
+		flush := func(force bool) error {
 			// The periodic sender and the final drain may meet while an HTTP call is
 			// in flight. Serialize them so batches always reach the server in seq
 			// order and a failed older batch is requeued ahead of newer messages.
 			flushMu.Lock()
 			defer flushMu.Unlock()
+			if !force && time.Now().Before(nextFlushAt) {
+				return nil
+			}
 
 			mu.Lock()
 			if pendingThinking.Len() > 0 {
@@ -3823,6 +3828,8 @@ func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend
 					mu.Lock()
 					batch = append(toSend, batch...)
 					mu.Unlock()
+					flushFailures++
+					nextFlushAt = time.Now().Add(taskMessageFlushBackoff(flushFailures))
 					taskLog.Warn("failed to report task messages; batch retained for retry",
 						"error", err,
 						"count", len(toSend),
@@ -3831,6 +3838,8 @@ func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend
 					)
 					return err
 				} else {
+					flushFailures = 0
+					nextFlushAt = time.Time{}
 					taskLog.Debug("reported task messages", "count", len(toSend), "last_seq", toSend[len(toSend)-1].Seq)
 				}
 			}
@@ -3848,7 +3857,7 @@ func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend
 			for {
 				select {
 				case <-ticker.C:
-					_ = flush()
+					_ = flush(false)
 				case <-done:
 					return
 				}
@@ -3978,7 +3987,7 @@ func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend
 		// by (task_id, seq).
 		var finalFlushErr error
 		for attempt := 0; attempt < 3; attempt++ {
-			finalFlushErr = flush()
+			finalFlushErr = flush(true)
 			if finalFlushErr == nil || !isTransientError(finalFlushErr) {
 				break
 			}
@@ -4245,6 +4254,21 @@ func shortID(id string) string {
 		return id
 	}
 	return id[:8]
+}
+
+// taskMessageFlushBackoff prevents a persistent server/auth failure from
+// turning the 500ms transcript ticker into a request storm. The terminal
+// drain bypasses this delay so a recovered connection can still flush before
+// task completion returns.
+func taskMessageFlushBackoff(failures int) time.Duration {
+	if failures < 1 {
+		return 0
+	}
+	delay := time.Second << min(failures-1, 5)
+	if delay > 30*time.Second {
+		return 30 * time.Second
+	}
+	return delay
 }
 
 // truncateLog truncates a string to maxLen, appending "…" if truncated.

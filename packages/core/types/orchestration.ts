@@ -151,6 +151,10 @@ export interface SquadRosterPolicyEntry {
 export interface OrchestrationPolicy extends Record<string, unknown> {
   max_concurrency?: number;
   parallel_workers?: number;
+  plan_shape?: "lean" | "full" | "custom";
+  verification_mode?: "manual" | "agent";
+  auto_qa?: boolean;
+  auto_review?: boolean;
   squad_id?: string;
   squad_roster?: SquadRosterPolicyEntry[];
 }
@@ -215,6 +219,8 @@ export interface CreateOrchestrationStepRequest {
   model?: string;
   instructions?: string;
   approval_required?: boolean;
+  /** Completes on human approval without dispatching an agent. */
+  human_only?: boolean;
   max_attempts?: number;
   depends_on_keys?: string[];
   parent_key?: string;

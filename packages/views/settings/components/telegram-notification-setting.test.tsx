@@ -84,6 +84,14 @@ describe("TelegramNotificationSetting", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the group setup link discoverable when per-agent bots are not configured", () => {
+    configRef.telegramBotsEnabled = false;
+    renderSetting();
+    expect(
+      screen.getByRole("button", { name: enSettings.notifications.telegram.groups_link }),
+    ).toBeInTheDocument();
+  });
+
   it("shows unlink when Telegram is linked", () => {
     linksRef.current = { links: [{ provider: "telegram", external_id: "99" }] };
     renderSetting();

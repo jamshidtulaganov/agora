@@ -163,6 +163,98 @@ func TestSquadOrchestrationBuildsCapabilityAwareParallelBranches(t *testing.T) {
 	}
 }
 
+func TestSquadOrchestrationUsesLeanPlanForCohesiveIssue(t *testing.T) {
+	leader := orchestrationTestUUID(t, "11111111-1111-4111-8111-111111111111")
+	backend := orchestrationTestUUID(t, "22222222-2222-4222-8222-222222222222")
+	frontend := orchestrationTestUUID(t, "33333333-3333-4333-8333-333333333333")
+	qa := orchestrationTestUUID(t, "44444444-4444-4444-8444-444444444444")
+	squad := orchestrationTestUUID(t, "66666666-6666-4666-8666-666666666666")
+	issue := db.Issue{
+		Title:       "Use EFS for the cards API",
+		Description: pgtype.Text{String: "Replace the existing DWH source for card automation.", Valid: true},
+		Metadata:    []byte(`{}`),
+	}
+	members := []orchestrationPlannerMember{
+		{AgentID: leader, Role: "leader", IsLeader: true},
+		{AgentID: frontend, Role: "Frontend engineer"},
+		{AgentID: backend, Role: "Backend engineer"},
+		{AgentID: qa, Role: "QA engineer"},
+	}
+	steps := defaultOrchestrationStepsWithMembers(issue, orchestrationRouting{
+		OwnerType: "squad", OwnerID: squad, ControllerAgent: leader, DevelopmentAgent: leader,
+	}, "squad", members, 3)
+	if len(steps) != 4 {
+		t.Fatalf("lean squad plan has %d steps, want plan + dev + verify + release: %#v", len(steps), steps)
+	}
+	if got := []string{steps[0].Key, steps[1].Key, steps[2].Key, steps[3].Key}; !reflect.DeepEqual(got, []string{"plan", "dev-backend", "verify", "release"}) {
+		t.Fatalf("lean plan keys = %v", got)
+	}
+	if steps[1].AgentID != uuidToString(backend) {
+		t.Fatalf("API issue should select backend specialist, got %#v", steps[1])
+	}
+	if steps[2].AgentID != uuidToString(qa) || !reflect.DeepEqual(steps[3].DependsOnKeys, []string{"verify"}) {
+		t.Fatalf("lean verification/release route is malformed: verify=%#v release=%#v", steps[2], steps[3])
+	}
+}
+
+func TestSquadOrchestrationUsesHumanVerificationWhenAutomationIsOff(t *testing.T) {
+	leader := orchestrationTestUUID(t, "11111111-1111-4111-8111-111111111111")
+	worker := orchestrationTestUUID(t, "22222222-2222-4222-8222-222222222222")
+	squad := orchestrationTestUUID(t, "66666666-6666-4666-8666-666666666666")
+	issue := db.Issue{Title: "Fix the invoice display", Metadata: []byte(`{}`)}
+	steps := defaultOrchestrationStepsWithMembersAndAutomation(issue, orchestrationRouting{
+		OwnerType: "squad", OwnerID: squad, ControllerAgent: leader, DevelopmentAgent: leader,
+	}, "squad", []orchestrationPlannerMember{
+		{AgentID: leader, Role: "leader", IsLeader: true},
+		{AgentID: worker, Role: "Implementation engineer"},
+	}, 3, false, false)
+	if got := len(steps); got != 4 {
+		t.Fatalf("manual-verification plan has %d steps, want plan + dev + human review + release: %#v", got, steps)
+	}
+	manual := steps[2]
+	if manual.Key != "manual-review" || manual.Stage != "review" || !manual.HumanOnly || !manual.ApprovalRequired || manual.AgentID != "" {
+		t.Fatalf("manual QA/review gate is malformed: %#v", manual)
+	}
+	if !reflect.DeepEqual(steps[3].DependsOnKeys, []string{"manual-review"}) {
+		t.Fatalf("release must wait for manual QA/review: %#v", steps[3])
+	}
+}
+
+func TestSquadOrchestrationAddsManualQABeforeAutomatedReview(t *testing.T) {
+	leader := orchestrationTestUUID(t, "11111111-1111-4111-8111-111111111111")
+	worker := orchestrationTestUUID(t, "22222222-2222-4222-8222-222222222222")
+	reviewer := orchestrationTestUUID(t, "33333333-3333-4333-8333-333333333333")
+	steps := defaultOrchestrationStepsWithMembersAndAutomation(db.Issue{Title: "Small backend fix"}, orchestrationRouting{
+		OwnerType: "squad", ControllerAgent: leader, DevelopmentAgent: leader,
+	}, "squad", []orchestrationPlannerMember{
+		{AgentID: leader, Role: "leader", IsLeader: true},
+		{AgentID: worker, Role: "Backend engineer"},
+		{AgentID: reviewer, Role: "Reviewer"},
+	}, 3, false, true)
+	byKey := map[string]orchestrationStepRequest{}
+	for _, step := range steps {
+		byKey[step.Key] = step
+	}
+	if !byKey["manual-qa"].HumanOnly || !reflect.DeepEqual(byKey["review"].DependsOnKeys, []string{"manual-qa"}) {
+		t.Fatalf("automated review must wait for manual QA: %#v", byKey)
+	}
+}
+
+func TestSquadOrchestrationShapeOverrideKeepsFullPlan(t *testing.T) {
+	issue := db.Issue{
+		Title:    "Small API fix",
+		Metadata: []byte(`{"orchestration_shape":"full"}`),
+	}
+	if got := inferSquadPlanShape(issue); got != squadPlanShapeFull {
+		t.Fatalf("explicit full shape = %q", got)
+	}
+	issue.Metadata = []byte(`{"orchestration_shape":"lean"}`)
+	issue.Description = pgtype.Text{String: strings.Repeat("large scope ", 200), Valid: true}
+	if got := inferSquadPlanShape(issue); got != squadPlanShapeLean {
+		t.Fatalf("explicit lean shape = %q", got)
+	}
+}
+
 func TestSquadOrchestrationKeepsDuplicateCapabilitiesAsDistinctBranches(t *testing.T) {
 	leader := orchestrationTestUUID(t, "11111111-1111-4111-8111-111111111111")
 	first := orchestrationTestUUID(t, "22222222-2222-4222-8222-222222222222")

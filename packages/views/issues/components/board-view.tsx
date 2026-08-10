@@ -11,14 +11,20 @@ import {
   type DragEndEvent,
   type DragOverEvent,
 } from "@dnd-kit/core";
-import type { QueryKey } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { Issue, IssueAssigneeGroup, IssueStatus } from "@agora/core/types";
 import { useLoadMoreByAssigneeGroup, useLoadMoreByStatus } from "@agora/core/issues/mutations";
-import type { AssigneeGroupedIssuesFilter, IssueSortParam, MyIssuesFilter } from "@agora/core/issues/queries";
+import {
+  childrenByParentsOptions,
+  type AssigneeGroupedIssuesFilter,
+  type IssueSortParam,
+  type MyIssuesFilter,
+} from "@agora/core/issues/queries";
 import { useViewStore } from "@agora/core/issues/stores/view-store-context";
 import type { IssueGrouping } from "@agora/core/issues/stores/view-store";
 import { useActorName } from "@agora/core/workspace/hooks";
+import { useWorkspaceId } from "@agora/core/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
@@ -106,7 +112,12 @@ function buildGroups(
 }
 
 const EMPTY_PROGRESS_MAP = new Map<string, ChildProgress>();
+const EMPTY_CHILDREN_MAP = new Map<string, Issue[]>();
 const EMPTY_IDS: string[] = [];
+
+export function topLevelBoardIssues(issues: Issue[]): Issue[] {
+  return issues.filter((issue) => !issue.parent_issue_id);
+}
 
 export function BoardView({
   issues,
@@ -139,6 +150,8 @@ export function BoardView({
   projectId?: string;
 }) {
   const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const queryClient = useQueryClient();
   const grouping = useViewStore((s) => s.grouping);
   const sortBy = useViewStore((s) => s.sortBy);
   const sortFieldKey = sortBy === "created_at" ? "created" : sortBy;
@@ -155,6 +168,24 @@ export function BoardView({
         ? assigneeGroups.flatMap((group) => group.issues)
         : issues,
     [assigneeGroups, grouping, issues],
+  );
+  // A status board is a portfolio of deliverables, not a flat task dump.
+  // Sub-issues render inside their parent card; keeping them as full cards as
+  // well duplicates the same work and lets orchestration fan-out overwhelm a
+  // column. List and swimlane views remain available for child-focused work.
+  const boardIssues = useMemo(
+    () => topLevelBoardIssues(groupedIssues),
+    [groupedIssues],
+  );
+  const parentIds = useMemo(
+    () => boardIssues
+      .filter((issue) => (childProgressMap.get(issue.id)?.total ?? 0) > 0)
+      .map((issue) => issue.id)
+      .toSorted(),
+    [boardIssues, childProgressMap],
+  );
+  const { data: childrenByParent = EMPTY_CHILDREN_MAP } = useQuery(
+    childrenByParentsOptions(wsId, parentIds, queryClient),
   );
   const hydratedAssigneeGroups = useMemo(() => {
     if (grouping !== "assignee" || !assigneeGroups) return undefined;
@@ -173,12 +204,13 @@ export function BoardView({
             : t(($) => $.filters.no_assignee),
         assigneeType: group.assignee_type,
         assigneeId: group.assignee_id,
-        totalCount: group.total,
+        totalCount: group.issues.filter((issue) => !issue.parent_issue_id).length,
         createData: {
           assignee_type: group.assignee_type,
           assignee_id: group.assignee_id,
         },
       }))
+      .filter((group) => group.totalCount > 0)
       .sort((a, b) => {
         const aOrder = order[a.assigneeType ?? "none"] ?? 99;
         const bOrder = order[b.assigneeType ?? "none"] ?? 99;
@@ -190,13 +222,13 @@ export function BoardView({
     () =>
       hydratedAssigneeGroups ??
       buildGroups(
-        issues,
+        boardIssues,
         visibleStatuses,
         grouping,
         getActorName,
         t(($) => $.filters.no_assignee),
       ),
-    [hydratedAssigneeGroups, issues, visibleStatuses, grouping, getActorName, t],
+    [hydratedAssigneeGroups, boardIssues, visibleStatuses, grouping, getActorName, t],
   );
   const groupIds = useMemo(
     () => new Set(groups.map((group) => group.id)),
@@ -221,16 +253,16 @@ export function BoardView({
   // Between drags: follows TQ via useEffect.
   // During drag: local-only, driven by onDragOver/onDragEnd.
   const [columns, setColumns] = useState<Record<string, string[]>>(() =>
-    buildColumns(groupedIssues, groups, grouping),
+    buildColumns(boardIssues, groups, grouping),
   );
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
 
   useEffect(() => {
     if (!isDraggingRef.current && !isSettlingRef.current) {
-      setColumns(buildColumns(groupedIssues, groups, grouping));
+      setColumns(buildColumns(boardIssues, groups, grouping));
     }
-  }, [groupedIssues, groups, grouping, settleVersion]);
+  }, [boardIssues, groups, grouping, settleVersion]);
 
   // After a cross-column move, lock for one animation frame so dnd-kit's
   // collision detection can stabilize before processing the next move.
@@ -248,9 +280,9 @@ export function BoardView({
   // referentially stable even if a TQ refetch lands mid-drag.
   const issueMap = useMemo(() => {
     const map = new Map<string, Issue>();
-    for (const issue of groupedIssues) map.set(issue.id, issue);
+    for (const issue of boardIssues) map.set(issue.id, issue);
     return map;
-  }, [groupedIssues]);
+  }, [boardIssues]);
 
   const issueMapRef = useRef(issueMap);
   if (!isDraggingRef.current && !isSettlingRef.current) {
@@ -306,7 +338,7 @@ export function BoardView({
       setActiveIssue(null);
 
       const resetColumns = () =>
-        setColumns(buildColumns(groupedIssues, groups, grouping));
+        setColumns(buildColumns(boardIssues, groups, grouping));
 
       if (!over) {
         resetColumns();
@@ -384,7 +416,7 @@ export function BoardView({
         isSettlingRef.current = false;
       });
     },
-    [groupedIssues, groups, grouping, onMoveIssue, groupIds, groupMap, sortBy],
+    [boardIssues, groups, grouping, onMoveIssue, groupIds, groupMap, sortBy],
   );
 
   return (
@@ -409,6 +441,7 @@ export function BoardView({
                 issueIds={columns[group.id] ?? EMPTY_IDS}
                 issueMap={issueMapRef.current}
                 childProgressMap={childProgressMap}
+                childrenByParent={childrenByParent}
                 myIssuesOpts={myIssuesOpts}
                 sort={sort}
                 projectId={projectId}
@@ -422,6 +455,7 @@ export function BoardView({
                   issueIds={columns[group.id] ?? EMPTY_IDS}
                   issueMap={issueMapRef.current}
                   childProgressMap={childProgressMap}
+                  childrenByParent={childrenByParent}
                   queryKey={assigneeGroupQueryKey}
                   filter={assigneeGroupFilter}
                   sort={sort}
@@ -435,6 +469,7 @@ export function BoardView({
                   issueIds={columns[group.id] ?? EMPTY_IDS}
                   issueMap={issueMapRef.current}
                   childProgressMap={childProgressMap}
+                  childrenByParent={childrenByParent}
                   projectId={projectId}
                   totalCount={group.totalCount}
                   sortLabel={sortLabel}
@@ -456,7 +491,11 @@ export function BoardView({
       <DragOverlay dropAnimation={null}>
         {activeIssue ? (
           <div style={{ width: BOARD_CARD_WIDTH }} className="rotate-1 cursor-grabbing opacity-90 shadow-lg shadow-black/10">
-            <BoardCardContent issue={activeIssue} childProgress={childProgressMap.get(activeIssue.id)} />
+            <BoardCardContent
+              issue={activeIssue}
+              childProgress={childProgressMap.get(activeIssue.id)}
+              childIssues={childrenByParent.get(activeIssue.id)}
+            />
           </div>
         ) : null}
       </DragOverlay>
@@ -469,6 +508,7 @@ const PaginatedAssigneeBoardColumn = memo(function PaginatedAssigneeBoardColumn(
   issueIds,
   issueMap,
   childProgressMap,
+  childrenByParent,
   queryKey,
   filter,
   sort,
@@ -479,13 +519,14 @@ const PaginatedAssigneeBoardColumn = memo(function PaginatedAssigneeBoardColumn(
   issueIds: string[];
   issueMap: Map<string, Issue>;
   childProgressMap?: Map<string, ChildProgress>;
+  childrenByParent?: Map<string, Issue[]>;
   queryKey: QueryKey;
   filter: AssigneeGroupedIssuesFilter;
   sort?: IssueSortParam;
   projectId?: string;
   sortLabel?: string | null;
 }) {
-  const { loadMore, hasMore, isLoading, total } = useLoadMoreByAssigneeGroup(
+  const { loadMore, hasMore, isLoading } = useLoadMoreByAssigneeGroup(
     {
       id: group.id,
       assignee_type: group.assigneeType ?? null,
@@ -501,7 +542,8 @@ const PaginatedAssigneeBoardColumn = memo(function PaginatedAssigneeBoardColumn(
       issueIds={issueIds}
       issueMap={issueMap}
       childProgressMap={childProgressMap}
-      totalCount={total}
+      childrenByParent={childrenByParent}
+      totalCount={issueIds.length}
       projectId={projectId}
       sortLabel={sortLabel}
       footer={
@@ -518,6 +560,7 @@ const PaginatedBoardColumn = memo(function PaginatedBoardColumn({
   issueIds,
   issueMap,
   childProgressMap,
+  childrenByParent,
   myIssuesOpts,
   sort,
   projectId,
@@ -527,12 +570,13 @@ const PaginatedBoardColumn = memo(function PaginatedBoardColumn({
   issueIds: string[];
   issueMap: Map<string, Issue>;
   childProgressMap?: Map<string, ChildProgress>;
+  childrenByParent?: Map<string, Issue[]>;
   myIssuesOpts?: { scope: string; filter: MyIssuesFilter };
   sort?: IssueSortParam;
   projectId?: string;
   sortLabel?: string | null;
 }) {
-  const { loadMore, hasMore, isLoading, total } = useLoadMoreByStatus(
+  const { loadMore, hasMore, isLoading } = useLoadMoreByStatus(
     group.status,
     myIssuesOpts,
     sort,
@@ -543,7 +587,8 @@ const PaginatedBoardColumn = memo(function PaginatedBoardColumn({
       issueIds={issueIds}
       issueMap={issueMap}
       childProgressMap={childProgressMap}
-      totalCount={total}
+      childrenByParent={childrenByParent}
+      totalCount={issueIds.length}
       projectId={projectId}
       sortLabel={sortLabel}
       footer={

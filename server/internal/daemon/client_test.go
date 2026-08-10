@@ -225,6 +225,89 @@ func TestPostJSONWithRetry_CtxCancelStopsRetries(t *testing.T) {
 	}
 }
 
+func TestReportTaskMessages_IsolatesEdgeBlockedMessage(t *testing.T) {
+	defer noSleepRetry(t)()
+
+	var accepted []TaskMessageData
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body struct {
+			Messages []TaskMessageData `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode messages: %v", err)
+		}
+		for _, message := range body.Messages {
+			if message.Content == "edge poison" {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte("<html><title>Blocked</title></html>"))
+				return
+			}
+		}
+		accepted = append(accepted, body.Messages...)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.ReportTaskMessages(context.Background(), "task-1", []TaskMessageData{
+		{Seq: 1, Type: "text", Content: "safe before"},
+		{Seq: 2, Type: "text", Content: "edge poison"},
+		{Seq: 3, Type: "text", Content: "safe after"},
+	})
+	if err != nil {
+		t.Fatalf("ReportTaskMessages: %v", err)
+	}
+	if calls.Load() < 4 {
+		t.Fatalf("requests = %d, want batch isolation requests", calls.Load())
+	}
+	if len(accepted) != 3 {
+		t.Fatalf("accepted = %+v, want three messages", accepted)
+	}
+	if accepted[0].Seq != 1 || accepted[0].Content != "safe before" {
+		t.Fatalf("first accepted message = %+v", accepted[0])
+	}
+	if accepted[1].Seq != 2 || accepted[1].Content != edgeOmittedDetail {
+		t.Fatalf("blocked singleton was not replaced safely: %+v", accepted[1])
+	}
+	if accepted[2].Seq != 3 || accepted[2].Content != "safe after" {
+		t.Fatalf("last accepted message = %+v", accepted[2])
+	}
+}
+
+func TestReportTaskMessages_DoesNotRewriteAuthorizationFailure(t *testing.T) {
+	defer noSleepRetry(t)()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.ReportTaskMessages(context.Background(), "task-1", []TaskMessageData{{
+		Seq: 1, Type: "text", Content: "safe",
+	}})
+	if err == nil {
+		t.Fatal("expected authorization error")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("requests = %d, want one", got)
+	}
+}
+
+func TestRequestError_HidesHostedEdgeDocument(t *testing.T) {
+	err := (&requestError{
+		Method: http.MethodPost, Path: "/messages", StatusCode: http.StatusForbidden,
+		Body: "<html><title>Blocked</title>" + string(make([]byte, 2048)),
+	}).Error()
+	if err != "POST /messages returned 403: hosted edge blocked the request" {
+		t.Fatalf("error = %q", err)
+	}
+}
+
 func TestDefaultTerminalRetrySchedule_MatchesAgreedPlan(t *testing.T) {
 	// MUL-2780 settled on a 5-step exponential backoff (4s, 8s, 16s, 32s, 64s).
 	// Pin it so a future "tidy this up" refactor can't silently flatten or

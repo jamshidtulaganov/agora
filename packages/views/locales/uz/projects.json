@@ -125,8 +125,25 @@
     "local_preview_url_set": "Preview: {{url}}"
   },
   "execution_defaults": {
-    "title": "Ijro standartlari",
-    "description": "Issue ijrochisi Human, Solo yoki Squad rejimini belgilaydi. Bu yerda davom etish, Squad DAG parallelligi va reja ko‘rigi sozlanadi.",
+    "title": "Ish jarayoni",
+    "description": "Loyihaning qaysi bosqichini agent bajarishini va qaysi bosqich insonni kutishini tanlang. Implementatsiya uchun issue ijrochisi Human, Solo yoki Squad rejimini belgilaydi.",
+    "build_stage": "Build",
+    "build_stage_hint": "Implementatsiya issue ijrochisining workspace va branchida bajariladi.",
+    "issue_assignee": "Issue ijrochisi",
+    "qa_stage": "QA",
+    "qa_stage_hint": "Loyiha tekshiruvlarini agentga bering yoki manual testni kuting.",
+    "review_stage": "Review",
+    "review_stage_hint": "Agent xulosasini oling yoki inson code reviewini kuting.",
+    "release_stage": "Release",
+    "release_stage_hint": "Production merge va release doim insonning aniq tasdig‘ini kutadi.",
+    "human": "Inson",
+    "agent": "Agent",
+    "human_approval": "Inson tasdig‘i",
+    "workspace_default": "Workspace standarti",
+    "custom": "Loyiha uchun",
+    "use_workspace_default": "Workspace standartiga qaytarish",
+    "advanced": "Qo‘shimcha orchestration",
+    "advanced_hint": "Davom etish, reja ko‘rigi, parallel ish va xavfsizlik avtomatizatsiyasi.",
     "strategy": "Kim bajarishi kerak?",
     "strategy_automatic": "Avtomatik",
     "strategy_solo": "Solo",
@@ -142,8 +159,8 @@
     "review_plan_first": "Rejani ishga tushirishdan oldin ko‘rish",
     "review_plan_first_hint": "“Tuzish va ishga tushirish” draft taklif yaratadi va inson boshlashini kutadi.",
     "save": "Standartlarni saqlash",
-    "saved": "Ijro standartlari saqlandi",
-    "save_failed": "Ijro standartlarini saqlab bo‘lmadi"
+    "saved": "Ish jarayoni sozlamalari saqlandi",
+    "save_failed": "Ish jarayoni sozlamalarini saqlab bo‘lmadi"
   },
   "delete_dialog": {
     "title": "Loyihani o‘chirish",

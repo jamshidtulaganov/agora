@@ -21,7 +21,7 @@ Agora 里的「编排（orchestration）」指两件不同的事，把它们分�
 这是日常流程 —— 没有运行、没有流水线，只有一个 [task](/tasks)。
 
 - **分给单个 [智能体](/agents)** → 那个智能体拿到一条直接任务并开始干活，状态变为进行中。
-- **分给一个 [squad](/squads)** → squad 的 **leader** 拿到一条任务，被要求 **协调而非亲自写代码**：把 issue 拆成最小的、可独立交付的子 issue，再按能力把它们分给 squad 成员（通常是 @mention 到子 issue 上）。
+- **分给一个 [squad](/squads)** → squad 的 **leader** 拿到一条任务，并把这条完整的父 issue 委派给最合适的成员。只有当多个成果可独立推进、由不同人负责且值得单独跟踪时才创建子 issue；实现、测试、评审和发布阶段本身不会变成子 issue。
 
 squad leader 的拆分是 **指令驱动** 的 —— leader 是一个按简报行事的智能体，所以它带着判断去拆解，跟人类 lead 一样。这 **不是** 编排运行搭出来的那张固定阶段图。两种机制，别混为一谈。
 
@@ -61,7 +61,7 @@ squad leader 的拆分是 **指令驱动** 的 —— leader 是一个按简报�
 | 策略 | 运行的形状 |
 | --- | --- |
 | **`solo`** | 两步：**work → release**。没有 plan、没有 QA、没有 review；要求 issue 已分给智能体。worker 不得生成运行时原生子智能体；并行工作必须成为持久化的小队 DAG 步骤。 |
-| **`squad`** | 完整流水线：**plan → N 条并行 dev 分支 → integrate →（QA ∥ review）→ release**。 |
+| **`squad`** | 自适应流水线：dev 图按 issue 范围缩放，QA/review 步骤跟随项目自动化开关。两项都关闭时，在 release 前停在一个人工 **Manual QA and review** 关卡。 |
 | **`human`** | 单个 **human-work** 步骤加一道审批关卡 —— 你自己勾掉的一个检查点，没有智能体。 |
 | **`automatic`** | Agora 依据 issue 的 **分配对象** 推断：智能体 → `solo`，squad → `squad`，人或未分配 → `human`。智能体只是属于某个 squad **不会** 因此变成 squad 运行。 |
 
@@ -75,7 +75,13 @@ squad leader 的拆分是 **指令驱动** 的 —— leader 是一个按简报�
 
 ### 各阶段
 
-一次 squad 运行有五个阶段。它们的顺序和之间的汇合点：
+squad 运行会按 issue 范围和项目当前自动化策略选择满足安全要求的最小图。启用自动 QA 与 review 时，简洁而完整的需求通常只有四步：
+
+```
+plan ─▶ dev ─▶ verify + review ─▶ release （审批）
+```
+
+较长、明确跨仓库或端到端的工作保留完整的五阶段并行图：
 
 ```
 plan ─▶ dev-frontend ─┐
@@ -83,11 +89,15 @@ plan ─▶ dev-frontend ─┐
        dev-…        ──┘              └─▶ review ──┴─▶ release （审批）
 ```
 
-- **plan** —— 控制者拟出拆分方案。
+- **plan** —— 控制者拟出路由与交接方案；不会把 DAG 阶段创建成子 issue。
 - **dev** —— 每种能力（frontend / backend / mobile / infra / docs / …）一个步骤，**并行**跑。
 - **integrate** —— 把并行 dev 分支合回一处的汇合步骤。它是一种步骤 *kind*，本身不是一个独立阶段 —— 它归属在 `dev` 里。只要一次运行有两条及以上 dev 分支，QA 或 review 之前就必须有一道 integrate 汇合。
 - **qa** 与 **review** —— 两者都依赖 integrate，并且彼此 **并行**。
 - **release** —— 依赖 **qa 和 review 两者**，且是一道 **审批关卡**：由人批准。批准时会重新检查合并关卡，若不满足则连同原因一起拒绝。
+
+当 `AGORA_AUTO_QA_ENABLED` 与 `AGORA_AUTO_REVIEW_ENABLED` 都关闭（默认）时，Agora 不会派发 QA/review 智能体。dev/integration 之后会停在纯人工 **Manual QA and review** 步骤；批准它表示人工测试与评审已完成，然后进入独立的人工 release 审批。只开启一个自动化开关时，只生成对应的智能体阶段，另一项保留为人工关卡。
+
+自动形状采用保守推断：简洁而完整的 issue 文本选择 lean 图；较长或明确跨仓库、端到端的工作选择 full 图。如需覆盖，可将 issue metadata `orchestration_shape` 设置为 `lean` 或 `full`，也可用自定义计划指定精确拓扑。最终形状保存为 `policy.plan_shape`。
 
 <Callout type="info">
 **solo** 运行只有 **work → release** —— **没有 QA、没有 review 步骤**。想要 QA 或 review 阶段，就用 squad 运行（或自定义计划）。这一点常让「以为每次运行都有关卡」的人意外。

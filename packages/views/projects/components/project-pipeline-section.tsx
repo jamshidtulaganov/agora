@@ -65,9 +65,17 @@ const CATEGORY_LABEL: Record<string, string> = {
   Review: "Code review",
   Automation: "Automation",
 };
-export function ProjectPipelineSection({ projectId }: { projectId: string }) {
+export function ProjectPipelineSection({
+  projectId,
+  embedded = false,
+  excludeKeys = [],
+}: {
+  projectId: string;
+  embedded?: boolean;
+  excludeKeys?: string[];
+}) {
   const wsId = useWorkspaceId();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   const { data: entries = [] } = useQuery({
     ...projectConfigOptions(wsId, projectId),
     enabled: open, // only fetch once the section is expanded
@@ -93,7 +101,7 @@ export function ProjectPipelineSection({ projectId }: { projectId: string }) {
 
   // Group by category (QA / Review / Automation) in first-seen order.
   const groups: { category: string; rows: ProjectConfigEntry[] }[] = [];
-  for (const e of entries) {
+  for (const e of entries.filter((entry) => !excludeKeys.includes(entry.key))) {
     let g = groups.find((x) => x.category === e.category);
     if (!g) {
       g = { category: e.category || "General", rows: [] };
@@ -104,23 +112,33 @@ export function ProjectPipelineSection({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      <button
-        type="button"
-        className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
-        onClick={() => setOpen(!open)}
-      >
-        <Sliders className="!size-3 shrink-0 text-muted-foreground" />
-        Pipeline
-        <ChevronRight
-          className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
-        />
-      </button>
+      {!embedded && (
+        <button
+          type="button"
+          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setOpen(!open)}
+        >
+          <Sliders className="!size-3 shrink-0 text-muted-foreground" />
+          Pipeline
+          <ChevronRight
+            className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+          />
+        </button>
+      )}
       {open && (
-        <div className="space-y-3 pl-2">
-          <p className="text-[10px] text-muted-foreground">
-            How this project handles testing, review, and automation. Each setting
-            uses the workspace default until you customize it for this project.
-          </p>
+        <div className={embedded ? "space-y-3" : "space-y-3 pl-2"}>
+          {embedded && groups.length > 0 && (
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+              <Sliders className="size-3" />
+              Advanced safeguards
+            </div>
+          )}
+          {!embedded && (
+            <p className="text-[10px] text-muted-foreground">
+              How this project handles testing, review, and automation. Each setting
+              uses the workspace default until you customize it for this project.
+            </p>
+          )}
           {groups.map((g) => (
             <div key={g.category} className="space-y-1">
               <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">

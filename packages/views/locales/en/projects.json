@@ -130,8 +130,25 @@
     "local_preview_url_set": "Preview: {{url}}"
   },
   "execution_defaults": {
-    "title": "Execution defaults",
-    "description": "The issue assignee selects Human, Solo, or Squad. These defaults control progression, Squad DAG concurrency, and plan review.",
+    "title": "Workflow",
+    "description": "Choose which project stages run by an agent and which wait for a person. The issue assignee still selects Human, Solo, or Squad for implementation.",
+    "build_stage": "Build",
+    "build_stage_hint": "Implementation runs in the issue assignee's workspace and branch.",
+    "issue_assignee": "Issue assignee",
+    "qa_stage": "QA",
+    "qa_stage_hint": "Run project checks automatically or pause for manual testing.",
+    "review_stage": "Review",
+    "review_stage_hint": "Ask an agent for a verdict or wait for a human code review.",
+    "release_stage": "Release",
+    "release_stage_hint": "Production merge and release always wait for an explicit approval.",
+    "human": "Human",
+    "agent": "Agent",
+    "human_approval": "Human approval",
+    "workspace_default": "Workspace default",
+    "custom": "Project custom",
+    "use_workspace_default": "Use workspace default",
+    "advanced": "Advanced orchestration",
+    "advanced_hint": "Progression, plan review, concurrency, and safety automation.",
     "strategy": "Who should execute?",
     "strategy_automatic": "Automatic",
     "strategy_solo": "Solo",
@@ -147,8 +164,8 @@
     "review_plan_first": "Review plans before they run",
     "review_plan_first_hint": "Build and run creates a draft proposal and waits for a human to start it.",
     "save": "Save defaults",
-    "saved": "Execution defaults saved",
-    "save_failed": "Failed to save execution defaults"
+    "saved": "Workflow settings saved",
+    "save_failed": "Failed to save workflow settings"
   },
   "delete_dialog": {
     "title": "Delete project",

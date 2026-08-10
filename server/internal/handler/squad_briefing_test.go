@@ -31,6 +31,20 @@ func TestSquadOperatingProtocolWarnsAgainstDualTrigger(t *testing.T) {
 	}
 }
 
+func TestSquadOperatingProtocolKeepsCohesiveWorkOnParent(t *testing.T) {
+	compact := strings.Join(strings.Fields(squadOperatingProtocol), " ")
+	for _, want := range []string{
+		"Keep the parent atomic by default",
+		"not separate sub-issues",
+		"never duplicate those stages as child issues",
+		"Prefer at most three children",
+	} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("expected adaptive decomposition rule %q\n--- protocol ---\n%s", want, squadOperatingProtocol)
+		}
+	}
+}
+
 // seedSquadForBriefing creates a squad with the seeded test agent as
 // leader. Returns the loaded db.Squad and a cleanup-registered ID.
 func seedSquadForBriefing(t *testing.T, leaderID string, name, instructions string) db.Squad {

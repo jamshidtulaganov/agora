@@ -1020,6 +1020,15 @@ func TestExecuteAndDrainWithMessageSequence_ContinuesAcrossSessions(t *testing.T
 	}
 }
 
+func TestTaskMessageFlushBackoff(t *testing.T) {
+	want := []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second}
+	for failures, expected := range want {
+		if got := taskMessageFlushBackoff(failures); got != expected {
+			t.Errorf("taskMessageFlushBackoff(%d) = %s, want %s", failures, got, expected)
+		}
+	}
+}
+
 func (b *fakeBackend) Execute(_ context.Context, _ string, opts agent.ExecOptions) (*agent.Session, error) {
 	i := int(b.idx.Add(1)) - 1
 	b.calls = append(b.calls, opts)

@@ -129,6 +129,8 @@ agent instructions. The briefing includes:
 Roster entries include member name, type, mention markdown, and non-empty role;
 archived agents are skipped.
 
+Keep cohesive work on its parent. Create at most three sub-issues only for
+independently owned outcomes; never mirror DAG stages as children.
 ## Issue assignment behavior
 
 Issues can be assigned to squads with:
@@ -341,13 +343,8 @@ a matter of the leader's instructions.
 
 ## Lead Orchestrator pattern
 
-A squad leader is not just a routing target — when a squad is used as the
-dev/QA pairing for a body of work, its leader is expected to act as an
-**orchestrator**: it personally decides which agent handles a task, which
-skills and MCP servers that agent needs, and which model fits the task's
-difficulty, and it can create or archive its own subagents to do that. This
-section is product guidance for briefing a leader this way; it does not
-change squad's routing mechanics above (routing to `leader_id` only).
+A squad leader is the **orchestrator**: it selects the agent, skills, MCPs, and
+model for each task. This guidance does not change routing to `leader_id`.
 
 When the issue uses a persisted orchestration run, workers are independent
 agent tasks with separate sessions, branches, and worktrees. The run pins one
@@ -365,6 +362,8 @@ nor worker may treat an issue comment as proof that Git handoff or integration
 succeeded—the daemon/server verify commits. The assignee selects topology (agent=solo,
 squad=squad, otherwise human); project defaults only tune run behavior. Native
 subagents are unsupported: use DAG steps. A started run is the sole dispatcher.
+Generated DAGs are adaptive: cohesive issues use a lean four-step path; broad
+work keeps parallel integration. `orchestration_shape=lean|full` overrides it.
 
 **Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
 squads per unit of work — one dev squad, one QA squad — each with its own

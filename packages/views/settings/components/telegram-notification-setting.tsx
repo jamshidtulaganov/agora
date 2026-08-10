@@ -35,7 +35,6 @@ export function TelegramNotificationSetting() {
   const { push } = useNavigation();
   const paths = useWorkspacePaths();
   const botUsername = useConfigStore((s) => s.telegramBotUsername);
-  const telegramBotsEnabled = useConfigStore((s) => s.telegramBotsEnabled);
 
   const { data, isLoading } = useQuery({
     queryKey: MY_LINKS_KEY,
@@ -154,22 +153,20 @@ export function TelegramNotificationSetting() {
             )}
           </div>
 
-          {telegramBotsEnabled ? (
-            <div className="border-t pt-4">
-              <p className="text-xs text-muted-foreground">
-                {t(($) => $.notifications.telegram.groups_hint)}
-              </p>
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto px-0 pt-1 text-xs"
-                onClick={() => push(`${paths.settings()}?tab=integrations`)}
-              >
-                {t(($) => $.notifications.telegram.groups_link)}
-                <ExternalLink className="ml-1 size-3" />
-              </Button>
-            </div>
-          ) : null}
+          <div className="border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              {t(($) => $.notifications.telegram.groups_hint)}
+            </p>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto px-0 pt-1 text-xs"
+              onClick={() => push(`${paths.settings()}?tab=integrations`)}
+            >
+              {t(($) => $.notifications.telegram.groups_link)}
+              <ExternalLink className="ml-1 size-3" />
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

@@ -10,7 +10,7 @@ func TestDefaultOrchestratorInstructionsSane(t_ *testing.T) {
 	if strings.TrimSpace(d) == "" {
 		t_.Fatal("default orchestrator instructions must not be empty")
 	}
-	for _, want := range []string{"orchestrator", "Decompose", "Delegate", "@mention", "difficulty"} {
+	for _, want := range []string{"orchestrator", "sub-issues", "Delegate", "@mention", "difficulty"} {
 		if !strings.Contains(d, want) {
 			t_.Fatalf("default brief missing %q", want)
 		}

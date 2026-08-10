@@ -597,9 +597,10 @@ func (s *TaskService) CreateOrchestrationTaskInTx(
 	issue db.Issue,
 	agentID, stepID pgtype.UUID,
 	modelOverride, thinkingLevelOverride pgtype.Text,
+	forceFreshSession bool,
 ) (db.AgentTaskQueue, error) {
 	txService := &TaskService{Queries: queries}
-	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, thinkingLevelOverride, stepID, false)
+	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, forceFreshSession, modelOverride, thinkingLevelOverride, stepID, false)
 }
 
 // EnqueueTaskForSquadLeader is the leader-role variant of EnqueueTaskForMention.

@@ -58,7 +58,11 @@ func ParseOrchestrationHandoff(stage, output string) (OrchestrationHandoff, bool
 	matches := orchestrationHandoffBlockRe.FindAllStringSubmatch(output, -1)
 	for i := len(matches) - 1; i >= 0; i-- {
 		var handoff OrchestrationHandoff
-		if err := json.Unmarshal([]byte(strings.TrimSpace(matches[i][1])), &handoff); err != nil {
+		raw := []byte(strings.TrimSpace(matches[i][1]))
+		if normalized, ok := normalizeFlexibleHandoffLists(raw); ok {
+			raw = normalized
+		}
+		if err := json.Unmarshal(raw, &handoff); err != nil {
 			continue
 		}
 		handoff.Stage = stage
@@ -67,6 +71,56 @@ func ParseOrchestrationHandoff(stage, output string) (OrchestrationHandoff, bool
 		}
 	}
 	return OrchestrationHandoff{}, false
+}
+
+// Some providers preserve more structure than the prompt asks for and emit
+// objects in the human-readable string arrays (for example
+// {"decision":"..."} in decisions). Rejecting the entire gate because one
+// list item is richer than expected loses an otherwise valid verdict. Coerce
+// those objects to concise strings while leaving the strongly typed artifact,
+// verification, and question fields strict.
+func normalizeFlexibleHandoffLists(raw []byte) ([]byte, bool) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil {
+		return raw, false
+	}
+	for _, key := range []string{"decisions", "contracts", "findings", "risks", "blockers", "next_actions"} {
+		value, exists := object[key]
+		if !exists {
+			continue
+		}
+		var items []json.RawMessage
+		if json.Unmarshal(value, &items) != nil {
+			continue
+		}
+		stringsOnly := make([]string, 0, len(items))
+		for _, item := range items {
+			var text string
+			if json.Unmarshal(item, &text) == nil {
+				stringsOnly = append(stringsOnly, text)
+				continue
+			}
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(item, &fields) == nil {
+				for _, field := range []string{"details", "decision", "contract", "risk", "blocker", "action", "summary", "name"} {
+					if candidate, ok := fields[field]; ok && json.Unmarshal(candidate, &text) == nil && strings.TrimSpace(text) != "" {
+						break
+					}
+				}
+			}
+			if strings.TrimSpace(text) == "" {
+				text = string(item)
+			}
+			stringsOnly = append(stringsOnly, text)
+		}
+		encoded, err := json.Marshal(stringsOnly)
+		if err != nil {
+			return raw, false
+		}
+		object[key] = encoded
+	}
+	normalized, err := json.Marshal(object)
+	return normalized, err == nil
 }
 
 // NormalizeOrchestrationHandoff always returns a typed envelope. During the

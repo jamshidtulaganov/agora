@@ -17,7 +17,17 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@agora/ui/components/ui/tooltip";
-import { ChevronRight, ChevronDown, Brain, AlertCircle, AlertTriangle, Copy } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Brain,
+  AlertCircle,
+  AlertTriangle,
+  Check,
+  Circle,
+  Copy,
+  LoaderCircle,
+} from "lucide-react";
 import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@agora/core/chat/queries";
 import { Markdown } from "@agora/views/common/markdown";
@@ -31,6 +41,7 @@ import { buildTimeline } from "../../common/task-transcript";
 import { TaskStatusPill } from "./task-status-pill";
 import { formatElapsedMs } from "../lib/format";
 import { splitTimeline, extractCopyText } from "../lib/copy-text";
+import { parseProtocolFallback, type ProtocolFallback } from "../lib/protocol-fallback";
 import { useT } from "../../i18n";
 
 // ─── Public component ────────────────────────────────────────────────────
@@ -232,6 +243,9 @@ function AssistantMessage({
   });
 
   const timeline: ChatTimelineItem[] = buildTimeline(taskMessages ?? []);
+  const protocolFallback = timeline.length === 0
+    ? parseProtocolFallback(message.content)
+    : null;
 
   // Failure bubble path: when the server's FailTask wrote a failure
   // chat_message (failure_reason set), render a destructive bubble with the
@@ -252,8 +266,10 @@ function AssistantMessage({
     <div className="w-full space-y-1.5">
       {timeline.length > 0 ? (
         <TimelineView items={timeline} attachments={message.attachments} />
+      ) : protocolFallback ? (
+        <ProtocolFallbackView fallback={protocolFallback} isPending={isPending} />
       ) : (
-        <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+        <div className="min-w-0 break-words text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
           <Markdown attachments={message.attachments}>{message.content}</Markdown>
         </div>
       )}
@@ -266,6 +282,67 @@ function AssistantMessage({
         timeline={timeline}
         isPending={isPending}
       />
+    </div>
+  );
+}
+
+function ProtocolFallbackView({
+  fallback,
+  isPending,
+}: {
+  fallback: ProtocolFallback;
+  isPending: boolean;
+}) {
+  const { t } = useT("chat");
+  const [rawOpen, setRawOpen] = useState(false);
+  const visibleTodo = fallback.todo.slice(0, 6);
+  const answer = !isPending && fallback.final ? fallback.final : "";
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <div
+        className="rounded-lg border border-foreground/10 bg-muted/20 px-3 py-2.5"
+        aria-live={isPending ? "polite" : undefined}
+      >
+        <div className="flex min-w-0 items-start gap-2 text-sm">
+          <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500" />
+          <span className="min-w-0 break-words leading-relaxed">{fallback.progress}</span>
+        </div>
+        {visibleTodo.length > 0 ? (
+          <ul className="mt-2 space-y-1 border-t border-foreground/10 pt-2">
+            {visibleTodo.map((item, index) => (
+              <li key={`${item.text}-${index}`} className="flex min-w-0 items-start gap-2 text-xs">
+                {item.status === "done" ? (
+                  <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+                ) : item.status === "active" ? (
+                  <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-blue-500" aria-hidden="true" />
+                ) : (
+                  <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                )}
+                <span className="min-w-0 break-words text-muted-foreground">{item.text}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {answer ? (
+        <div className="min-w-0 break-words text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+          <Markdown>{answer}</Markdown>
+        </div>
+      ) : null}
+
+      <Collapsible open={rawOpen} onOpenChange={setRawOpen}>
+        <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+          {rawOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          <span>{t(($) => $.message_list.show_details)}</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-xs text-muted-foreground">
+            {fallback.raw}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

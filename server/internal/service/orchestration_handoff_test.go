@@ -90,3 +90,34 @@ func TestParseOrchestrationHandoffRoutesQuestionsToHumanConsumer(t *testing.T) {
 		t.Fatalf("question target has no automatic consumer: %#v", handoff.Question)
 	}
 }
+
+func TestParseOrchestrationHandoffAcceptsRichStringListItems(t *testing.T) {
+	output := "```agora-handoff\n" + `{
+  "schema_version": 1,
+  "stage": "review",
+  "outcome": "completed",
+  "verdict": "pass",
+  "summary": "Contract is correct",
+  "decisions": [{"decision":"Keep the additive field"}],
+  "contracts": [{"name":"invoice producer","effect":"read"}],
+  "artifacts": [],
+  "verification": [{"name":"static review","status":"passed"}],
+  "findings": [{"severity":"low","details":"Spanish fallback remains"}],
+  "risks": [{"risk":"Dependencies unavailable"}],
+  "blockers": [],
+  "next_actions": [{"owner":"qa","action":"Run the authenticated smoke"}]
+}` + "\n```"
+	handoff, ok := ParseOrchestrationHandoff("review", output)
+	if !ok || handoff.Verdict != "pass" {
+		t.Fatalf("rich handoff should retain its verdict: ok=%v handoff=%#v", ok, handoff)
+	}
+	if len(handoff.Decisions) != 1 || handoff.Decisions[0] != "Keep the additive field" {
+		t.Fatalf("decision object was not normalized: %#v", handoff.Decisions)
+	}
+	if len(handoff.Findings) != 1 || handoff.Findings[0] != "Spanish fallback remains" {
+		t.Fatalf("finding object was not normalized: %#v", handoff.Findings)
+	}
+	if len(handoff.NextActions) != 1 || handoff.NextActions[0] != "Run the authenticated smoke" {
+		t.Fatalf("action object was not normalized: %#v", handoff.NextActions)
+	}
+}

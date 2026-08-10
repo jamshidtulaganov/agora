@@ -125,8 +125,25 @@
     "local_preview_url_set": "预览：{{url}}"
   },
   "execution_defaults": {
-    "title": "执行默认设置",
-    "description": "任务负责人决定人工、Solo 或小队模式。这里设置推进方式、小队 DAG 并发和计划审阅。",
+    "title": "工作流",
+    "description": "选择哪些项目阶段由智能体执行，哪些阶段等待人工处理。实施方式仍由任务负责人决定人工、Solo 或小队模式。",
+    "build_stage": "构建",
+    "build_stage_hint": "实施工作在任务负责人的工作区和分支中运行。",
+    "issue_assignee": "任务负责人",
+    "qa_stage": "QA",
+    "qa_stage_hint": "自动运行项目检查，或暂停并等待人工测试。",
+    "review_stage": "审阅",
+    "review_stage_hint": "由智能体给出结论，或等待人工代码审阅。",
+    "release_stage": "发布",
+    "release_stage_hint": "合并到生产分支和发布始终等待明确的人工批准。",
+    "human": "人工",
+    "agent": "智能体",
+    "human_approval": "人工批准",
+    "workspace_default": "工作区默认值",
+    "custom": "项目自定义",
+    "use_workspace_default": "使用工作区默认值",
+    "advanced": "高级编排",
+    "advanced_hint": "推进方式、计划审阅、并发和安全自动化。",
     "strategy": "由谁执行？",
     "strategy_automatic": "自动",
     "strategy_solo": "单个智能体",
@@ -142,8 +159,8 @@
     "review_plan_first": "运行前审阅计划",
     "review_plan_first_hint": "“构建并运行”会先创建草稿计划，等待人工启动。",
     "save": "保存默认设置",
-    "saved": "已保存执行默认设置",
-    "save_failed": "无法保存执行默认设置"
+    "saved": "已保存工作流设置",
+    "save_failed": "无法保存工作流设置"
   },
   "delete_dialog": {
     "title": "删除项目",

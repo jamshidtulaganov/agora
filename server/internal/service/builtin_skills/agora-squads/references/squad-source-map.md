@@ -91,9 +91,22 @@ Contracts:
   (daemon.go:1187, 1530);
 - briefing includes operating protocol, roster, and optional instructions
   (squad_briefing.go:104-117);
+- operating protocol keeps cohesive work on the parent and reserves at most
+  three child issues for independently trackable outcomes; DAG stages never
+  become child issues (squad_briefing.go:squadOperatingProtocol);
 - `instructions` section appears only when non-empty (squad_briefing.go:110-112);
 - archived agent members are skipped from roster (squad_briefing.go:178-179);
 - no traced behavior injects `instructions` into every squad member.
+
+Adaptive persisted-run topology is implemented in
+`server/internal/handler/orchestration.go` (`inferSquadPlanShape`,
+`leanSquadWorker`, `defaultOrchestrationStepsWithMembers`). The selected
+`lean|full|custom` shape is stored in run policy as `plan_shape`.
+QA/review topology also follows the effective project-scoped
+`AGORA_AUTO_QA_ENABLED` and `AGORA_AUTO_REVIEW_ENABLED` values. Disabled
+automation becomes an unrouted human approval checkpoint; approving it
+completes the step without dispatching the controller. Run policy records
+`auto_qa`, `auto_review`, and `verification_mode`.
 
 ## Issue Assignment
 

@@ -83,13 +83,16 @@ func (h *Handler) orchestrationDefaultsForIssue(ctx context.Context, issue db.Is
 }
 
 type orchestrationStepRequest struct {
-	Key              string   `json:"key"`
-	Title            string   `json:"title"`
-	Stage            string   `json:"stage"`
-	AgentID          string   `json:"agent_id"`
-	Model            string   `json:"model"`
-	Instructions     string   `json:"instructions"`
-	ApprovalRequired bool     `json:"approval_required"`
+	Key              string `json:"key"`
+	Title            string `json:"title"`
+	Stage            string `json:"stage"`
+	AgentID          string `json:"agent_id"`
+	Model            string `json:"model"`
+	Instructions     string `json:"instructions"`
+	ApprovalRequired bool   `json:"approval_required"`
+	// HumanOnly marks an approval checkpoint that completes when approved. It
+	// must not inherit the run controller and dispatch an agent afterwards.
+	HumanOnly        bool     `json:"human_only"`
 	MaxAttempts      int32    `json:"max_attempts"`
 	DependsOnKeys    []string `json:"depends_on_keys"`
 	ParentKey        string   `json:"parent_key"`
@@ -768,7 +771,7 @@ func (h *Handler) orchestrationPlanAgentIDs(
 			add(controllerID)
 			continue
 		}
-		if !agentID.Valid && input.ApprovalRequired {
+		if !agentID.Valid && input.ApprovalRequired && !input.HumanOnly {
 			controllerID := routing.ControllerAgent
 			if !controllerID.Valid {
 				controllerID = routing.DevelopmentAgent
@@ -1339,7 +1342,82 @@ func squadPlanParallelWidth(steps []orchestrationStepRequest, configured int) (i
 	return width, len(developmentAgents)
 }
 
+const (
+	squadPlanShapeLean = "lean"
+	squadPlanShapeFull = "full"
+)
+
+// inferSquadPlanShape keeps the automatic squad path proportional to the
+// issue. Most concise, cohesive requests need coordination, one implementer,
+// one independent verification pass, and a human release gate—not a branch
+// for every roster member. Large or explicitly cross-boundary work keeps the
+// full parallel DAG. Humans can force either result with the
+// orchestration_shape issue metadata key or provide a custom plan.
+func inferSquadPlanShape(issue db.Issue) string {
+	if explicit := strings.ToLower(strings.TrimSpace(issueMetadataString(issue.Metadata, "orchestration_shape"))); explicit == squadPlanShapeLean || explicit == squadPlanShapeFull {
+		return explicit
+	}
+	description := ""
+	if issue.Description.Valid {
+		description = issue.Description.String
+	}
+	body := strings.ToLower(strings.TrimSpace(issue.Title + "\n" + description))
+	// Empty synthetic issues are treated as unknown/full. This is fail-safe and
+	// also keeps imported records without useful text from being under-planned.
+	if body == "" {
+		return squadPlanShapeFull
+	}
+	for _, marker := range []string{
+		"cross-repo", "cross repo", "multiple repositories", "multiple projects",
+		"end-to-end", "end to end", "e2e", "data migration", "schema migration",
+		"frontend and backend", "backend and frontend", "ui and api", "api and ui",
+	} {
+		if strings.Contains(body, marker) {
+			return squadPlanShapeFull
+		}
+	}
+	if len(body) <= 700 {
+		return squadPlanShapeLean
+	}
+	return squadPlanShapeFull
+}
+
+func leanSquadWorker(issue db.Issue, workers []orchestrationPlannerMember) orchestrationPlannerMember {
+	if len(workers) == 0 {
+		return orchestrationPlannerMember{}
+	}
+	description := ""
+	if issue.Description.Valid {
+		description = issue.Description.String
+	}
+	body := strings.ToLower(issue.Title + "\n" + description)
+	capabilityMarkers := map[string][]string{
+		"frontend":       {"frontend", "ui", "ux", "screen", "page", "component", "responsive", "css"},
+		"backend":        {"backend", "api", "endpoint", "database", "schema", "server"},
+		"mobile":         {"mobile", "ios", "android", "swift", "kotlin"},
+		"infrastructure": {"infrastructure", "deploy", "docker", "kubernetes", "terraform", "ci/cd"},
+		"documentation":  {"documentation", "docs", "readme", "changelog", "markdown"},
+	}
+	bestIndex, bestScore := 0, -1
+	for i, worker := range workers {
+		score := 0
+		for _, marker := range capabilityMarkers[plannerCapability(worker)] {
+			if strings.Contains(body, marker) {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestIndex, bestScore = i, score
+		}
+	}
+	return workers[bestIndex]
+}
+
 func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember, configuredConcurrency int) []orchestrationStepRequest {
+	return defaultOrchestrationStepsWithMembersAndAutomation(issue, routing, strategy, members, configuredConcurrency, true, true)
+}
+
+func defaultOrchestrationStepsWithMembersAndAutomation(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember, configuredConcurrency int, autoQA, autoReview bool) []orchestrationStepRequest {
 	controller := routing.ControllerAgent
 	development := routing.DevelopmentAgent
 	if !development.Valid {
@@ -1422,6 +1500,10 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 	if len(workers) == 0 {
 		workers = []orchestrationPlannerMember{{AgentID: development, Role: "implementation"}}
 	}
+	planShape := inferSquadPlanShape(issue)
+	if planShape == squadPlanShapeLean && autoQA && autoReview {
+		workers = []orchestrationPlannerMember{leanSquadWorker(issue, workers)}
+	}
 
 	controllerModel := ""
 	if member, ok := plannerMemberByID(members, controller); ok {
@@ -1473,9 +1555,62 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		})
 		verificationDependencies = []string{"integrate"}
 	}
+	if planShape == squadPlanShapeLean {
+		steps = append(steps,
+			orchestrationStepRequest{
+				Key: "verify", Title: "Verify and review the result", Stage: "qa", Capability: "qa",
+				AgentID: uuidToString(qaAgent), Model: qaModel, MaxAttempts: 2,
+				DependsOnKeys: verificationDependencies, SquadID: squadID,
+				Instructions: "Independently test the completed outcome and review the changed code and contracts. Report one combined verdict with concrete evidence; do not edit the reviewed artifact.",
+			},
+			orchestrationStepRequest{
+				Key: "release", Title: "Approve and merge the change", Stage: "release", Capability: "release",
+				ApprovalRequired: true, MaxAttempts: 2, DependsOnKeys: []string{"verify"}, SquadID: squadID,
+				Instructions: "After human approval, merge only the exact artifact verified by the prior step into its configured target branch. Verify the pull request identity and reviewed HEAD before merging; stop and report if either moved.",
+			},
+		)
+		return steps
+	}
+	releaseDependencies := append([]string(nil), verificationDependencies...)
+	if autoQA {
+		steps = append(steps, orchestrationStepRequest{
+			Key: "qa", Title: "Verify the completed result", Stage: "qa", Capability: "qa",
+			AgentID: uuidToString(qaAgent), Model: qaModel, MaxAttempts: 2,
+			DependsOnKeys: verificationDependencies, SquadID: squadID,
+		})
+		releaseDependencies = []string{"qa"}
+	}
+	if !autoQA && autoReview {
+		steps = append(steps, orchestrationStepRequest{
+			Key: "manual-qa", Title: "Manual QA", Stage: "qa", Capability: "qa",
+			ApprovalRequired: true, HumanOnly: true, MaxAttempts: 1,
+			DependsOnKeys: releaseDependencies,
+			Instructions:  "Run the project's manual QA checks against the completed build and approve this checkpoint only when the evidence is acceptable.",
+		})
+		releaseDependencies = []string{"manual-qa"}
+	}
+	if autoReview {
+		steps = append(steps, orchestrationStepRequest{
+			Key: "review", Title: "Review the completed result", Stage: "review", Capability: "review",
+			AgentID: uuidToString(reviewAgent), Model: reviewModel, MaxAttempts: 2,
+			DependsOnKeys: releaseDependencies, SquadID: squadID,
+		})
+		releaseDependencies = []string{"review"}
+	} else {
+		title := "Manual review"
+		instructions := "Review the completed artifact and record the human decision before continuing."
+		if !autoQA {
+			title = "Manual QA and review"
+			instructions = "Run the project's manual QA checks against the completed build, review the result, and approve this checkpoint only when the evidence is acceptable."
+		}
+		steps = append(steps, orchestrationStepRequest{
+			Key: "manual-review", Title: title, Stage: "review", Capability: "review",
+			ApprovalRequired: true, HumanOnly: true, MaxAttempts: 1,
+			DependsOnKeys: releaseDependencies, Instructions: instructions,
+		})
+		releaseDependencies = []string{"manual-review"}
+	}
 	steps = append(steps,
-		orchestrationStepRequest{Key: "qa", Title: "Verify the completed result", Stage: "qa", Capability: "qa", AgentID: uuidToString(qaAgent), Model: qaModel, MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
-		orchestrationStepRequest{Key: "review", Title: "Review the completed result", Stage: "review", Capability: "review", AgentID: uuidToString(reviewAgent), Model: reviewModel, MaxAttempts: 2, DependsOnKeys: verificationDependencies, SquadID: squadID},
 		orchestrationStepRequest{
 			// UNROUTED ON PURPOSE. A release step that carries an agent_id is
 			// dispatched by the scheduler like any other step — BEFORE the human
@@ -1489,7 +1624,7 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 			// because both attempts are now post-approval and a merge is worth
 			// one retry.
 			Key: "release", Title: "Approve and merge the change", Stage: "release", Capability: "release",
-			ApprovalRequired: true, MaxAttempts: 2, DependsOnKeys: []string{"qa", "review"}, SquadID: squadID,
+			ApprovalRequired: true, MaxAttempts: 2, DependsOnKeys: releaseDependencies, SquadID: squadID,
 			Instructions: "After human approval, merge only the exact integrated artifact verified by QA and review into its configured target branch. Verify the pull request identity and reviewed HEAD before merging; stop and report if either moved.",
 		},
 	)
@@ -1655,8 +1790,13 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			configuredConcurrency = int(configured)
 		}
 	}
+	autoQA := h.autoQAEnabled(r.Context(), issue)
+	autoReview := h.autoReviewEnabled(r.Context(), issue)
 	if !hasCustomPlan {
-		req.Steps = defaultOrchestrationStepsWithMembers(issue, routing, executionStrategy, plannerMembers, configuredConcurrency)
+		req.Steps = defaultOrchestrationStepsWithMembersAndAutomation(
+			issue, routing, executionStrategy, plannerMembers, configuredConcurrency,
+			autoQA, autoReview,
+		)
 	}
 	if len(req.Steps) > 20 {
 		writeError(w, http.StatusBadRequest, "plan cannot exceed 20 steps")
@@ -1719,7 +1859,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		agentID, _ := parseOptionalUUID(input.AgentID)
-		if !agentID.Valid && input.ApprovalRequired {
+		if !agentID.Valid && input.ApprovalRequired && !input.HumanOnly {
 			if strings.TrimSpace(input.SquadID) != "" {
 				_, controllerID, resolveErr := h.resolveSquadStep(r.Context(), issue.WorkspaceID, input)
 				if resolveErr != nil {
@@ -1752,11 +1892,23 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	req.Policy["controller_agent_id"] = uuidToString(routing.ControllerAgent)
 	req.Policy["execution_strategy"] = executionStrategy
 	req.Policy["progression_policy"] = progressionPolicy
+	req.Policy["auto_qa"] = autoQA
+	req.Policy["auto_review"] = autoReview
+	if !autoQA && !autoReview {
+		req.Policy["verification_mode"] = "manual"
+	} else {
+		req.Policy["verification_mode"] = "agent"
+	}
 	if artifactLocation != "" {
 		req.Policy[orchestrationArtifactLocationPolicyKey] = artifactLocation
 	}
 	if executionStrategy == "squad" && routing.OwnerType == "squad" {
 		req.Policy["squad_id"] = uuidToString(routing.OwnerID)
+		if hasCustomPlan {
+			req.Policy["plan_shape"] = "custom"
+		} else {
+			req.Policy["plan_shape"] = inferSquadPlanShape(issue)
+		}
 		if roster := buildSquadRosterPolicy(plannerMembers); len(roster) > 0 {
 			req.Policy["squad_roster"] = roster
 		}
@@ -1882,7 +2034,11 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		// ApproveOrchestrationStep's COALESCE yields NULL, and the step is
 		// marked `completed` with no merge ever dispatched — the approval
 		// silently does nothing.
-		if input.ApprovalRequired && !agentID.Valid && !controllerAgentID.Valid {
+		if input.HumanOnly && (!input.ApprovalRequired || agentID.Valid) {
+			writeError(w, http.StatusBadRequest, "human-only steps must be unrouted approval gates")
+			return
+		}
+		if input.ApprovalRequired && !input.HumanOnly && !agentID.Valid && !controllerAgentID.Valid {
 			controllerAgentID = routing.ControllerAgent
 			if !controllerAgentID.Valid {
 				controllerAgentID = routing.DevelopmentAgent
@@ -3304,6 +3460,7 @@ func (h *Handler) queueOrchestrationStepAtomically(
 	task, err := h.TaskService.CreateOrchestrationTaskInTx(
 		ctx, qtx, issue, current.AgentID, current.ID,
 		current.ModelOverride, current.ThinkingLevelOverride,
+		current.Attempt > 0 && (current.Stage == "qa" || current.Stage == "review"),
 	)
 	if err != nil {
 		return db.AgentTaskQueue{}, db.OrchestrationEvent{}, err

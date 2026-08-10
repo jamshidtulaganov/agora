@@ -38,7 +38,6 @@ export function IntegrationsTab() {
   const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const zohoEnabled = useConfigStore((s) => s.zohoEnabled);
   const larkEnabled = useConfigStore((s) => s.larkEnabled);
-  const telegramBotsEnabled = useConfigStore((s) => s.telegramBotsEnabled);
 
   const { data: figmaStatus } = useQuery({
     queryKey: ["figma-credential", wsId],
@@ -62,7 +61,7 @@ export function IntegrationsTab() {
   // panel share one cache entry instead of fetching twice.
   const { data: telegramData } = useQuery({
     ...telegramInstallationsOptions(wsId),
-    enabled: !!wsId && telegramBotsEnabled,
+    enabled: !!wsId,
   });
 
   const status = (connected: boolean): "connected" | "not_connected" =>
@@ -120,16 +119,14 @@ export function IntegrationsTab() {
           </IntegrationCard>
         ) : null}
 
-        {telegramBotsEnabled ? (
-          <IntegrationCard
-            icon={<Send className="h-4 w-4" />}
-            name={t(($) => $.integrations.telegram.name)}
-            description={t(($) => $.integrations.telegram.description)}
-            status={status(telegramData?.configured === true)}
-          >
-            <TelegramTab />
-          </IntegrationCard>
-        ) : null}
+        <IntegrationCard
+          icon={<Send className="h-4 w-4" />}
+          name={t(($) => $.integrations.telegram.name)}
+          description={t(($) => $.integrations.telegram.description)}
+          status={status(telegramData?.configured === true)}
+        >
+          <TelegramTab />
+        </IntegrationCard>
 
         {larkEnabled ? (
           <IntegrationCard

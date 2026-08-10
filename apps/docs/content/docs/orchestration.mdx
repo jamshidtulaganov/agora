@@ -21,7 +21,7 @@ Assigning an issue — even to a whole squad — does **not** start an orchestra
 This is the everyday flow — no run, no pipeline, just a [task](/tasks).
 
 - **Assign to a single [agent](/agents)** → that agent gets one direct task and starts working. Status moves to In Progress.
-- **Assign to a [squad](/squads)** → the squad's **leader** gets one task, briefed to **coordinate rather than code**: break the issue into the smallest independently-shippable sub-issues and delegate them to squad members by fit (usually by @mentioning them onto sub-issues).
+- **Assign to a [squad](/squads)** → the squad's **leader** gets one task, briefed to coordinate and delegate the cohesive parent issue to the best-fit member. It creates sub-issues only for independently owned outcomes that remain useful to track on their own—not for implementation, test, review, or release stages.
 
 The squad-leader split is **instruction-driven** — the leader is an agent following a briefing, so it decomposes with judgement, the same way a human lead would. It is *not* the rigid stage graph that an orchestration run builds. Two different mechanisms; don't conflate them.
 
@@ -61,7 +61,7 @@ The **Customize** panel offers four strategies:
 | Strategy | Shape of the run |
 | --- | --- |
 | **`solo`** | Two steps: **work → release**. No plan, no QA, no review. Requires an agent-assigned issue. The worker must not spawn runtime-native child agents; parallel work belongs in persisted Squad DAG steps. |
-| **`squad`** | The full pipeline: **plan → N parallel dev branches → integrate → (QA ∥ review) → release**. |
+| **`squad`** | Adaptive pipeline. The dev graph scales with issue scope; QA/review steps follow the project's automation flags. With both flags off, the graph pauses at one human **Manual QA and review** gate before release. |
 | **`human`** | A single **human-work** step with an approval gate — a checkpoint you tick off yourself, no agent. |
 | **`automatic`** | Agora infers from the issue's **assignee**: agent → `solo`, squad → `squad`, human/unassigned → `human`. An agent that merely belongs to a squad still gets `solo` — membership does not force a squad run. |
 
@@ -75,7 +75,16 @@ Other options on the panel:
 
 ### The stages
 
-A squad run has five stages. Their order and the join between them:
+A squad run uses the smallest safe graph for the issue and the project's
+current automation policy. With automatic QA and review enabled, a concise
+cohesive request has four agent-backed steps:
+
+```
+plan ─▶ dev ─▶ verify + review ─▶ release  (approval)
+```
+
+Long or explicitly cross-boundary work keeps the full five-stage shape and
+the join between parallel branches:
 
 ```
 plan ─▶ dev-frontend ─┐
@@ -83,11 +92,25 @@ plan ─▶ dev-frontend ─┐
        dev-…        ──┘              └─▶ review ──┴─▶ release  (approval)
 ```
 
-- **plan** — the controller drafts the breakdown.
+- **plan** — the controller drafts the routing and handoff. It does not create
+  child issues for DAG stages.
 - **dev** — one step per capability (frontend / backend / mobile / infra / docs / …), run in **parallel**.
 - **integrate** — a join step that merges the parallel dev branches back together. It is a step *kind*, not a stage of its own — it lives inside `dev`. Whenever a run has two or more dev branches, an integrate join is required before QA or review can run.
 - **qa** and **review** — both depend on integrate and run in **parallel** with each other.
 - **release** — depends on **both** qa and review, and is an **approval gate**: a human approves it. Approving re-checks the merge gates and refuses (with a reason) if they aren't satisfied.
+
+When `AGORA_AUTO_QA_ENABLED` and `AGORA_AUTO_REVIEW_ENABLED` are both off (the
+default), Agora does not dispatch QA/review agents. After dev/integration it
+parks at a human-only **Manual QA and review** step. Approving that checkpoint
+records that manual testing/review is complete and advances to the separate
+manual release approval. If only one automation flag is on, only that agent
+stage is generated; the other remains a human checkpoint.
+
+The automatic shape is conservative: concise cohesive issue text selects the
+lean graph; long or explicitly cross-repository/end-to-end work selects the
+full graph. Set issue metadata `orchestration_shape` to `lean` or `full` when
+you need to override inference, or use a custom plan for exact topology. The
+chosen value is persisted as `policy.plan_shape`.
 
 <Callout type="info">
 A **solo** run is only **work → release** — it has **no QA and no review step**. If you want a QA or review stage, use a squad run (or a custom plan). This surprises people who expect every run to be gated.

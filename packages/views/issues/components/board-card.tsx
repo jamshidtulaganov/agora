@@ -26,6 +26,7 @@ import type { ChildProgress } from "./list-row";
 import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
+import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 
 function formatDate(date: string): string {
@@ -60,10 +61,12 @@ export const BoardCardContent = memo(function BoardCardContent({
   issue,
   editable = false,
   childProgress,
+  childIssues,
 }: {
   issue: Issue;
   editable?: boolean;
   childProgress?: ChildProgress;
+  childIssues?: Issue[];
 }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
@@ -102,6 +105,8 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
+  const visibleChildIssues = childIssues?.slice(0, 5) ?? [];
+  const remainingChildCount = Math.max(0, (childIssues?.length ?? 0) - visibleChildIssues.length);
   const showLabels = storeProperties.labels && labels.length > 0;
 
   const showAssigneeName = showAssigneeSection && hasAssignee && !showStartDate && !showDueDate;
@@ -300,9 +305,47 @@ export const BoardCardContent = memo(function BoardCardContent({
           )}
         </div>
       )}
+
+      <BoardChildIssueList
+        issues={visibleChildIssues}
+        remainingCount={remainingChildCount}
+        label={t(($) => $.detail.sub_issues_label)}
+      />
     </div>
   );
 });
+
+export function BoardChildIssueList({
+  issues,
+  remainingCount = 0,
+  label,
+}: {
+  issues: Issue[];
+  remainingCount?: number;
+  label: string;
+}) {
+  if (issues.length === 0) return null;
+  return (
+    <div
+      className="relative mt-2.5 space-y-1 border-t border-foreground/10 pt-2 pl-2"
+      aria-label={label}
+    >
+      <span className="absolute bottom-1 left-0 top-2 w-px bg-border" aria-hidden="true" />
+      {issues.map((child) => (
+        <div key={child.id} className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4">
+          <StatusIcon status={child.status} className="size-3" />
+          <span className="shrink-0 tabular-nums text-muted-foreground">{child.identifier}</span>
+          <span className="min-w-0 truncate text-foreground/80">{child.title}</span>
+        </div>
+      ))}
+      {remainingCount > 0 ? (
+        <div className="pl-[18px] text-[11px] tabular-nums text-muted-foreground">
+          +{remainingCount}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const animateLayoutChanges: AnimateLayoutChanges = (args) => {
   const { isSorting, wasDragging } = args;
@@ -310,7 +353,7 @@ const animateLayoutChanges: AnimateLayoutChanges = (args) => {
   return defaultAnimateLayoutChanges(args);
 };
 
-export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, childProgress, disableSorting }: { issue: Issue; childProgress?: ChildProgress; disableSorting?: boolean }) {
+export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, childProgress, childIssues, disableSorting }: { issue: Issue; childProgress?: ChildProgress; childIssues?: Issue[]; disableSorting?: boolean }) {
   const p = useWorkspacePaths();
   const {
     attributes,
@@ -344,7 +387,7 @@ export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, chil
           href={p.issueDetail(issue.id)}
           className={`group block transition-colors ${isDragging ? "pointer-events-none" : ""}`}
         >
-          <BoardCardContent issue={issue} editable childProgress={childProgress} />
+          <BoardCardContent issue={issue} editable childProgress={childProgress} childIssues={childIssues} />
         </AppLink>
       </div>
     </IssueActionsContextMenu>
