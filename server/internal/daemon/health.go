@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jamshidtulaganov/agora/server/internal/daemon/repocache"
+	"github.com/jamshidtulaganov/agora/server/internal/previewproxy"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -748,8 +749,12 @@ func previewLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 	orig := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		orig(req)
+		req.Header.Set("Accept-Encoding", "identity")
 		req.URL.Path = "/" + tail
 		req.Host = target.Host
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		return previewproxy.PrepareResponse(resp, "/editor/local/"+portStr)
 	}
 	proxy.ServeHTTP(w, r)
 }

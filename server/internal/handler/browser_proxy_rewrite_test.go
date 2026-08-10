@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"io"
-	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/jamshidtulaganov/agora/server/internal/previewproxy"
 )
 
 func TestDevServerPort(t *testing.T) {
@@ -37,7 +37,7 @@ func TestRewriteDevServerBody(t *testing.T) {
 		`const rel = "./local.js";`, // relative — must NOT change
 		`const api = "/api/data";`,  // app data path, not a dev root — must NOT change
 	}, "\n")
-	out := string(rewriteDevServerBody([]byte(in), prefix))
+	out := string(previewproxy.RewriteBody([]byte(in), prefix))
 
 	mustHave := []string{
 		`src="` + prefix + `/@vite/client"`,
@@ -65,29 +65,13 @@ func TestIsRewritableContentType(t *testing.T) {
 	yes := []string{"text/html", "text/html; charset=utf-8", "application/javascript", "text/javascript", "text/css; charset=utf-8"}
 	no := []string{"application/json", "image/png", "font/woff2", "application/wasm", ""}
 	for _, c := range yes {
-		if !isRewritableContentType(c) {
+		if !previewproxy.IsRewritableContentType(c) {
 			t.Errorf("%q should be rewritable", c)
 		}
 	}
 	for _, c := range no {
-		if isRewritableContentType(c) {
+		if previewproxy.IsRewritableContentType(c) {
 			t.Errorf("%q should NOT be rewritable", c)
 		}
-	}
-}
-
-// ModifyResponse leaves a non-text response byte-identical.
-func TestRewriteDevServerResponsePassthroughForImages(t *testing.T) {
-	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a}
-	resp := &http.Response{
-		Header: http.Header{"Content-Type": {"image/png"}},
-		Body:   io.NopCloser(strings.NewReader(string(raw))),
-	}
-	if err := rewriteDevServerResponse(resp, "/p/editor/local/5173"); err != nil {
-		t.Fatalf("rewrite: %v", err)
-	}
-	got, _ := io.ReadAll(resp.Body)
-	if string(got) != string(raw) {
-		t.Errorf("image body mutated: %v", got)
 	}
 }

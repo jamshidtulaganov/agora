@@ -1,22 +1,19 @@
 package handler
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/previewproxy"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -260,7 +257,7 @@ func (h *Handler) ProxyBrowser(w http.ResponseWriter, r *http.Request) {
 	// through untouched.
 	if devPrefix != "" {
 		proxy.ModifyResponse = func(resp *http.Response) error {
-			return rewriteDevServerResponse(resp, devPrefix)
+			return previewproxy.PrepareResponse(resp, devPrefix)
 		}
 	}
 	// The global CSP middleware stamps the API policy on every response; these
@@ -290,52 +287,4 @@ func devServerPort(upstreamPath string) string {
 		}
 	}
 	return port
-}
-
-// devRootRefs matches an absolute-root reference to a Vite/bundler dev root,
-// captured right after a delimiter (quote, paren, =, or whitespace) so we only
-// touch real references, not arbitrary "/foo" substrings. The alternation is
-// the fixed set of roots a dev server serves its module graph + assets from.
-var devRootRefs = regexp.MustCompile(
-	`([\"'` + "`" + `(=\s])/((?:@vite/|@react-refresh|@id/|@fs/|src/|node_modules/|assets/|@vite-plugin|__vite))`,
-)
-
-// rewriteDevServerResponse rewrites absolute-root asset refs in an HTML/JS/CSS
-// dev-server response so they resolve through the proxy prefix. Non-text
-// responses and other content types pass through untouched. Pure except for
-// mutating resp.Body + headers; the matching logic is in rewriteDevServerBody
-// for unit testing.
-func rewriteDevServerResponse(resp *http.Response, devPrefix string) error {
-	ct := resp.Header.Get("Content-Type")
-	if !isRewritableContentType(ct) {
-		return nil
-	}
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return err
-	}
-	out := rewriteDevServerBody(body, devPrefix)
-	resp.Body = io.NopCloser(bytes.NewReader(out))
-	resp.ContentLength = int64(len(out))
-	resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
-	// A rewritten body no longer matches the upstream validator.
-	resp.Header.Del("ETag")
-	return nil
-}
-
-// isRewritableContentType gates rewriting to the text formats that carry
-// absolute-root refs (HTML entry, JS modules, CSS url()). JSON, images, fonts,
-// wasm and the like pass through byte-for-byte.
-func isRewritableContentType(ct string) bool {
-	ct = strings.ToLower(ct)
-	return strings.Contains(ct, "text/html") ||
-		strings.Contains(ct, "javascript") ||
-		strings.Contains(ct, "text/css")
-}
-
-// rewriteDevServerBody is the pure core: prefix every absolute-root dev-server
-// ref with devPrefix. Exported-ish (package) for unit tests.
-func rewriteDevServerBody(body []byte, devPrefix string) []byte {
-	return devRootRefs.ReplaceAll(body, []byte("${1}"+devPrefix+"/${2}"))
 }

@@ -59,6 +59,38 @@ func TestPreviewLocalProxyForwardsTrackedPreview(t *testing.T) {
 	}
 }
 
+func TestPreviewLocalProxyAllowsEmbeddingAndRewritesRootAssets(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'self'")
+		w.Header().Set("Content-Security-Policy-Report-Only", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
+		_, _ = fmt.Fprint(w, `<script src="/assets/app.js"></script>`)
+	}))
+	defer upstream.Close()
+	port := registerTestPreview(t, upstream)
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/editor/local/%d/", port), nil)
+	rec := httptest.NewRecorder()
+	previewLocalProxyHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, header := range []string{"Content-Security-Policy-Report-Only", "X-Frame-Options"} {
+		if got := rec.Header().Get(header); got != "" {
+			t.Errorf("%s was not removed: %q", header, got)
+		}
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'self'" {
+		t.Errorf("non-framing CSP changed: %q", got)
+	}
+	want := fmt.Sprintf(`src="/editor/local/%d/assets/app.js"`, port)
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("rewritten body missing %q: %s", want, rec.Body.String())
+	}
+}
+
 func TestPreviewLocalProxyRejectsUntrackedAndInvalidPorts(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/editor/local/59999/", nil)
 	rec := httptest.NewRecorder()
