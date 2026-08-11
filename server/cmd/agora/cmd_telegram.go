@@ -26,10 +26,9 @@ import (
 // the same list that decides who may instruct the agent decides where it may
 // speak, so granting a room and letting the agent talk there stay one decision.
 //
-// There is no edit and no delete. A message an agent has posted is part of the
-// room's record, and letting it rewrite or erase that would make the transcript
-// unreliable in exactly the situation where someone is reconstructing what an
-// agent did.
+// Agents have no edit or delete surface. The cleanup-fixtures command below is
+// a separate human owner/admin operation for explicitly selected platform-bot
+// report messages; the server rejects agent task tokens.
 
 var telegramCmd = &cobra.Command{
 	Use:   "telegram",
@@ -119,6 +118,44 @@ var telegramSendCmd = &cobra.Command{
 			return err
 		}
 		fmt.Fprintf(os.Stdout, "Sent to %s\n", result.ChatID)
+		return nil
+	},
+}
+
+var telegramCleanupLinks []string
+
+var telegramCleanupFixturesCmd = &cobra.Command{
+	Use:   "cleanup-fixtures",
+	Short: "Delete selected platform-bot fixture notices",
+	Long: "Delete exact Telegram report messages selected by their private-group links.\n\n" +
+		"This is a human owner/admin operation. The server only accepts links for\n" +
+		"a report chat configured in the current workspace; bot credentials remain\n" +
+		"server-side.",
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(telegramCleanupLinks) == 0 {
+			return fmt.Errorf("at least one --message-link is required")
+		}
+		workspaceID, err := requireWorkspaceID(cmd)
+		if err != nil {
+			return err
+		}
+		client, err := newAPIClient(cmd)
+		if err != nil {
+			return err
+		}
+		var result struct {
+			DeletedMessageIDs []int64 `json:"deleted_message_ids"`
+		}
+		path := "/api/workspaces/" + workspaceID + "/telegram/test-fixtures/delete"
+		if err := client.PostJSON(cmd.Context(), path, map[string]any{
+			"message_links": telegramCleanupLinks,
+		}, &result); err != nil {
+			return err
+		}
+		for _, id := range result.DeletedMessageIDs {
+			fmt.Fprintf(os.Stdout, "Deleted Telegram message %d\n", id)
+		}
 		return nil
 	},
 }
@@ -275,9 +312,12 @@ func init() {
 		"An answer button; repeat for each choice (at least two)")
 	telegramAskCmd.Flags().IntVar(&telegramAskTimeout, "timeout", 0,
 		"Seconds to wait before giving up (default 600, max 3600)")
+	telegramCleanupFixturesCmd.Flags().StringArrayVar(&telegramCleanupLinks, "message-link", nil,
+		"Exact private-group Telegram message link; repeat for each target")
 
 	telegramCmd.AddCommand(telegramChatsCmd)
 	telegramCmd.AddCommand(telegramSendCmd)
 	telegramCmd.AddCommand(telegramAskCmd)
+	telegramCmd.AddCommand(telegramCleanupFixturesCmd)
 	rootCmd.AddCommand(telegramCmd)
 }
