@@ -80,10 +80,7 @@ func sanitizeBranchForPath(b string) string {
 // is on PATH). A package var so tests can stub the real install. Returns trimmed
 // combined output.
 var runDepInstall = func(repo, install string) (string, error) {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
+	shell := resolveLoginShell()
 	cmd := exec.Command(shell, "-lc", install)
 	cmd.Dir = repo
 	out, err := cmd.CombinedOutput()

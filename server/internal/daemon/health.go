@@ -1112,10 +1112,7 @@ func resolvePreviewRepoDir(workdir, repo string) string {
 func runProjectTests(repoDir, command string, timeout time.Duration) (string, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
+	shell := resolveLoginShell()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
 	cmd.Dir = repoDir
 	cmd.Env = append(os.Environ(), "CI=1", "FORCE_COLOR=0", "NO_COLOR=1", "BROWSER=none")
@@ -1154,10 +1151,7 @@ func ensureDeps(repoDir string) (string, error) {
 // node is on PATH), in its own process group so the whole tree can be killed.
 func startPreview(repoDir, command string, hintPort int) (*previewProc, error) {
 	buf := &syncBuffer{}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
+	shell := resolveLoginShell()
 	cmd := exec.Command(shell, "-lc", command)
 	cmd.Dir = repoDir
 	cmd.Stdout = buf

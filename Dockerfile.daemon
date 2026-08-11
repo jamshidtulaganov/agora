@@ -83,5 +83,6 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 # HOME lives on the mounted volume so the agora config (~/.agora/config.json),
 # the Claude config (~/.claude), and the cloned workspaces all survive restarts.
 ENV HOME=/data
+ENV SHELL=/bin/bash
 WORKDIR /data
 ENTRYPOINT ["/entrypoint.sh"]
