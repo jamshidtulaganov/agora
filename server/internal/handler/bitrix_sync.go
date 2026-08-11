@@ -814,6 +814,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
 		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+		// Bitrix tags → Agora labels (additive; backfills older mirrors too).
+		h.syncBitrixTagsAsLabels(ctx, ws.ID, existing.ID, task)
 		if h.bitrixTaskHasStageRestriction(ctx, task, st) {
 			if err := h.Queries.SetIssueArchived(ctx, db.SetIssueArchivedParams{ID: existing.ID, Archived: false}); err != nil {
 				slog.Warn("bitrix sync: unarchive re-entered review task failed", "task_id", task.ID, "error", err)
@@ -972,6 +974,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
 	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+	// Bitrix tags → Agora labels (bug/feature → type:*, aliases collapsed).
+	h.syncBitrixTagsAsLabels(ctx, ws.ID, res.Issue.ID, task)
 
 	// A task already on the done stage at import time is historical — archive it
 	// straight away so it never shows on the active board (opt-in).
