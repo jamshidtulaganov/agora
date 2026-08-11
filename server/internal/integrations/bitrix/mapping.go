@@ -34,6 +34,29 @@ func IsAITask(task *Task) bool {
 	return false
 }
 
+// IsClosedStatus reports whether a Bitrix STATUS/REAL_STATUS code means the
+// task is finished on the portal (completed or declined). Personal mirrors
+// skip creating these and remove any previously synced Agora issue.
+func IsClosedStatus(bitrixStatus string) bool {
+	switch strings.TrimSpace(bitrixStatus) {
+	case "5", "7":
+		return true
+	default:
+		return false
+	}
+}
+
+// IsClosedIssueStatus reports whether an Agora status is a terminal board
+// column that must not stay on a personal Bitrix mirror.
+func IsClosedIssueStatus(agoraStatus string) bool {
+	switch strings.TrimSpace(agoraStatus) {
+	case StatusDone, StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
 // MapStatus maps a Bitrix task status code to a Agora issue status.
 //
 // Bitrix task status codes (REAL_STATUS / STATUS):

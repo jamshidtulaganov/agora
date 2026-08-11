@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -767,4 +769,98 @@ func (h *Handler) GetBitrixImportProgress(w http.ResponseWriter, r *http.Request
 	}
 	bitrixImportProgressState.Unlock()
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- POST /api/bitrix/cleanup-done ----------------------------------------
+
+// BitrixCleanupDoneResponse reports how many closed Bitrix-linked issues were
+// hard-deleted from each routed workspace.
+type BitrixCleanupDoneResponse struct {
+	Deleted int `json:"deleted"`
+}
+
+// CleanupBitrixDoneIssues deletes Agora issues that were mirrored from Bitrix
+// (metadata.bitrix_task_id set) and are already in a terminal status
+// (done/cancelled). One-shot operator cleanup after a historical import flooded
+// the board; ongoing sync skips/removes closed tasks itself.
+func (h *Handler) CleanupBitrixDoneIssues(w http.ResponseWriter, r *http.Request) {
+	if !h.requireBitrixOperator(w, r) {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+	cfg := bitrixRouteConfig()
+	slugs := map[string]bool{}
+	if s := strings.ToLower(strings.TrimSpace(cfg.DefaultSlug)); s != "" {
+		slugs[s] = true
+	}
+	for _, s := range cfg.GroupMap {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			slugs[s] = true
+		}
+	}
+	deleted := 0
+	for slug := range slugs {
+		ws, err := h.Queries.GetWorkspaceBySlug(r.Context(), slug)
+		if err != nil {
+			continue
+		}
+		n, err := h.cleanupClosedBitrixIssues(r.Context(), ws.ID)
+		if err != nil {
+			slog.Warn("bitrix cleanup-done failed", "workspace", slug, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to cleanup closed bitrix issues: "+err.Error())
+			return
+		}
+		deleted += n
+	}
+	writeJSON(w, http.StatusOK, BitrixCleanupDoneResponse{Deleted: deleted})
+}
+
+func (h *Handler) cleanupClosedBitrixIssues(ctx context.Context, wsID pgtype.UUID) (int, error) {
+	rows, err := h.DB.Query(ctx,
+		`SELECT id, workspace_id, title, description, status, priority,
+		        assignee_type, assignee_id, creator_type, creator_id,
+		        parent_issue_id, acceptance_criteria, context_refs, position,
+		        due_date, created_at, updated_at, number, project_id,
+		        origin_type, origin_id, first_executed_at, start_date, metadata
+		   FROM issue
+		  WHERE workspace_id = $1
+		    AND metadata ? $2
+		    AND status IN ('done', 'cancelled')`,
+		wsID, bitrixTaskIDMetaKey)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var issues []db.Issue
+	for rows.Next() {
+		var i db.Issue
+		if err := rows.Scan(
+			&i.ID, &i.WorkspaceID, &i.Title, &i.Description, &i.Status, &i.Priority,
+			&i.AssigneeType, &i.AssigneeID, &i.CreatorType, &i.CreatorID,
+			&i.ParentIssueID, &i.AcceptanceCriteria, &i.ContextRefs, &i.Position,
+			&i.DueDate, &i.CreatedAt, &i.UpdatedAt, &i.Number, &i.ProjectID,
+			&i.OriginType, &i.OriginID, &i.FirstExecutedAt, &i.StartDate, &i.Metadata,
+		); err != nil {
+			return 0, err
+		}
+		issues = append(issues, i)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	deleted := 0
+	for _, issue := range issues {
+		if err := h.deleteBitrixSyncedIssue(ctx, issue); err != nil {
+			slog.Warn("bitrix cleanup-done: delete failed",
+				"issue_id", util.UUIDToString(issue.ID), "error", err)
+			continue
+		}
+		deleted++
+	}
+	return deleted, nil
 }

@@ -748,6 +748,26 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	stageName := h.bitrixStageName(ctx, st, task.GroupID, task.StageID)
 	mappedStatus := resolveBitrixIssueStatus(stageName, task.Status, h.bitrixRoutingForWorkspace(ctx, ws.ID, st).StageMap)
 
+	// Personal mirror: never keep completed/declined Bitrix history on the board.
+	// Skip create for closed tasks; delete any previously synced issue when the
+	// portal task (or its kanban stage) lands in a terminal state.
+	if bitrix.IsClosedStatus(task.Status) || bitrix.IsClosedIssueStatus(mappedStatus) {
+		if found {
+			if err := h.deleteBitrixSyncedIssue(ctx, existing); err != nil {
+				return fmt.Errorf("delete closed bitrix issue: %w", err)
+			}
+			slog.Info("bitrix sync: removed closed Bitrix-linked issue",
+				"issue_id", util.UUIDToString(existing.ID),
+				"task_id", task.ID, "bitrix_status", task.Status, "mapped_status", mappedStatus)
+			st.updated++
+			return nil
+		}
+		slog.Debug("bitrix sync: closed task, skipping create",
+			"task_id", task.ID, "bitrix_status", task.Status, "mapped_status", mappedStatus, "stage", stageName)
+		st.skipped++
+		return nil
+	}
+
 	if found {
 		// Already synced. Reconcile status AND assignee, doing both RAW (no bus
 		// publish) so we don't trigger our own outbound listener and echo the
@@ -901,7 +921,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		WorkspaceID:  ws.ID,
 		Title:        draft.Title,
 		Description:  strToText(draft.Description),
-		Status:       draft.Status,
+		// Prefer stage-aware mapped status over STATUS-only draft mapping.
+		Status:       mappedStatus,
 		Priority:     "none",
 		AssigneeType: assigneeType,
 		AssigneeID:   assigneeID,
@@ -958,7 +979,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	slog.Info("bitrix sync: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID),
-		"task_id", task.ID, "workspace", slug, "status", draft.Status,
+		"task_id", task.ID, "workspace", slug, "status", mappedStatus,
 		"project_id", util.UUIDToString(projectID))
 	st.created++
 
@@ -976,7 +997,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// classify + enrich + ask-back on the fresh ticket. AFTER content import so
 	// the triage run sees the imported Bitrix comments/attachments. Best-effort;
 	// capped per sync run and skipped for already-closed backfill.
-	h.maybeEnqueueBitrixTriage(ctx, ws, res.Issue, draft.Status, st)
+	h.maybeEnqueueBitrixTriage(ctx, ws, res.Issue, mappedStatus, st)
 	return nil
 }
 
@@ -1181,6 +1202,29 @@ func resolveBitrixIssueStatus(stageName, bitrixStatus string, stageMap map[strin
 		}
 	}
 	return bitrix.MapStatus(bitrixStatus)
+}
+
+// deleteBitrixSyncedIssue hard-deletes a Bitrix-linked issue (and cancels its
+// tasks / cleans attachments) when the portal task is closed. Mirrors the
+// destructive half of DeleteIssue without an HTTP actor — the Bitrix sync is
+// the system actor removing mirror clutter, not a member action.
+func (h *Handler) deleteBitrixSyncedIssue(ctx context.Context, issue db.Issue) error {
+	if h.TaskService != nil {
+		h.TaskService.CancelTasksForIssue(ctx, issue.ID)
+	}
+	_ = h.Queries.FailAutopilotRunsByIssue(ctx, issue.ID)
+	attachmentURLs, _ := h.Queries.ListAttachmentURLsByIssueOrComments(ctx, issue.ID)
+	if err := h.Queries.DeleteIssue(ctx, db.DeleteIssueParams{
+		ID:          issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		return err
+	}
+	h.deleteS3Objects(ctx, attachmentURLs)
+	wsID := util.UUIDToString(issue.WorkspaceID)
+	issueID := util.UUIDToString(issue.ID)
+	h.publish(protocol.EventIssueDeleted, wsID, "system", "", map[string]any{"issue_id": issueID})
+	return nil
 }
 
 // findIssueByBitrixTaskID returns the issue in the workspace whose metadata

@@ -278,6 +278,23 @@ func TestMapStatus(t *testing.T) {
 	}
 }
 
+func TestIsClosedStatus(t *testing.T) {
+	if !IsClosedStatus("5") || !IsClosedStatus("7") {
+		t.Fatal("completed/declined must be closed")
+	}
+	for _, s := range []string{"1", "2", "3", "4", "6", "", "x"} {
+		if IsClosedStatus(s) {
+			t.Errorf("IsClosedStatus(%q) = true, want false", s)
+		}
+	}
+	if !IsClosedIssueStatus(StatusDone) || !IsClosedIssueStatus(StatusCancelled) {
+		t.Fatal("done/cancelled issue statuses must be closed")
+	}
+	if IsClosedIssueStatus(StatusInProgress) {
+		t.Fatal("in_progress must not be closed")
+	}
+}
+
 func TestBitrixStatusFromIssue(t *testing.T) {
 	cases := map[string]string{
 		StatusBacklog:    "6",

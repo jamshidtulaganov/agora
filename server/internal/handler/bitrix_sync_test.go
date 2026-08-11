@@ -173,9 +173,9 @@ func TestBitrixWebhookCreatesAndAssignsIssue(t *testing.T) {
 	}
 }
 
-// TestBitrixWebhookUpdatesInPlace: a second event (status 5) updates the same
-// issue to done without creating a duplicate.
-func TestBitrixWebhookUpdatesInPlace(t *testing.T) {
+// TestBitrixWebhookRemovesClosedInPlace: a second event (status 5) deletes the
+// previously synced issue — personal mirrors do not keep Bitrix history.
+func TestBitrixWebhookRemovesClosedInPlace(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
 	}
@@ -197,7 +197,7 @@ func TestBitrixWebhookUpdatesInPlace(t *testing.T) {
 		t.Fatalf("after create: count=%d status=%q", count, status)
 	}
 
-	// Flip the task to completed (5 -> done) and re-fire.
+	// Flip the task to completed (5) and re-fire — mirror issue must disappear.
 	portal.setTask(taskID, `{
 		"id":"`+taskID+`","title":"Evolving task","status":"5","tags":["ai"]
 	}`)
@@ -205,12 +205,32 @@ func TestBitrixWebhookUpdatesInPlace(t *testing.T) {
 		t.Fatalf("second webhook status = %d", w.Code)
 	}
 
-	_, status2, _, _, count2 := issueByBitrixTaskID(t, taskID)
-	if count2 != 1 {
-		t.Fatalf("after update: count = %d, want 1 (no duplicate)", count2)
+	_, _, _, _, count2 := issueByBitrixTaskID(t, taskID)
+	if count2 != 0 {
+		t.Fatalf("after closed sync: count = %d, want 0 (removed)", count2)
 	}
-	if status2 != "done" {
-		t.Errorf("after update: status = %q, want done", status2)
+}
+
+// TestBitrixWebhookSkipsCompletedOnCreate: STATUS=5 must not create an issue.
+func TestBitrixWebhookSkipsCompletedOnCreate(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	portal := newBitrixMockPortal(t)
+	configureBitrixEnv(t, portal.srv.URL)
+
+	const taskID = "bx-closed-create-1"
+	cleanupBitrixIssues(t, taskID)
+
+	portal.setTask(taskID, `{
+		"id":"`+taskID+`","title":"Already done","status":"5","tags":["ai"]
+	}`)
+	if w := postBitrixWebhook(t, "ONTASKADD", taskID); w.Code != http.StatusOK {
+		t.Fatalf("webhook status = %d, want 200", w.Code)
+	}
+	_, _, _, _, count := issueByBitrixTaskID(t, taskID)
+	if count != 0 {
+		t.Fatalf("closed task created %d issue(s), want 0", count)
 	}
 }
 
