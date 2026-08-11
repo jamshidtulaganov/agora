@@ -2762,51 +2762,6 @@ func branchInstructionFor(isGitLab bool, branch string) string {
 	return ""
 }
 
-// issueTaskType maps the issue's fundamental `type:*` label to how the agent
-// should work: "bug" (debug), "feature"/"question" (plan then build), or
-// "chore" ("" instruction). type:* is the classifier — not a separate mode:* label.
-func (h *Handler) issueTaskType(ctx context.Context, issue db.Issue) string {
-	return resolveTaskType(h.issueLabelNames(ctx, issue.ID))
-}
-
-func resolveTaskType(labelNames []string) string {
-	for _, name := range labelNames {
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "type:bug":
-			return "bug"
-		case "type:feature", "type:question":
-			return "feature"
-		case "type:chore", "type:refactor":
-			return "chore"
-		}
-	}
-	return ""
-}
-
-// taskModeInstructionFor returns the type-specific approach appended to a
-// draft_code action. BUG → reproduce/root-cause/verify; FEATURE (and question)
-// → plan/acceptance/variants then build. PURE (unit-tested without a DB).
-func taskModeInstructionFor(taskType string) string {
-	switch taskType {
-	case "bug":
-		return " This is a BUG (type:bug) — work like a debugger, not a patcher: " +
-			"(1) REPRODUCE it first with a failing test or a concrete runnable repro that currently FAILS; " +
-			"(2) trace the ROOT CAUSE — and check the ACTUAL installed version of any library/framework you touch " +
-			"(read its types/docs) instead of assuming an API from memory; " +
-			"(3) apply the smallest fix that addresses the cause; " +
-			"(4) prove the failing test/repro now PASSES. Show failing-before / passing-after in the PR."
-	case "feature":
-		return " This is a FEATURE/PLANNING issue (type:feature or type:question) — think before you code: " +
-			"(1) restate acceptance criteria and open questions; attach or keep `needs:spec` if critical details are missing; " +
-			"(2) when any UI is involved, lay out 2-3 DESIGN VARIANTS (layout/interaction options + tradeoffs) and get " +
-			"the direction reviewed — defer to the designer agent's variants if one is already posted — before " +
-			"committing to a single build; (3) outline the implementation plan (files/modules touched); " +
-			"(4) only then build the chosen approach and verify the new behavior with a test. Note which variant you built and why."
-	default:
-		return ""
-	}
-}
-
 // verifyGateInstruction is the universal "prove it works before you call it
 // done" clause for draft_code actions. Closes the recurring failure where an
 // agent reported success from code inspection and re-ran blindly because it

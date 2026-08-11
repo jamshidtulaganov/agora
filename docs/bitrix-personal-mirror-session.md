@@ -44,10 +44,17 @@ Personal realtime mirror of Bitrix tasks for one human, with Bitrix as source of
 
 ### Agent work style (fundamental `type:*`)
 
-| Label | `draft_code` behavior |
+`draft_code` is the generic “implement this issue and open a draft PR” action;
+it is not a synonym for debugging. The same type-driven contract also rides on
+direct issue assignments, ordinary issue-comment continuations, Bitrix-mirrored
+work, and persisted orchestration plan/dev steps. QA, review, design, docs,
+integration, and deploy runs keep their own stage contracts.
+
+| Label | Implementation behavior |
 | --- | --- |
-| `type:bug` | Debugging: reproduce → root-cause → smallest fix → verify |
-| `type:feature` / `type:question` | Planning: acceptance → variants/plan → then build |
+| `type:bug` | Debugging: reproduce with failing evidence → test hypotheses/root cause → smallest fix → regression proof |
+| `type:feature` | Planning-first: acceptance → meaningful variants/tradeoffs → implementation plan → build and verify |
+| `type:question` | Investigate/plan first; change code only when the task defines an accepted deliverable |
 | *(no `mode:*` labels)* | Explicitly rejected as a parallel classifier |
 
 ### Enable triage

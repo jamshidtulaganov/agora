@@ -1607,6 +1607,20 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// The issue's fundamental type selects how implementation work is
+			// performed, regardless of how it entered Agora (direct assignment,
+			// ordinary comment, Bitrix mirror, or a persisted dev step). Slice
+			// actions such as QA/review/design/deploy are intentionally excluded;
+			// draft_code already carries this exact contract in its trigger.
+			if resp.Agent != nil {
+				protocolKind := h.taskTriggerSliceActionKind(r.Context(), task.TriggerCommentID)
+				if claimNeedsIssueWorkMode(task.OrchestrationStepID.Valid, resp.OrchestrationStage, resp.OrchestrationStepKind, protocolKind) {
+					if note := taskModeInstructionForClaim(h.issueTaskType(r.Context(), issue), resp.OrchestrationStage); note != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
+					}
+				}
+			}
+
 			// Full issue brief (description + acceptance criteria) rides on EVERY
 			// claim. The claim brief otherwise carries only title + trigger
 			// comment — for Bitrix-imported legacy tickets the whole RU/UZ spec

@@ -288,15 +288,7 @@ func deployTargetClause(env deployEnvironment) (string, bool) {
 // slice-action comment, ahead of the @mention). The claim path uses this to
 // attach GitLab pipeline MCP tools to deploy tasks ONLY.
 func (h *Handler) taskTriggerIsDeploy(ctx context.Context, triggerCommentID pgtype.UUID) bool {
-	if !triggerCommentID.Valid {
-		return false
-	}
-	c, err := h.Queries.GetComment(ctx, triggerCommentID)
-	if err != nil {
-		return false
-	}
-	marker := strings.TrimSuffix(agentProtocolMarker(sliceActionDeploy), "\n")
-	return strings.HasPrefix(strings.TrimSpace(c.Content), marker)
+	return h.taskTriggerSliceActionKind(ctx, triggerCommentID) == sliceActionDeploy
 }
 
 // projectDeployAgent resolves the project's configured deploy agent
