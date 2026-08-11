@@ -42,6 +42,47 @@ services:
       # Figma-linked agent tasks; it never lives in workspace or agent JSON.
       - key: AGORA_FIGMA_SECRET_KEY
         generateValue: true
+      # Bitrix24 is the task source of truth for Sales Doctor. The inbound REST
+      # webhook URL contains a credential and must be entered in Render; never
+      # commit it. The responsible-user allowlist below is the fail-closed data
+      # boundary: every other Bitrix user's task is rejected before routing.
+      - key: BITRIX_WEBHOOK_URL
+        sync: false
+      - key: BITRIX_INBOUND_SECRET
+        generateValue: true
+      - key: BITRIX_WEBHOOK_PUBLIC_URL
+        value: https://agora-web-7mav.onrender.com
+      - key: BITRIX_SYNC_WORKSPACE_SLUG
+        value: sales-doctor
+      - key: BITRIX_TARGET_PROJECT
+        value: Bitrix
+      - key: BITRIX_SYNC_USER_EMAILS
+        value: j.tulaaganov@salesdoc.io,s.tojiyev@salesdoc.io
+      # Jamshid's own tasks sync at every stage. S. Tojiyev's tasks become
+      # review work only while the Bitrix Kanban stage is exactly Code Review.
+      - key: BITRIX_SYNC_USER_STAGE_RULES
+        value: '{"s.tojiyev@salesdoc.io":["Code Review"]}'
+      - key: BITRIX_REVIEW_SQUAD_ID
+        value: 9b2c64b6-9167-49bd-b0b4-302c2ee60e3e
+      - key: BITRIX_PROVISION_ASSIGNEES
+        value: "true"
+      # Webhooks provide real-time sync; polling reconciles missed deliveries.
+      - key: BITRIX_SYNC_POLL_INTERVAL
+        value: 5m
+      - key: AGORA_BITRIX_USER_POLL_INTERVAL
+        value: 5m
+      # Only Jamshid-authored status changes/comments/files mirror outbound;
+      # agent and system activity stays private inside Agora.
+      - key: BITRIX_PUSH_STATUS
+        value: "true"
+      - key: BITRIX_PUSH_SYSTEM_COMMENTS
+        value: "false"
+      - key: BITRIX_PUSH_HUMAN_COMMENTS
+        value: "true"
+      - key: BITRIX_OUTBOUND_USER_EMAIL
+        value: j.tulaaganov@salesdoc.io
+      - key: AGORA_BITRIX_BULK_IMPORT
+        value: "false"
       - key: APP_ENV
         value: production
       - key: ALLOW_SIGNUP

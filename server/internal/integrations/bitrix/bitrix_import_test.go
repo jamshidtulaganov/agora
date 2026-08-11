@@ -10,6 +10,38 @@ import (
 	"testing"
 )
 
+func TestGetTaskChatMessagesPaginatesFullHistory(t *testing.T) {
+	var lastIDs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		lastID := r.PostForm.Get("LAST_ID")
+		lastIDs = append(lastIDs, lastID)
+		w.Header().Set("Content-Type", "application/json")
+		switch lastID {
+		case "":
+			io.WriteString(w, `{"result":{"messages":[{"id":60,"author_id":7,"date":"d3","text":"third"},{"id":59,"author_id":7,"date":"d2","text":"second"}],"users":[{"id":7,"name":"Jamshid"}]}}`)
+		case "59":
+			io.WriteString(w, `{"result":{"messages":[{"id":58,"author_id":7,"date":"d1","text":"first"}],"users":[{"id":7,"name":"Jamshid"}]}}`)
+		default:
+			io.WriteString(w, `{"result":{"messages":[],"users":[]}}`)
+		}
+	}))
+	defer srv.Close()
+
+	comments, err := NewClient(srv.URL).GetTaskChatMessages(context.Background(), "42")
+	if err != nil {
+		t.Fatalf("GetTaskChatMessages: %v", err)
+	}
+	if got, want := lastIDs, []string{"", "59", "58"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("LAST_ID sequence = %v, want %v", got, want)
+	}
+	if len(comments) != 3 || comments[0].Text != "first" || comments[2].Text != "third" {
+		t.Fatalf("comments not returned oldest-first: %+v", comments)
+	}
+}
+
 // --- GetTaskComments --------------------------------------------------------
 
 func TestGetTaskComments(t *testing.T) {
@@ -61,12 +93,13 @@ func TestGetTaskComments(t *testing.T) {
 	}
 }
 
-func TestGetTaskCommentsCap(t *testing.T) {
+func TestGetTaskCommentsReturnsFullLegacyHistory(t *testing.T) {
+	const totalComments = 70
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var b strings.Builder
 		b.WriteString(`{"result":[`)
-		for i := 0; i < maxCommentsPerTask+20; i++ {
+		for i := 0; i < totalComments; i++ {
 			if i > 0 {
 				b.WriteString(",")
 			}
@@ -82,8 +115,8 @@ func TestGetTaskCommentsCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTaskComments: %v", err)
 	}
-	if len(comments) != maxCommentsPerTask {
-		t.Fatalf("got %d comments, want cap %d", len(comments), maxCommentsPerTask)
+	if len(comments) != totalComments {
+		t.Fatalf("got %d comments, want full history of %d", len(comments), totalComments)
 	}
 }
 

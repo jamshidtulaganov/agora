@@ -18,6 +18,7 @@ package bitrix
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -888,15 +889,7 @@ func (c *Client) GetTaskChatMessages(ctx context.Context, chatID string) ([]Comm
 		return nil, nil
 	}
 	endpoint := c.baseURL + "im.dialog.messages.get"
-	form := url.Values{}
-	form.Set("DIALOG_ID", "chat"+chatID)
-	form.Set("LIMIT", "50")
-
-	body, err := c.post(ctx, endpoint, form)
-	if err != nil {
-		return nil, err
-	}
-	var parsed struct {
+	type chatMessagesResponse struct {
 		Result struct {
 			Messages []struct {
 				ID       jsonStr `json:"id"`
@@ -912,47 +905,73 @@ func (c *Client) GetTaskChatMessages(ctx context.Context, chatID string) ([]Comm
 		Error     string `json:"error"`
 		ErrorDesc string `json:"error_description"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("bitrix: decode im.dialog.messages.get: %w", err)
-	}
-	if parsed.Error != "" {
-		return nil, fmt.Errorf("bitrix: im.dialog.messages.get error %s: %s", parsed.Error, parsed.ErrorDesc)
-	}
-	names := make(map[string]string, len(parsed.Result.Users))
-	for _, u := range parsed.Result.Users {
-		if id := firstNonEmpty(u.ID); id != "" {
-			names[id] = firstNonEmpty(u.Name)
+	const maxChatHistory = 5000
+	out := make([]Comment, 0, 50)
+	seen := map[string]bool{}
+	lastID := ""
+	for len(out) < maxChatHistory {
+		form := url.Values{}
+		form.Set("DIALOG_ID", "chat"+chatID)
+		form.Set("LIMIT", "50")
+		if lastID != "" {
+			form.Set("LAST_ID", lastID)
 		}
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
+		var parsed chatMessagesResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode im.dialog.messages.get: %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: im.dialog.messages.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+		if len(parsed.Result.Messages) == 0 {
+			break
+		}
+		names := make(map[string]string, len(parsed.Result.Users))
+		for _, u := range parsed.Result.Users {
+			if id := firstNonEmpty(u.ID); id != "" {
+				names[id] = firstNonEmpty(u.Name)
+			}
+		}
+		minID := ""
+		for _, m := range parsed.Result.Messages {
+			messageID := strings.TrimSpace(firstNonEmpty(m.ID))
+			if messageID != "" && (minID == "" || numericStringLess(messageID, minID)) {
+				minID = messageID
+			}
+			text := strings.TrimSpace(string(m.Text))
+			authorID := strings.TrimSpace(firstNonEmpty(m.AuthorID))
+			if messageID == "" || seen[messageID] || text == "" || authorID == "" || authorID == "0" {
+				continue
+			}
+			seen[messageID] = true
+			author := names[authorID]
+			if author == "" {
+				author = "user " + authorID
+			}
+			out = append(out, Comment{ID: "chat-" + messageID, Author: author, Date: firstNonEmpty(m.Date), Text: text, AuthorID: authorID})
+		}
+		if minID == "" || minID == lastID {
+			break
+		}
+		lastID = minID
 	}
-	out := make([]Comment, 0, len(parsed.Result.Messages))
-	for _, m := range parsed.Result.Messages {
-		text := strings.TrimSpace(string(m.Text))
-		if text == "" {
-			continue
-		}
-		authorID := strings.TrimSpace(firstNonEmpty(m.AuthorID))
-		// Skip portal SYSTEM messages (author id 0) — these are the kanban
-		// stage-change / status notifications ("X изменил стадию на Y"), which
-		// are noise in Agora (the stage already drives the issue status) and
-		// would otherwise import attributed to no real person.
-		if authorID == "" || authorID == "0" {
-			continue
-		}
-		author := names[authorID]
-		if author == "" {
-			author = "user " + authorID
-		}
-		out = append(out, Comment{
-			// Namespace the id so a chat message can't collide with a
-			// commentitem id in the issue's synced-id dedup set.
-			ID:       "chat-" + firstNonEmpty(m.ID),
-			Author:   author,
-			Date:     firstNonEmpty(m.Date),
-			Text:     text,
-			AuthorID: authorID,
-		})
-	}
+	sort.Slice(out, func(i, j int) bool {
+		return numericStringLess(strings.TrimPrefix(out[i].ID, "chat-"), strings.TrimPrefix(out[j].ID, "chat-"))
+	})
 	return out, nil
+}
+
+func numericStringLess(a, b string) bool {
+	ai, aerr := strconv.ParseInt(a, 10, 64)
+	bi, berr := strconv.ParseInt(b, 10, 64)
+	if aerr == nil && berr == nil {
+		return ai < bi
+	}
+	return a < b
 }
 
 // Comment is the subset of a Bitrix task comment Agora mirrors into an issue
@@ -995,15 +1014,9 @@ type listCommentsResponse struct {
 	ErrorDesc string          `json:"error_description"`
 }
 
-// maxCommentsPerTask caps how many comments GetTaskComments returns so a task
-// with a long discussion thread can't balloon the import. Mirrors the legacy
-// bot's bounded comment mirror.
-const maxCommentsPerTask = 50
-
 // GetTaskComments returns a task's comment feed (author, date, text), oldest
 // first, via task.commentitem.getlist with ORDER[ID]=asc. Comments with an
-// empty POST_MESSAGE (file-only system rows) are skipped. The result is capped
-// at maxCommentsPerTask. Reuses the same flexible jsonStr decoding as the rest
+// empty POST_MESSAGE (file-only system rows) are skipped. Reuses the same flexible jsonStr decoding as the rest
 // of the client so a number-vs-string id / author parses identically.
 func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment, error) {
 	if c.baseURL == "" {
@@ -1055,7 +1068,7 @@ func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment,
 		})
 	}
 	// Oldest-first by numeric comment id (we can't ask Bitrix to ORDER; see the
-	// note above), then cap. Falls back to a string compare for non-numeric ids.
+	// note above). Falls back to a string compare for non-numeric ids.
 	sort.Slice(comments, func(i, j int) bool {
 		a, errA := strconv.Atoi(comments[i].ID)
 		b, errB := strconv.Atoi(comments[j].ID)
@@ -1064,9 +1077,6 @@ func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment,
 		}
 		return comments[i].ID < comments[j].ID
 	})
-	if len(comments) > maxCommentsPerTask {
-		comments = comments[:maxCommentsPerTask]
-	}
 	return comments, nil
 }
 
@@ -1113,18 +1123,13 @@ type attachedObjectResponse struct {
 	ErrorDesc string `json:"error_description"`
 }
 
-// maxFilesPerTask caps how many attachments GetTaskFiles resolves so a task
-// with dozens of files can't make the sync goroutine fan out unbounded
-// disk.attachedObject.get calls. Matches the legacy bot's per-task cap.
-const maxFilesPerTask = 8
-
 // GetTaskFiles resolves a task's attachments. It first reads the task's
 // UF_TASK_WEBDAV_FILES (a list of disk file ids) via tasks.task.get, then
 // resolves each id to NAME/DOWNLOAD_URL/SIZE via disk.attachedObject.get. The
 // returned URL is made absolute against the portal host derived from the REST
 // base URL when Bitrix hands back a host-relative path. The result is capped at
-// maxFilesPerTask; an individual file that fails to resolve is skipped rather
-// than failing the whole call.
+// an individual file that fails to resolve is skipped rather than failing the
+// whole call.
 func (c *Client) GetTaskFiles(ctx context.Context, taskID string) ([]File, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
@@ -1158,9 +1163,6 @@ func (c *Client) GetTaskFiles(ctx context.Context, taskID string) ([]File, error
 
 	files := make([]File, 0, len(ids))
 	for _, fid := range ids {
-		if len(files) >= maxFilesPerTask {
-			break
-		}
 		f, err := c.getAttachedObject(ctx, fid)
 		if err != nil {
 			// A single unresolved file must not abort the whole attachment
@@ -1634,21 +1636,137 @@ func ResolveDepartmentSubtree(depts []Department, names []string) map[string]boo
 // AddTaskComment posts a comment to a task's comment feed via
 // task.commentitem.add. Fields are sent as taskId + fields[POST_MESSAGE].
 func (c *Client) AddTaskComment(ctx context.Context, taskID, text string) error {
+	_, err := c.AddTaskCommentWithFilesResult(ctx, taskID, text, nil)
+	return err
+}
+
+// AddTaskCommentWithFiles posts a human-authored comment and optional Bitrix
+// Drive file ids. task.commentitem.add remains supported by Bitrix for this
+// compatibility path; UF_FORUM_MESSAGE_DOC values use the documented `n<ID>`
+// form. The newer task-chat API can replace this once every supported portal
+// runs tasks 25.700+.
+func (c *Client) AddTaskCommentWithFiles(ctx context.Context, taskID, text string, fileIDs []string) error {
+	_, err := c.AddTaskCommentWithFilesResult(ctx, taskID, text, fileIDs)
+	return err
+}
+
+// AddTaskCommentWithFilesResult is AddTaskCommentWithFiles with the created
+// Bitrix comment id returned for echo suppression during bidirectional sync.
+func (c *Client) AddTaskCommentWithFilesResult(ctx context.Context, taskID, text string, fileIDs []string) (string, error) {
 	if c.baseURL == "" {
-		return errors.New("bitrix: empty base URL")
+		return "", errors.New("bitrix: empty base URL")
 	}
 	if strings.TrimSpace(taskID) == "" {
-		return errors.New("bitrix: empty task id")
+		return "", errors.New("bitrix: empty task id")
 	}
 	endpoint := c.baseURL + "task.commentitem.add"
 	form := url.Values{}
 	form.Set("TASKID", taskID)
 	form.Set("FIELDS[POST_MESSAGE]", text)
+	for _, id := range fileIDs {
+		id = strings.TrimSpace(strings.TrimPrefix(id, "n"))
+		if id != "" {
+			form.Add("FIELDS[UF_FORUM_MESSAGE_DOC][]", "n"+id)
+		}
+	}
 	body, err := c.post(ctx, endpoint, form)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return checkError(body)
+	if err := checkError(body); err != nil {
+		return "", err
+	}
+	var parsed struct {
+		Result jsonStr `json:"result"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("bitrix: decode task.commentitem.add: %w", err)
+	}
+	return strings.TrimSpace(parsed.Result.String()), nil
+}
+
+// GetUserStorageID returns the Bitrix Drive storage id for a portal user. It
+// intentionally selects only ENTITY_TYPE=user + the requested ENTITY_ID so an
+// outbound Agora attachment cannot land in a company or another user's drive.
+func (c *Client) GetUserStorageID(ctx context.Context, userID string) (string, error) {
+	if c.baseURL == "" {
+		return "", errors.New("bitrix: empty base URL")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", errors.New("bitrix: empty user id")
+	}
+	form := url.Values{}
+	form.Set("filter[ENTITY_TYPE]", "user")
+	form.Set("filter[ENTITY_ID]", userID)
+	body, err := c.post(ctx, c.baseURL+"disk.storage.getlist", form)
+	if err != nil {
+		return "", err
+	}
+	var parsed struct {
+		Result []struct {
+			ID jsonStr `json:"ID"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("bitrix: decode disk.storage.getlist: %w", err)
+	}
+	if parsed.Error != "" {
+		return "", fmt.Errorf("bitrix: disk.storage.getlist error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	for _, storage := range parsed.Result {
+		if id := strings.TrimSpace(storage.ID.String()); id != "" {
+			return id, nil
+		}
+	}
+	return "", errors.New("bitrix: user drive storage not found")
+}
+
+// UploadFileToStorage uploads bytes to the root of one Bitrix Drive storage
+// and returns the Drive object id accepted by UF_FORUM_MESSAGE_DOC.
+func (c *Client) UploadFileToStorage(ctx context.Context, storageID, filename string, data []byte) (string, error) {
+	if c.baseURL == "" {
+		return "", errors.New("bitrix: empty base URL")
+	}
+	storageID = strings.TrimSpace(storageID)
+	filename = strings.TrimSpace(filename)
+	if storageID == "" || filename == "" {
+		return "", errors.New("bitrix: storage id and filename are required")
+	}
+	form := url.Values{}
+	form.Set("id", storageID)
+	form.Set("data[NAME]", filename)
+	form.Set("fileContent[0]", filename)
+	form.Set("fileContent[1]", base64.StdEncoding.EncodeToString(data))
+	form.Set("generateUniqueName", "true")
+	body, err := c.post(ctx, c.baseURL+"disk.storage.uploadfile", form)
+	if err != nil {
+		return "", err
+	}
+	var parsed struct {
+		Result struct {
+			ID      jsonStr `json:"ID"`
+			LowerID jsonStr `json:"id"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("bitrix: decode disk.storage.uploadfile: %w", err)
+	}
+	if parsed.Error != "" {
+		return "", fmt.Errorf("bitrix: disk.storage.uploadfile error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	id := strings.TrimSpace(parsed.Result.ID.String())
+	if id == "" {
+		id = strings.TrimSpace(parsed.Result.LowerID.String())
+	}
+	if id == "" {
+		return "", errors.New("bitrix: disk.storage.uploadfile returned no file id")
+	}
+	return id, nil
 }
 
 // updateTaskRequest is the JSON body for tasks.task.update.json. Bitrix
@@ -1678,6 +1796,25 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, bitrixStatus stri
 		return fmt.Errorf("bitrix: encode tasks.task.update: %w", err)
 	}
 	body, err := c.postJSON(ctx, endpoint, buf)
+	if err != nil {
+		return err
+	}
+	return checkError(body)
+}
+
+// MoveTaskToStage mirrors an Agora status to the corresponding Bitrix group
+// Kanban stage. Position is omitted, letting the portal apply its stage order.
+func (c *Client) MoveTaskToStage(ctx context.Context, taskID, stageID string) error {
+	if c.baseURL == "" {
+		return errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(taskID) == "" || strings.TrimSpace(stageID) == "" {
+		return errors.New("bitrix: task id and stage id are required")
+	}
+	form := url.Values{}
+	form.Set("id", strings.TrimSpace(taskID))
+	form.Set("stageId", strings.TrimSpace(stageID))
+	body, err := c.post(ctx, c.baseURL+"task.stages.movetask", form)
 	if err != nil {
 		return err
 	}

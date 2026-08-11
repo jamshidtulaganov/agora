@@ -6,18 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jamshidtulaganov/agora/server/internal/config"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"github.com/jamshidtulaganov/agora/server/internal/events"
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 	"github.com/jamshidtulaganov/agora/server/internal/service"
@@ -149,6 +151,28 @@ func bitrixTaskHasTag(task *bitrix.Task, tag string) bool {
 // status update (tasks.task.update) on top of the courtesy comment.
 func bitrixPushStatus() bool {
 	switch strings.ToLower(config.String("BITRIX_PUSH_STATUS")) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// bitrixPushSystemComments controls Agora-authored status/QA courtesy comments.
+// It defaults on for backward compatibility. Personal mirrors set it false so
+// agent/system activity stays inside Agora and only the configured human's own
+// discussion crosses back to Bitrix.
+func bitrixPushSystemComments() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_PUSH_SYSTEM_COMMENTS"))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+func bitrixPushHumanComments() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_PUSH_HUMAN_COMMENTS"))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
@@ -533,26 +557,32 @@ func (h *Handler) PollBitrixUserTasks(ctx context.Context) {
 	if !bitrixInboundEnabled(cfg) {
 		return
 	}
-	rows, err := h.DB.Query(ctx,
-		`SELECT external_id FROM user_external_identity WHERE provider = $1`,
-		providerBitrix)
+	st := h.newBitrixSyncState()
+	bitrixIDs, err := h.bitrixConfiguredUserIDs(ctx, st)
 	if err != nil {
-		slog.Warn("bitrix user poll: list linked users failed", "error", err)
+		slog.Warn("bitrix user poll: configured user resolution failed", "error", err)
 		return
 	}
-	var bitrixIDs []string
-	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil && strings.TrimSpace(id) != "" {
-			bitrixIDs = append(bitrixIDs, strings.TrimSpace(id))
+	if len(bitrixIDs) == 0 {
+		rows, qerr := h.DB.Query(ctx,
+			`SELECT external_id FROM user_external_identity WHERE provider = $1`,
+			providerBitrix)
+		if qerr != nil {
+			slog.Warn("bitrix user poll: list linked users failed", "error", qerr)
+			return
 		}
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil && strings.TrimSpace(id) != "" {
+				bitrixIDs = append(bitrixIDs, strings.TrimSpace(id))
+			}
+		}
+		rows.Close()
 	}
-	rows.Close()
 	if len(bitrixIDs) == 0 {
 		return
 	}
 
-	st := h.newBitrixSyncState()
 	synced, polledUsers := 0, 0
 	for _, bid := range bitrixIDs {
 		if ctx.Err() != nil {
@@ -628,7 +658,6 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		st.skipped++
 		return nil
 	}
-
 	slug := bitrix.ResolveWorkspaceSlug(task, cfg)
 	if slug == "" {
 		slog.Warn("bitrix sync: no workspace resolved for task, skipping",
@@ -640,6 +669,23 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	ws, err := h.Queries.GetWorkspaceBySlug(ctx, slug)
 	if err != nil {
 		return fmt.Errorf("workspace by slug %q: %w", slug, err)
+	}
+	if !h.bitrixTaskInConfiguredScope(ctx, task, st) {
+		// Stage-restricted tasks (for example Shaxzod's Code Review queue)
+		// disappear from the active Agora board as soon as they leave the
+		// configured stage. Keep the linked issue archived for audit/history.
+		if existing, found, findErr := h.findIssueByBitrixTaskID(ctx, ws.ID, task.ID); findErr != nil {
+			slog.Warn("bitrix sync: find out-of-scope task failed", "task_id", task.ID, "error", findErr)
+		} else if found {
+			if archiveErr := h.Queries.SetIssueArchived(ctx, db.SetIssueArchivedParams{ID: existing.ID, Archived: true}); archiveErr != nil {
+				slog.Warn("bitrix sync: archive out-of-scope task failed", "task_id", task.ID, "error", archiveErr)
+			}
+		}
+		slog.Debug("bitrix sync: task outside configured personal scope, skipping",
+			"task_id", task.ID, "responsible_id", task.ResponsibleID,
+			"group_id", task.GroupID, "sprint_id", task.SprintID)
+		st.skipped++
+		return nil
 	}
 
 	// Serialize the find/create/stamp sequence per (workspace, task) with a
@@ -718,6 +764,9 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// outbound echo).
 		responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 		assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
+		if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
+			assigneeType, assigneeID = reviewType, reviewID
+		}
 		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.bitrixSetIssueAssignee(ctx, existing.ID, ws.ID, assigneeType, assigneeID); err != nil {
 				return fmt.Errorf("update issue assignee: %w", err)
@@ -730,6 +779,11 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
 		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+		if h.bitrixTaskHasStageRestriction(ctx, task, st) {
+			if err := h.Queries.SetIssueArchived(ctx, db.SetIssueArchivedParams{ID: existing.ID, Archived: false}); err != nil {
+				slog.Warn("bitrix sync: unarchive re-entered review task failed", "task_id", task.ID, "error", err)
+			}
+		}
 
 		// Retire tasks that land on the kanban's done stage so the historical
 		// Bitrix backlog doesn't clutter the active board (opt-in).
@@ -814,6 +868,9 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
+	if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
+		assigneeType, assigneeID = reviewType, reviewID
+	}
 
 	// Per-user scope: only import a task that belongs to one of THIS workspace's
 	// members. When the responsible resolves to no member (not linked + not
@@ -1334,7 +1391,7 @@ func (h *Handler) bitrixCommentAuthor(ctx context.Context, wsID pgtype.UUID, aut
 	// (prod default) every Bitrix comment fell back to the owner.
 	if t, uid := h.bitrixResolveAssignee(ctx, wsID, id, u); t.Valid {
 		ref = bitrixAuthorRef{Type: t, ID: uid}
-	} else if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees && h.bitrixUserInTeam(ctx, st, u) {
+	} else if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees && bitrixUserAllowedEmail(u) && h.bitrixUserInTeam(ctx, st, u) {
 		// Provision a NEW shadow member only when the workspace opted in and the
 		// author is inside the team-department allowlist.
 		if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
@@ -1544,6 +1601,9 @@ func (h *Handler) registerBitrixOutbound() {
 		return
 	}
 	h.Bus.Subscribe(protocol.EventIssueUpdated, func(e events.Event) {
+		if !h.bitrixOutboundActorAllowed(context.Background(), e) {
+			return
+		}
 		if !bitrixShouldMirror(e.Payload) {
 			return
 		}
@@ -1561,10 +1621,33 @@ func (h *Handler) registerBitrixOutbound() {
 		}()
 	})
 
+	// Human discussion mirror. It is deliberately fail-closed to one configured
+	// Agora account; agent/system comments and another member's uploads never
+	// cross the workspace boundary into Bitrix.
+	h.Bus.Subscribe(protocol.EventCommentCreated, func(e events.Event) {
+		if !bitrixPushHumanComments() || !h.bitrixOutboundActorAllowed(context.Background(), e) {
+			return
+		}
+		comment, ok := bitrixCommentFromEvent(e.Payload)
+		if !ok || comment.BitrixCommentID != nil {
+			return
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			if err := h.mirrorHumanCommentToBitrix(ctx, e.ActorID, comment); err != nil {
+				slog.Warn("bitrix outbound: human comment mirror failed", "comment_id", comment.ID, "error", err)
+			}
+		}()
+	})
+
 	// QA verdict mirror: when an issue gains a qa:pass / qa:fail label, post a
 	// courtesy verdict comment to the linked Bitrix task. The payload carries the
 	// full label set (no delta), so the handler re-reads + dedups.
 	h.Bus.Subscribe(protocol.EventIssueLabelsChanged, func(e events.Event) {
+		if !bitrixPushSystemComments() {
+			return
+		}
 		m, ok := e.Payload.(map[string]any)
 		if !ok {
 			return
@@ -1581,6 +1664,105 @@ func (h *Handler) registerBitrixOutbound() {
 			}
 		}()
 	})
+}
+
+func (h *Handler) bitrixOutboundActorAllowed(ctx context.Context, e events.Event) bool {
+	if e.ActorType != "member" {
+		return false
+	}
+	want := strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_OUTBOUND_USER_EMAIL")))
+	if want == "" {
+		return false
+	}
+	id, err := util.ParseUUID(e.ActorID)
+	if err != nil {
+		return false
+	}
+	user, err := h.Queries.GetUser(ctx, id)
+	return err == nil && strings.EqualFold(strings.TrimSpace(user.Email), want)
+}
+
+func bitrixCommentFromEvent(payload any) (CommentResponse, bool) {
+	m, ok := payload.(map[string]any)
+	if !ok {
+		return CommentResponse{}, false
+	}
+	switch c := m["comment"].(type) {
+	case CommentResponse:
+		return c, c.ID != "" && c.IssueID != ""
+	case *CommentResponse:
+		if c != nil {
+			return *c, c.ID != "" && c.IssueID != ""
+		}
+	}
+	return CommentResponse{}, false
+}
+
+const bitrixOutboundAttachmentMaxBytes = 64 << 20
+
+func (h *Handler) mirrorHumanCommentToBitrix(ctx context.Context, actorID string, comment CommentResponse) error {
+	issueID, err := util.ParseUUID(comment.IssueID)
+	if err != nil {
+		return fmt.Errorf("parse issue id: %w", err)
+	}
+	issue, err := h.Queries.GetIssue(ctx, issueID)
+	if err != nil {
+		return fmt.Errorf("get issue: %w", err)
+	}
+	taskID := bitrixTaskIDFromMetadata(issue.Metadata)
+	if taskID == "" {
+		return nil
+	}
+	client := bitrix.NewClient(bitrixWebhookURL())
+	var fileIDs []string
+	if len(comment.Attachments) > 0 {
+		if h.Storage == nil {
+			return errors.New("attachment storage is not configured")
+		}
+		task, err := client.GetTask(ctx, taskID)
+		if err != nil {
+			return fmt.Errorf("get task for attachment upload: %w", err)
+		}
+		storageID, err := client.GetUserStorageID(ctx, task.ResponsibleID)
+		if err != nil {
+			return fmt.Errorf("get responsible user storage: %w", err)
+		}
+		for _, att := range comment.Attachments {
+			if att.UploaderType != "member" || att.UploaderID != actorID {
+				continue
+			}
+			reader, err := h.Storage.GetReader(ctx, h.Storage.KeyFromURL(att.URL))
+			if err != nil {
+				return fmt.Errorf("open attachment %q: %w", att.Filename, err)
+			}
+			data, readErr := io.ReadAll(io.LimitReader(reader, bitrixOutboundAttachmentMaxBytes+1))
+			closeErr := reader.Close()
+			if readErr != nil {
+				return fmt.Errorf("read attachment %q: %w", att.Filename, readErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close attachment %q: %w", att.Filename, closeErr)
+			}
+			if len(data) > bitrixOutboundAttachmentMaxBytes {
+				return fmt.Errorf("attachment %q exceeds 64 MiB outbound limit", att.Filename)
+			}
+			fileID, err := client.UploadFileToStorage(ctx, storageID, att.Filename, data)
+			if err != nil {
+				return fmt.Errorf("upload attachment %q: %w", att.Filename, err)
+			}
+			fileIDs = append(fileIDs, fileID)
+		}
+	}
+	commentID, err := client.AddTaskCommentWithFilesResult(ctx, taskID, comment.Content, fileIDs)
+	if err != nil {
+		return fmt.Errorf("add human comment: %w", err)
+	}
+	if commentID != "" {
+		seen := h.bitrixSyncedIDSet(ctx, issue.ID, bitrixSyncedCommentIDsKey)
+		seen[commentID] = true
+		h.setBitrixSyncedIDSet(ctx, issue.WorkspaceID, issue.ID, bitrixSyncedCommentIDsKey, seen)
+	}
+	return nil
 }
 
 // bitrixShouldMirror decides whether an issue:updated payload represents a real
@@ -1648,21 +1830,72 @@ func (h *Handler) mirrorIssueStatusToBitrix(ctx context.Context, issueID string)
 
 	client := bitrix.NewClient(bitrixWebhookURL())
 
-	// Spec format: "🤖 Agora: issue <PREFIX>-<n> → <Label>" — the
-	// workspace-prefixed identifier (PROJ-12) the rest of the product uses, a
-	// bot emoji, and a Unicode arrow.
-	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
-	comment := fmt.Sprintf("🤖 Agora: issue %s-%d → %s", prefix, issue.Number, bitrixStatusLabel(issue.Status))
-	if err := client.AddTaskComment(ctx, taskID, comment); err != nil {
-		return fmt.Errorf("add task comment: %w", err)
+	if bitrixPushSystemComments() {
+		// Workspace-prefixed identifier (PROJ-12) matches the rest of Agora.
+		prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
+		comment := fmt.Sprintf("🤖 Agora: issue %s-%d → %s", prefix, issue.Number, bitrixStatusLabel(issue.Status))
+		if err := client.AddTaskComment(ctx, taskID, comment); err != nil {
+			return fmt.Errorf("add task comment: %w", err)
+		}
 	}
 
 	if bitrixPushStatus() {
+		var mirrorErrs []error
+		// Prefer the live Kanban stage: it is what humans drag in Bitrix and what
+		// inbound sync already maps into Agora status. Keep coarse STATUS aligned
+		// too for tasks outside a group Kanban and for Bitrix list filters.
+		if task, err := client.GetTask(ctx, taskID); err != nil {
+			mirrorErrs = append(mirrorErrs, fmt.Errorf("get task for stage mirror: %w", err))
+		} else if strings.TrimSpace(task.GroupID) != "" {
+			if stages, serr := client.GetTaskStages(ctx, task.GroupID); serr != nil {
+				mirrorErrs = append(mirrorErrs, fmt.Errorf("get task stages: %w", serr))
+			} else {
+				st := h.newBitrixSyncState()
+				stageMap := h.bitrixRoutingForWorkspace(ctx, issue.WorkspaceID, st).StageMap
+				if stageID := bitrixStageIDForIssueStatus(issue.Status, stages, stageMap); stageID != "" && stageID != task.StageID {
+					if merr := client.MoveTaskToStage(ctx, taskID, stageID); merr != nil {
+						mirrorErrs = append(mirrorErrs, fmt.Errorf("move task stage: %w", merr))
+					}
+				}
+			}
+		}
 		if err := client.UpdateTaskStatus(ctx, taskID, bitrix.BitrixStatusFromIssue(issue.Status)); err != nil {
-			return fmt.Errorf("update task status: %w", err)
+			mirrorErrs = append(mirrorErrs, fmt.Errorf("update task status: %w", err))
+		}
+		if len(mirrorErrs) > 0 {
+			return errors.Join(mirrorErrs...)
 		}
 	}
 	return nil
+}
+
+func bitrixStageIDForIssueStatus(issueStatus string, stages, stageMap map[string]string) string {
+	ids := make([]string, 0, len(stages))
+	for id := range stages {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a, aerr := strconv.Atoi(ids[i])
+		b, berr := strconv.Atoi(ids[j])
+		if aerr == nil && berr == nil {
+			return a < b
+		}
+		return ids[i] < ids[j]
+	})
+	for _, id := range ids {
+		name := strings.TrimSpace(stages[id])
+		mapped := ""
+		if stageMap != nil {
+			mapped = strings.TrimSpace(stageMap[strings.ToLower(name)])
+		}
+		if mapped == "" {
+			mapped = bitrix.MapStage(name)
+		}
+		if mapped == issueStatus {
+			return id
+		}
+	}
+	return ""
 }
 
 // mirrorQAVerdictToBitrix posts a courtesy QA verdict comment to the linked

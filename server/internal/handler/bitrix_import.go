@@ -233,8 +233,12 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		StageMap  map[string]string  `json:"bitrix_stage_map"`
 	}
 	if len(settings) == 0 || json.Unmarshal(settings, &parsed) != nil {
-		st.routing[key] = bitrixRoutingConfig{}
-		return bitrixRoutingConfig{}
+		cfg := bitrixRoutingConfig{
+			Default:            strings.TrimSpace(os.Getenv("BITRIX_TARGET_PROJECT")),
+			ProvisionAssignees: bitrixProvisionAssigneesEnabled(false),
+		}
+		st.routing[key] = cfg
+		return cfg
 	}
 	var stageMap map[string]string
 	if len(parsed.StageMap) > 0 {
@@ -254,9 +258,26 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		}
 	}
 	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].Prefix) > len(rules[j].Prefix) })
-	cfg := bitrixRoutingConfig{Prefixes: rules, Default: strings.TrimSpace(parsed.Default), ProvisionAssignees: parsed.Provision, StageMap: stageMap}
+	defaultProject := strings.TrimSpace(parsed.Default)
+	if defaultProject == "" {
+		defaultProject = strings.TrimSpace(os.Getenv("BITRIX_TARGET_PROJECT"))
+	}
+	provision := bitrixProvisionAssigneesEnabled(parsed.Provision)
+	cfg := bitrixRoutingConfig{Prefixes: rules, Default: defaultProject, ProvisionAssignees: provision, StageMap: stageMap}
 	st.routing[key] = cfg
 	return cfg
+}
+
+func bitrixProvisionAssigneesEnabled(workspaceSetting bool) bool {
+	if workspaceSetting {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_PROVISION_ASSIGNEES"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // matchBitrixPrefixRule returns the project title a task title routes to by
