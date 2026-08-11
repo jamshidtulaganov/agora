@@ -40,6 +40,8 @@ require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
 require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
 require_config "$config" 'AGORA_APP_URL: http://localhost:3100'
+require_config "$config" 'AGORA_BITRIX_BULK_IMPORT: "false"'
+require_config "$config" 'AGORA_BITRIX_IMPORT_OWN_ONLY: "false"'
 
 for script in scripts/dev.sh scripts/check.sh; do
   if ! grep -Fq '. scripts/local-env.sh' "$script"; then
