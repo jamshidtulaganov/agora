@@ -3,6 +3,7 @@ export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" |
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
 
 export type ProjectExecutionStrategy = "automatic" | "solo" | "squad" | "human";
+export type ProjectModelRoutingMode = "pinned" | "cost" | "balanced" | "intelligence";
 
 export interface ProjectOrchestrationDefaults {
   // "automatic" infers solo/squad/human from the issue owner at run creation.
@@ -11,6 +12,8 @@ export interface ProjectOrchestrationDefaults {
   max_concurrency: number;
   // When true, Build and run creates a draft proposal and waits for Start.
   review_plan_first: boolean;
+  // Pinned preserves agent defaults. Adaptive modes resolve per-step pins.
+  model_routing_mode?: ProjectModelRoutingMode;
 }
 
 export interface ProjectPreviewTarget {

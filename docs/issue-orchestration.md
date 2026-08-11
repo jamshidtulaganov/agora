@@ -30,7 +30,26 @@ all steps completed → run completed
 Every executable step names an agent and may name an opaque provider model.
 The task queue forwards that model to the selected agent runtime. Unlike normal
 issue tasks, an explicit orchestration model is not downgraded by cost-tier
-labels. Default plans separate responsibility from execution control:
+labels. `model_routing_mode` controls how those immutable step pins are chosen:
+
+- `pinned` (default) preserves each agent/custom-step model and thinking level;
+- `cost` uses frontier planning, efficient implementation/QA, and balanced
+  integration/review, unless issue risk signals escalate a step;
+- `balanced` uses frontier planning, efficient models for small/mechanical
+  implementation, and balanced models for the remaining routine work;
+- `intelligence` uses frontier models throughout;
+- Cursor runtimes delegate adaptive selection to Cursor's native `auto` model;
+  providers without an Agora profile safely preserve the existing agent pin.
+
+The resolver records `mode`, `router_version`, and one decision per routed step
+under `orchestration_run.policy.model_routing`. Each decision includes the
+provider, exact model/thinking pin, quality tier, human-readable reason, and any
+risk/scope signals. Generated plans are fully routed. Explicit model or thinking
+pins in custom plans remain authoritative; only unpinned custom steps are routed.
+Routing selects within the already assigned agent's runtime; it never silently
+changes the worker, provider, credentials, skills, or artifact location.
+The first provider profiles are Codex, Claude, Gemini, and Cursor. Default plans
+then separate responsibility from execution control:
 
 - a directly assigned agent remains the development worker;
 - a squad-owned issue resolves `squad.leader_id` as both controller and the
@@ -41,8 +60,8 @@ labels. Default plans separate responsibility from execution control:
 - QA and review cast metadata override the controller for those stages.
 
 The run row snapshots `owner_type`, `owner_id`, `controller_agent_id`,
-`execution_strategy`, and `progression_policy`; the JSON policy retains legacy
-aliases only during the compatibility window. The API emits the snapshot so a
+`execution_strategy`, and `progression_policy`; the JSON policy retains model
+routing decisions and legacy aliases only during the compatibility window. The API emits the snapshot so a
 mid-run reassignment cannot silently relabel the accountable owner or
 controller. `max_concurrency` defaults to 3 and is capped at 10. Steps declare
 `depends_on_keys`; the persisted dependency table supports fan-out and join

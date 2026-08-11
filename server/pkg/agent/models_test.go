@@ -392,6 +392,53 @@ anthropic/claude-sonnet-4-6
 	}
 }
 
+func TestParseOpenCodeModelsFiltersNonAgentCapabilities(t *testing.T) {
+	input := `xai/grok-code
+{
+  "capabilities": {
+    "toolcall": true,
+    "output": { "text": true }
+  }
+}
+xai/grok-imagine-image
+{
+  "capabilities": {
+    "toolcall": false,
+    "output": { "text": false, "image": true }
+  }
+}
+xai/grok-text-without-tools
+{
+  "capabilities": {
+    "toolcall": false,
+    "output": { "text": true }
+  }
+}
+`
+	models, hadMetadata := parseOpenCodeModelsDetailed(input)
+	if !hadMetadata {
+		t.Fatal("expected verbose metadata to be detected")
+	}
+	if len(models) != 1 || models[0].ID != "xai/grok-code" {
+		t.Fatalf("expected only text+tool model, got %+v", models)
+	}
+}
+
+func TestParseOpenCodeModelsDoesNotFallbackWhenAllVerboseModelsAreMediaOnly(t *testing.T) {
+	input := `xai/grok-imagine-video
+{
+  "capabilities": {
+    "toolcall": false,
+    "output": { "text": false, "video": true }
+  }
+}
+`
+	models, hadMetadata := parseOpenCodeModelsDetailed(input)
+	if !hadMetadata || len(models) != 0 {
+		t.Fatalf("expected a recognized catalog with no agent-capable models, metadata=%v models=%+v", hadMetadata, models)
+	}
+}
+
 func TestParseOpenCodeModelsMalformedVerboseBlockKeepsFollowingModels(t *testing.T) {
 	input := `openai/gpt-5
 {
@@ -805,6 +852,44 @@ composer-2 - Composer 2
 	models := parseCursorModels(input)
 	if len(models) != 1 || models[0].ID != "composer-2" {
 		t.Fatalf("unexpected: %+v", models)
+	}
+}
+
+func TestListModelsCursorCacheIncludesExecutablePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake cursor binaries are POSIX shell scripts")
+	}
+	dir := t.TempDir()
+	first := filepath.Join(dir, "cursor-one")
+	second := filepath.Join(dir, "cursor-two")
+	writeTestExecutable(t, first, []byte("#!/bin/sh\necho 'first-model - First Model (default)'\n"))
+	writeTestExecutable(t, second, []byte("#!/bin/sh\necho 'second-model - Second Model (default)'\n"))
+
+	for _, path := range []string{first, second} {
+		key := discoveryCacheKey("cursor", path)
+		modelCacheMu.Lock()
+		delete(modelCache, key)
+		modelCacheMu.Unlock()
+		t.Cleanup(func() {
+			modelCacheMu.Lock()
+			delete(modelCache, key)
+			modelCacheMu.Unlock()
+		})
+	}
+
+	firstModels, err := ListModels(context.Background(), "cursor", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondModels, err := ListModels(context.Background(), "cursor", second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstModels) != 1 || firstModels[0].ID != "first-model" {
+		t.Fatalf("first executable catalog = %+v", firstModels)
+	}
+	if len(secondModels) != 1 || secondModels[0].ID != "second-model" {
+		t.Fatalf("second executable reused first cache entry: %+v", secondModels)
 	}
 }
 

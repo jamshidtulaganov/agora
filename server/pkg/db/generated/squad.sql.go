@@ -563,6 +563,33 @@ func (q *Queries) ListSquadsByMember(ctx context.Context, arg ListSquadsByMember
 	return items, nil
 }
 
+const normalizeSquadLeaderRoles = `-- name: NormalizeSquadLeaderRoles :exec
+UPDATE squad_member
+SET role = CASE
+    WHEN member_type = 'agent' AND member_id = $2 THEN 'leader'
+    WHEN lower(btrim(role)) = 'leader' THEN 'member'
+    ELSE role
+END
+WHERE squad_id = $1
+  AND (
+      (member_type = 'agent' AND member_id = $2)
+      OR lower(btrim(role)) = 'leader'
+  )
+`
+
+type NormalizeSquadLeaderRolesParams struct {
+	SquadID  pgtype.UUID `json:"squad_id"`
+	MemberID pgtype.UUID `json:"member_id"`
+}
+
+// The squad.leader_id column is canonical. Keep the human-readable member
+// roles aligned with it so roster displays and orchestration briefs never
+// advertise a stale second leader after leadership changes.
+func (q *Queries) NormalizeSquadLeaderRoles(ctx context.Context, arg NormalizeSquadLeaderRolesParams) error {
+	_, err := q.db.Exec(ctx, normalizeSquadLeaderRoles, arg.SquadID, arg.MemberID)
+	return err
+}
+
 const removeSquadMember = `-- name: RemoveSquadMember :execrows
 DELETE FROM squad_member
 WHERE squad_id = $1 AND member_type = $2 AND member_id = $3

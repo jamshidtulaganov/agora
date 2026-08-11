@@ -1,6 +1,6 @@
 ---
 name: agora-squads
-description: "Use when creating, inspecting, updating, assigning, mentioning, or debugging Agora squads. Explains what squads are, squad/member fields, CLI commands, leader routing, issue assignment, comments, mentions, autopilot behavior, leader briefing, the QA-lead/dev-lead orchestrator pattern (sibling leads, dynamic subagent creation, model selection), side effects, and product-gap handling."
+description: "Use when creating, inspecting, updating, assigning, mentioning, or debugging Agora squads. Explains human-only roster management, squad/member fields, CLI commands, leader routing, issue assignment, comments, mentions, autopilot behavior, leader briefing, persisted orchestration, model selection, side effects, and product-gap handling."
 user-invocable: false
 allowed-tools: Bash(agora *)
 ---
@@ -80,6 +80,12 @@ agora issue comment add <issue-id> --help
 
 Prefer `--output json` for reads. Use `--help` before writes.
 
+Squad and roster writes are human-only. Task/cloud-node credentials cannot
+create, update, archive, or change membership/roles. A running agent may inspect
+the squad and describe the exact roster change needed, but must ask a workspace
+owner/admin human to apply it. `squad activity` remains agent-writable because it
+records the leader's issue evaluation rather than changing squad configuration.
+
 ## Squad fields
 
 - `id` — squad UUID.
@@ -115,7 +121,10 @@ Create/update only checks that the agent exists, so an archived leader fails
 closed later: assignment, autopilot admission, and comment/mention readiness
 all reject it before enqueueing work.
 
-On create, the backend adds the leader as a member with role `leader`; updating `leader_id` does the same if needed.
+On create, the backend adds the leader as a member with role `leader`. Updating
+`leader_id` atomically adds/promotes the new leader and demotes any stale
+`leader` role labels to `member`. Use the leader selector to change leadership;
+direct role edits cannot assign or remove the canonical leader role.
 
 ## Leader briefing
 
@@ -384,28 +393,30 @@ even if today only one agent exists to do the work. This keeps the leader in
 the loop on every task by construction, so it can decide delegation instead
 of being bypassed.
 
-**Outside a run, leaders may manage persistent Agora agents.** This is roster management,
-not native child threads. Their task token authenticates the same `agora agent` CLI —
-there is no separate "leader" capability tier. A leader can:
+**Roster changes require a human.** A leader task token may inspect agents and
+the current roster, but squad creation/update/archive and member add/remove/role
+writes reject machine actors. If the roster lacks a capability, the leader must
+leave an issue comment naming the required role, runtime/model, skills, and MCP
+access, then continue with a safe current member or wait for the human change.
+Inside a run, parallel work uses versioned DAG routes; provider-native child
+threads remain unsupported and invisible to Agora lifecycle tracking.
 
-```bash
-agora agent create --name <name> --runtime-id <runtime-id> \
-  --description "<catalog summary>" --instructions "<runtime contract>" \
-  --model <model> --output json
-agora agent skills set <agent-id> --skill-ids <id1>,<id2> --output json
-agora squad member add <squad-id> --member-id <new-agent-id> --type agent --role <role> --output json
-agora agent update <agent-id> --archived true    # retire a subagent once its task is done
-```
+**Model/difficulty selection.** Persisted orchestration supports a creation-time
+`model_routing_mode` with four values. `pinned` is the compatibility default and
+preserves the roster/custom-step pins. `cost`, `balanced`, and `intelligence`
+all use frontier reasoning for the plan step, then choose efficient, balanced,
+or frontier provider-native model/thinking pins per downstream step. Risk
+signals escalate instead of downgrading. The run policy records the router
+version, exact decision, reason, and signals for every routed step. Explicit
+model/thinking values on a custom plan remain authoritative; only unpinned
+custom steps are routed. Codex, Claude, Gemini, and Cursor have profiles;
+unknown providers preserve their existing agent pin. The router selects within
+the assigned agent's runtime and never silently changes the worker/provider,
+credentials, skills, or artifact location.
 
-See `agora-creating-agents` for the full field contract (what's validated,
-what the daemon actually reads, env/secret handling). A leader choosing to
-create an agent should: pick skills via `agent skills set` (creation binds none),
-pick an MCP config when external tools are needed, add it to its squad, and archive
-it when done. Inside a run, use versioned DAG routes instead.
-
-**Model/difficulty selection — label the issue or set the agent directly.**
-`applyIssueCostTier` (`server/internal/handler/daemon.go`) resolves an ordinary
-task's model+thinking from issue tier labels at claim time:
+Outside persisted runs, `applyIssueCostTier`
+(`server/internal/handler/daemon.go`) resolves an ordinary task's model+thinking
+from issue tier labels at claim time:
 
 - `tier:trivial` → haiku, no thinking
 - `tier:light` → sonnet, no thinking
@@ -419,8 +430,9 @@ create` and `agora agent update` take `--model` AND `--thinking-level`
 (e.g. `--model claude-opus-4-8 --thinking-level high` for the hardest work,
 `--model claude-sonnet-5` for fast execution). Note the timing: model and
 thinking are read at ordinary-task CLAIM time. Persisted orchestration snapshots
-both per step and preserves them through retry/failover/reroute — configure the
-roster BEFORE creating its run.
+both per step and preserves them through retry/failover/reroute. With `pinned`,
+configure the roster before creating its run; with an adaptive mode, inspect the
+recorded plan decisions before starting a draft proposal.
 
 ## Autopilot behavior
 

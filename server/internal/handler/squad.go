@@ -332,6 +332,7 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := db.UpdateSquadParams{ID: squad.ID}
+	var nextLeaderID pgtype.UUID
 	if req.Name != nil {
 		params.Name = pgtype.Text{String: *req.Name, Valid: true}
 	}
@@ -356,16 +357,8 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "leader must be a valid agent in this workspace")
 			return
 		}
-		// Ensure new leader is a squad member; auto-add if not.
-		isMember, _ := h.Queries.IsSquadMember(r.Context(), db.IsSquadMemberParams{
-			SquadID: squad.ID, MemberType: "agent", MemberID: lid,
-		})
-		if !isMember {
-			h.Queries.AddSquadMember(r.Context(), db.AddSquadMemberParams{
-				SquadID: squad.ID, MemberType: "agent", MemberID: lid, Role: "leader",
-			})
-		}
 		params.LeaderID = lid
+		nextLeaderID = lid
 
 		// Promoting/setting a leader on a squad that has no orchestration brief
 		// yet auto-seeds the default (the leader IS the orchestrator). Only when
@@ -376,12 +369,53 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := h.Queries.UpdateSquad(r.Context(), params)
+	// Updating the canonical leader and its member-role projection is one
+	// transaction. Otherwise a failure between AddSquadMember/UpdateSquad could
+	// leave a stale or second "leader" role in the roster.
+	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update squad")
 		return
 	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
 
+	if req.LeaderID != nil {
+		isMember, err := qtx.IsSquadMember(r.Context(), db.IsSquadMemberParams{
+			SquadID: squad.ID, MemberType: "agent", MemberID: nextLeaderID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update squad leader")
+			return
+		}
+		if !isMember {
+			if _, err := qtx.AddSquadMember(r.Context(), db.AddSquadMemberParams{
+				SquadID: squad.ID, MemberType: "agent", MemberID: nextLeaderID, Role: "leader",
+			}); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to update squad leader")
+				return
+			}
+		}
+	}
+
+	updated, err := qtx.UpdateSquad(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update squad")
+		return
+	}
+	if req.LeaderID != nil {
+		if err := qtx.NormalizeSquadLeaderRoles(r.Context(), db.NormalizeSquadLeaderRolesParams{
+			SquadID:  squad.ID,
+			MemberID: nextLeaderID,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update squad leader")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update squad")
+		return
+	}
 	resp, err := h.squadToResponseWithPreview(r.Context(), updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load squad member preview")
@@ -407,12 +441,27 @@ func (h *Handler) DeleteSquad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := requestUserID(r)
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user_id")
+	if !ok {
+		return
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to archive squad")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
 	// Transfer issues assigned to this squad to the leader agent.
-	if err := h.Queries.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
+	if err := qtx.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
 		AssigneeID:   squad.ID,
 		AssigneeID_2: squad.LeaderID,
 	}); err != nil {
-		slog.Warn("transfer squad assignees failed", "squad_id", uuidToString(squad.ID), "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to transfer squad issues")
+		return
 	}
 
 	// Mirror the issue-assignee transfer for autopilots that target this
@@ -421,20 +470,22 @@ func (h *Handler) DeleteSquad(w http.ResponseWriter, r *http.Request) {
 	// "assignee squad is archived" — visible to ops but useless to the
 	// owner. Rewriting to the leader keeps the autopilot semantics
 	// unchanged (Path A from MUL-2429 is leader-only execution anyway).
-	if err := h.Queries.TransferSquadAutopilotsToLeader(r.Context(), db.TransferSquadAutopilotsToLeaderParams{
+	if err := qtx.TransferSquadAutopilotsToLeader(r.Context(), db.TransferSquadAutopilotsToLeaderParams{
 		AssigneeID:   squad.ID,
 		AssigneeID_2: squad.LeaderID,
 	}); err != nil {
-		slog.Warn("transfer squad autopilots failed", "squad_id", uuidToString(squad.ID), "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to transfer squad autopilots")
+		return
 	}
 
-	userID := requestUserID(r)
-	userUUID, _ := parseUUIDOrBadRequest(w, userID, "user_id")
-
-	if _, err := h.Queries.ArchiveSquad(r.Context(), db.ArchiveSquadParams{
+	if _, err := qtx.ArchiveSquad(r.Context(), db.ArchiveSquadParams{
 		ID:         squad.ID,
 		ArchivedBy: userUUID,
 	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to archive squad")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to archive squad")
 		return
 	}
@@ -690,6 +741,11 @@ func (h *Handler) AddSquadMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(req.Role), "leader") &&
+		(req.MemberType != "agent" || memberUUID != squad.LeaderID) {
+		writeError(w, http.StatusBadRequest, "use the squad leader selector to assign the leader role")
+		return
+	}
 
 	// Validate the member belongs to this workspace.
 	if req.MemberType == "agent" {
@@ -753,7 +809,6 @@ func (h *Handler) RemoveSquadMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 	// Prevent removing the leader.
 	if req.MemberType == "agent" && uuidToString(squad.LeaderID) == req.MemberID {
 		writeError(w, http.StatusBadRequest, "cannot remove the squad leader; change leader first")
@@ -803,6 +858,12 @@ func (h *Handler) UpdateSquadMemberRole(w http.ResponseWriter, r *http.Request) 
 
 	memberUUID, ok := parseUUIDOrBadRequest(w, req.MemberID, "member_id")
 	if !ok {
+		return
+	}
+	isCanonicalLeader := req.MemberType == "agent" && memberUUID == squad.LeaderID
+	wantsLeaderRole := strings.EqualFold(strings.TrimSpace(req.Role), "leader")
+	if isCanonicalLeader != wantsLeaderRole {
+		writeError(w, http.StatusBadRequest, "use the squad leader selector to change leadership")
 		return
 	}
 

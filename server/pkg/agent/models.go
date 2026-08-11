@@ -137,7 +137,7 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 			return discoverAntigravityModels(ctx, executablePath)
 		})
 	case "cursor":
-		return cachedDiscovery(providerType, func() ([]Model, error) {
+		return cachedDiscovery(discoveryCacheKey(providerType, executablePath), func() ([]Model, error) {
 			return discoverCursorModels(ctx, executablePath)
 		})
 	case "copilot":
@@ -506,8 +506,8 @@ func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model
 	// stale config entry can make `opencode models` exit non-zero while still
 	// listing the resolvable catalog (mirrors the pi path; see #3729/#3627).
 	out, _ := cmd.Output()
-	models := parseOpenCodeModels(string(out))
-	if len(models) == 0 {
+	models, hadVerboseMetadata := parseOpenCodeModelsDetailed(string(out))
+	if len(models) == 0 && !hadVerboseMetadata {
 		// Verbose yielded nothing usable (unsupported flag, error text, or an
 		// empty list). Retry the plain command, which omits the per-model JSON
 		// but still prints the IDs.
@@ -529,9 +529,20 @@ func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model
 // that object contains `variants`, each enabled variant becomes a thinking
 // level that the backend later passes through `opencode run --variant`.
 func parseOpenCodeModels(output string) []Model {
+	models, _ := parseOpenCodeModelsDetailed(output)
+	return models
+}
+
+// parseOpenCodeModelsDetailed also reports whether the output contained valid
+// verbose metadata. That distinction prevents a valid catalog containing only
+// non-agent media models from falling back to the capability-blind plain list
+// and reintroducing those entries.
+func parseOpenCodeModelsDetailed(output string) ([]Model, bool) {
 	lines := strings.Split(output, "\n")
 	var models []Model
 	indexByID := map[string]int{}
+	eligibleByID := map[string]bool{}
+	hadVerboseMetadata := false
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -550,6 +561,7 @@ func parseOpenCodeModels(output string) []Model {
 			idx = len(models)
 			indexByID[id] = idx
 			models = append(models, Model{ID: id, Label: id, Provider: provider})
+			eligibleByID[id] = true
 		}
 
 		next := i + 1
@@ -561,11 +573,19 @@ func parseOpenCodeModels(output string) []Model {
 		}
 		raw, resumeAt := collectOpenCodeModelJSON(lines, next)
 		if json.Valid(raw) {
-			annotateOpenCodeModelMetadata(&models[idx], raw)
+			hadVerboseMetadata = true
+			eligibleByID[id] = annotateOpenCodeModelMetadata(&models[idx], raw)
 		}
 		i = resumeAt - 1
 	}
-	return models
+
+	filtered := models[:0]
+	for _, model := range models {
+		if eligibleByID[model.ID] {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered, hadVerboseMetadata
 }
 
 func parseOpenCodeModelIDLine(line string) string {
@@ -606,8 +626,16 @@ func collectOpenCodeModelJSON(lines []string, start int) ([]byte, int) {
 }
 
 type opencodeModelMetadata struct {
-	Reasoning bool                            `json:"reasoning"`
-	Variants  map[string]opencodeModelVariant `json:"variants"`
+	Reasoning    bool                            `json:"reasoning"`
+	Variants     map[string]opencodeModelVariant `json:"variants"`
+	Capabilities *opencodeModelCapabilities      `json:"capabilities"`
+}
+
+type opencodeModelCapabilities struct {
+	ToolCall bool `json:"toolcall"`
+	Output   struct {
+		Text bool `json:"text"`
+	} `json:"output"`
 }
 
 type opencodeModelVariant struct {
@@ -636,19 +664,28 @@ var opencodeVariantOrder = map[string]int{
 	"max":     6,
 }
 
-func annotateOpenCodeModelMetadata(model *Model, raw []byte) {
+func annotateOpenCodeModelMetadata(model *Model, raw []byte) bool {
 	var meta opencodeModelMetadata
 	if err := json.Unmarshal(raw, &meta); err != nil {
-		return
+		return true
+	}
+	// OpenCode's verbose catalog includes image/video generation models that
+	// accept `--model` but cannot run a text coding-agent turn. Only expose
+	// entries that explicitly support both text output and tool calls. Older
+	// CLIs that omit capabilities remain visible; the plain fallback cannot
+	// prove capabilities either and is intentionally permissive.
+	if meta.Capabilities != nil && (!meta.Capabilities.Output.Text || !meta.Capabilities.ToolCall) {
+		return false
 	}
 	if !meta.Reasoning && !openCodeVariantsLookReasoning(meta.Variants) {
-		return
+		return true
 	}
 	levels := openCodeThinkingLevelsFromVariants(meta.Variants)
 	if len(levels) == 0 {
-		return
+		return true
 	}
 	model.Thinking = &ModelThinking{SupportedLevels: levels}
+	return true
 }
 
 func openCodeVariantsLookReasoning(variants map[string]opencodeModelVariant) bool {

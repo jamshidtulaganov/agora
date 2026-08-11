@@ -78,6 +78,22 @@ UPDATE squad_member SET role = $4
 WHERE squad_id = $1 AND member_type = $2 AND member_id = $3
 RETURNING *;
 
+-- name: NormalizeSquadLeaderRoles :exec
+-- The squad.leader_id column is canonical. Keep the human-readable member
+-- roles aligned with it so roster displays and orchestration briefs never
+-- advertise a stale second leader after leadership changes.
+UPDATE squad_member
+SET role = CASE
+    WHEN member_type = 'agent' AND member_id = $2 THEN 'leader'
+    WHEN lower(btrim(role)) = 'leader' THEN 'member'
+    ELSE role
+END
+WHERE squad_id = $1
+  AND (
+      (member_type = 'agent' AND member_id = $2)
+      OR lower(btrim(role)) = 'leader'
+  );
+
 -- name: IsSquadMember :one
 SELECT EXISTS(
     SELECT 1 FROM squad_member

@@ -19,6 +19,8 @@ func TestCreateIssueOrchestrationUsesExplicitSquadRoster(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+	t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "true")
 	ctx := context.Background()
 
 	leaderID := createHandlerTestAgent(t, "Orchestration squad leader", []byte("[]"))
@@ -87,7 +89,8 @@ func TestCreateIssueOrchestrationUsesExplicitSquadRoster(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title": fmt.Sprintf("Explicit squad orchestration %d", time.Now().UnixNano()),
+		"title":       fmt.Sprintf("Explicit squad orchestration %d", time.Now().UnixNano()),
+		"description": "Coordinate frontend and backend changes across the product boundary.",
 	})
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {

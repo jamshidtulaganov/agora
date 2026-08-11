@@ -58,7 +58,9 @@ Source:
 
 ```text
 server/internal/handler/squad.go                  # CreateSquad ~200-272, UpdateSquad ~287-364
+server/cmd/server/router.go                       # RequireHumanActor on squad/roster mutations
 server/pkg/db/queries/agent.sql                   # GetAgentInWorkspace ~15-17
+server/pkg/db/queries/squad.sql                   # NormalizeSquadLeaderRoles + archive transfers
 server/pkg/db/generated/agent.sql.go              # getAgentInWorkspace ~1261
 ```
 
@@ -73,8 +75,15 @@ Contracts:
   closed later, at routing/dispatch — see the readiness gate (squad.go:945,
   isSquadLeaderReady → service.AgentReadiness at squad.go:1017), assignment
   validation (issue.go:2625-2627), and autopilot admission (autopilot.go:885-891);
-- leader is auto-added as member with role `leader` (squad.go:258-263);
-- updating `leader_id` auto-adds new leader as member if missing (squad.go:340-347).
+- leader is auto-added as member with role `leader`;
+- squad and roster mutations are wrapped with `RequireHumanActor`; machine task
+  and cloud-node credentials receive 403 before the handler runs;
+- updating `leader_id` performs member add/promotion, canonical squad update,
+  and stale leader-role demotion in one transaction;
+- direct member-role writes cannot assign `leader` to a non-leader or remove
+  the canonical leader role; callers must use the leader selector;
+- archive transfers issue and autopilot assignees to the leader and archives
+  the squad in one transaction. Any failed transfer aborts the archive.
 
 ## Leader Briefing
 
@@ -493,11 +502,10 @@ Contracts:
   actor-type deny (owner/admin-only, agent actors rejected regardless of
   role) per `agora-creating-agents/SKILL.md` — create/update/skills have no
   equivalent deny;
-- `applyIssueCostTier` is the ONLY automatic model/thinking-level selection
-  in the codebase today, and it only fires for two label values
-  (daemon.go:1121); every other model choice — including a leader picking a
-  model for a subagent it just created — is a manual `--model` flag, not
-  platform-driven.
+- ordinary tasks use `applyIssueCostTier` for label-driven model/thinking
+  selection at claim time (daemon.go); persisted orchestration separately uses
+  `applyAdaptiveModelRouting` at plan creation when `model_routing_mode` is
+  `cost`, `balanced`, or `intelligence`. `pinned` remains the default.
 
 ## Persisted issue orchestration
 
@@ -510,6 +518,7 @@ server/migrations/170_orchestration_step_capability.up.sql
 server/migrations/187_orchestration_thinking_override.up.sql
 server/pkg/db/queries/orchestration.sql
 server/internal/handler/orchestration.go
+server/internal/handler/orchestration_model_routing.go # provider profiles, risk/scope policy, audit decisions
 server/internal/service/task.go              # orchestration task snapshot + terminal callback
 server/internal/handler/daemon.go             # authoritative per-step model/thinking route
 server/internal/daemon/prompt.go              # per-step handoff contract
@@ -540,6 +549,9 @@ Contracts:
   fast daemon cannot complete before the task-to-step relationship exists;
 - explicit orchestration model/thinking snapshots are authoritative, copied to
   each queued task, and not replaced by issue cost-tier labels;
+- optional adaptive routing resolves those authoritative pins at plan creation,
+  records versioned per-step reasons/signals in the run policy, and preserves
+  explicit custom-plan pins plus unknown-provider agent defaults;
 - orchestration owns retry for linked tasks, preventing the generic task retry
   and fallback paths from creating a second competing attempt; stale sweeps
   and daemon orphan recovery re-enter the orchestration terminal callback;

@@ -26,6 +26,7 @@ type orchestrationPlanRequest struct {
 	Mode              string `json:"mode"`
 	ExecutionStrategy string `json:"execution_strategy"`
 	ProgressionPolicy string `json:"progression_policy"`
+	ModelRoutingMode  string `json:"model_routing_mode"`
 	SquadID           string `json:"squad_id"`
 	// AutoStart is a pointer so omission can inherit the project's
 	// review_plan_first default while an explicit false still creates a draft.
@@ -39,6 +40,7 @@ type projectOrchestrationDefaults struct {
 	ProgressionPolicy string `json:"progression_policy"`
 	MaxConcurrency    int    `json:"max_concurrency"`
 	ReviewPlanFirst   *bool  `json:"review_plan_first"`
+	ModelRoutingMode  string `json:"model_routing_mode"`
 	SquadID           string `json:"-"`
 }
 
@@ -73,6 +75,7 @@ func (h *Handler) orchestrationDefaultsForIssue(ctx context.Context, issue db.Is
 		defaults.ExecutionStrategy = ""
 	}
 	defaults.ProgressionPolicy = normalizeProgressionPolicy(defaults.ProgressionPolicy)
+	defaults.ModelRoutingMode = normalizeModelRoutingMode(defaults.ModelRoutingMode)
 	if defaults.MaxConcurrency < 1 || defaults.MaxConcurrency > 10 {
 		defaults.MaxConcurrency = 0
 	}
@@ -83,13 +86,14 @@ func (h *Handler) orchestrationDefaultsForIssue(ctx context.Context, issue db.Is
 }
 
 type orchestrationStepRequest struct {
-	Key              string `json:"key"`
-	Title            string `json:"title"`
-	Stage            string `json:"stage"`
-	AgentID          string `json:"agent_id"`
-	Model            string `json:"model"`
-	Instructions     string `json:"instructions"`
-	ApprovalRequired bool   `json:"approval_required"`
+	Key              string  `json:"key"`
+	Title            string  `json:"title"`
+	Stage            string  `json:"stage"`
+	AgentID          string  `json:"agent_id"`
+	Model            string  `json:"model"`
+	ThinkingLevel    *string `json:"thinking_level"`
+	Instructions     string  `json:"instructions"`
+	ApprovalRequired bool    `json:"approval_required"`
 	// HumanOnly marks an approval checkpoint that completes when approved. It
 	// must not inherit the run controller and dispatch an agent afterwards.
 	HumanOnly        bool     `json:"human_only"`
@@ -440,13 +444,38 @@ func prepareOrchestrationPlan(steps []orchestrationStepRequest) error {
 	if len(joiningIntegrations) == 0 {
 		return fmt.Errorf("parallel development branches %s require an integration join", strings.Join(terminalDev, ", "))
 	}
+	var consumesIntegrationJoin func(string, map[string]bool) bool
+	consumesIntegrationJoin = func(key string, visiting map[string]bool) bool {
+		if joiningIntegrations[key] {
+			return true
+		}
+		if visiting[key] {
+			return false
+		}
+		index, ok := seen[key]
+		if !ok {
+			return false
+		}
+		visiting[key] = true
+		defer delete(visiting, key)
+		for _, dependency := range steps[index].DependsOnKeys {
+			if consumesIntegrationJoin(dependency, visiting) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, step := range steps {
 		if step.Stage != "qa" && step.Stage != "review" {
 			continue
 		}
 		consumesJoin := false
 		for _, dependency := range step.DependsOnKeys {
-			if joiningIntegrations[dependency] {
+			// Review commonly consumes QA, which consumes the integration
+			// artifact. Treat that transitive chain as joined; requiring every
+			// downstream gate to point directly at the integration step rejects
+			// the valid sequential QA -> review flow.
+			if consumesIntegrationJoin(dependency, map[string]bool{}) {
 				consumesJoin = true
 				break
 			}
@@ -1168,10 +1197,15 @@ func orchestrationExecutionSnapshot(
 	queries *db.Queries,
 	workspaceID, agentID pgtype.UUID,
 	requestedModel string,
+	requestedThinking *string,
 ) (pgtype.Text, pgtype.Text, error) {
 	model := strings.TrimSpace(requestedModel)
 	if !agentID.Valid {
-		return pgtype.Text{String: model, Valid: model != ""}, pgtype.Text{}, nil
+		thinking := pgtype.Text{}
+		if requestedThinking != nil {
+			thinking = pgtype.Text{String: strings.TrimSpace(*requestedThinking), Valid: true}
+		}
+		return pgtype.Text{String: model, Valid: model != ""}, thinking, nil
 	}
 	agent, err := queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
 		ID: agentID, WorkspaceID: workspaceID,
@@ -1182,8 +1216,12 @@ func orchestrationExecutionSnapshot(
 	if model == "" {
 		model = strings.TrimSpace(agent.Model.String)
 	}
+	thinking := strings.TrimSpace(agent.ThinkingLevel.String)
+	if requestedThinking != nil {
+		thinking = strings.TrimSpace(*requestedThinking)
+	}
 	return pgtype.Text{String: model, Valid: true}, pgtype.Text{
-		String: strings.TrimSpace(agent.ThinkingLevel.String), Valid: true,
+		String: thinking, Valid: true,
 	}, nil
 }
 
@@ -1501,7 +1539,11 @@ func defaultOrchestrationStepsWithMembersAndAutomation(issue db.Issue, routing o
 		workers = []orchestrationPlannerMember{{AgentID: development, Role: "implementation"}}
 	}
 	planShape := inferSquadPlanShape(issue)
-	if planShape == squadPlanShapeLean && autoQA && autoReview {
+	// Lean plans stay lean regardless of whether verification is automated or
+	// human-gated. Otherwise disabling auto-QA/review unexpectedly expands a
+	// cohesive task across every development specialist and adds an integration
+	// hop before the manual checkpoint.
+	if planShape == squadPlanShapeLean {
 		workers = []orchestrationPlannerMember{leanSquadWorker(issue, workers)}
 	}
 
@@ -1555,7 +1597,11 @@ func defaultOrchestrationStepsWithMembersAndAutomation(issue db.Issue, routing o
 		})
 		verificationDependencies = []string{"integrate"}
 	}
-	if planShape == squadPlanShapeLean {
+	// Combining QA and review is safe only when both stages are automated. A
+	// project that disables either automation must retain the corresponding
+	// human checkpoint below; lean describes graph width, not permission to
+	// bypass project execution policy.
+	if planShape == squadPlanShapeLean && autoQA && autoReview {
 		steps = append(steps,
 			orchestrationStepRequest{
 				Key: "verify", Title: "Verify and review the result", Stage: "qa", Capability: "qa",
@@ -1681,6 +1727,17 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	projectDefaults := h.orchestrationDefaultsForIssue(r.Context(), issue)
+	if strings.TrimSpace(req.ModelRoutingMode) != "" && normalizeModelRoutingMode(req.ModelRoutingMode) == "" {
+		writeError(w, http.StatusBadRequest, "model_routing_mode must be pinned, cost, balanced, or intelligence")
+		return
+	}
+	modelRoutingMode := normalizeModelRoutingMode(req.ModelRoutingMode)
+	if modelRoutingMode == "" {
+		modelRoutingMode = projectDefaults.ModelRoutingMode
+	}
+	if modelRoutingMode == "" {
+		modelRoutingMode = modelRoutingPinned
+	}
 	if strings.TrimSpace(req.ProgressionPolicy) != "" && normalizeProgressionPolicy(req.ProgressionPolicy) == "" {
 		writeError(w, http.StatusBadRequest, "progression_policy must be automatic, gated, or manual")
 		return
@@ -1806,6 +1863,9 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	modelRoutingDecisions := h.applyAdaptiveModelRouting(
+		r.Context(), issue, routing, modelRoutingMode, req.Steps, !hasCustomPlan,
+	)
 	effectiveAgentIDs, routeErr := h.orchestrationPlanAgentIDs(r.Context(), issue.WorkspaceID, routing, req.Steps)
 	if routeErr != nil {
 		writeError(w, http.StatusBadRequest, routeErr.Error())
@@ -1892,6 +1952,10 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	req.Policy["controller_agent_id"] = uuidToString(routing.ControllerAgent)
 	req.Policy["execution_strategy"] = executionStrategy
 	req.Policy["progression_policy"] = progressionPolicy
+	req.Policy["model_routing"] = orchestrationModelRoutingPolicy{
+		Mode: modelRoutingMode, RouterVersion: orchestrationModelRouterVersion,
+		Decisions: modelRoutingDecisions,
+	}
 	req.Policy["auto_qa"] = autoQA
 	req.Policy["auto_review"] = autoReview
 	if !autoQA && !autoReview {
@@ -2076,7 +2140,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 			snapshotAgentID = controllerAgentID
 		}
 		modelOverride, thinkingLevelOverride, snapshotErr := orchestrationExecutionSnapshot(
-			r.Context(), qtx, issue.WorkspaceID, snapshotAgentID, input.Model,
+			r.Context(), qtx, issue.WorkspaceID, snapshotAgentID, input.Model, input.ThinkingLevel,
 		)
 		if snapshotErr != nil {
 			writeError(w, http.StatusBadRequest, "step agent not found in workspace")
@@ -2280,7 +2344,7 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		rerouteModel, rerouteThinkingLevel, err = orchestrationExecutionSnapshot(
-			r.Context(), h.Queries, issue.WorkspaceID, agentID, req.Model,
+			r.Context(), h.Queries, issue.WorkspaceID, agentID, req.Model, nil,
 		)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "step agent not found in workspace")
@@ -2473,7 +2537,7 @@ func (h *Handler) EditIssueOrchestration(w http.ResponseWriter, r *http.Request)
 			err = shiftErr
 		} else {
 			childModel, childThinkingLevel, snapshotErr := orchestrationExecutionSnapshot(
-				r.Context(), qtx, issue.WorkspaceID, agentID, child.Model,
+				r.Context(), qtx, issue.WorkspaceID, agentID, child.Model, child.ThinkingLevel,
 			)
 			if snapshotErr != nil {
 				err = snapshotErr

@@ -64,7 +64,7 @@ func composeTailoredOrchestratorInstructions(squadName string, roster []squadRos
 	}
 
 	if len(members) == 0 {
-		b.WriteString("\n\nThis squad has no members besides you yet. Decompose the issue anyway so the work is trackable and QA-separable, and create a subagent (agora agent create → agora squad member add) for any sub-task you should not do yourself.")
+		b.WriteString("\n\nThis squad has no members besides you yet. Keep cohesive work on the parent and handle it yourself when safe. If a separate capability is required, name the missing role/tooling in an issue comment and ask the human to add a member; squad roster changes are human-only.")
 		return b.String()
 	}
 
@@ -79,7 +79,7 @@ func composeTailoredOrchestratorInstructions(squadName string, roster []squadRos
 		}
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\nRoute each sub-task to the member whose description best fits it. If a task fits no member, create a subagent for it, give it the right skills + a model that matches the task's difficulty, and archive it when done.")
+	b.WriteString("\nRoute each sub-task to the current member whose description best fits it. If no member fits, name the missing role/tooling in an issue comment and ask the human to add or configure a member. Do not create hidden provider-native children or mutate the squad from a task credential.")
 	return b.String()
 }
 

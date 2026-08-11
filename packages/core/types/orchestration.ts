@@ -10,6 +10,7 @@ export type OrchestrationRunStatus =
 
 export type ExecutionStrategy = "human" | "solo" | "squad" | "custom";
 export type ProgressionPolicy = "automatic" | "gated" | "manual";
+export type ModelRoutingMode = "pinned" | "cost" | "balanced" | "intelligence";
 
 export type OrchestrationStepStatus =
   | "pending"
@@ -157,6 +158,19 @@ export interface OrchestrationPolicy extends Record<string, unknown> {
   auto_review?: boolean;
   squad_id?: string;
   squad_roster?: SquadRosterPolicyEntry[];
+  model_routing?: {
+    mode: ModelRoutingMode;
+    router_version: number;
+    decisions?: Array<{
+      step_key: string;
+      provider: string;
+      model?: string;
+      thinking_level?: string;
+      quality_tier: "pinned" | "efficient" | "balanced" | "frontier" | "provider_auto";
+      reason: string;
+      signals?: string[];
+    }>;
+  };
 }
 
 export interface OrchestrationRun {
@@ -217,6 +231,7 @@ export interface CreateOrchestrationStepRequest {
   stage: OrchestrationStage;
   agent_id?: string;
   model?: string;
+  thinking_level?: string;
   instructions?: string;
   approval_required?: boolean;
   /** Completes on human approval without dispatching an agent. */
@@ -233,6 +248,7 @@ export interface CreateOrchestrationStepRequest {
 export interface CreateOrchestrationRequest {
   execution_strategy?: ExecutionStrategy;
   progression_policy?: ProgressionPolicy;
+  model_routing_mode?: ModelRoutingMode;
   /** Explicit roster used by squad execution when issue ownership differs. */
   squad_id?: string;
   /** @deprecated Use progression_policy. */

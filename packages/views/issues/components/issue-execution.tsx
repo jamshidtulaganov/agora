@@ -41,6 +41,7 @@ import type {
   Agent,
   AgentTask,
   ExecutionStrategy,
+  ModelRoutingMode,
   OrchestrationEvent,
   OrchestrationRun,
   OrchestrationStep,
@@ -627,6 +628,9 @@ function AdvancedStep({ run, step, stepByID, agents }: { run: OrchestrationRun; 
   const showCapability = kind === "dev"
     && step.capability !== "implementation"
     && !title.toLocaleLowerCase().includes(capability.toLocaleLowerCase());
+  const routingDecision = run.policy.model_routing?.decisions?.find(
+    (decision) => decision.step_key === step.key,
+  );
   return (
     <li className="relative grid grid-cols-[1.5rem_1fr] gap-2 pb-4 last:pb-0">
       <span className={cn("relative z-10 flex size-6 items-center justify-center rounded-full border bg-popover", step.status === "completed" && "border-success/40 text-success", step.status === "failed" && "border-destructive/40 text-destructive", (step.status === "running" || step.status === "queued") && "border-brand/40 text-brand")}>
@@ -646,6 +650,7 @@ function AdvancedStep({ run, step, stepByID, agents }: { run: OrchestrationRun; 
         <dl className="mt-2 grid gap-x-3 gap-y-1 text-[10px] sm:grid-cols-2">
           {step.model && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.model)}</dt><dd className="inline break-all font-mono">{step.model}</dd></div>}
           {step.thinking_level !== undefined && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.thinking_snapshot)} · </dt><dd className="inline break-all font-mono">{step.thinking_level || t(($) => $.execution_surface.no_thinking)}</dd></div>}
+          {routingDecision && <div className="min-w-0 sm:col-span-2"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.routing_reason)} · </dt><dd className="inline">{routingDecision.reason}</dd></div>}
           {step.worktree_branch && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.branch)}</dt><dd className="inline break-all font-mono">{step.worktree_branch}</dd></div>}
           {step.base_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.base)}</dt><dd className="inline font-mono">{step.base_sha.slice(0, 12)}</dd></div>}
           {step.head_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.head)}</dt><dd className="inline font-mono">{step.head_sha.slice(0, 12)}</dd></div>}
@@ -743,6 +748,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   const [customizing, setCustomizing] = useState(false);
   const [strategy, setStrategy] = useState<"automatic" | ExecutionStrategy>("automatic");
   const [progression, setProgression] = useState<ProgressionPolicy>("automatic");
+  const [modelRouting, setModelRouting] = useState<ModelRoutingMode>("pinned");
   const [squadId, setSquadId] = useState("");
   const [maxConcurrency, setMaxConcurrency] = useState(3);
   const [reviewPlanFirst, setReviewPlanFirst] = useState(false);
@@ -764,10 +770,12 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   useEffect(() => {
     setStrategy("automatic");
     setProgression(projectDefaults?.progression_policy ?? "automatic");
+    setModelRouting(projectDefaults?.model_routing_mode ?? "pinned");
     setMaxConcurrency(projectDefaults?.max_concurrency ?? 3);
     setReviewPlanFirst(projectDefaults?.review_plan_first ?? false);
   }, [
     projectDefaults?.progression_policy,
+    projectDefaults?.model_routing_mode,
     projectDefaults?.max_concurrency,
     projectDefaults?.review_plan_first,
   ]);
@@ -807,6 +815,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
           ...(strategy === "automatic" ? {} : { execution_strategy: strategy }),
           ...(strategy === "squad" && squadId ? { squad_id: squadId } : {}),
           progression_policy: progression,
+          model_routing_mode: modelRouting,
           ...(usesSquadDAG ? { policy: { max_concurrency: maxConcurrency } } : {}),
         },
       },
@@ -935,6 +944,26 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
                 ))}
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">{t(($) => $.execution_surface.progression_hint)}</p>
+            </fieldset>
+
+            <fieldset className="sm:col-span-2">
+              <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.model_routing_legend)}</legend>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(["pinned", "cost", "balanced", "intelligence"] as const).map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn("h-7", modelRouting === option && SEGMENT_ACTIVE_CLASS)}
+                    onClick={() => setModelRouting(option)}
+                    aria-pressed={modelRouting === option}
+                  >
+                    {t(($) => $.execution_surface[`model_routing_${option}`])}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">{t(($) => $.execution_surface.model_routing_hint)}</p>
             </fieldset>
 
             {usesSquadDAG && <label className="flex items-center justify-between gap-4 text-xs">

@@ -202,6 +202,81 @@ func generateTestJWT(userID, email, name string) (string, error) {
 	return token.SignedString(auth.JWTSecret())
 }
 
+// TestSquadMutationsRequireHumanActor exercises the complete router/auth stack
+// with a real task token. It protects the route wiring itself: a future
+// refactor must not let an owner-backed machine credential mutate persistent
+// squad configuration.
+func TestSquadMutationsRequireHumanActor(t *testing.T) {
+	ctx := context.Background()
+
+	var agentID, runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		SELECT id, runtime_id
+		FROM agent
+		WHERE workspace_id = $1
+		ORDER BY created_at
+		LIMIT 1
+	`, testWorkspaceID).Scan(&agentID, &runtimeID); err != nil {
+		t.Fatalf("find fixture agent: %v", err)
+	}
+
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, started_at)
+		VALUES ($1, $2, 'running', 0, now())
+		RETURNING id
+	`, agentID, runtimeID).Scan(&taskID); err != nil {
+		t.Fatalf("create fixture task: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
+	})
+
+	rawToken := fmt.Sprintf("mat_squad_route_guard_%d", time.Now().UnixNano())
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
+		VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')
+	`, auth.HashToken(rawToken), taskID, agentID, testWorkspaceID, testUserID); err != nil {
+		t.Fatalf("create fixture task token: %v", err)
+	}
+
+	fakeSquadID := "00000000-0000-0000-0000-000000000001"
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/squads"},
+		{http.MethodPut, "/api/squads/" + fakeSquadID},
+		{http.MethodDelete, "/api/squads/" + fakeSquadID},
+		{http.MethodPost, "/api/squads/" + fakeSquadID + "/members"},
+		{http.MethodDelete, "/api/squads/" + fakeSquadID + "/members"},
+		{http.MethodPatch, "/api/squads/" + fakeSquadID + "/members/role"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, testServer.URL+tc.path, bytes.NewReader([]byte(`{}`)))
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+rawToken)
+			req.Header.Set("Content-Type", "application/json")
+			// The task-token workspace binding is authoritative; this header is
+			// intentionally included to mirror a normal agent request.
+			req.Header.Set("X-Workspace-ID", testWorkspaceID)
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("expected 403 for task-token squad mutation, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
 // ---- Health ----
 
 func TestHealth(t *testing.T) {

@@ -55,11 +55,11 @@ func TestDefaultOrchestrationStepsRouteStageCast(t *testing.T) {
 		t.Fatalf("release needs both attempts post-approval, got MaxAttempts=%d", steps[4].MaxAttempts)
 	}
 	if len(steps[2].DependsOnKeys) != 1 || steps[2].DependsOnKeys[0] != "dev" ||
-		len(steps[3].DependsOnKeys) != 1 || steps[3].DependsOnKeys[0] != "dev" {
-		t.Fatalf("QA and review must inspect the sole exact development artifact: qa=%v review=%v", steps[2].DependsOnKeys, steps[3].DependsOnKeys)
+		len(steps[3].DependsOnKeys) != 1 || steps[3].DependsOnKeys[0] != "qa" {
+		t.Fatalf("QA must inspect development and review must consume QA evidence: qa=%v review=%v", steps[2].DependsOnKeys, steps[3].DependsOnKeys)
 	}
-	if len(steps[4].DependsOnKeys) != 2 {
-		t.Fatalf("release must join QA and review branches: %v", steps[4].DependsOnKeys)
+	if !reflect.DeepEqual(steps[4].DependsOnKeys, []string{"review"}) {
+		t.Fatalf("release must wait for the completed review chain: %v", steps[4].DependsOnKeys)
 	}
 }
 

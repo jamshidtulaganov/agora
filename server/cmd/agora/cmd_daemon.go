@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -690,10 +691,46 @@ func runDaemonStatus(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	health := checkDaemonHealthOnPort(ctx, healthPort)
+	var desktopDaemons []profiledDaemonHealth
+	// Desktop intentionally owns named `desktop-<host>` profiles so it never
+	// mutates the user's default CLI config. A bare `agora daemon status` used
+	// to probe only the default port and report "stopped" while that managed
+	// daemon was healthy. Preserve explicit --profile behavior, but when the
+	// implicit default is down, discover live Desktop profiles and report them.
+	if profile == "" && !cmd.Flags().Changed("profile") && !daemonAlive(health) {
+		desktopDaemons = findRunningDesktopDaemons(ctx)
+		if len(desktopDaemons) > 0 {
+			health = cloneHealth(desktopDaemons[0].health)
+			health["profile"] = desktopDaemons[0].profile
+			health["managed_by"] = "desktop"
+			if len(desktopDaemons) > 1 {
+				others := make([]string, 0, len(desktopDaemons)-1)
+				for _, daemon := range desktopDaemons[1:] {
+					others = append(others, daemon.profile)
+				}
+				health["other_running_profiles"] = others
+			}
+		}
+	}
 
 	output, _ := cmd.Flags().GetString("output")
 	if output == "json" {
 		return cli.PrintJSON(os.Stdout, health)
+	}
+	if len(desktopDaemons) > 0 {
+		for i, daemon := range desktopDaemons {
+			if i > 0 {
+				fmt.Fprintln(os.Stdout)
+			}
+			label := fmt.Sprintf("Daemon [%s]", daemon.profile)
+			switch daemon.health["status"] {
+			case "running":
+				printDaemonStatusReport(os.Stdout, label, daemon.health)
+			case "starting":
+				fmt.Fprintf(os.Stdout, "%s: starting (pid %v)\n", label, daemon.health["pid"])
+			}
+		}
+		return nil
 	}
 
 	label := "Daemon"
@@ -710,6 +747,68 @@ func runDaemonStatus(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stdout, "%s: stopped\n", label)
 	}
 	return nil
+}
+
+type profiledDaemonHealth struct {
+	profile string
+	health  map[string]any
+}
+
+func cloneHealth(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in)+3)
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func desktopProfileNames() []string {
+	root, err := profilesRootDir()
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	profiles := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "desktop-") {
+			profiles = append(profiles, entry.Name())
+		}
+	}
+	sort.Strings(profiles)
+	return profiles
+}
+
+func findRunningDesktopDaemons(ctx context.Context) []profiledDaemonHealth {
+	profiles := desktopProfileNames()
+	if len(profiles) == 0 {
+		return nil
+	}
+
+	results := make(chan profiledDaemonHealth, len(profiles))
+	var wg sync.WaitGroup
+	for _, profile := range profiles {
+		profile := profile
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			health := checkDaemonHealthOnPort(ctx, healthPortForProfile(profile))
+			if daemonAlive(health) {
+				results <- profiledDaemonHealth{profile: profile, health: health}
+			}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	active := make([]profiledDaemonHealth, 0, len(profiles))
+	for result := range results {
+		active = append(active, result)
+	}
+	sort.Slice(active, func(i, j int) bool { return active[i].profile < active[j].profile })
+	return active
 }
 
 // printDaemonStatusReport renders a key/value summary of the daemon health

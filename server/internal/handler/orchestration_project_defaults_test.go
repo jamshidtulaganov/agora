@@ -27,7 +27,8 @@ func TestCreateIssueOrchestrationInheritsProjectDefaults(t *testing.T) {
 			"execution_strategy": "solo",
 			"progression_policy": "gated",
 			"max_concurrency": 5,
-			"review_plan_first": true
+			"review_plan_first": true,
+			"model_routing_mode": "balanced"
 		}
 	}`).Scan(&projectID); err != nil {
 		t.Fatalf("create project: %v", err)
@@ -77,5 +78,9 @@ func TestCreateIssueOrchestrationInheritsProjectDefaults(t *testing.T) {
 	}
 	if got := policy["max_concurrency"]; got != float64(5) {
 		t.Fatalf("max_concurrency = %#v, want 5", got)
+	}
+	modelRouting, ok := policy["model_routing"].(map[string]any)
+	if !ok || modelRouting["mode"] != modelRoutingBalanced || modelRouting["router_version"] != float64(orchestrationModelRouterVersion) {
+		t.Fatalf("model routing defaults not inherited: %#v", policy["model_routing"])
 	}
 }

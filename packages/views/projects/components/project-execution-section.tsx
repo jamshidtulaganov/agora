@@ -25,6 +25,7 @@ const BUILT_IN_DEFAULTS: ProjectOrchestrationDefaults = {
   progression_policy: "automatic",
   max_concurrency: 3,
   review_plan_first: false,
+  model_routing_mode: "pinned",
 };
 
 const ACTIVE_SEGMENT =
@@ -47,6 +48,7 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
   const [progression, setProgression] = useState<ProjectOrchestrationDefaults["progression_policy"]>(saved.progression_policy);
   const [maxConcurrency, setMaxConcurrency] = useState(saved.max_concurrency);
   const [reviewPlanFirst, setReviewPlanFirst] = useState(saved.review_plan_first);
+  const [modelRouting, setModelRouting] = useState<ProjectOrchestrationDefaults["model_routing_mode"]>(saved.model_routing_mode ?? "pinned");
   const autoQA = projectConfig.find((entry) => entry.key === "AGORA_AUTO_QA_ENABLED");
   const autoReview = projectConfig.find((entry) => entry.key === "AGORA_AUTO_REVIEW_ENABLED");
 
@@ -54,7 +56,8 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
     setProgression(saved.progression_policy);
     setMaxConcurrency(saved.max_concurrency);
     setReviewPlanFirst(saved.review_plan_first);
-  }, [saved.progression_policy, saved.max_concurrency, saved.review_plan_first]);
+    setModelRouting(saved.model_routing_mode ?? "pinned");
+  }, [saved.progression_policy, saved.max_concurrency, saved.review_plan_first, saved.model_routing_mode]);
 
   const save = async () => {
     if (!project) return;
@@ -65,6 +68,7 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
       progression_policy: progression,
       max_concurrency: Math.min(10, Math.max(1, maxConcurrency)),
       review_plan_first: reviewPlanFirst,
+      model_routing_mode: modelRouting ?? "pinned",
     };
     try {
       await updateProject.mutateAsync({
@@ -198,6 +202,33 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
                       </Button>
                     ))}
                   </div>
+                </fieldset>
+
+                <fieldset>
+                  <legend className="text-[10px] font-medium text-muted-foreground">
+                    {t(($) => $.execution_defaults.model_routing)}
+                  </legend>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {(["pinned", "cost", "balanced", "intelligence"] as const).map((option) => (
+                      <Button
+                        key={option}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={cn(
+                          "h-7 px-2 text-[11px]",
+                          modelRouting === option && ACTIVE_SEGMENT,
+                        )}
+                        onClick={() => setModelRouting(option)}
+                        aria-pressed={modelRouting === option}
+                      >
+                        {t(($) => $.execution_defaults[`model_routing_${option}`])}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                    {t(($) => $.execution_defaults.model_routing_hint)}
+                  </p>
                 </fieldset>
 
                 <label className="flex items-center justify-between gap-3 text-xs">

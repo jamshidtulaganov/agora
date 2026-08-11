@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jamshidtulaganov/agora/server/internal/daemon"
 )
@@ -128,6 +133,65 @@ func TestPrintDaemonStatusAlignsValuesWithProfileLabel(t *testing.T) {
 			t.Fatalf("value column drift: line %q starts at col %d, want %d (first line: %q)",
 				line, got, want, lines[0])
 		}
+	}
+}
+
+func TestDesktopProfileNamesOnlyReturnsDesktopManagedProfiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	profilesRoot := filepath.Join(home, ".agora", "profiles")
+	for _, profile := range []string{"desktop-z.example", "staging", "desktop-a.example"} {
+		if err := os.MkdirAll(filepath.Join(profilesRoot, profile), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(profilesRoot, "desktop-file"), []byte("not a profile"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := desktopProfileNames()
+	want := []string{"desktop-a.example", "desktop-z.example"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("desktop profiles = %v, want %v", got, want)
+	}
+}
+
+func TestFindRunningDesktopDaemonsProbesManagedProfilePorts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var profile string
+	var listener net.Listener
+	for i := 0; i < 1000; i++ {
+		candidate := "desktop-status-test-" + strconv.Itoa(i)
+		addr := "127.0.0.1:" + strconv.Itoa(healthPortForProfile(candidate))
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			profile = candidate
+			listener = ln
+			break
+		}
+	}
+	if listener == nil {
+		t.Fatal("could not reserve a desktop profile health port")
+	}
+	defer listener.Close()
+	if err := os.MkdirAll(filepath.Join(home, ".agora", "profiles", profile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"running","pid":1234,"uptime":"1m"}`))
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got := findRunningDesktopDaemons(ctx)
+	if len(got) != 1 || got[0].profile != profile || got[0].health["status"] != "running" {
+		t.Fatalf("running desktop daemons = %+v, want profile %q", got, profile)
 	}
 }
 

@@ -33,6 +33,27 @@ const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 // this fires; the timer only ever resolves on the failure path.
 const INSTALL_GRACE_MS = 10_000;
 
+// Packaged builds made between release tags use `git describe` versions such
+// as 0.3.54-13-gc548fc11. They are valid semver for Electron packaging but do
+// not have matching GitHub Releases, so hourly updater probes can only emit
+// "No published versions" forever. Official tagged prereleases remain
+// eligible; only development/dirty/git-distance builds are excluded.
+export function isAutoUpdateEligibleBuild(
+  isPackaged: boolean,
+  version: string,
+): boolean {
+  if (!isPackaged) return false;
+  const normalized = version.trim();
+  if (!normalized || /(?:^|-)dirty$/i.test(normalized)) return false;
+  if (/^0\.0\.0-/i.test(normalized)) return false;
+  return !/-\d+-g[0-9a-f]+(?:-dirty)?$/i.test(normalized);
+}
+
+export function isNoPublishedReleaseError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.toLowerCase().includes("no published versions on github");
+}
+
 export type ManualUpdateCheckResult =
   | {
       ok: true;
@@ -106,6 +127,23 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   // bare timeout. electron-updater surfaces Squirrel.Mac's rejection through
   // the `error` event, long before the user ever clicks "Restart now".
   let lastUpdaterError: Error | null = null;
+  let reportedMissingRelease = false;
+  const updateEligible = isAutoUpdateEligibleBuild(
+    app.isPackaged,
+    app.getVersion(),
+  );
+  const reportCheckFailure = (prefix: string, err: unknown): void => {
+    if (isNoPublishedReleaseError(err)) {
+      if (!reportedMissingRelease) {
+        reportedMissingRelease = true;
+        log.info(
+          "Auto-update metadata is not published yet; repeated error logs are suppressed for this session.",
+        );
+      }
+      return;
+    }
+    console.error(prefix, err);
+  };
 
   autoUpdater.on("update-available", (info) => {
     // Forwarded for renderer-side state tracking only; the notification UI
@@ -131,6 +169,15 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
 
   autoUpdater.on("error", (err) => {
     lastUpdaterError = err instanceof Error ? err : new Error(String(err));
+    if (isNoPublishedReleaseError(err)) {
+      if (!reportedMissingRelease) {
+        reportedMissingRelease = true;
+        log.info(
+          "Auto-update metadata is not published yet; repeated error logs are suppressed for this session.",
+        );
+      }
+      return;
+    }
     log.error("Auto-updater error:", err);
   });
 
@@ -169,6 +216,13 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle("updater:check", async (): Promise<ManualUpdateCheckResult> => {
+    if (!updateEligible) {
+      return {
+        ok: false,
+        error:
+          "Update checks are unavailable for local or unpublished desktop builds.",
+      };
+    }
     try {
       const result = (await checkForUpdatesOnce()) as
         | { updateInfo: { version: string }; isUpdateAvailable?: boolean }
@@ -194,10 +248,17 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
     }
   });
 
+  if (!updateEligible) {
+    log.info(
+      `Auto-update checks disabled for unpublished build ${app.getVersion()}.`,
+    );
+    return;
+  }
+
   // Initial check shortly after startup so we don't block boot.
   setTimeout(() => {
     checkForUpdatesOnce().catch((err) => {
-      console.error("Failed to check for updates:", err);
+      reportCheckFailure("Failed to check for updates:", err);
     });
   }, STARTUP_CHECK_DELAY_MS);
 
@@ -205,7 +266,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   // without requiring the user to restart the app.
   setInterval(() => {
     checkForUpdatesOnce().catch((err) => {
-      console.error("Periodic update check failed:", err);
+      reportCheckFailure("Periodic update check failed:", err);
     });
   }, PERIODIC_CHECK_INTERVAL_MS);
 }

@@ -1159,16 +1159,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Squads
 			r.Route("/api/squads", func(r chi.Router) {
 				r.Get("/", h.ListSquads)
-				r.Post("/", h.CreateSquad)
+				r.With(handler.RequireHumanActor).Post("/", h.CreateSquad)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetSquad)
-					r.Put("/", h.UpdateSquad)
-					r.Delete("/", h.DeleteSquad)
+					r.With(handler.RequireHumanActor).Put("/", h.UpdateSquad)
+					r.With(handler.RequireHumanActor).Delete("/", h.DeleteSquad)
 					r.Get("/members", h.ListSquadMembers)
 					r.Get("/members/status", h.ListSquadMemberStatus)
-					r.Post("/members", h.AddSquadMember)
-					r.Delete("/members", h.RemoveSquadMember)
-					r.Patch("/members/role", h.UpdateSquadMemberRole)
+					r.With(handler.RequireHumanActor).Post("/members", h.AddSquadMember)
+					r.With(handler.RequireHumanActor).Delete("/members", h.RemoveSquadMember)
+					r.With(handler.RequireHumanActor).Patch("/members/role", h.UpdateSquadMemberRole)
 					// Tailor: return a roster-aware orchestrator brief for the
 					// squad's Instructions field (does not persist; the frontend
 					// fills the editable textarea with it).

@@ -13,6 +13,8 @@ const ctx = vi.hoisted(() => ({
   downloadUpdate: vi.fn(),
   quitAndInstall: vi.fn(),
   getVersion: vi.fn(() => "0.3.17"),
+  logError: vi.fn(),
+  logInfo: vi.fn(),
 }));
 
 vi.mock("electron-updater", () => {
@@ -36,15 +38,16 @@ vi.mock("electron-updater", () => {
 
 vi.mock("electron-log", () => ({
   default: {
-    error: vi.fn(),
+  error: ctx.logError,
     warn: vi.fn(),
-    info: vi.fn(),
+  info: ctx.logInfo,
     transports: { file: { level: "info" } },
   },
 }));
 
 vi.mock("electron", () => ({
   app: {
+  isPackaged: true,
     getVersion: ctx.getVersion,
   },
   BrowserWindow: class BrowserWindow {},
@@ -53,7 +56,11 @@ vi.mock("electron", () => ({
   },
 }));
 
-import { setupAutoUpdater } from "./updater";
+import {
+  isAutoUpdateEligibleBuild,
+  isNoPublishedReleaseError,
+  setupAutoUpdater,
+} from "./updater";
 
 function emitUpdater(event: string, ...args: unknown[]) {
   for (const handler of ctx.handlers.get(event) ?? []) {
@@ -124,7 +131,10 @@ describe("setupAutoUpdater", () => {
     ctx.checkForUpdates.mockClear();
     ctx.downloadUpdate.mockClear();
     ctx.quitAndInstall.mockClear();
-    ctx.getVersion.mockClear();
+  ctx.getVersion.mockReset();
+  ctx.getVersion.mockReturnValue("0.3.17");
+  ctx.logError.mockClear();
+  ctx.logInfo.mockClear();
   });
 
   afterEach(() => {
@@ -179,12 +189,74 @@ describe("setupAutoUpdater", () => {
   });
 });
 
+describe("update eligibility", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    ctx.handlers.clear();
+    ctx.ipcHandle.mockClear();
+    ctx.checkForUpdates.mockClear();
+    ctx.getVersion.mockReset();
+    ctx.getVersion.mockReturnValue("0.3.17");
+    ctx.logError.mockClear();
+    ctx.logInfo.mockClear();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it.each([
+    [false, "0.3.17", false],
+    [true, "0.3.54-13-gc548fc11", false],
+    [true, "0.3.54-13-gc548fc11-dirty", false],
+    [true, "0.0.0-c548fc11", false],
+    [true, "0.3.55", true],
+    [true, "0.3.55-beta.1", true],
+  ] as const)("packaged=%s version=%s => %s", (packaged, version, expected) => {
+    expect(isAutoUpdateEligibleBuild(packaged, version)).toBe(expected);
+  });
+
+  it("recognizes GitHub's empty-release error", () => {
+    expect(
+      isNoPublishedReleaseError(new Error("No published versions on GitHub")),
+    ).toBe(true);
+    expect(isNoPublishedReleaseError(new Error("network unavailable"))).toBe(
+      false,
+    );
+  });
+
+  it("does not schedule checks for an unpublished packaged build", async () => {
+    ctx.getVersion.mockReturnValue("0.3.54-13-gc548fc11");
+    setupAutoUpdater(() => null);
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+    expect(ctx.checkForUpdates).not.toHaveBeenCalled();
+    expect(ctx.logInfo).toHaveBeenCalledWith(
+      "Auto-update checks disabled for unpublished build 0.3.54-13-gc548fc11.",
+    );
+  });
+
+  it("downgrades a missing GitHub release to a one-time info log", () => {
+    setupAutoUpdater(() => null);
+
+    emitUpdater("error", new Error("No published versions on GitHub"));
+    emitUpdater("error", new Error("No published versions on GitHub"));
+
+    expect(ctx.logError).not.toHaveBeenCalled();
+    expect(ctx.logInfo).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("updater:install", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     ctx.handlers.clear();
     ctx.ipcHandle.mockClear();
     ctx.quitAndInstall.mockClear();
+    ctx.getVersion.mockReset();
+    ctx.getVersion.mockReturnValue("0.3.17");
   });
 
   afterEach(() => {
