@@ -450,7 +450,7 @@
     },
     "bitrix": {
       "name": "Bitrix24",
-      "description": "Bitrix24 ishchi guruhlari va tasklarini import qiling va statusni orqaga sinxronlang."
+      "description": "Shaxsiy Bitrix24 task oynasi. Bitrix manba haqiqat bo‘lib qoladi."
     },
     "zoho": {
       "name": "Zoho",

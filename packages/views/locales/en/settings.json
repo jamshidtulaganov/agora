@@ -450,7 +450,7 @@
     },
     "bitrix": {
       "name": "Bitrix24",
-      "description": "Import Bitrix24 workgroups and tasks, and mirror status back."
+      "description": "Personal Bitrix24 task mirror. Bitrix stays source of truth."
     },
     "zoho": {
       "name": "Zoho",

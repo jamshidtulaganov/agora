@@ -28,12 +28,14 @@ import (
 	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
-// Bitrix24 task sync. Bitrix is the task master: an inbound webhook on
-// ONTASKADD / ONTASKUPDATE pulls the task, and (if it is tagged "ai") creates
-// or updates a Agora issue in the routed workspace. A complementary outbound
-// listener mirrors Agora issue status changes back to Bitrix as a courtesy
-// comment (always) and, when BITRIX_PUSH_STATUS is truthy, a real status
-// update.
+// Bitrix24 task sync. Bitrix is the task source of truth: an inbound webhook
+// on ONTASKADD / ONTASKUPDATE pulls the task (optionally filtered by
+// BITRIX_TASK_TAG and BITRIX_SYNC_USER_EMAILS) and creates or updates an Agora
+// issue in the routed workspace. Outbound is fail-closed to one human
+// (BITRIX_OUTBOUND_USER_EMAIL): comments/attachments when
+// BITRIX_PUSH_HUMAN_COMMENTS is on; optional status/stage when
+// BITRIX_PUSH_STATUS is on. Agent/system content stays in Agora unless
+// BITRIX_PUSH_SYSTEM_COMMENTS is explicitly enabled.
 //
 // The metadata key linking an issue to its Bitrix origin. Dedup keys on the
 // task id (not the title) so re-firing ONTASKUPDATE updates the same issue

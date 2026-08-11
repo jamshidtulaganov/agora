@@ -450,7 +450,7 @@
     },
     "bitrix": {
       "name": "Bitrix24",
-      "description": "导入 Bitrix24 工作组和 task，并将状态同步回去。"
+      "description": "个人 Bitrix24 task 镜像。Bitrix 仍是任务权威来源。"
     },
     "zoho": {
       "name": "Zoho",

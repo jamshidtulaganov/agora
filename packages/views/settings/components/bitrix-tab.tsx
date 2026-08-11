@@ -17,9 +17,9 @@ export function BitrixTab() {
   return (
     <div className="flex items-start justify-between gap-4">
       <p className="max-w-prose text-sm text-muted-foreground">
-        Import Bitrix24 workgroups and tasks into Agora. Each group becomes a
-        project; its tasks become issues with comments, attachments, and video
-        frames. Issue status mirrors back to the Bitrix task.
+        Personal Bitrix24 mirror: tasks become issues with comments,
+        attachments, and video frames. Bitrix stays source of truth; only your
+        human comments and attachments sync outbound.
       </p>
       <Button size="sm" className="shrink-0" onClick={() => nav.push(paths.bitrix())}>
         Open import
