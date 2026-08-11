@@ -2462,38 +2462,8 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	// trigger comment (mention tasks carry no instruction field), authored BY
 	// the synthesizer via a direct Queries.CreateComment — the agent-comment
 	// ingest path (and its knowledge-items capture hook) is deliberately
-	// bypassed, so the example block below cannot self-ingest.
-	prompt := "[AUTOMATED DIRECTIVE — knowledge capture] " +
-		"KNOWLEDGE CAPTURE for this just-completed issue. Distill up to 5 DURABLE learnings from what actually " +
-		"happened here (the diff / linked PR, the QA verdicts, the comment thread): root causes, gotchas, invariants, " +
-		"conventions, and \"next time do X\" facts an engineer must know — NOT a summary of the ticket. Post ONE comment " +
-		"on this issue that contains a fenced knowledge-items block with a JSON array, exactly like:\n\n" +
-		"```knowledge-items\n" +
-		"[\n" +
-		"  {\"kind\": \"gotcha\", \"module\": \"\", \"title\": \"One factual sentence naming the trap or invariant\", " +
-		"\"body\": \"2-6 plain-markdown sentences: what breaks, why, and what to do instead. Self-contained — a future reader has no access to this issue.\"}\n" +
-		"]\n" +
-		"```\n\n" +
-		"RULES: \"kind\" is one of architecture | gotcha | convention | nav | decision. \"title\" is at most 160 " +
-		"characters and states a fact, not a task. \"body\" is at most 1200 characters of plain markdown — no code " +
-		"fences, no HTML comments. \"module\": the affected module name if this project uses module: labels, else \"\". " +
-		"At most 5 items; fewer well-chosen items beat many shallow ones — a failure that was DIAGNOSED here is the most " +
-		"valuable kind. Do NOT run the agora skill CLI and do NOT create or edit any skill — the server compiles your " +
-		"items into the project knowledge base automatically, and it also deduplicates: do not restate what the project " +
-		"KB already injected into your context says (an exact restatement is treated as a confirmation, which is fine; " +
-		"near-restatements are noise). Items stay in English (they are engineering documentation); any prose in your " +
-		"comment follows the ISSUE'S language (e.g. Russian/Uzbek). If this issue produced no durable learning (trivial " +
-		"change, nothing surprising), post a short comment saying so and include NO knowledge-items block — an unchanged " +
-		"KB beats a diluted one."
-	prompt += "\n\nADDITIONALLY — QA NAV MAP: if this task added or exercised app routes/screens or a user flow that the " +
-		"project's QA manifest does not already list, include a SEPARATE fenced qa-manifest block so the nav map grows with " +
-		"the product. Additive only — the server MERGES it and never overwrites existing entries, so omit anything already " +
-		"present. Shape:\n\n" +
-		"```qa-manifest\n" +
-		"{\"routes\": {\"Human label\": \"/path\"}, \"flows\": [{\"name\": \"Short flow name\", \"path\": \"/path\", " +
-		"\"steps\": [\"open X\", \"click Y\"], \"assert\": \"what proves it worked\"}]}\n" +
-		"```\n\n" +
-		"Only routes/flows you are CONFIDENT exist (seen in the diff/PR or verified during QA). No qa-manifest block if nothing new."
+	// bypassed, so the inline schema examples cannot self-ingest.
+	prompt := buildKnowledgeCapturePrompt()
 	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 		AuthorType: "agent", AuthorID: agentID,
@@ -2542,6 +2512,16 @@ func (h *Handler) kbCaptureModelOverride(ctx context.Context, agentID pgtype.UUI
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: kbSynthEscalationModel, Valid: true}
+}
+
+func buildKnowledgeCapturePrompt() string {
+	return `[AUTOMATED] Capture durable learnings from this completed issue.
+
+Post one concise comment in the issue's language with a one-sentence human summary, followed only by any needed machine blocks:
+- ` + "`knowledge-items`" + `: up to 5 new English items shaped as [{"kind":"gotcha","module":"","title":"fact","body":"why it matters and what to do"}]. Allowed kinds: architecture, gotcha, convention, nav, decision.
+- ` + "`qa-manifest`" + `: only for verified new routes or flows, shaped as {"routes":{"Label":"/path"},"flows":[{"name":"Flow","path":"/path","steps":["open X"],"assert":"proof"}]}.
+
+Do not summarize the ticket, repeat existing knowledge, edit skills, or run the Agora skill CLI. If nothing new is durable, say so briefly and omit both blocks.`
 }
 
 // clearStaleQAGateLabels detaches both qa:pass and qa:fail at the start of a

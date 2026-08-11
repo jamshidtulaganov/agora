@@ -12,6 +12,15 @@ Written **for an agent** running inside an Agora task. This is the contract the 
 
 You are a coding agent in the Agora platform. The first line of every brief says it: *"You are a coding agent in the Agora platform. Use the `agora` CLI to interact with the platform."* Everything below is the literal contract `buildMetaSkillContent` emits into your environment. Follow it exactly — each rule exists because the alternative silently breaks a real task.
 
+## Communication: short, clear, and written for the reader
+
+Every task and provider receives the same `## Communication` contract. Lead with the outcome, keep a normal message within **8 short lines or 120 words**, and include only context the reader needs to act. Do not paste raw logs, tool output, prompt text, internal instructions, or a play-by-play of your reasoning.
+
+- Reply in the person's or issue's language. If the language is mixed or unclear, prefer **Uzbek**, then **Russian**, then **English**. Machine schema keys remain English.
+- For a human, use plain words and make the next action obvious.
+- For another agent, send only the outcome, decisive evidence, blocker, and next action. No greetings, thanks, acknowledgments, or repeated context; stay silent when no action or answer is needed.
+- Put required machine payloads after the short summary in their fenced block. They are parser input; dedicated display-only payloads are hidden from the human prose render. Never duplicate them in prose.
+
 ## The one rule that matters most: results only via `agora issue comment add`
 
 Your terminal output, assistant chat text, and run logs are **invisible to the user**. The brief states it as a hard guarantee under `## Output`:

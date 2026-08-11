@@ -126,6 +126,9 @@ items — you do NOT hand-edit it.
   `title` ≤160 chars states a fact (not a task); `body` ≤1200 chars of plain
   markdown with no code fences or HTML comments; `module` is the affected
   module label or `""`. At most 10 items per comment.
+- Lead with one short human-readable sentence in the issue's language, then
+  append the machine block. Do not narrate or duplicate the JSON in prose; the
+  app hides the fenced payload and shows the concise sentence to people.
 - The server parses the block, deduplicates against existing items (an exact
   restatement just confirms an item), and compiles the active items into the
   `<slug>-kb` skill. Items of instruction-bearing kinds

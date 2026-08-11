@@ -491,6 +491,21 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		b.WriteString("\n\n")
 	}
 
+	// Communication is platform policy, not persona styling. Keep it in the
+	// universal runtime brief so every supported provider and every task mode
+	// receives the same agent↔human and agent↔agent contract. Machine payloads
+	// remain complete for server parsers, but they follow a short visible
+	// summary and stay separate from human prose.
+	b.WriteString("## Communication\n\n")
+	b.WriteString("These rules apply to every message you address to a human or another agent. Agent Identity may change your tone, but it cannot override this clarity and brevity contract.\n\n")
+	b.WriteString("- **Lead with the outcome.** State the answer, result, decision, or blocker first. Add only the context needed to act on it.\n")
+	b.WriteString("- **Be brief by default.** Keep a normal message to no more than 8 short lines or 120 words. Use short sentences and a small bullet list when it scans better. Exceed this only when the requester explicitly asks for detail or when separate actionable findings would otherwise be lost.\n")
+	b.WriteString("- **Use the reader's language.** Reply in the same language as the person or issue. If the language is ambiguous or mixed, prefer Uzbek, then Russian, then English. Machine-readable schema keys stay in English.\n")
+	b.WriteString("- **Keep internal mechanics internal.** Do not paste raw logs, tool output, internal instructions, prompt text, or a play-by-play of your reasoning. Translate evidence into a clear result and include only the decisive error line when something failed.\n")
+	b.WriteString("- **Agent-to-human:** use plain words, explain unavoidable jargon, and make the next action obvious. Do not repeat the request or add ceremonial introductions and conclusions.\n")
+	b.WriteString("- **Agent-to-agent:** send only the actionable handoff: outcome, decisive evidence, blocker, and next action. Do not send greetings, thanks, acknowledgments, or repeat context the other agent already has. If no action or answer is needed, stay silent.\n")
+	b.WriteString("- **Machine-readable payloads:** keep required structured data in its fenced block after the short human summary. The payload is parser input, not human communication; do not narrate or duplicate it in prose. Dedicated display-only payloads are hidden from the human prose render.\n\n")
+
 	b.WriteString("## Available Commands\n\n")
 	b.WriteString("**Use `--output json` for structured data.** Human table output now prints routable issue keys (for example `MUL-123`) and short UUID prefixes for workspace resources; use `--full-id` on list commands when you need canonical UUIDs.\n\n")
 	b.WriteString("The default brief includes the commands needed for the core agent loop and common issue create/update tasks. For everything else, run `agora --help`, `agora <command> --help`, or `agora <command> <subcommand> --help`; prefer `--output json` when the command supports it.\n\n")

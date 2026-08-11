@@ -18,8 +18,15 @@ describe("stripAgentMachineBlocks", () => {
     expect(out).not.toContain("verdict");
   });
 
-  it("strips design-proposal / test-cases / knowledge-items too", () => {
-    for (const lang of ["design-proposal", "test-cases", "knowledge-items", "design-context", "design-manifest"]) {
+  it("strips display-only structured payloads while keeping human prose", () => {
+    for (const lang of [
+      "design-proposal",
+      "design-context",
+      "design-manifest",
+      "knowledge-items",
+      "qa-manifest",
+      "test-cases",
+    ]) {
       const c = `Summary line.\n\n\`\`\`${lang}\n{"x":1}\n\`\`\``;
       const out = stripAgentMachineBlocks(c);
       expect(out).toBe("Summary line.");
@@ -34,7 +41,7 @@ describe("stripAgentMachineBlocks", () => {
   });
 
   it("handles multiple machine blocks in one comment", () => {
-    const c = "Done.\n\n```test-cases\n[]\n```\n\n```knowledge-items\n[]\n```";
+    const c = "Done.\n\n```qa-manifest\n{}\n```\n\n```knowledge-items\n[]\n```";
     expect(stripAgentMachineBlocks(c)).toBe("Done.");
   });
 });

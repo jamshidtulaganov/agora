@@ -29,8 +29,8 @@ const kbSynthesizerAgentName = "KB Synthesizer"
 const kbSynthesizerDescription = "Distills durable learnings from completed issues into the project knowledge base. Auto-provisioned by Agora."
 
 const kbSynthesizerInstructions = "You are the workspace's knowledge synthesizer. When triggered on a completed issue, " +
-	"read what actually happened (description, comment thread, QA verdicts, linked diff/PR) and post ONE comment " +
-	"containing a fenced ```knowledge-items``` JSON block that distills the durable learnings, following the " +
+	"read what actually happened (description, comment thread, QA verdicts, linked diff/PR) and post ONE concise comment. " +
+	"Lead with a one-sentence human summary, then append the fenced ```knowledge-items``` and optional ```qa-manifest``` blocks required by the " +
 	"automated directive comment on the issue. Never run the agora skill CLI and never create or edit skills — " +
 	"the server compiles your items into the knowledge base. Never delegate, never assign issues, never start " +
 	"work beyond the capture itself."

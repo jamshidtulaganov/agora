@@ -532,6 +532,55 @@ func TestWorkspaceContextHeadingSkippedWhenEmpty(t *testing.T) {
 	}
 }
 
+// The communication contract is platform policy, not an agent persona or a
+// task-specific suggestion. Every supported provider and every task mode must
+// inherit the same short, human-readable output rules.
+func TestCommunicationContractRenderedAcrossProvidersAndTaskKinds(t *testing.T) {
+	t.Parallel()
+	providers := []string{
+		"claude", "codebuddy", "codex", "copilot", "opencode", "openclaw",
+		"hermes", "gemini", "pi", "cursor", "kimi", "kiro", "antigravity",
+	}
+	taskKinds := []struct {
+		name string
+		ctx  TaskContextForEnv
+	}{
+		{name: "assignment", ctx: TaskContextForEnv{IssueID: "issue-1"}},
+		{name: "comment", ctx: TaskContextForEnv{IssueID: "issue-1", TriggerCommentID: "comment-1"}},
+		{name: "chat", ctx: TaskContextForEnv{ChatSessionID: "chat-1"}},
+		{name: "quick-create", ctx: TaskContextForEnv{QuickCreatePrompt: "create an issue"}},
+		{name: "autopilot", ctx: TaskContextForEnv{AutopilotRunID: "run-1"}},
+		{name: "orchestration", ctx: TaskContextForEnv{IssueID: "issue-1", OrchestrationStep: true, OrchestrationStage: "dev"}},
+	}
+
+	for _, provider := range providers {
+		provider := provider
+		for _, taskKind := range taskKinds {
+			taskKind := taskKind
+			t.Run(provider+"/"+taskKind.name, func(t *testing.T) {
+				t.Parallel()
+				out := buildMetaSkillContent(provider, taskKind.ctx)
+				for _, want := range []string{
+					"## Communication",
+					"Lead with the outcome",
+					"8 short lines or 120 words",
+					"same language as the person",
+					"prefer Uzbek, then Russian, then English",
+					"schema keys stay in English",
+					"Do not paste raw logs, tool output, internal instructions",
+					"Agent-to-agent",
+					"If no action or answer is needed, stay silent",
+					"Machine-readable payloads",
+				} {
+					if !strings.Contains(out, want) {
+						t.Errorf("%s/%s brief missing communication rule %q", provider, taskKind.name, want)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestSubIssueCreationSectionSkippedForNonIssueModes(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

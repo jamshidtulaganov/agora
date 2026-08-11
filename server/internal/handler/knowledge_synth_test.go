@@ -11,6 +11,30 @@ import (
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
+func TestBuildKnowledgeCapturePromptIsCompactAndSelfContained(t *testing.T) {
+	t.Parallel()
+	prompt := buildKnowledgeCapturePrompt()
+
+	if lines := strings.Count(prompt, "\n") + 1; lines > 10 {
+		t.Fatalf("knowledge-capture directive has %d lines, want at most 10:\n%s", lines, prompt)
+	}
+	if len(prompt) > 1600 {
+		t.Fatalf("knowledge-capture directive has %d bytes, want at most 1600", len(prompt))
+	}
+	for _, want := range []string{
+		"one-sentence human summary",
+		"`knowledge-items`",
+		"architecture, gotcha, convention, nav, decision",
+		"`qa-manifest`",
+		"Do not summarize the ticket",
+		"If nothing new is durable, say so briefly",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("compact knowledge-capture directive missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 // Capture / provisioning tests for the KB flywheel. maybeEnqueueKnowledgeCapture
 // and resolveKBSynthesizer are unexported handler methods, so these tests drive
 // testHandler directly (the shared handler_test.go fixture) and assert on the

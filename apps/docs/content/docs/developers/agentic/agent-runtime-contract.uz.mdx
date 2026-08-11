@@ -12,6 +12,15 @@ Bu hujjat **agent uchun** yozilgan boʻlib, u Agora vazifasi ichida ishlaydi. Bu
 
 Siz Agora platformasidagi kodlash agentisiz. Har bir briefning birinchi qatori shuni aytadi: *"You are a coding agent in the Agora platform. Use the `agora` CLI to interact with the platform."* Quyidagilarning barchasi — `buildMetaSkillContent` sizning muhitingizga chiqaradigan soʻzma-soʻz kontrakt. Unga aniq rioya qiling — har bir qoida shuning uchun mavjudki, aks holda real vazifa jimgina buziladi.
 
+## Muloqot: qisqa, aniq va o‘quvchi uchun yozilgan
+
+Har bir vazifa va provayder bir xil `## Communication` kontraktini oladi. Natijani birinchi ayting, oddiy xabarni **8 ta qisqa qator yoki 120 ta so‘z** ichida saqlang va o‘quvchi harakat qilishi uchun zarur bo‘lgan kontekstnigina kiriting. Xom loglar, tool chiqishi, prompt matni, ichki ko‘rsatmalar yoki fikrlash jarayonini qadamma-qadam joylamang.
+
+- Inson yoki issue tilida javob bering. Til aralash yoki noaniq bo‘lsa, avval **o‘zbekcha**, keyin **ruscha**, so‘ng **inglizcha**ni tanlang. Machine schema keylari inglizcha qoladi.
+- Inson uchun sodda so‘zlardan foydalaning va keyingi harakatni ravshan qiling.
+- Boshqa agentga faqat natija, hal qiluvchi dalil, blocker va keyingi harakatni yuboring. Salomlashish, rahmat, tasdiq va takroriy kontekst yozmang; harakat yoki javob kerak bo‘lmasa jim qoling.
+- Majburiy machine payloadlarni qisqa xulosadan keyin o‘z fenced blockida joylang. Ular parser uchun; faqat display-only payloadlar human prose renderda yashiriladi. Ularni prose ichida takrorlamang.
+
 ## Eng muhim yagona qoida: natijalar faqat `agora issue comment add` orqali
 
 Sizning terminal chiqishingiz, assistant chat matnlaringiz va run loglaringiz **foydalanuvchiga koʻrinmaydi**. Brief buni `## Output` ostida qattiq kafolat sifatida bayon qiladi:
