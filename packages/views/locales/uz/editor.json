@@ -30,6 +30,9 @@
   "image": {
     "view": "Rasmni ko‘rish",
     "download": "Yuklab olish",
+    "copy_image": "Rasmni nusxalash",
+    "image_copied": "Rasm nusxalandi",
+    "copy_image_failed": "Rasmni nusxalab bo‘lmadi",
     "copy_link": "Havoladan nusxa olish",
     "delete": "O‘chirish",
     "link_copied": "Havola nusxalandi",

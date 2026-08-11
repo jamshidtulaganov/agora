@@ -6,7 +6,11 @@ import {
   clipboard,
   type WebContents,
 } from "electron";
-import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
+import {
+  downloadURLSafely,
+  isSafeExternalHttpUrl,
+  openExternalSafely,
+} from "./external-url";
 
 // Electron ships with no default right-click menu, so a user selecting text
 // in the renderer has no way to copy it. Mirror Chrome's minimal clipboard
@@ -21,7 +25,17 @@ import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
 // translation files.
 export function installContextMenu(webContents: WebContents): void {
   webContents.on("context-menu", (_event, params) => {
-    const { editFlags, selectionText, isEditable, linkURL } = params;
+    const {
+      editFlags,
+      selectionText,
+      isEditable,
+      linkURL,
+      mediaType,
+      srcURL,
+      hasImageContents,
+      x,
+      y,
+    } = params;
     const hasSelection = selectionText.trim().length > 0;
     // params.linkURL is the resolved absolute URL of the anchor under the
     // cursor; Electron normalizes relative hrefs against the page URL for
@@ -33,6 +47,7 @@ export function installContextMenu(webContents: WebContents): void {
     // outside what this menu promises.
     const linkIsHttpUrl = !!linkURL && isSafeExternalHttpUrl(linkURL);
     const labels = pickLabels();
+    const window = BrowserWindow.fromWebContents(webContents) ?? undefined;
 
     const menu = new Menu();
 
@@ -83,8 +98,47 @@ export function installContextMenu(webContents: WebContents): void {
       );
     }
 
+    const isImage = mediaType === "image" && hasImageContents;
+    const isVideo = mediaType === "video";
+    const isAudio = mediaType === "audio";
+    const hasDownloadableMedia =
+      (isImage || isVideo || isAudio) && isSafeExternalHttpUrl(srcURL);
+
+    if (isImage || hasDownloadableMedia) {
+      if (menu.items.length > 0) {
+        menu.append(new MenuItem({ type: "separator" }));
+      }
+      if (isImage) {
+        menu.append(
+          new MenuItem({
+            label: labels.copyImage,
+            click: () => webContents.copyImageAt(x, y),
+          }),
+        );
+      }
+      if (hasDownloadableMedia && window) {
+        menu.append(
+          new MenuItem({
+            label: isImage
+              ? labels.saveImageAs
+              : isVideo
+                ? labels.saveVideoAs
+                : labels.saveAudioAs,
+            click: () => downloadURLSafely(window, srcURL),
+          }),
+        );
+      }
+      if (hasDownloadableMedia) {
+        menu.append(
+          new MenuItem({
+            label: labels.copyMediaAddress,
+            click: () => clipboard.writeText(srcURL),
+          }),
+        );
+      }
+    }
+
     if (menu.items.length === 0) return;
-    const window = BrowserWindow.fromWebContents(webContents) ?? undefined;
     menu.popup({ window });
   });
 }
@@ -97,24 +151,49 @@ export function installContextMenu(webContents: WebContents): void {
 type ContextMenuLabels = {
   openLink: string;
   copyLinkAddress: string;
+  copyImage: string;
+  saveImageAs: string;
+  saveVideoAs: string;
+  saveAudioAs: string;
+  copyMediaAddress: string;
 };
 
 const labelsByLocale: Record<string, ContextMenuLabels> = {
   en: {
     openLink: "Open Link in Browser",
     copyLinkAddress: "Copy Link Address",
+    copyImage: "Copy Image",
+    saveImageAs: "Save Image As…",
+    saveVideoAs: "Save Video As…",
+    saveAudioAs: "Save Audio As…",
+    copyMediaAddress: "Copy Media Address",
   },
   "zh-Hans": {
     openLink: "在浏览器中打开链接",
     copyLinkAddress: "复制链接地址",
+    copyImage: "复制图片",
+    saveImageAs: "图片另存为…",
+    saveVideoAs: "视频另存为…",
+    saveAudioAs: "音频另存为…",
+    copyMediaAddress: "复制媒体地址",
   },
   uz: {
     openLink: "Havolani brauzerda ochish",
     copyLinkAddress: "Havola manzilini nusxalash",
+    copyImage: "Rasmni nusxalash",
+    saveImageAs: "Rasmni saqlash…",
+    saveVideoAs: "Videoni saqlash…",
+    saveAudioAs: "Audioni saqlash…",
+    copyMediaAddress: "Media manzilini nusxalash",
   },
   ru: {
     openLink: "Открыть ссылку в браузере",
     copyLinkAddress: "Скопировать адрес ссылки",
+    copyImage: "Копировать изображение",
+    saveImageAs: "Сохранить изображение как…",
+    saveVideoAs: "Сохранить видео как…",
+    saveAudioAs: "Сохранить аудио как…",
+    copyMediaAddress: "Копировать адрес медиа",
   },
 };
 

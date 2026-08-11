@@ -58,3 +58,59 @@ export async function copyText(text: string): Promise<boolean> {
     previouslyFocused?.focus();
   }
 }
+
+/**
+ * Copy an image to the system clipboard as PNG.
+ *
+ * The ClipboardItem is created immediately from a promise so Safari and
+ * Chromium keep the original click's user activation while attachment bytes
+ * are fetched and, when necessary, converted from JPEG/WebP to PNG.
+ */
+export async function copyImage(
+  source: Blob | Promise<Blob>,
+): Promise<boolean> {
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.clipboard?.write ||
+    typeof ClipboardItem === "undefined"
+  ) {
+    return false;
+  }
+
+  try {
+    const png = Promise.resolve(source).then(toPngBlob);
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": png }),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function toPngBlob(blob: Blob): Promise<Blob> {
+  if (blob.type === "image/png") return blob;
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
+    throw new Error("Image conversion is unavailable");
+  }
+
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable");
+    context.drawImage(bitmap, 0, 0);
+    const png = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) =>
+          result ? resolve(result) : reject(new Error("PNG conversion failed")),
+        "image/png",
+      );
+    });
+    return png;
+  } finally {
+    bitmap.close();
+  }
+}

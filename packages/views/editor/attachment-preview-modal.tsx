@@ -39,13 +39,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  api,
   PreviewTooLargeError,
   PreviewUnsupportedError,
 } from "@agora/core/api";
-import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
+import { Copy, Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
 import type { Attachment } from "@agora/core/types";
 import { paths, useWorkspaceSlug } from "@agora/core/paths";
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { copyImage, copyText } from "@agora/ui/lib/clipboard";
+import { toast } from "sonner";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";
@@ -89,6 +92,7 @@ interface PreviewState {
   filename: string;
   contentType: string;
   mediaUrl: string;
+  durableUrl: string;
   attachmentId: string | null;
 }
 
@@ -112,6 +116,15 @@ function normalize(source: PreviewSource): PreviewState {
       filename: source.attachment.filename,
       contentType: source.attachment.content_type,
       mediaUrl: resolvePreviewMediaUrl(source.attachment),
+      durableUrl:
+        resolvePublicFileUrl(
+          source.attachment.markdown_url ||
+            source.attachment.url ||
+            source.attachment.download_url,
+        ) ||
+        source.attachment.markdown_url ||
+        source.attachment.url ||
+        source.attachment.download_url,
       attachmentId: source.attachment.id,
     };
   }
@@ -119,6 +132,7 @@ function normalize(source: PreviewSource): PreviewState {
     filename: source.filename,
     contentType: "",
     mediaUrl: resolvePublicFileUrl(source.url) ?? source.url,
+    durableUrl: resolvePublicFileUrl(source.url) ?? source.url,
     attachmentId: null,
   };
 }
@@ -224,6 +238,31 @@ export function AttachmentPreviewModal({
     }
   };
 
+  const copiesImageBytes = kind === "image" && !!state.attachmentId;
+  const copyLabel = copiesImageBytes
+    ? t(($) => $.image.copy_image)
+    : t(($) => $.image.copy_link);
+  const handleCopy = async () => {
+    if (copiesImageBytes && state.attachmentId) {
+      const copied = await copyImage(
+        api.getAttachmentDownloadBlob(state.attachmentId),
+      );
+      toast[copied ? "success" : "error"](
+        copied
+          ? t(($) => $.image.image_copied)
+          : t(($) => $.image.copy_image_failed),
+      );
+      return;
+    }
+
+    const copied = await copyText(state.durableUrl);
+    toast[copied ? "success" : "error"](
+      copied
+        ? t(($) => $.image.link_copied)
+        : t(($) => $.image.copy_link_failed),
+    );
+  };
+
   // Open-in-new-tab mirrors HtmlAttachmentPreview's inline toolbar: only the
   // `html` kind has a dedicated full-page route (/attachments/{id}/preview).
   // Gated on slug + attachmentId for the same reason — URL-only sources
@@ -264,7 +303,7 @@ export function AttachmentPreviewModal({
       >
         <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2">
           <FileText className="size-4 shrink-0 text-muted-foreground" />
-          <p className="truncate text-sm font-medium">{state.filename}</p>
+          <p className="min-w-0 truncate text-sm font-medium">{state.filename}</p>
           <span className="ml-1 shrink-0 text-xs text-muted-foreground">
             {state.contentType || "—"}
           </span>
@@ -282,12 +321,23 @@ export function AttachmentPreviewModal({
             )}
             <button
               type="button"
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+              title={copyLabel}
+              aria-label={copyLabel}
+              onClick={handleCopy}
+            >
+              <Copy className="size-3.5" />
+              <span>{copyLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
               title={t(($) => $.image.download)}
               aria-label={t(($) => $.image.download)}
               onClick={handleDownload}
             >
-              <Download className="size-4" />
+              <Download className="size-3.5" />
+              <span>{t(($) => $.image.download)}</span>
             </button>
             <button
               type="button"

@@ -30,6 +30,9 @@
   "image": {
     "view": "查看图片",
     "download": "下载",
+    "copy_image": "复制图片",
+    "image_copied": "图片已复制",
+    "copy_image_failed": "复制图片失败",
     "copy_link": "复制链接",
     "delete": "删除",
     "link_copied": "已复制链接",

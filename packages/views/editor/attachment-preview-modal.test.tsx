@@ -16,8 +16,11 @@ vi.mock("../platform", () => ({
 // declarations.
 const {
   getAttachmentTextContentMock,
+  getAttachmentDownloadBlobMock,
   downloadMock,
   getBaseUrlMock,
+  copyImageMock,
+  copyTextMock,
   FakePreviewTooLargeError,
   FakePreviewUnsupportedError,
 } = vi.hoisted(() => {
@@ -35,7 +38,10 @@ const {
   }
   return {
     getAttachmentTextContentMock: vi.fn(),
+    getAttachmentDownloadBlobMock: vi.fn(),
     downloadMock: vi.fn(),
+    copyImageMock: vi.fn(),
+    copyTextMock: vi.fn(),
     // Default to the web shape (empty base, same-origin). Tests covering
     // the desktop-renderer / standalone-shell case override per-test.
     getBaseUrlMock: vi.fn(() => ""),
@@ -47,10 +53,16 @@ const {
 vi.mock("@agora/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
+    getAttachmentDownloadBlob: getAttachmentDownloadBlobMock,
     getBaseUrl: getBaseUrlMock,
   },
   PreviewTooLargeError: FakePreviewTooLargeError,
   PreviewUnsupportedError: FakePreviewUnsupportedError,
+}));
+
+vi.mock("@agora/ui/lib/clipboard", () => ({
+  copyImage: copyImageMock,
+  copyText: copyTextMock,
 }));
 
 vi.mock("./use-download-attachment", () => ({
@@ -100,7 +112,15 @@ vi.mock("../i18n", () => ({
   useT: () => ({
     t: (sel: (s: Record<string, Record<string, string>>) => string) =>
       sel({
-        image: { download: "Download" },
+        image: {
+          download: "Download",
+          copy_image: "Copy image",
+          image_copied: "Image copied",
+          copy_image_failed: "Failed to copy image",
+          copy_link: "Copy link",
+          link_copied: "Link copied",
+          copy_link_failed: "Failed to copy link",
+        },
         attachment: {
           preview: "Preview",
           preview_loading: "Loading preview…",
@@ -158,6 +178,11 @@ beforeEach(() => {
   // Default to web's same-origin empty base so existing absolute-URL tests
   // remain unaffected by the relative-URL resolution added in normalize().
   getBaseUrlMock.mockReturnValue("");
+  getAttachmentDownloadBlobMock.mockResolvedValue(
+    new Blob(["png"], { type: "image/png" }),
+  );
+  copyImageMock.mockResolvedValue(true);
+  copyTextMock.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -447,6 +472,62 @@ describe("AttachmentPreviewModal — controls", () => {
     expect(buttons.length).toBeGreaterThan(0);
     fireEvent.click(buttons[0]!);
     expect(downloadMock).toHaveBeenCalledWith("att-1");
+  });
+
+  it("keeps labeled Copy and Download actions visible in the preview header", () => {
+    const att = makeAttachment({
+      filename: "shot.png",
+      content_type: "image/png",
+    });
+    render(
+      <AttachmentPreviewModal
+        source={{ kind: "full", attachment: att }}
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Copy image" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+  });
+
+  it("copies image bytes through the authenticated attachment endpoint", async () => {
+    const att = makeAttachment({
+      filename: "shot.png",
+      content_type: "image/png",
+    });
+    render(
+      <AttachmentPreviewModal
+        source={{ kind: "full", attachment: att }}
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy image" }));
+    await waitFor(() => {
+      expect(getAttachmentDownloadBlobMock).toHaveBeenCalledWith("att-1");
+      expect(copyImageMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("copies a durable link for non-image previews", async () => {
+    const att = makeAttachment({
+      filename: "demo.mp4",
+      content_type: "video/mp4",
+    });
+    render(
+      <AttachmentPreviewModal
+        source={{ kind: "full", attachment: att }}
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await waitFor(() => {
+      expect(copyTextMock).toHaveBeenCalledWith(att.markdown_url);
+    });
   });
 
   it("clicking the backdrop closes the modal", () => {

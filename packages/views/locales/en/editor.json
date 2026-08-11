@@ -30,6 +30,9 @@
   "image": {
     "view": "View image",
     "download": "Download",
+    "copy_image": "Copy image",
+    "image_copied": "Image copied",
+    "copy_image_failed": "Failed to copy image",
     "copy_link": "Copy link",
     "delete": "Delete",
     "link_copied": "Link copied",

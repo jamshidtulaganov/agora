@@ -16,6 +16,8 @@ const ctx = vi.hoisted(() => ({
   browserWindowFromWebContents: vi.fn(),
   popupSpy: vi.fn(),
   clipboardWriteText: vi.fn(),
+  copyImageAt: vi.fn(),
+  downloadURL: vi.fn(),
   openExternalSpy: vi.fn().mockResolvedValue(undefined),
   preferredLanguagesRef: { current: ["en-US"] as string[] },
 }));
@@ -60,6 +62,11 @@ type ContextMenuParams = {
   selectionText: string;
   isEditable: boolean;
   linkURL: string;
+  srcURL: string;
+  mediaType: "none" | "image" | "audio" | "video";
+  hasImageContents: boolean;
+  x: number;
+  y: number;
   editFlags: {
     canCut: boolean;
     canCopy: boolean;
@@ -83,6 +90,7 @@ function makeWebContents() {
     fire(params: ContextMenuParams) {
       for (const h of handlers) h({}, params);
     },
+    copyImageAt: ctx.copyImageAt,
   };
 }
 
@@ -98,8 +106,13 @@ describe("installContextMenu — link items", () => {
     ctx.capturedItems.length = 0;
     ctx.popupSpy.mockClear();
     ctx.clipboardWriteText.mockClear();
+    ctx.copyImageAt.mockClear();
+    ctx.downloadURL.mockClear();
     ctx.openExternalSpy.mockClear();
     ctx.browserWindowFromWebContents.mockReset();
+    ctx.browserWindowFromWebContents.mockReturnValue({
+      webContents: { downloadURL: ctx.downloadURL },
+    });
     ctx.preferredLanguagesRef.current = ["en-US"];
   });
 
@@ -147,12 +160,12 @@ describe("installContextMenu — link items", () => {
   it("does NOT add link items when there is no link under the cursor", () => {
     const wc = makeWebContents();
     installContextMenu(wc as never);
-    wc.fire({
+    wc.fire(baseSelection({
       selectionText: "hello",
       isEditable: false,
       linkURL: "",
       editFlags: { ...baseEditFlags, canCopy: true },
-    });
+    }));
     const labels = lastMenuLabelsOrEmpty();
     expect(labels).not.toContain("Open Link in Browser");
     // Selection-only context still surfaces copy as before — guards
@@ -181,6 +194,67 @@ describe("installContextMenu — link items", () => {
     wc.fire(baseSelection({ linkURL: "https://agora.dev" }));
     expect(lastMenuLabels()).toContain("Open Link in Browser");
   });
+
+  it("copies the rendered image even when its source is a renderer blob URL", () => {
+    const wc = makeWebContents();
+    installContextMenu(wc as never);
+    wc.fire(
+      baseSelection({
+        mediaType: "image",
+        hasImageContents: true,
+        srcURL: "blob:https://app.agora.dev/image-1",
+        x: 24,
+        y: 48,
+      }),
+    );
+
+    expect(lastMenuLabels()).toContain("Copy Image");
+    expect(lastMenuLabels()).not.toContain("Save Image As…");
+    invokeByLabel("Copy Image");
+    expect(ctx.copyImageAt).toHaveBeenCalledWith(24, 48);
+  });
+
+  it("saves and copies the address of an HTTP image", () => {
+    const wc = makeWebContents();
+    installContextMenu(wc as never);
+    wc.fire(
+      baseSelection({
+        mediaType: "image",
+        hasImageContents: true,
+        srcURL: "https://cdn.agora.dev/shot.png",
+      }),
+    );
+
+    expect(lastMenuLabels()).toEqual(
+      expect.arrayContaining([
+        "Copy Image",
+        "Save Image As…",
+        "Copy Media Address",
+      ]),
+    );
+    invokeByLabel("Save Image As…");
+    expect(ctx.downloadURL).toHaveBeenCalledWith(
+      "https://cdn.agora.dev/shot.png",
+    );
+    invokeByLabel("Copy Media Address");
+    expect(ctx.clipboardWriteText).toHaveBeenCalledWith(
+      "https://cdn.agora.dev/shot.png",
+    );
+  });
+
+  it("offers save and address actions for videos without an image-copy action", () => {
+    const wc = makeWebContents();
+    installContextMenu(wc as never);
+    wc.fire(
+      baseSelection({
+        mediaType: "video",
+        srcURL: "https://cdn.agora.dev/demo.mp4",
+      }),
+    );
+
+    expect(lastMenuLabels()).toContain("Save Video As…");
+    expect(lastMenuLabels()).not.toContain("Copy Image");
+  });
 });
 
 // --- helpers ---
@@ -190,6 +264,11 @@ function baseSelection(over: Partial<ContextMenuParams>): ContextMenuParams {
     selectionText: "",
     isEditable: false,
     linkURL: "",
+    srcURL: "",
+    mediaType: "none",
+    hasImageContents: false,
+    x: 0,
+    y: 0,
     editFlags: { ...baseEditFlags },
     ...over,
   };
