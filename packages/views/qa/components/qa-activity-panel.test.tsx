@@ -247,6 +247,7 @@ describe("QAActivityPanel", () => {
         undefined,
         undefined,
         undefined,
+        "auto",
       ),
     );
   });

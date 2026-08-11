@@ -70,6 +70,8 @@ export interface AgentTask {
   // autopilot-spawned. Check chat_session_id / autopilot_run_id to tell
   // which source produced it.
   issue_id: string;
+  /** Human-selected behavior for this individual run. Auto derives from the issue type. */
+  run_mode?: AgentRunMode;
   // `waiting_local_directory` is the daemon-emitted hold state for the
   // local_directory flow: a task that has been dispatched but is parked
   // because another task currently owns the same on-disk path lock.
@@ -139,6 +141,8 @@ export interface AgentTask {
    */
   relative_work_dir?: string;
 }
+
+export type AgentRunMode = "auto" | "debug" | "plan" | "build";
 
 export interface Agent {
   id: string;

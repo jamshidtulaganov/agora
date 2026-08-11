@@ -109,6 +109,26 @@ func taskModeInstructionForClaim(taskType, orchestrationStage string) string {
 	return taskModeInstructionFor(taskType)
 }
 
+// taskRunModeInstructionForClaim applies a human's per-run override. Auto keeps
+// the fundamental type:* behavior; every other value is independent of labels
+// and affects only the task row that is being claimed.
+func taskRunModeInstructionForClaim(runMode, taskType, orchestrationStage string) string {
+	switch runMode {
+	case "debug":
+		return " RUN MODE — DEBUG (explicit human override for this run). Work as an evidence-first debugger regardless of the issue type. " +
+			"Reproduce the failure with a runnable repro or failing test; form and test concrete hypotheses; trace the root cause through the actual code path; make the smallest causal fix; and prove failing-before / passing-after with a regression test plus relevant checks. " +
+			"Do not substitute a speculative patch for reproduction and root-cause evidence. Report the repro, root cause, fix, and exact verification."
+	case "plan":
+		return " RUN MODE — PLAN (explicit human override for this run). This run is read-only planning. Inspect the issue, comments, attachments, code, and runtime evidence; restate testable acceptance criteria; identify open decisions, affected boundaries, edge cases, risks, and verification; compare viable variants where a meaningful decision exists; and return an implementation-ready plan. " +
+			"Do not edit files, create branches or commits, open a pull request, change issue status, or start implementation. Ask one concise blocking question when a critical decision cannot be resolved from evidence."
+	case "build":
+		return " RUN MODE — BUILD (explicit human override for this run). Implement the accepted request now regardless of the issue type. Inspect enough existing code and conventions to make a coherent change, but do not stop at a plan or require design variants unless a genuinely blocking decision remains. " +
+			"Keep the change scoped, satisfy the stated acceptance criteria, add or update focused tests, run the relevant verification, and report the implementation plus exact evidence."
+	default:
+		return taskModeInstructionForClaim(taskType, orchestrationStage)
+	}
+}
+
 // taskTriggerSliceActionKind returns the explicit backend slice-action marker
 // carried by a triggering comment. An empty string means an ordinary issue
 // assignment/comment. Unknown markers are still returned so claim routing can

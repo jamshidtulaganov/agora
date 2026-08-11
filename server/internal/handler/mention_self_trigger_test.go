@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 	"github.com/jamshidtulaganov/agora/server/internal/util"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
@@ -15,7 +16,7 @@ import (
 func enqueueMentionedAgentTasksForTest(t *testing.T, ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, authorType, authorID string) {
 	t.Helper()
 	triggers := testHandler.computeMentionedAgentCommentTriggers(ctx, issue, comment.Content, parentComment, authorType, authorID)
-	testHandler.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers)
+	testHandler.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers, service.AgentRunModeAuto)
 }
 
 // selfMentionFixture wires the seeded "Handler Test Agent" as J plus two

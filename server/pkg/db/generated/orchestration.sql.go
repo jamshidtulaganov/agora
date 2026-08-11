@@ -1172,7 +1172,7 @@ func (q *Queries) GetLatestOrchestrationRunForIssue(ctx context.Context, issueID
 }
 
 const getLatestTaskForOrchestrationStep = `-- name: GetLatestTaskForOrchestrationStep :one
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override FROM agent_task_queue
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override, run_mode FROM agent_task_queue
 WHERE orchestration_step_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT 1
@@ -1212,6 +1212,7 @@ func (q *Queries) GetLatestTaskForOrchestrationStep(ctx context.Context, orchest
 		&i.ModelOverride,
 		&i.OrchestrationStepID,
 		&i.ThinkingLevelOverride,
+		&i.RunMode,
 	)
 	return i, err
 }

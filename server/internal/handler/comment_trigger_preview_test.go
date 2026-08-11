@@ -146,6 +146,59 @@ func TestCreateComment_SuppressUnknownAgentIDIsNoop(t *testing.T) {
 	}
 }
 
+func TestCreateComment_PersistsRunModeOnTriggeredTask(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "Run Mode Agent", nil)
+	issueID := createCommentTriggerPreviewIssue(t, "comment trigger run mode", "", "")
+	content := fmt.Sprintf("[@Agent](mention://agent/%s) investigate this failure", agentID)
+
+	postCommentForTriggerPreviewTest(t, issueID, map[string]any{
+		"content":  content,
+		"run_mode": "debug",
+	})
+
+	var runMode string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT run_mode FROM agent_task_queue
+		WHERE issue_id = $1 AND agent_id = $2
+		ORDER BY created_at DESC LIMIT 1
+	`, issueID, agentID).Scan(&runMode); err != nil {
+		t.Fatalf("read triggered task run mode: %v", err)
+	}
+	if runMode != "debug" {
+		t.Fatalf("task run_mode = %q, want debug", runMode)
+	}
+}
+
+func TestCreateComment_RejectsInvalidRunModeBeforeWriting(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+
+	issueID := createCommentTriggerPreviewIssue(t, "invalid comment run mode", "", "")
+	w := httptest.NewRecorder()
+	r := newRequest(http.MethodPost, "/api/issues/"+issueID+"/comments", map[string]any{
+		"content":  "do something",
+		"run_mode": "turbo",
+	})
+	r = withURLParam(r, "id", issueID)
+	testHandler.CreateComment(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateComment invalid run mode: got %d, want 400: %s", w.Code, w.Body.String())
+	}
+
+	var count int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM comment WHERE issue_id = $1`, issueID).Scan(&count); err != nil {
+		t.Fatalf("count comments: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid run mode wrote %d comments, want 0", count)
+	}
+}
+
 func TestPreviewCommentTriggers_NoteReturnsNoAgents(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

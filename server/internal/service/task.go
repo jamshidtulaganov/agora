@@ -492,7 +492,13 @@ func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, t
 	if len(triggerCommentID) > 0 {
 		commentID = triggerCommentID[0]
 	}
-	return s.enqueueIssueTask(ctx, issue, commentID, false)
+	return s.enqueueIssueTask(ctx, issue, commentID, false, AgentRunModeAuto)
+}
+
+// EnqueueTaskForIssueWithRunMode is the comment-composer variant: the selected
+// mode is stored on this task only and never mutates the issue or agent.
+func (s *TaskService) EnqueueTaskForIssueWithRunMode(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, runMode string) (db.AgentTaskQueue, error) {
+	return s.enqueueIssueTask(ctx, issue, triggerCommentID, false, runMode)
 }
 
 // enqueueIssueTask is the shared implementation behind EnqueueTaskForIssue
@@ -500,7 +506,7 @@ func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, t
 // daemon claim handler skips the (agent_id, issue_id) resume lookup — the
 // user already judged the prior output bad, a fresh agent session is the
 // expected behavior.
-func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, forceFreshSession bool) (db.AgentTaskQueue, error) {
+func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, forceFreshSession bool, runMode string) (db.AgentTaskQueue, error) {
 	if !issue.AssigneeID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no assignee")
 		return db.AgentTaskQueue{}, fmt.Errorf("issue has no assignee")
@@ -528,6 +534,7 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 		TriggerCommentID:  triggerCommentID,
 		TriggerSummary:    s.buildCommentTriggerSummary(ctx, triggerCommentID),
 		ForceFreshSession: pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
+		RunMode:           pgtype.Text{String: runMode, Valid: runMode != ""},
 	})
 	if err != nil {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
@@ -562,7 +569,13 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 // Unlike EnqueueTaskForIssue, this takes an explicit agent ID rather than
 // deriving it from the issue assignee.
 func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{}, AgentRunModeAuto)
+}
+
+// EnqueueTaskForMentionWithRunMode stores a human-selected mode on this one
+// mentioned-agent task. It is intentionally separate from agent configuration.
+func (s *TaskService) EnqueueTaskForMentionWithRunMode(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, runMode string) (db.AgentTaskQueue, error) {
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{}, runMode)
 }
 
 // EnqueueTaskForMentionWithModel is EnqueueTaskForMention with a per-task model
@@ -571,7 +584,7 @@ func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue,
 // issue cost-tier labels. Used by knowledge-capture to escalate a large-thread
 // distillation from the synthesizer's cheap default model to a bigger one.
 func (s *TaskService) EnqueueTaskForMentionWithModel(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, modelOverride pgtype.Text) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, modelOverride, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, false, modelOverride, pgtype.Text{}, pgtype.UUID{}, AgentRunModeAuto)
 }
 
 // EnqueueOrchestrationTask dispatches one persisted orchestration step through
@@ -584,7 +597,7 @@ func (s *TaskService) EnqueueOrchestrationTask(ctx context.Context, issue db.Iss
 	// claim/runtime safety checks can prove the lineage is compatible. Manual
 	// issue reruns remain the only ordinary path that deliberately forces a
 	// fresh session.
-	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, thinkingLevelOverride, stepID)
+	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, thinkingLevelOverride, stepID, AgentRunModeAuto)
 }
 
 // CreateOrchestrationTaskInTx inserts an orchestration task through the
@@ -600,7 +613,7 @@ func (s *TaskService) CreateOrchestrationTaskInTx(
 	forceFreshSession bool,
 ) (db.AgentTaskQueue, error) {
 	txService := &TaskService{Queries: queries}
-	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, forceFreshSession, modelOverride, thinkingLevelOverride, stepID, false)
+	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, forceFreshSession, modelOverride, thinkingLevelOverride, stepID, AgentRunModeAuto, false)
 }
 
 // EnqueueTaskForSquadLeader is the leader-role variant of EnqueueTaskForMention.
@@ -610,14 +623,20 @@ func (s *TaskService) CreateOrchestrationTaskInTx(
 // as a worker (do not skip). This matters for agents that are simultaneously
 // the leader and a worker of the same squad — see migration 090.
 func (s *TaskService) EnqueueTaskForSquadLeader(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{}, AgentRunModeAuto)
 }
 
-func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID) (db.AgentTaskQueue, error) {
-	return s.createMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, forceFreshSession, modelOverride, thinkingLevelOverride, orchestrationStepID, true)
+// EnqueueTaskForSquadLeaderWithRunMode is the squad equivalent of the manual
+// comment run control.
+func (s *TaskService) EnqueueTaskForSquadLeaderWithRunMode(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, triggerCommentID pgtype.UUID, runMode string) (db.AgentTaskQueue, error) {
+	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, false, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{}, runMode)
 }
 
-func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID, publish bool) (db.AgentTaskQueue, error) {
+func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID, runMode string) (db.AgentTaskQueue, error) {
+	return s.createMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, forceFreshSession, modelOverride, thinkingLevelOverride, orchestrationStepID, runMode, true)
+}
+
+func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride, thinkingLevelOverride pgtype.Text, orchestrationStepID pgtype.UUID, runMode string, publish bool) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("mention task enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -644,6 +663,7 @@ func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, age
 		ModelOverride:         modelOverride,
 		ThinkingLevelOverride: thinkingLevelOverride,
 		OrchestrationStepID:   orchestrationStepID,
+		RunMode:               pgtype.Text{String: runMode, Valid: runMode != ""},
 	})
 	if err != nil {
 		slog.Error("mention task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -1842,6 +1862,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 	var (
 		agentID  pgtype.UUID
 		isLeader bool
+		runMode  = AgentRunModeAuto
 	)
 	if sourceTaskID.Valid {
 		sourceTask, err := s.Queries.GetAgentTask(ctx, sourceTaskID)
@@ -1853,6 +1874,9 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		}
 		agentID = sourceTask.AgentID
 		isLeader = sourceTask.IsLeaderTask
+		if sourceTask.RunMode != "" {
+			runMode = sourceTask.RunMode
+		}
 		// Inherit trigger provenance so a per-row rerun of a comment- or
 		// mention-triggered task stays a comment-triggered task. Without
 		// this the daemon's buildCommentPrompt path is skipped (it keys on
@@ -1896,7 +1920,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
 
-	task, err := s.enqueueRerunTask(ctx, issue, agentID, triggerCommentID, isLeader)
+	task, err := s.enqueueRerunTask(ctx, issue, agentID, triggerCommentID, isLeader, runMode)
 	if err != nil {
 		return nil, err
 	}
@@ -1917,12 +1941,12 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 // stays in sync; otherwise (squad member, prior assignee that has since been
 // reassigned, mention agent) we use the mention path with the same
 // force_fresh_session=true contract.
-func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool) (db.AgentTaskQueue, error) {
+func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, runMode string) (db.AgentTaskQueue, error) {
 	if issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid &&
 		util.UUIDToString(issue.AssigneeID) == util.UUIDToString(agentID) {
-		return s.enqueueIssueTask(ctx, issue, triggerCommentID, true)
+		return s.enqueueIssueTask(ctx, issue, triggerCommentID, true, runMode)
 	}
-	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, true, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{})
+	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, true, pgtype.Text{}, pgtype.Text{}, pgtype.UUID{}, runMode)
 }
 
 // HandleFailedTasks runs the post-failure side effects for a batch of

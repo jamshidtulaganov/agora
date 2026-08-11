@@ -779,6 +779,9 @@ type CreateCommentRequest struct {
 	ParentID         *string  `json:"parent_id"`
 	AttachmentIDs    []string `json:"attachment_ids"`
 	SuppressAgentIDs []string `json:"suppress_agent_ids"`
+	// RunMode controls only agent tasks triggered by this comment. It never
+	// mutates issue labels, issue metadata, or the agent's saved configuration.
+	RunMode string `json:"run_mode"`
 }
 
 type CommentTriggerPreviewRequest struct {
@@ -911,6 +914,11 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Type == "" {
 		req.Type = "comment"
+	}
+	runMode, validRunMode := service.NormalizeAgentRunMode(req.RunMode)
+	if !validRunMode {
+		writeError(w, http.StatusBadRequest, "run_mode must be one of: auto, debug, plan, build")
+		return
 	}
 
 	var parentID pgtype.UUID
@@ -1057,7 +1065,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// must keep the resolved root in sync.
 	h.TaskService.AutoUnresolveThreadOnReply(r.Context(), rootComment, uuidToString(issue.WorkspaceID), authorType, authorID)
 
-	h.triggerTasksForComment(r.Context(), issue, comment, parentComment, authorType, authorID, suppressAgentIDs)
+	h.triggerTasksForCommentWithRunMode(r.Context(), issue, comment, parentComment, authorType, authorID, suppressAgentIDs, runMode)
 
 	// Real agents (daemon/CLI) post their structured output via THIS HTTP path,
 	// not the internal createAgentComment path — so the QA captures must run here
@@ -1156,12 +1164,21 @@ func isNoteComment(content string) bool {
 }
 
 func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, actorType, actorID string, suppressAgentIDs []pgtype.UUID) {
+	h.triggerTasksForCommentWithRunMode(ctx, issue, comment, parentComment, actorType, actorID, suppressAgentIDs, service.AgentRunModeAuto)
+}
+
+func (h *Handler) triggerTasksForCommentWithRunMode(ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, actorType, actorID string, suppressAgentIDs []pgtype.UUID, runMode string) {
 	if isNoteComment(comment.Content) {
 		return
 	}
+	if normalized, ok := service.NormalizeAgentRunMode(runMode); ok {
+		runMode = normalized
+	} else {
+		runMode = service.AgentRunModeAuto
+	}
 	triggers := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID)
 	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
-	h.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers)
+	h.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers, runMode)
 }
 
 func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppressAgentIDs []pgtype.UUID) []commentAgentTrigger {
@@ -1187,12 +1204,12 @@ func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppre
 	return filtered
 }
 
-func (h *Handler) enqueueCommentAgentTriggers(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, triggers []commentAgentTrigger) {
+func (h *Handler) enqueueCommentAgentTriggers(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, triggers []commentAgentTrigger, runMode string) {
 	for _, trigger := range triggers {
 		switch trigger.Source {
 		case commentTriggerSourceIssueAssignee:
 			if trigger.Squad != nil {
-				if _, err := h.TaskService.EnqueueTaskForSquadLeader(ctx, issue, trigger.Agent.ID, triggerCommentID); err != nil {
+				if _, err := h.TaskService.EnqueueTaskForSquadLeaderWithRunMode(ctx, issue, trigger.Agent.ID, triggerCommentID, runMode); err != nil {
 					slog.Warn("enqueue squad leader task failed",
 						"issue_id", uuidToString(issue.ID),
 						"squad_id", uuidToString(trigger.Squad.ID),
@@ -1201,18 +1218,18 @@ func (h *Handler) enqueueCommentAgentTriggers(ctx context.Context, issue db.Issu
 				}
 				continue
 			}
-			if _, err := h.TaskService.EnqueueTaskForIssue(ctx, issue, triggerCommentID); err != nil {
+			if _, err := h.TaskService.EnqueueTaskForIssueWithRunMode(ctx, issue, triggerCommentID, runMode); err != nil {
 				slog.Warn("enqueue agent task on comment failed", "issue_id", uuidToString(issue.ID), "error", err)
 			}
 		case commentTriggerSourceMentionSquadLeader:
-			if _, err := h.TaskService.EnqueueTaskForSquadLeader(ctx, issue, trigger.Agent.ID, triggerCommentID); err != nil {
+			if _, err := h.TaskService.EnqueueTaskForSquadLeaderWithRunMode(ctx, issue, trigger.Agent.ID, triggerCommentID, runMode); err != nil {
 				slog.Warn("enqueue squad leader mention task failed",
 					"issue_id", uuidToString(issue.ID),
 					"agent_id", uuidToString(trigger.Agent.ID),
 					"error", err)
 			}
 		case commentTriggerSourceMentionAgent:
-			if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, trigger.Agent.ID, triggerCommentID); err != nil {
+			if _, err := h.TaskService.EnqueueTaskForMentionWithRunMode(ctx, issue, trigger.Agent.ID, triggerCommentID, runMode); err != nil {
 				slog.Warn("enqueue mention agent task failed",
 					"issue_id", uuidToString(issue.ID),
 					"agent_id", uuidToString(trigger.Agent.ID),

@@ -600,13 +600,15 @@ export function useCreateComment(issueId: string) {
       parentId,
       attachmentIds,
       suppressAgentIds,
+      runMode,
     }: {
       content: string;
       type?: string;
       parentId?: string;
       attachmentIds?: string[];
       suppressAgentIds?: string[];
-    }) => api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds),
+      runMode?: import("../types").AgentRunMode;
+    }) => api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, runMode),
     onSuccess: (comment) => {
       const entry: TimelineEntry = {
         type: "comment",

@@ -452,13 +452,10 @@ func TestCreateComment_DualRoleAgentWorkerCommentWakesLeader(t *testing.T) {
 	}
 }
 
-// TestCreateRetryTask_InheritsIsLeaderTask locks the retry-clone contract for
-// MUL-2218: auto-retry of a leader-role task must produce a child task that is
-// also is_leader_task=true. Without this, MaybeRetryFailedTask silently
-// demotes a retried leader task to a worker task, and the self-trigger guard
-// in computeAssignedSquadLeaderCommentTrigger / comment.go stops recognising the
-// retried leader's own comments — re-opening the bug this issue fixes.
-func TestCreateRetryTask_InheritsIsLeaderTask(t *testing.T) {
+// TestCreateRetryTask_InheritsTaskExecutionSettings locks the retry-clone
+// contract: role and per-run behavior are properties of the attempted run and
+// must survive an automatic retry.
+func TestCreateRetryTask_InheritsTaskExecutionSettings(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -478,18 +475,19 @@ func TestCreateRetryTask_InheritsIsLeaderTask(t *testing.T) {
 	cases := []struct {
 		name     string
 		isLeader bool
+		runMode  string
 	}{
-		{name: "leader task retry stays leader", isLeader: true},
-		{name: "worker task retry stays worker", isLeader: false},
+		{name: "leader debug task retry preserves settings", isLeader: true, runMode: "debug"},
+		{name: "worker plan task retry preserves settings", isLeader: false, runMode: "plan"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var parentID string
 			if err := testPool.QueryRow(ctx, `
-				INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, attempt, max_attempts, is_leader_task)
-				VALUES ($1, $2, $3, 'failed', 1, 3, $4)
+				INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, attempt, max_attempts, is_leader_task, run_mode)
+				VALUES ($1, $2, $3, 'failed', 1, 3, $4, $5)
 				RETURNING id
-			`, fx.LeaderID, runtimeID, issueID, tc.isLeader).Scan(&parentID); err != nil {
+			`, fx.LeaderID, runtimeID, issueID, tc.isLeader, tc.runMode).Scan(&parentID); err != nil {
 				t.Fatalf("seed parent task: %v", err)
 			}
 			t.Cleanup(func() {
@@ -502,6 +500,9 @@ func TestCreateRetryTask_InheritsIsLeaderTask(t *testing.T) {
 			}
 			if child.IsLeaderTask != tc.isLeader {
 				t.Fatalf("child.IsLeaderTask = %v, want %v (parent role must be inherited)", child.IsLeaderTask, tc.isLeader)
+			}
+			if child.RunMode != tc.runMode {
+				t.Fatalf("child.RunMode = %q, want %q (parent run mode must be inherited)", child.RunMode, tc.runMode)
 			}
 		})
 	}

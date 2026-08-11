@@ -286,6 +286,7 @@ type AgentTaskResponse struct {
 	// daemons ignore the field (omitempty).
 	IssueBody        string                `json:"issue_body,omitempty"`
 	Status           string                `json:"status"`
+	RunMode          string                `json:"run_mode"`
 	Priority         int32                 `json:"priority"`
 	DispatchedAt     *string               `json:"dispatched_at"`
 	StartedAt        *string               `json:"started_at"`
@@ -449,6 +450,7 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		IssueID:          uuidToString(t.IssueID),
 		WorkspaceID:      workspaceID,
 		Status:           t.Status,
+		RunMode:          t.RunMode,
 		Priority:         t.Priority,
 		DispatchedAt:     timestampToPtr(t.DispatchedAt),
 		StartedAt:        timestampToPtr(t.StartedAt),

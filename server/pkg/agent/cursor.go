@@ -395,6 +395,8 @@ var cursorBlockedArgs = map[string]blockedArgMode{
 	"-p":              blockedStandalone, // non-interactive print mode
 	"--output-format": blockedWithValue,  // stream-json protocol
 	"--yolo":          blockedStandalone, // auto-approval for autonomous operation
+	"--mode":          blockedWithValue,  // per-task run mode is server-owned
+	"--plan":          blockedStandalone, // shorthand for --mode=plan
 }
 
 // buildCursorArgs assembles the argv for a one-shot cursor-agent invocation.
@@ -413,6 +415,9 @@ func buildCursorArgs(prompt string, opts ExecOptions, logger *slog.Logger) []str
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
+	}
+	if opts.RunMode == "plan" {
+		args = append(args, "--mode", "plan")
 	}
 	// NOTE: cursor-agent CLI does not support --system-prompt or --max-turns.
 	// Instructions are injected via AGENTS.md and .cursor/skills/ files instead.

@@ -62,6 +62,16 @@ func TestBuildCursorArgsWithResume(t *testing.T) {
 	}
 }
 
+func TestBuildCursorArgsUsesNativePlanMode(t *testing.T) {
+	t.Parallel()
+
+	args := buildCursorArgs("inspect and plan", ExecOptions{RunMode: "plan"}, slog.Default())
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--mode plan") {
+		t.Fatalf("plan run must use Cursor native read-only mode, got %v", args)
+	}
+}
+
 func TestBuildCursorArgsMinimal(t *testing.T) {
 	t.Parallel()
 

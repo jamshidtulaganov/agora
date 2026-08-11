@@ -236,6 +236,7 @@ describe("ApiClient", () => {
       "parent-1",
       ["attachment-1"],
       ["agent-1"],
+      "plan",
     );
 
     expect(fetchMock.mock.calls.map(([url, init]) => ({
@@ -257,6 +258,7 @@ describe("ApiClient", () => {
           parent_id: "parent-1",
           attachment_ids: ["attachment-1"],
           suppress_agent_ids: ["agent-1"],
+          run_mode: "plan",
         }),
       },
     ]);

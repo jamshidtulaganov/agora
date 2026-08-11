@@ -1615,7 +1615,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			if resp.Agent != nil {
 				protocolKind := h.taskTriggerSliceActionKind(r.Context(), task.TriggerCommentID)
 				if claimNeedsIssueWorkMode(task.OrchestrationStepID.Valid, resp.OrchestrationStage, resp.OrchestrationStepKind, protocolKind) {
-					if note := taskModeInstructionForClaim(h.issueTaskType(r.Context(), issue), resp.OrchestrationStage); note != "" {
+					if note := taskRunModeInstructionForClaim(task.RunMode, h.issueTaskType(r.Context(), issue), resp.OrchestrationStage); note != "" {
 						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
 					}
 				}

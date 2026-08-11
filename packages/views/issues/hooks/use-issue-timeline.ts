@@ -259,10 +259,10 @@ export function useIssueTimeline(issueId: string, userId?: string) {
   // --- Mutation functions ---
 
   const submitComment = useCallback(
-    async (content: string, attachmentIds?: string[], suppressAgentIds?: string[]) => {
+    async (content: string, attachmentIds?: string[], suppressAgentIds?: string[], runMode?: import("@agora/core/types").AgentRunMode) => {
       if (!content.trim() || !userId) return;
       try {
-        await createComment({ content, attachmentIds, suppressAgentIds });
+        await createComment({ content, attachmentIds, suppressAgentIds, runMode });
       } catch (err) {
         toast.error(
           err instanceof Error && err.message

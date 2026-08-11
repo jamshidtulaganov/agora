@@ -77,6 +77,37 @@ func TestPlanningStageInstructionDoesNotImplement(t *testing.T) {
 	}
 }
 
+func TestExplicitTaskRunModesOverrideIssueType(t *testing.T) {
+	debug := taskRunModeInstructionForClaim("debug", "feature", "")
+	for _, want := range []string{"RUN MODE — DEBUG", "Reproduce", "root cause", "smallest causal fix"} {
+		if !strings.Contains(debug, want) {
+			t.Errorf("debug override missing %q: %s", want, debug)
+		}
+	}
+	if strings.Contains(debug, "PLAN THEN BUILD") {
+		t.Fatalf("debug override leaked feature auto behavior: %s", debug)
+	}
+
+	plan := taskRunModeInstructionForClaim("plan", "bug", "")
+	for _, want := range []string{"RUN MODE — PLAN", "read-only planning", "Do not edit files", "implementation-ready plan"} {
+		if !strings.Contains(plan, want) {
+			t.Errorf("plan override missing %q: %s", want, plan)
+		}
+	}
+
+	build := taskRunModeInstructionForClaim("build", "question", "")
+	for _, want := range []string{"RUN MODE — BUILD", "Implement the accepted request now", "acceptance criteria", "verification"} {
+		if !strings.Contains(build, want) {
+			t.Errorf("build override missing %q: %s", want, build)
+		}
+	}
+
+	auto := taskRunModeInstructionForClaim("auto", "bug", "")
+	if !strings.Contains(auto, "ISSUE WORKFLOW — DEBUGGING") {
+		t.Fatalf("auto mode did not preserve type:bug behavior: %s", auto)
+	}
+}
+
 func TestClaimNeedsIssueWorkMode(t *testing.T) {
 	cases := []struct {
 		name          string

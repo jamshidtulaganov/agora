@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Ban, CheckCircle2, ChevronRight, ExternalLink, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
+import { Ban, Bug, CheckCircle2, ChevronRight, ExternalLink, Hammer, ListChecks, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { issueKeys } from "@agora/core/issues/queries";
@@ -317,6 +317,7 @@ export function ActiveTaskRow({
   return (
     <RowShell task={task}>
       <TriggerText text={trigger} />
+      <RunModeBadge mode={task.run_mode} />
       <RowStatus title={label}>
         {task.status === "running" ? (
           <>
@@ -414,6 +415,7 @@ export function PastRow({ task, issueId }: { task: AgentTask; issueId: string })
   return (
     <RowShell task={task}>
       <TriggerText text={trigger} />
+      <RunModeBadge mode={task.run_mode} />
       <RowStatus title={failureLabel ?? label}>
         <TaskStatusIcon status={task.status} />
         <span className="sr-only">{failureLabel ?? label}</span>
@@ -494,6 +496,31 @@ function RowShell({
 
 function TriggerText({ text }: { text: string }) {
   return <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{text}</span>;
+}
+
+function RunModeBadge({ mode }: { mode: AgentTask["run_mode"] }) {
+  const { t } = useT("issues");
+  if (!mode || mode === "auto") return null;
+  const config = {
+    debug: { icon: Bug, label: t(($) => $.comment.run_mode_debug), description: t(($) => $.comment.run_mode_debug_desc) },
+    plan: { icon: ListChecks, label: t(($) => $.comment.run_mode_plan), description: t(($) => $.comment.run_mode_plan_desc) },
+    build: { icon: Hammer, label: t(($) => $.comment.run_mode_build), description: t(($) => $.comment.run_mode_build_desc) },
+  }[mode];
+  if (!config) return null;
+  const Icon = config.icon;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="inline-flex shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground" />
+        }
+      >
+        <Icon className="size-3" />
+        {config.label}
+      </TooltipTrigger>
+      <TooltipContent>{config.description}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function RowStatus({

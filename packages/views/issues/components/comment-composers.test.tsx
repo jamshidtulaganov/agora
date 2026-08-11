@@ -114,7 +114,8 @@ function renderReplyInput({
 }
 
 function getSubmitButton(container: HTMLElement): HTMLButtonElement {
-  const button = container.querySelectorAll("button")[1];
+  const buttons = container.querySelectorAll("button");
+  const button = buttons[buttons.length - 1];
   if (!button) throw new Error("Expected submit button to render");
   return button;
 }
@@ -130,7 +131,8 @@ describe("comment composers", () => {
 
     expect(screen.getByPlaceholderText("Leave a comment...")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Attach file" })).toBeInTheDocument();
-    expect(container.querySelectorAll("button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Run mode: Auto" })).toBeInTheDocument();
+    expect(container.querySelectorAll("button")).toHaveLength(3);
 
     const shell = screen.getByTestId("drop-zone");
     expect(shell.className).not.toMatch(/max-h-/);
@@ -168,7 +170,22 @@ describe("comment composers", () => {
     fireEvent.click(getSubmitButton(container));
 
     await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith("hello from composer", undefined, undefined);
+      expect(onSubmit).toHaveBeenCalledWith("hello from composer", undefined, undefined, "auto");
+    });
+  });
+
+  it("sends the selected run mode with the individual comment-triggered run", async () => {
+    const { container, onSubmit } = renderCommentInput();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run mode: Auto" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Debug/ }));
+    fireEvent.change(screen.getByTestId("editor"), {
+      target: { value: "find the root cause" },
+    });
+    fireEvent.click(getSubmitButton(container));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith("find the root cause", undefined, undefined, "debug");
     });
   });
 

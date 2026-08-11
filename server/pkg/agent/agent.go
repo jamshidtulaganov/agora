@@ -24,6 +24,10 @@ type Backend interface {
 type ExecOptions struct {
 	Cwd   string
 	Model string
+	// RunMode is the per-task human override. Cursor receives plan through its
+	// native read-only CLI mode; all providers also receive the server-authored
+	// execution contract in their task instructions.
+	RunMode string
 	// SystemPrompt is consumed only by providers that can pass or safely inline
 	// developer/system instructions. Hermes ACP intentionally ignores it and
 	// relies on cwd-scoped context files such as AGENTS.md instead.

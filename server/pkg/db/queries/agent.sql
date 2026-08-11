@@ -141,7 +141,7 @@ ORDER BY created_at DESC;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     trigger_summary, force_fresh_session, is_leader_task, model_override,
-    thinking_level_override, orchestration_step_id
+    thinking_level_override, orchestration_step_id, run_mode
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
@@ -149,7 +149,8 @@ VALUES (
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
     sqlc.narg('model_override'), sqlc.narg('thinking_level_override'),
-    sqlc.narg('orchestration_step_id')
+    sqlc.narg('orchestration_step_id'),
+    COALESCE(sqlc.narg('run_mode')::text, 'auto')
 )
 RETURNING *;
 
@@ -187,7 +188,7 @@ INSERT INTO agent_task_queue (
     status, priority, trigger_comment_id, trigger_summary, context,
     session_id, work_dir,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    model_override, thinking_level_override
+    model_override, thinking_level_override, run_mode
 )
 SELECT
     p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -197,7 +198,7 @@ SELECT
     p.attempt + 1, p.max_attempts, p.id,
     p.failure_reason IS NOT DISTINCT FROM 'codex_semantic_inactivity',
     p.is_leader_task,
-    p.model_override, p.thinking_level_override
+    p.model_override, p.thinking_level_override, p.run_mode
 FROM agent_task_queue p
 WHERE p.id = $1
 RETURNING *;
@@ -214,7 +215,7 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, trigger_summary, context,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    model_override, thinking_level_override
+    model_override, thinking_level_override, run_mode
 )
 SELECT
     p.agent_id, sqlc.arg('runtime_id'), p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -222,7 +223,7 @@ SELECT
     p.attempt, p.max_attempts, p.id,
     true,
     p.is_leader_task,
-    p.model_override, p.thinking_level_override
+    p.model_override, p.thinking_level_override, p.run_mode
 FROM agent_task_queue p
 WHERE p.id = sqlc.arg('parent_id')
 RETURNING *;

@@ -6,17 +6,18 @@ import { FileUploadButton } from "@agora/ui/components/common/file-upload-button
 import { SubmitButton } from "@agora/ui/components/common/submit-button";
 import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { api } from "@agora/core/api";
-import type { Attachment } from "@agora/core/types";
+import type { AgentRunMode, Attachment } from "@agora/core/types";
 import { contentReferencesAttachment } from "@agora/core/types";
 import { enterKey, formatShortcut, modKey } from "@agora/core/platform";
 import { useCommentDraftStore } from "@agora/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";
+import { RunModePicker } from "./run-mode-picker";
 
 interface CommentInputProps {
   issueId: string;
-  onSubmit: (content: string, attachmentIds?: string[], suppressAgentIds?: string[]) => Promise<void>;
+  onSubmit: (content: string, attachmentIds?: string[], suppressAgentIds?: string[], runMode?: AgentRunMode) => Promise<void>;
 }
 
 function CommentInput({ issueId, onSubmit }: CommentInputProps) {
@@ -31,6 +32,7 @@ function CommentInput({ issueId, onSubmit }: CommentInputProps) {
   const [content, setContent] = useState(initialDraft ?? "");
   const [isEmpty, setIsEmpty] = useState(() => !initialDraft?.trim());
   const [submitting, setSubmitting] = useState(false);
+  const [runMode, setRunMode] = useState<AgentRunMode>("auto");
   const [suppressedAgentIds, setSuppressedAgentIds] = useState<Set<string>>(() => new Set());
   const triggerPreview = useCommentTriggerPreview({ issueId, content });
   // Attachments uploaded in this composer session. Drives both:
@@ -107,6 +109,7 @@ function CommentInput({ issueId, onSubmit }: CommentInputProps) {
         content,
         activeIds.length > 0 ? activeIds : undefined,
         suppressAgentIds.length > 0 ? suppressAgentIds : undefined,
+        runMode,
       );
       editorRef.current?.clearContent();
       setContent("");
@@ -147,7 +150,7 @@ function CommentInput({ issueId, onSubmit }: CommentInputProps) {
           slashCommandMode="command"
         />
       </div>
-      <div className="absolute bottom-1 left-2 right-28 min-w-0">
+      <div className="absolute bottom-1 left-2 right-48 min-w-0">
         <CommentTriggerChips
           agents={triggerPreview.agents}
           suppressedAgentIds={suppressedAgentIds}
@@ -155,6 +158,7 @@ function CommentInput({ issueId, onSubmit }: CommentInputProps) {
         />
       </div>
       <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
+        <RunModePicker value={runMode} onChange={setRunMode} />
         <FileUploadButton
           size="sm"
           multiple
