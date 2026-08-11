@@ -40,8 +40,9 @@ describe("desktop router covers the shared sidebar", () => {
     ).toEqual([]);
   });
 
-  // Guards the specific regression: these three were the ones that 404'd.
-  it.each(["aiAccounts", "plugins", "mcp"])("serves /%s", (key) => {
+  // Guards specific regressions: these shared navigation destinations were
+  // linked from desktop UI before the hand-maintained router served them.
+  it.each(["aiAccounts", "plugins", "mcp", "bitrix"])("serves /%s", (key) => {
     const url = (ws as unknown as Record<string, () => string>)[key]!();
     const matches = matchRoutes(appRoutes, url);
     expect(matches, `no route matched ${url}`).not.toBeNull();

@@ -29,6 +29,7 @@ import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@agora/views/squads/components";
 import { InboxPage } from "@agora/views/inbox";
+import { BitrixPage } from "@agora/views/bitrix";
 import { SettingsPage } from "@agora/views/settings";
 import { useT } from "@agora/views/i18n";
 import { Download, Server } from "lucide-react";
@@ -213,6 +214,11 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Squad" },
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
+          {
+            path: "bitrix",
+            element: <BitrixPage />,
+            handle: { title: "Bitrix" },
+          },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,
