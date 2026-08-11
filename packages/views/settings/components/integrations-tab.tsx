@@ -123,7 +123,15 @@ export function IntegrationsTab() {
           icon={<Send className="h-4 w-4" />}
           name={t(($) => $.integrations.telegram.name)}
           description={t(($) => $.integrations.telegram.description)}
-          status={status(telegramData?.configured === true)}
+          // `configured` only means the server has a seal key and can accept
+          // bot tokens. Calling that Connected produced a green badge beside
+          // an empty "No bots connected" panel. Connection state is the
+          // workspace's active per-agent installations instead.
+          status={status(
+            (telegramData?.installations ?? []).some(
+              (installation) => installation.status === "active",
+            ),
+          )}
         >
           <TelegramTab />
         </IntegrationCard>
