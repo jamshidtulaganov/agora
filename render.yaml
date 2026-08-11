@@ -57,8 +57,9 @@ services:
         value: sales-doctor
       - key: BITRIX_TARGET_PROJECT
         value: Bitrix
+      # Bitrix portal EMAIL (one "a": tulaganov). Agora login may differ.
       - key: BITRIX_SYNC_USER_EMAILS
-        value: j.tulaaganov@salesdoc.io
+        value: j.tulaganov@salesdoc.io
       - key: BITRIX_PROVISION_ASSIGNEES
         value: "true"
       # Webhooks provide real-time sync; polling reconciles missed deliveries.
@@ -74,6 +75,7 @@ services:
         value: "false"
       - key: BITRIX_PUSH_HUMAN_COMMENTS
         value: "true"
+      # Agora account email for outbound gate (may differ from Bitrix EMAIL).
       - key: BITRIX_OUTBOUND_USER_EMAIL
         value: j.tulaaganov@salesdoc.io
       - key: AGORA_BITRIX_BULK_IMPORT
