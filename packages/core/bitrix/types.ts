@@ -2,6 +2,8 @@
 // server/internal/handler/bitrix_endpoints.go (BitrixGroupResponse,
 // BitrixTaskResponse, BitrixImportRequest/Response).
 
+import { z } from "zod";
+
 /** One Bitrix workgroup, annotated with the Agora workspace slug it routes to. */
 export interface BitrixGroup {
   id: string;
@@ -70,6 +72,25 @@ export interface BitrixImportResponse {
   accepted?: number;
   errors: string[];
 }
+
+/** Runtime-safe wire schema for both selected and self-scoped imports. */
+export const BitrixImportResponseSchema = z
+  .object({
+    created: z.number().default(0),
+    updated: z.number().default(0),
+    skipped: z.number().default(0),
+    accepted: z.number().optional(),
+    errors: z.array(z.string()).nullish().transform((value) => value ?? []),
+  })
+  .loose();
+
+export const EMPTY_BITRIX_IMPORT_RESPONSE: BitrixImportResponse = {
+  created: 0,
+  updated: 0,
+  skipped: 0,
+  accepted: 0,
+  errors: [],
+};
 
 /** Result of an on-demand per-project Bitrix re-sync. The sync is asynchronous
  * (202 + background); `accepted` is how many tasks were enqueued and

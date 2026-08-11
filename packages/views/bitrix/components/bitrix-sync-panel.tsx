@@ -9,6 +9,7 @@ import {
   bitrixUsersOptions,
   bitrixImportProgressOptions,
   useImportBitrixTasks,
+  useImportMyBitrixTasks,
   type BitrixImportResponse,
   type BitrixImportProgressItem,
 } from "@agora/core/bitrix";
@@ -83,6 +84,7 @@ export function BitrixSyncPanel() {
   const groupsQuery = useQuery(bitrixGroupsOptions());
   const usersQuery = useQuery(bitrixUsersOptions());
   const importMut = useImportBitrixTasks();
+  const importMineMut = useImportMyBitrixTasks();
 
   // Poll live import progress while a run is in flight (started this session).
   const [polling, setPolling] = useState(false);
@@ -165,6 +167,17 @@ export function BitrixSyncPanel() {
     );
   }
 
+  function runMyImport() {
+    setPolling(false);
+    setResult(null);
+    importMineMut.mutate(undefined, {
+      onSuccess: (r) => {
+        setResult(r);
+        setPolling(true);
+      },
+    });
+  }
+
   function switchMode(next: Mode) {
     setMode(next);
     setFilter("");
@@ -188,9 +201,18 @@ export function BitrixSyncPanel() {
             <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
           </Button>
           <Button
+            variant="outline"
+            size="sm"
+            onClick={runMyImport}
+            disabled={importMineMut.isPending || importMut.isPending || progress?.running}
+          >
+            {importMineMut.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+            Import my tasks
+          </Button>
+          <Button
             size="sm"
             onClick={runImport}
-            disabled={!totalSelected || importMut.isPending || progress?.running}
+            disabled={!totalSelected || importMut.isPending || importMineMut.isPending || progress?.running}
           >
             {importMut.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
             Import{totalSelected ? ` ${totalSelected}` : ""}
@@ -248,6 +270,12 @@ export function BitrixSyncPanel() {
         {importMut.isError && (
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             Import failed: {(importMut.error as Error)?.message}
+          </div>
+        )}
+
+        {importMineMut.isError && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Could not import your tasks: {(importMineMut.error as Error)?.message}
           </div>
         )}
 

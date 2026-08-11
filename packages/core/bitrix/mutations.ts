@@ -23,6 +23,20 @@ export function useImportBitrixTasks() {
   });
 }
 
+/** Import tasks assigned to the authenticated user's linked Bitrix identity.
+ * Unlike the selector import, this is available to every workspace member. */
+export function useImportMyBitrixTasks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.importMyBitrixTasks(),
+    retry: false,
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: bitrixKeys.all });
+      qc.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
+
 /** Re-sync a single Bitrix-linked project on demand. The server stamps the
  * project's bitrix_synced_at synchronously (before the 202), so refetching the
  * project surfaces the new "last synced" immediately; the synced issues stream

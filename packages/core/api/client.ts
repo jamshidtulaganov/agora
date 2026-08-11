@@ -175,6 +175,10 @@ import type {
   BitrixImportProgress,
   BitrixSyncResult,
 } from "../bitrix/types";
+import {
+  BitrixImportResponseSchema,
+  EMPTY_BITRIX_IMPORT_RESPONSE,
+} from "../bitrix/types";
 import type {
   ZohoProject,
   ZohoImportRequest,
@@ -2539,9 +2543,22 @@ export class ApiClient {
   async importBitrixTasks(
     req: BitrixImportRequest,
   ): Promise<BitrixImportResponse> {
-    return this.fetch(`/api/bitrix/import`, {
+    const raw = await this.fetch<unknown>(`/api/bitrix/import`, {
       method: "POST",
       body: JSON.stringify(req),
+    });
+    return parseWithFallback(raw, BitrixImportResponseSchema, EMPTY_BITRIX_IMPORT_RESPONSE, {
+      endpoint: "POST /api/bitrix/import",
+    });
+  }
+
+  /** Import only tasks assigned to the caller's linked Bitrix identity. */
+  async importMyBitrixTasks(): Promise<BitrixImportResponse> {
+    const raw = await this.fetch<unknown>(`/api/bitrix/import/mine`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, BitrixImportResponseSchema, EMPTY_BITRIX_IMPORT_RESPONSE, {
+      endpoint: "POST /api/bitrix/import/mine",
     });
   }
 

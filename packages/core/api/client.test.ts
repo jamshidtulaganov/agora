@@ -5,6 +5,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("Bitrix import API", () => {
+  it("uses the self-scoped endpoint for the caller's own tasks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ accepted: 4, errors: [] }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    const response = await client.importMyBitrixTasks();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/bitrix/import/mine",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(response).toMatchObject({ accepted: 4, errors: [] });
+  });
+});
+
 describe("ApiClient", () => {
   it("sends the rendered orchestration question identity with an answer", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
