@@ -52,6 +52,8 @@ function sanitizeSuggestedFilename(filename?: string): string | undefined {
     .replaceAll("\\", "/")
     .split("/")
     .at(-1)
+    // ASCII control characters are never valid in the suggested OS filename.
+    // eslint-disable-next-line no-control-regex
     ?.replace(/[\u0000-\u001f\u007f]/g, "")
     .trim();
   if (!basename || basename === "." || basename === "..") return undefined;
