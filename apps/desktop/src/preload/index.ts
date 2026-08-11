@@ -104,10 +104,11 @@ const desktopAPI = {
   /** Open a URL in the default browser */
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
   /** Download a file by URL through Electron's native download system.
-   *  Shows a save dialog and saves to disk. Unlike openExternal, this
-   *  avoids browser rendering of HTML files on Linux.
+   *  Shows a save dialog using the optional original filename and saves to
+   *  disk. Unlike openExternal, this avoids browser rendering of HTML files.
    *  On non-desktop platforms this property is undefined. */
-  downloadURL: (url: string) => ipcRenderer.invoke("file:download-url", url),
+  downloadURL: (url: string, suggestedFilename?: string) =>
+    ipcRenderer.invoke("file:download-url", url, suggestedFilename),
   /** Toggle immersive mode — hide macOS traffic lights for full-screen modals */
   setImmersiveMode: (immersive: boolean) =>
     ipcRenderer.invoke("window:setImmersive", immersive),

@@ -1,11 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("electron", () => ({
+  app: { getPath: vi.fn(() => "/Users/test/Downloads") },
   shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
 }));
 
 import { shell } from "electron";
-import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
+import {
+  downloadURLSafely,
+  isSafeExternalHttpUrl,
+  openExternalSafely,
+} from "./external-url";
 
 describe("isSafeExternalHttpUrl", () => {
   it("allows http and https URLs", () => {
@@ -69,5 +74,63 @@ describe("openExternalSafely", () => {
     openExternalSafely("javascript:alert(1)");
     openExternalSafely("not a url");
     expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe("downloadURLSafely", () => {
+  it("uses the attachment filename in Electron's native save dialog", () => {
+    const setSaveDialogOptions = vi.fn();
+    let willDownload: ((event: unknown, item: unknown) => void) | undefined;
+    const downloadURL = vi.fn(() => {
+      willDownload?.({}, { setSaveDialogOptions });
+    });
+    const win = {
+      webContents: {
+        downloadURL,
+        session: {
+          once: vi.fn((_event, listener) => {
+            willDownload = listener;
+          }),
+        },
+      },
+    };
+
+    downloadURLSafely(
+      win as never,
+      "https://api.example.test/api/attachments/att-1/download",
+      "invoice-status.png",
+    );
+
+    expect(downloadURL).toHaveBeenCalledOnce();
+    expect(setSaveDialogOptions).toHaveBeenCalledWith({
+      defaultPath: "/Users/test/Downloads/invoice-status.png",
+    });
+  });
+
+  it("removes path traversal from renderer-provided filenames", () => {
+    const setSaveDialogOptions = vi.fn();
+    let willDownload: ((event: unknown, item: unknown) => void) | undefined;
+    const win = {
+      webContents: {
+        downloadURL: vi.fn(() => {
+          willDownload?.({}, { setSaveDialogOptions });
+        }),
+        session: {
+          once: vi.fn((_event, listener) => {
+            willDownload = listener;
+          }),
+        },
+      },
+    };
+
+    downloadURLSafely(
+      win as never,
+      "https://cdn.example.test/image",
+      "../../private\\invoice.png",
+    );
+
+    expect(setSaveDialogOptions).toHaveBeenCalledWith({
+      defaultPath: "/Users/test/Downloads/invoice.png",
+    });
   });
 });

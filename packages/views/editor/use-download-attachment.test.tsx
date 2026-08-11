@@ -86,9 +86,7 @@ describe("useDownloadAttachment (web)", () => {
     expect(anchor!.href).toBe(
       "http://localhost:3000/api/attachments/att-1/download?workspace_slug=acme",
     );
-    // Empty download attribute intentionally defers the final filename to the
-    // endpoint / redirected object Content-Disposition header.
-    expect(anchor!.getAttribute("download")).toBe("");
+    expect(anchor!.getAttribute("download")).toBe("file.md");
     expect(anchor!.isConnected).toBe(false);
   });
 
@@ -218,7 +216,7 @@ describe("useDownloadAttachment (desktop)", () => {
     // No placeholder — Electron's setWindowOpenHandler would reject
     // about:blank, so we go straight to the platform's IPC bridge.
     expect(openSpy).not.toHaveBeenCalled();
-    expect(downloadURL).toHaveBeenCalledWith(SIGNED_URL);
+    expect(downloadURL).toHaveBeenCalledWith(SIGNED_URL, "file.md");
   });
 
   it("shows a toast when the API rejects on desktop", async () => {
@@ -264,6 +262,7 @@ describe("useDownloadAttachment (desktop)", () => {
 
     expect(downloadURL).toHaveBeenCalledWith(
       "https://api.example.test/api/attachments/att-1/download",
+      "file.md",
     );
   });
 
@@ -288,6 +287,7 @@ describe("useDownloadAttachment (desktop)", () => {
 
     expect(downloadURL).toHaveBeenCalledWith(
       "https://api.example.test/api/attachments/att-1/download",
+      "file.md",
     );
   });
 
@@ -312,6 +312,6 @@ describe("useDownloadAttachment (desktop)", () => {
       await result.current("att-1");
     });
 
-    expect(downloadURL).toHaveBeenCalledWith(SIGNED_URL);
+    expect(downloadURL).toHaveBeenCalledWith(SIGNED_URL, "file.md");
   });
 });

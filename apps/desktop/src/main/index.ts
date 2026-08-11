@@ -404,13 +404,18 @@ if (!gotTheLock) {
       return openExternalSafely(url);
     });
 
-    ipcMain.handle("file:download-url", (_event, url: string) => {
-      if (!mainWindow) {
-        console.warn("[download] ignored file:download-url — mainWindow torn down");
-        return;
-      }
-      downloadURLSafely(mainWindow, url);
-    });
+    ipcMain.handle(
+      "file:download-url",
+      (_event, url: string, suggestedFilename?: string) => {
+        if (!mainWindow) {
+          console.warn(
+            "[download] ignored file:download-url — mainWindow torn down",
+          );
+          return;
+        }
+        downloadURLSafely(mainWindow, url, suggestedFilename);
+      },
+    );
 
     // Deep link that arrived before the renderer subscribed (cold start via
     // link tap). Single-consume; see the pendingDeepLink comment above.

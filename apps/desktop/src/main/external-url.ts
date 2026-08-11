@@ -1,4 +1,5 @@
-import { shell, type BrowserWindow } from "electron";
+import { app, shell, type BrowserWindow } from "electron";
+import { join } from "node:path";
 
 // True when the URL parses and uses http/https — the only schemes we let
 // reach `shell.openExternal`. Scheme comparison is safe because the WHATWG
@@ -24,12 +25,37 @@ export function openExternalSafely(url: string): Promise<void> | void {
 // to `webContents.downloadURL` elsewhere in the main process are banned by
 // the no-restricted-syntax rule in apps/desktop/eslint.config.mjs.
 // Reuses the same http/https allowlist as openExternalSafely.
-export function downloadURLSafely(win: BrowserWindow, url: string): void {
+export function downloadURLSafely(
+  win: BrowserWindow,
+  url: string,
+  suggestedFilename?: string,
+): void {
   if (getHttpProtocol(url) === null) {
     console.warn(`[security] blocked downloadURL: ${describeScheme(url)}`);
     return;
   }
+
+  const filename = sanitizeSuggestedFilename(suggestedFilename);
+  if (filename) {
+    win.webContents.session.once("will-download", (_event, item) => {
+      item.setSaveDialogOptions({
+        defaultPath: join(app.getPath("downloads"), filename),
+      });
+    });
+  }
   win.webContents.downloadURL(url);
+}
+
+function sanitizeSuggestedFilename(filename?: string): string | undefined {
+  if (!filename) return undefined;
+  const basename = filename
+    .replaceAll("\\", "/")
+    .split("/")
+    .at(-1)
+    ?.replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim();
+  if (!basename || basename === "." || basename === "..") return undefined;
+  return basename;
 }
 
 function getHttpProtocol(url: string): "http:" | "https:" | null {

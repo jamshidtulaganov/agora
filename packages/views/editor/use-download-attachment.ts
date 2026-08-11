@@ -8,7 +8,10 @@ import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useT } from "../i18n";
 
 interface DesktopBridge {
-  downloadURL?: (u: string) => Promise<void> | void;
+  downloadURL?: (
+    url: string,
+    suggestedFilename?: string,
+  ) => Promise<void> | void;
 }
 
 function attachmentDownloadEndpoint(
@@ -21,16 +24,15 @@ function attachmentDownloadEndpoint(
   return resolvePublicFileUrl(endpoint) ?? endpoint;
 }
 
-function triggerBrowserDownload(url: string): void {
+function triggerBrowserDownload(url: string, filename: string): void {
   const anchor = document.createElement("a");
   anchor.href = url;
   // Keep the click in the current browsing context. For same-origin API
-  // downloads this hint lets Chromium/Safari use Content-Disposition's
-  // filename without opening a blank tab. If the endpoint later 302s to
-  // CloudFront/S3, the server signs that redirect with an attachment
-  // disposition; the browser follows it natively without buffering the file
-  // into JS memory.
-  anchor.download = "";
+  // downloads the explicit attachment filename avoids Chromium guessing from
+  // the endpoint's trailing `/download` segment. If the endpoint later 302s
+  // to CloudFront/S3, the server also signs that redirect with an attachment
+  // disposition; the browser follows it natively without buffering the file.
+  anchor.download = filename;
   anchor.rel = "noopener";
   anchor.style.display = "none";
   document.body.appendChild(anchor);
@@ -62,10 +64,10 @@ function hasDesktopDownloadBridge(): boolean {
  *   pipeline.
  *
  * - **Desktop**: uses `desktopAPI.downloadURL()` which invokes Electron's
- *   native `webContents.downloadURL()`, showing a save dialog and saving
- *   the file directly. This avoids the system browser entirely and fixes
- *   the Linux/Ubuntu issue where HTML files are rendered inline instead
- *   of being downloaded.
+ *   native `webContents.downloadURL()`, passing the attachment filename into
+ *   the save dialog and saving the file directly. This avoids the system
+ *   browser entirely and fixes the Linux/Ubuntu issue where HTML files are
+ *   rendered inline instead of being downloaded.
  */
 export function useDownloadAttachment(): (attachmentId: string) => Promise<void> {
   const { t } = useT("editor");
@@ -93,7 +95,7 @@ export function useDownloadAttachment(): (attachmentId: string) => Promise<void>
           const bridge = (
             window as unknown as { desktopAPI?: DesktopBridge }
           ).desktopAPI;
-          await bridge!.downloadURL!(downloadUrl);
+          await bridge!.downloadURL!(downloadUrl, fresh.filename);
         } catch {
           failed();
         }
@@ -106,7 +108,7 @@ export function useDownloadAttachment(): (attachmentId: string) => Promise<void>
         // not use `download_url` here: in CloudFront mode it may already be a
         // signed CDN URL, while the unified endpoint is the stable browser
         // entry point that chooses cloudfront / presign / proxy server-side.
-        await api.getAttachment(attachmentId);
+        const fresh = await api.getAttachment(attachmentId);
         if (typeof document === "undefined") {
           failed();
           return;
@@ -117,6 +119,7 @@ export function useDownloadAttachment(): (attachmentId: string) => Promise<void>
         }
         triggerBrowserDownload(
           attachmentDownloadEndpoint(attachmentId, workspaceSlug),
+          fresh.filename,
         );
       } catch {
         failed();
