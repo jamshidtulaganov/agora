@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   Ban,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -69,22 +68,13 @@ import { formatDuration } from "../../agents/components/agent-activity-hover-con
 import { useT } from "../../i18n";
 import { useTaskLive } from "./stage-live-process";
 import {
-  latestCompletedOrchestrationHandoff,
   isManualOrchestrationBatchPaused,
-  orchestrationDisplayGroups,
   orchestrationDisplayKind,
   orchestrationHandoff,
   orchestrationStepDisplayTitle,
   orchestrationTitleRepeatsKind,
   type OrchestrationDisplayKind,
 } from "./orchestration-display";
-
-const ACTIVE_TASK_STATUSES = new Set<AgentTask["status"]>([
-  "queued",
-  "dispatched",
-  "waiting_local_directory",
-  "running",
-]);
 
 const COMPLETE_STEP_STATUSES = new Set<OrchestrationStep["status"]>(["completed", "skipped"]);
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -126,15 +116,6 @@ function eventLabel(event: OrchestrationEvent, t: IssuesT): string {
     case "run_cancelled": return t(($) => $.execution_surface.event_run_cancelled);
     default: return t(($) => $.execution_surface.event_updated);
   }
-}
-
-function statusTone(status: OrchestrationStep["status"]) {
-  if (status === "completed") return "bg-success";
-  if (status === "failed" || status === "blocked" || status === "cancelled") return "bg-destructive";
-  if (status === "running" || status === "queued") return "bg-brand";
-  if (status === "waiting_approval" || status === "waiting_input") return "bg-warning";
-  if (status === "skipped") return "bg-muted-foreground/30";
-  return "bg-border";
 }
 
 function runStatus(run: OrchestrationRun, t: IssuesT) {
@@ -188,22 +169,6 @@ function actuallyWorking(step: OrchestrationStep, task?: AgentTask) {
   return step.status === "running";
 }
 
-function actuallyWaiting(step: OrchestrationStep, task?: AgentTask) {
-  if (task) return ACTIVE_TASK_STATUSES.has(task.status) && task.status !== "running";
-  return step.status === "queued";
-}
-
-function waitingReason(step: OrchestrationStep, stepByID: Map<string, OrchestrationStep>, t: IssuesT, task?: AgentTask, draft = false) {
-  if (draft) return t(($) => $.execution_surface.waiting_proposed);
-  if (task?.status === "waiting_local_directory") return t(($) => $.execution_surface.waiting_workspace);
-  if (actuallyWaiting(step, task)) return t(($) => $.execution_surface.waiting_agent);
-  const blockers = step.depends_on_step_ids
-    .map((id) => stepByID.get(id))
-    .filter((dependency): dependency is OrchestrationStep => !!dependency && !COMPLETE_STEP_STATUSES.has(dependency.status));
-  if (blockers.length > 0) return t(($) => $.execution_surface.waiting_dependencies, { steps: blockers.map(orchestrationStepDisplayTitle).join(" + ") });
-  return t(($) => $.execution_surface.waiting_capacity);
-}
-
 function displayKindLabel(kind: OrchestrationDisplayKind, t: IssuesT): string {
   switch (kind) {
     case "plan": return t(($) => $.execution_surface.stage_plan);
@@ -215,47 +180,12 @@ function displayKindLabel(kind: OrchestrationDisplayKind, t: IssuesT): string {
   }
 }
 
-function StageRail({ steps }: { steps: OrchestrationStep[] }) {
-  const { t } = useT("issues");
-  const groups = orchestrationDisplayGroups(steps);
-  if (groups.length === 0) return null;
-  return (
-    <div
-      className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-x-3 gap-y-2 border-t pt-3"
-      role="list"
-      aria-label={t(($) => $.execution_surface.stages)}
-    >
-      {groups.map((group) => {
-        const completed = group.steps.filter((step) => COMPLETE_STEP_STATUSES.has(step.status)).length;
-        const label = displayKindLabel(group.kind, t);
-        return (
-          <div key={group.kind} className="min-w-0" role="listitem" aria-label={`${label} ${completed}/${group.steps.length}`}>
-            <div className="mb-1.5 flex items-center gap-1.5 text-[10px]">
-              <span className="truncate font-semibold text-foreground/80">{label}</span>
-              <span className="ml-auto font-mono tabular-nums text-muted-foreground">
-                {completed}/{group.steps.length}
-              </span>
-            </div>
-            <div className="grid h-1.5 grid-flow-col auto-cols-fr gap-1" aria-hidden>
-              {group.steps.map((step) => (
-                <span key={step.id} className={cn("rounded-full transition-colors", statusTone(step.status))} />
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function ExecutionStatusBar({
   run,
   onOpen,
-  onOpenWork,
 }: {
   run: OrchestrationRun;
   onOpen: () => void;
-  onOpenWork?: () => void;
 }) {
   const { t } = useT("issues");
   const startRun = useStartIssueOrchestration();
@@ -264,39 +194,52 @@ function ExecutionStatusBar({
   const status = runStatus(run, t);
   const manualBatchPaused = isManualOrchestrationBatchPaused(run);
   const canStart = run.status === "draft" || manualBatchPaused;
+  const progress = run.steps.length > 0 ? Math.round((completed / run.steps.length) * 100) : 0;
 
   return (
     <div className="rounded-xl border bg-card px-3.5 py-3 shadow-xs sm:px-4">
       <p className="sr-only" aria-live="polite">
         {status.label}. {t(($) => $.detail.orchestration_progress, { completed, count: run.steps.length })}.
       </p>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className={cn("flex items-center gap-2 text-xs font-semibold", status.tone)}>
-          <span className={cn("size-2 rounded-full", status.dot, run.status === "running" && "motion-safe:animate-pulse")} aria-hidden />
-          {status.label}
-        </span>
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {t(($) => $.detail.orchestration_progress, { completed, count: run.steps.length })}
-          {active > 0 ? ` · ${t(($) => $.detail.orchestration_active, { count: active })}` : ""}
-        </span>
-        {canStart && (
-          <Button size="sm" disabled={startRun.isPending} onClick={() => startRun.mutate(run.issue_id)}>
-            {startRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
-            {manualBatchPaused ? t(($) => $.execution_surface.continue_batch) : t(($) => $.detail.orchestration_run)}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className={cn("flex items-center gap-2 text-sm font-semibold", status.tone)}>
+              <span className={cn("size-2 rounded-full", status.dot, run.status === "running" && "motion-safe:animate-pulse")} aria-hidden />
+              {status.label}
+            </span>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {t(($) => $.detail.orchestration_progress, { completed, count: run.steps.length })}
+              {active > 0 ? ` · ${t(($) => $.detail.orchestration_active, { count: active })}` : ""}
+            </span>
+          </div>
+          <div
+            className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label={t(($) => $.detail.orchestration_progress, { completed, count: run.steps.length })}
+            aria-valuemin={0}
+            aria-valuemax={run.steps.length}
+            aria-valuenow={completed}
+          >
+            <div
+              className={cn("h-full rounded-full transition-[width] motion-reduce:transition-none", status.dot)}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {canStart && (
+            <Button size="sm" disabled={startRun.isPending} onClick={() => startRun.mutate(run.issue_id)}>
+              {startRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
+              {manualBatchPaused ? t(($) => $.execution_surface.continue_batch) : t(($) => $.detail.orchestration_run)}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onOpen}>
+            {t(($) => $.execution_surface.details)}
+            <ChevronRight aria-hidden />
           </Button>
-        )}
-        {onOpenWork && (
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={onOpenWork}>
-            <ListTree aria-hidden />
-            {t(($) => $.execution_surface.open_work)}
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" className={cn(!onOpenWork && "ml-auto")} onClick={onOpen}>
-          {t(($) => $.execution_surface.details)}
-          <ChevronRight aria-hidden />
-        </Button>
+        </div>
       </div>
-      <StageRail steps={run.steps} />
     </div>
   );
 }
@@ -317,38 +260,38 @@ function ActionCard({ issueId, step }: { issueId: string; step: OrchestrationSte
   const question = handoff?.question?.prompt;
   const blocker = handoff?.blockers?.join(" · ");
   const title = orchestrationStepDisplayTitle(step);
+  const summary = waitingInput
+    ? question || t(($) => $.execution_surface.action_question_hint)
+    : blocked
+      ? blocker || handoff?.summary || t(($) => $.execution_surface.action_failed_hint)
+      : failed
+        ? step.integration_status === "conflicts"
+          ? t(($) => $.execution_surface.action_conflicts)
+          : handoff?.summary || t(($) => $.execution_surface.action_failed_hint)
+        : step.depends_on_step_ids.length > 0
+          ? t(($) => $.execution_surface.action_prerequisites, { count: step.depends_on_step_ids.length })
+          : t(($) => $.execution_surface.action_approve_hint);
 
   return (
-    <div className={cn("flex flex-col gap-3 rounded-lg border p-3", danger ? "border-destructive/30 bg-destructive/[0.035]" : "border-warning/35 bg-warning/[0.045]")}>
+    <div className={cn("flex flex-col gap-3 rounded-xl border p-4", danger ? "border-destructive/30 bg-destructive/[0.035]" : "border-warning/35 bg-warning/[0.045]")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 gap-2.5">
           <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md", danger ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning")}>
             {danger ? <OctagonAlert className="size-4" aria-hidden /> : <ShieldCheck className="size-4" aria-hidden />}
           </span>
           <div className="min-w-0">
-            <p className="text-xs font-semibold">
+            <p className="text-sm font-semibold">
               {waitingInput
                 ? t(($) => $.execution_surface.action_question, { title })
-                : blocked
-                  ? t(($) => $.execution_surface.action_blocked, { title })
-                  : failed
-                    ? t(($) => $.execution_surface.action_step_attention, { title })
+                : danger
+                  ? t(($) => $.execution_surface.action_needs_attention)
                     : isRelease
                       ? t(($) => $.execution_surface.action_release_ready)
                       : t(($) => $.execution_surface.action_step_ready, { title })}
             </p>
-            <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-muted-foreground">
-              {waitingInput
-                ? question || t(($) => $.execution_surface.action_question_hint)
-                : blocked
-                  ? blocker || step.error || t(($) => $.execution_surface.action_stopped)
-                  : failed
-                    ? step.integration_status === "conflicts"
-                      ? t(($) => $.execution_surface.action_conflicts)
-                      : step.error || t(($) => $.execution_surface.action_stopped)
-                    : step.depends_on_step_ids.length > 0
-                      ? t(($) => $.execution_surface.action_prerequisites, { count: step.depends_on_step_ids.length })
-                      : t(($) => $.execution_surface.action_approve_hint)}
+            {danger && <p className="mt-0.5 text-[11px] font-medium text-foreground/70">{title}</p>}
+            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+              {summary}
             </p>
           </div>
         </div>
@@ -461,92 +404,52 @@ function WorkingCard({ issueId, step, task }: { issueId: string; step: Orchestra
   );
 }
 
-function WaitingRow({ step, reason }: { step: OrchestrationStep; reason: string }) {
-  const { t } = useT("issues");
-  const kind = orchestrationDisplayKind(step);
-  return (
-    <li className="flex items-center gap-2.5 py-2 text-xs">
-      {step.kind === "integration" ? <GitMerge className="size-3.5 shrink-0 text-muted-foreground" aria-hidden /> : <Circle className="size-3 shrink-0 text-muted-foreground/50" aria-hidden />}
-      <span className="min-w-0 flex-1 truncate font-medium text-foreground/85">{orchestrationStepDisplayTitle(step)}</span>
-      <span className="hidden min-w-0 max-w-[55%] truncate text-[11px] text-muted-foreground sm:block">{reason}</span>
-      <Badge variant="secondary" className="h-5 shrink-0 text-[9px]">{displayKindLabel(kind, t)}</Badge>
-    </li>
-  );
+function actionPriority(step: OrchestrationStep): number {
+  if (step.status === "waiting_input") return 0;
+  if (step.status === "waiting_approval") return 1;
+  if (step.status === "blocked" || (step.status === "failed" && step.attempt < step.max_attempts)) return 2;
+  return 3;
 }
 
-function ActiveWork({ run, tasks }: { run: OrchestrationRun; tasks: AgentTask[] }) {
+function ActiveWork({
+  run,
+  tasks,
+  onOpenDetails,
+}: {
+  run: OrchestrationRun;
+  tasks: AgentTask[];
+  onOpenDetails: () => void;
+}) {
   const { t } = useT("issues");
   const taskByID = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const stepByID = useMemo(() => new Map(run.steps.map((step) => [step.id, step])), [run.steps]);
-  const action = run.steps.filter((step) => step.status === "waiting_approval" || step.status === "waiting_input" || step.status === "blocked" || step.status === "failed");
+  const action = run.steps
+    .filter((step) => step.status === "waiting_approval" || step.status === "waiting_input" || step.status === "blocked" || step.status === "failed")
+    .sort((a, b) => actionPriority(a) - actionPriority(b) || a.position - b.position);
   const working = run.steps.filter((step) => actuallyWorking(step, taskForStep(step, taskByID)));
-  const waiting = run.steps.filter((step) => {
-    if (action.includes(step) || working.includes(step) || COMPLETE_STEP_STATUSES.has(step.status)) return false;
-    return step.status !== "cancelled" && step.status !== "skipped";
-  });
-  const completed = run.steps.filter((step) => COMPLETE_STEP_STATUSES.has(step.status));
-  const latestHandoff = latestCompletedOrchestrationHandoff(run.steps, run.events, tasks);
+  const primaryAction = action[0];
+
+  if (!primaryAction && working.length === 0) return null;
 
   return (
-    <section className="mt-3 space-y-5 rounded-xl border bg-background px-4 py-4 sm:px-5" aria-labelledby={`active-work-${run.id}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 id={`active-work-${run.id}`} className="text-sm font-semibold">{t(($) => $.execution_surface.active_work)}</h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{t(($) => $.execution_surface.active_work_hint)}</p>
-        </div>
-        <Badge variant="outline" className="h-5 text-[9px]">{strategyLabel(run.execution_strategy, t)}</Badge>
-      </div>
-
-      {action.length > 0 && (
+    <section className="mt-3 space-y-3" aria-label={t(($) => $.execution_surface.active_work)}>
+      {primaryAction && (
         <div className="space-y-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-warning">{t(($) => $.execution_surface.action_required)}</h3>
-          {action.map((step) => <ActionCard key={step.id} issueId={run.issue_id} step={step} />)}
+          <ActionCard issueId={run.issue_id} step={primaryAction} />
+          {action.length > 1 && (
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onOpenDetails}>
+              {t(($) => $.execution_surface.action_more, { count: action.length - 1 })}
+              <ChevronRight aria-hidden />
+            </Button>
+          )}
         </div>
       )}
 
       {working.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.working_now)}</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t(($) => $.execution_surface.working_now)}</h3>
           <div className={cn("grid gap-3", working.length > 1 && "md:grid-cols-2")}>
             {working.map((step) => <WorkingCard key={step.id} issueId={run.issue_id} step={step} task={taskForStep(step, taskByID)} />)}
           </div>
-        </div>
-      )}
-
-      {waiting.length > 0 && (
-        <details className="group" open={working.length === 0 && action.length === 0}>
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <ChevronDown className="size-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden />
-            {t(($) => $.execution_surface.waiting)}
-            <span className="font-mono tabular-nums">{waiting.length}</span>
-          </summary>
-          <ul className="mt-2 divide-y divide-border/60 rounded-lg border px-3">
-            {waiting.map((step) => <WaitingRow key={step.id} step={step} reason={waitingReason(step, stepByID, t, taskForStep(step, taskByID), run.status === "draft")} />)}
-          </ul>
-        </details>
-      )}
-
-      {completed.length > 0 && (
-        <div className="space-y-2 border-t pt-3 text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-hidden />
-            <span className="font-medium text-foreground/80">{t(($) => $.execution_surface.completed, { count: completed.length })}</span>
-          </div>
-          {latestHandoff && (
-            <div className="rounded-lg border bg-muted/20 px-3 py-2.5" data-testid="latest-orchestration-handoff">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 flex-1 font-medium text-foreground/85">
-                  {t(($) => $.execution_surface.latest_handoff, { title: orchestrationStepDisplayTitle(latestHandoff.step) })}
-                </span>
-                <Badge variant="outline" className="h-4 px-1 text-[9px]">
-                  {displayKindLabel(orchestrationDisplayKind(latestHandoff.step), t)}
-                </Badge>
-              </div>
-              <p className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed text-foreground/75">
-                {latestHandoff.output}
-              </p>
-            </div>
-          )}
         </div>
       )}
     </section>
@@ -655,13 +558,23 @@ function AdvancedStep({ run, step, stepByID, agents }: { run: OrchestrationRun; 
           {step.base_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.base)}</dt><dd className="inline font-mono">{step.base_sha.slice(0, 12)}</dd></div>}
           {step.head_sha && <div className="min-w-0"><dt className="inline text-muted-foreground">{t(($) => $.execution_surface.head)}</dt><dd className="inline font-mono">{step.head_sha.slice(0, 12)}</dd></div>}
         </dl>
+        {step.error && (
+          <details className="mt-2 text-[10px] text-muted-foreground">
+            <summary className="cursor-pointer rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t(($) => $.execution_surface.technical_details)}
+            </summary>
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/45 p-2 font-mono text-[9px] leading-relaxed text-foreground/75">
+              {step.error}
+            </pre>
+          </details>
+        )}
         <DraftRouteControl run={run} step={step} agents={agents} />
       </div>
     </li>
   );
 }
 
-function ExecutionDrawer({ run, open, onOpenChange, agents }: { run: OrchestrationRun; open: boolean; onOpenChange: (open: boolean) => void; agents: Agent[] }) {
+function ExecutionDrawer({ run, open, onOpenChange, onOpenWork, agents }: { run: OrchestrationRun; open: boolean; onOpenChange: (open: boolean) => void; onOpenWork?: () => void; agents: Agent[] }) {
   const { t } = useT("issues");
   const stepByID = new Map(run.steps.map((step) => [step.id, step]));
   const history = [
@@ -675,6 +588,21 @@ function ExecutionDrawer({ run, open, onOpenChange, agents }: { run: Orchestrati
         <SheetHeader className="border-b pr-12">
           <SheetTitle className="flex items-center gap-2"><ListTree className="size-4 text-brand" aria-hidden />{t(($) => $.execution_surface.drawer_title)}</SheetTitle>
           <SheetDescription>{t(($) => $.execution_surface.drawer_description, { version: run.plan_version, strategy: strategyLabel(run.execution_strategy, t), progression: progressionLabel(run.progression_policy, t) })}</SheetDescription>
+          {onOpenWork && (
+            <div className="pt-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onOpenChange(false);
+                  onOpenWork();
+                }}
+              >
+                <ListTree aria-hidden />
+                {t(($) => $.execution_surface.open_work)}
+              </Button>
+            </div>
+          )}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
           {roster.length > 0 && (
@@ -1003,9 +931,9 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
 
   return (
     <div>
-      <ExecutionStatusBar run={run} onOpen={() => setDrawerOpen(true)} onOpenWork={onOpenWork} />
-      <ActiveWork run={run} tasks={tasks} />
-      <ExecutionDrawer run={run} open={drawerOpen} onOpenChange={setDrawerOpen} agents={agents} />
+      <ExecutionStatusBar run={run} onOpen={() => setDrawerOpen(true)} />
+      <ActiveWork run={run} tasks={tasks} onOpenDetails={() => setDrawerOpen(true)} />
+      <ExecutionDrawer run={run} open={drawerOpen} onOpenChange={setDrawerOpen} onOpenWork={onOpenWork} agents={agents} />
     </div>
   );
 }

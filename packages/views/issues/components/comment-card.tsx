@@ -422,6 +422,13 @@ function CommentRow({
   const canEditEntry = isOwn || (canModerate && entry.actor_type === "member");
   const canDeleteEntry = isOwn || canModerate;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const defaultCollapsed = entry.actor_type === "agent" && !isResolution && !isHighlighted;
+  const isCollapsed = useCommentCollapseStore((s) => s.isCollapsed(issueId, entry.id, defaultCollapsed));
+  const toggleCollapse = useCommentCollapseStore((s) => s.toggle);
+  const open = edit.editing || !isCollapsed;
+  const contentPreview = humanReadableAgentComment(entry.content ?? "", entry.actor_type)
+    .replace(/\n/g, " ")
+    .slice(0, 100);
 
   const reactions = entry.reactions ?? [];
 
@@ -432,11 +439,23 @@ function CommentRow({
           author + actions visible while you scroll its body, then releases once
           this reply ends. bg-card occludes the body scrolling underneath. */}
       <StickyHeaderShell
+        sticky={open}
         highlighted={isHighlighted}
-        className="flex items-center gap-2.5 px-4 pt-1 pb-1.5"
+        className="flex items-center gap-2 px-3 py-1.5"
       >
-        <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size={24} enableHoverCard showStatusDot />
-        <span className="cursor-pointer text-sm font-medium">
+        {defaultCollapsed && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-6 shrink-0 text-muted-foreground"
+            onClick={() => toggleCollapse(issueId, entry.id, true)}
+            aria-label={open ? t(($) => $.comment.collapse_agent_update) : t(($) => $.comment.expand_agent_update)}
+          >
+            <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+          </Button>
+        )}
+        <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size={22} enableHoverCard showStatusDot />
+        <span className="cursor-pointer text-[13px] font-medium">
           {getActorName(entry.actor_type, entry.actor_id)}
         </span>
         <Tooltip>
@@ -455,6 +474,12 @@ function CommentRow({
         {isResolution && (
           <span className="text-xs font-medium text-success">
             {t(($) => $.comment.resolve.resolution_badge)}
+          </span>
+        )}
+
+        {!open && contentPreview && (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {contentPreview}
           </span>
         )}
 
@@ -520,10 +545,10 @@ function CommentRow({
         </div>
       </StickyHeaderShell>
 
-      {edit.editing ? (
+      {open && (edit.editing ? (
         <div
           {...edit.dropZoneProps}
-          className="relative pl-12 pr-4 pt-1"
+          className="relative pl-11 pr-3 pt-1"
           onKeyDown={(e) => { if (e.key === "Escape") edit.cancelEdit(); }}
         >
           <div className="text-sm leading-relaxed">
@@ -572,26 +597,26 @@ function CommentRow({
         </div>
       ) : (
         <>
-          <div className="pl-12 pr-4 pt-1 text-sm leading-relaxed text-foreground/85">
+          <div className="pl-11 pr-3 pt-1 text-sm leading-relaxed text-foreground/85">
             <HumanReadableCommentBody entry={entry} />
           </div>
-          <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-12 pr-4" />
+          <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-11 pr-3" />
           <ReactionBar
             reactions={reactions}
             currentUserId={currentUserId}
             onToggle={(emoji) => onToggleReaction(entry.id, emoji)}
             getActorName={getActorName}
-            className="mt-1.5 pl-12 pr-4"
+            className="mt-1.5 pl-11 pr-3"
           />
           {/* Live agent activity for the run THIS comment triggered (slice-action
               / @mention) — rendered right under the comment so it's clear which
               request the agent is working on. Renders nothing when no running
               task points at this comment. */}
-          <div className="pl-12 pr-4">
+          <div className="pl-11 pr-3">
             <LiveAgentChangesFeed issueId={issueId} triggerCommentId={entry.id} />
           </div>
         </>
-      )}
+      ))}
     </div>
   );
 }
@@ -619,10 +644,15 @@ function CommentCardImpl({
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const { getActorName } = useActorName();
-  const isCollapsed = useCommentCollapseStore((s) => s.isCollapsed(issueId, entry.id));
+  const isHighlighted = highlightedCommentId === entry.id;
+  const defaultCollapsed = entry.actor_type === "agent" && !isHighlighted;
+  const isCollapsed = useCommentCollapseStore((s) => s.isCollapsed(issueId, entry.id, defaultCollapsed));
   const toggleCollapse = useCommentCollapseStore((s) => s.toggle);
   const open = !isCollapsed;
-  const handleOpenChange = useCallback((_open: boolean) => toggleCollapse(issueId, entry.id), [toggleCollapse, issueId, entry.id]);
+  const handleOpenChange = useCallback(
+    (_open: boolean) => toggleCollapse(issueId, entry.id, defaultCollapsed),
+    [toggleCollapse, issueId, entry.id, defaultCollapsed],
+  );
 
   const edit = useEditAttachmentState(issueId, entry, onEdit);
 
@@ -644,8 +674,6 @@ function CommentCardImpl({
     .replace(/\n/g, " ")
     .slice(0, 80);
   const reactions = entry.reactions ?? [];
-
-  const isHighlighted = highlightedCommentId === entry.id;
 
   // Reply-resolution display. When a REPLY is the thread's resolution, the other
   // replies fold behind a bar and the resolution stays visible (root-resolution
@@ -681,7 +709,7 @@ function CommentCardImpl({
     // timeline's scroll parent instead of this card. See PR #3623.
     // Highlight (deep-link target) = a soft background tint only — the old
     // ring-2 "active border" read as a stray selected state and is gone.
-    <Card className={cn("!py-0 !gap-0 overflow-clip transition-colors duration-700", isHighlighted && highlightedCommentBackgroundClass)}>
+    <Card className={cn("!gap-0 !py-0 overflow-clip transition-colors duration-700", isHighlighted && highlightedCommentBackgroundClass)}>
       {onCollapseResolved && (
         <button
           type="button"
@@ -705,14 +733,14 @@ function CommentCardImpl({
         <StickyHeaderShell
           sticky={stickyHeader}
           highlighted={isHighlighted}
-          className="px-4 py-3"
+          className="px-3 py-2"
         >
           <div className="flex items-center gap-2.5">
             <CollapsibleTrigger className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
               <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")} />
             </CollapsibleTrigger>
-            <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size={24} enableHoverCard showStatusDot />
-            <span className="shrink-0 cursor-pointer text-sm font-medium">
+            <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size={22} enableHoverCard showStatusDot />
+            <span className="shrink-0 cursor-pointer text-[13px] font-medium">
               {getActorName(entry.actor_type, entry.actor_id)}
             </span>
             <Tooltip>
@@ -810,7 +838,7 @@ function CommentCardImpl({
         {/* Collapsible body */}
         <CollapsibleContent>
           {/* Parent comment body */}
-          <div className="px-4 pt-1 pb-3">
+          <div className="px-3 pb-2 pt-0.5">
             {edit.editing ? (
               <div
                 {...edit.dropZoneProps}
@@ -863,16 +891,16 @@ function CommentCardImpl({
               </div>
             ) : (
               <>
-                <div className="pl-10 text-sm leading-relaxed text-foreground/85">
+                <div className="pl-9 text-sm leading-relaxed text-foreground/85">
                   <HumanReadableCommentBody entry={entry} />
                 </div>
-                <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-10" />
+                <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-9" />
                 <ReactionBar
                   reactions={reactions}
                   currentUserId={currentUserId}
                   onToggle={(emoji) => onToggleReaction(entry.id, emoji)}
                   getActorName={getActorName}
-                  className="mt-1.5 pl-10"
+                  className="mt-1.5 pl-9"
                 />
               </>
             )}

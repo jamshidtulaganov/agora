@@ -349,6 +349,8 @@
     "delete_failed": "Failed to delete comment",
     "reply_count_one": "{{count}} reply",
     "reply_count_other": "{{count}} replies",
+    "expand_agent_update": "Show agent update",
+    "collapse_agent_update": "Hide agent update",
     "leave_comment_placeholder": "Leave a comment...",
     "new_indicator": "New comment",
     "send_tooltip": "Send",
@@ -559,6 +561,9 @@
     "waiting_dependencies": "Waiting for {{steps}}",
     "waiting_capacity": "Ready when capacity is available",
     "action_step_attention": "{{title}} needs attention",
+    "action_needs_attention": "Needs attention",
+    "action_failed_hint": "This step could not finish. Open Details to review the technical error or retry it.",
+    "action_more": "More items need attention ({{count}})",
     "action_question": "{{title}} needs your input",
     "action_blocked": "{{title}} is blocked",
     "action_question_hint": "Answer the agent's blocking question to continue this same work unit.",
@@ -599,6 +604,7 @@
     "event_run_completed": "Execution completed",
     "event_run_failed": "Execution failed",
     "event_run_cancelled": "Execution cancelled",
+    "technical_details": "Technical details",
     "event_updated": "Execution updated"
   },
   "live_editor": {

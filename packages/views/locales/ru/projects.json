@@ -97,6 +97,8 @@
     "toast_local_primary_updated": "Основная рабочая папка обновлена",
     "toast_local_primary_failed": "Не удалось обновить основную рабочую папку",
     "chat_hint_prefix": "Агент будет работать на месте по адресу",
+    "local_workspace_count_one": "{{count}} локальная папка агента",
+    "local_workspace_count_other": "{{count}} локальных папок агента",
     "toast_local_attached": "Локальный каталог прикреплён",
     "toast_local_approve_failed": "Не удалось сохранить разрешение для папки — попробуйте ещё раз.",
     "local_approve_protected": "Эта папка содержит системные данные или учётные данные и не может использоваться для задач агентов.",

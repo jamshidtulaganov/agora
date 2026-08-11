@@ -349,6 +349,8 @@
     "delete_failed": "Izohni o‘chirib bo‘lmadi",
     "reply_count_one": "{{count}} ta javob",
     "reply_count_other": "{{count}} ta javob",
+    "expand_agent_update": "Agent yangilanishini ko‘rsatish",
+    "collapse_agent_update": "Agent yangilanishini yashirish",
     "leave_comment_placeholder": "Izoh qoldiring...",
     "new_indicator": "Yangi izoh",
     "send_tooltip": "Yuborish",
@@ -559,6 +561,9 @@
     "waiting_dependencies": "{{steps}} tugashi kutilmoqda",
     "waiting_capacity": "Resurs bo‘shashi bilan tayyor",
     "action_step_attention": "{{title}} e’tibor talab qiladi",
+    "action_needs_attention": "E’tibor kerak",
+    "action_failed_hint": "Bu bosqich tugamadi. Texnik xatoni ko‘rish yoki qayta urinish uchun Tafsilotlarni oching.",
+    "action_more": "Yana e’tibor talab qiladigan ishlar: {{count}}",
     "action_question": "{{title}} uchun javobingiz kerak",
     "action_blocked": "{{title}} bloklangan",
     "action_question_hint": "Shu ish bosqichini davom ettirish uchun agent savoliga javob bering.",
@@ -599,6 +604,7 @@
     "event_run_completed": "Ijro tugallandi",
     "event_run_failed": "Ijro xato bilan tugadi",
     "event_run_cancelled": "Ijro bekor qilindi",
+    "technical_details": "Texnik tafsilotlar",
     "event_updated": "Ijro yangilandi"
   },
   "live_editor": {

@@ -97,6 +97,8 @@
     "toast_local_primary_updated": "主要工作目录已更新",
     "toast_local_primary_failed": "无法更新主要工作目录",
     "chat_hint_prefix": "Agent 将在",
+    "local_workspace_count_one": "{{count}} 个本地智能体工作区",
+    "local_workspace_count_other": "{{count}} 个本地智能体工作区",
     "toast_local_attached": "已添加本地目录",
     "toast_local_approve_failed": "无法保存目录授权，请重试。",
     "local_approve_protected": "该目录包含系统或凭据数据，不能用于智能体任务。",

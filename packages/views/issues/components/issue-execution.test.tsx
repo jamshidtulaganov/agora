@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   createIssueOrchestration: vi.fn(),
   editIssueOrchestration: vi.fn(),
   respondToOrchestrationStep: vi.fn(),
+  retryOrchestrationStep: vi.fn(),
 }));
 
 vi.mock("@agora/core/api", () => ({
@@ -28,6 +29,7 @@ vi.mock("@agora/core/api", () => ({
     createIssueOrchestration: mocks.createIssueOrchestration,
     editIssueOrchestration: mocks.editIssueOrchestration,
     respondToOrchestrationStep: mocks.respondToOrchestrationStep,
+    retryOrchestrationStep: mocks.retryOrchestrationStep,
   },
 }));
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
@@ -246,6 +248,93 @@ describe("IssueExecution orchestration response", () => {
         { question_id: "question-2", message: "Use v2." },
       );
     });
+  });
+
+  it("shows one human action on the issue and keeps raw failures in Details", async () => {
+    const stepBase = {
+      approval_required: false,
+      instructions: "",
+      depends_on_step_ids: [],
+      merge_status: "not_checked",
+      conflict_files: [],
+      kind: "task",
+      integration_status: "not_required",
+      integrated_head_shas: [],
+      missing_head_shas: [],
+    };
+    mocks.getIssueOrchestration.mockResolvedValue({
+      id: "run-blocked",
+      issue_id: "issue-1",
+      status: "blocked",
+      mode: "auto",
+      execution_strategy: "squad",
+      progression_policy: "automatic",
+      policy: {},
+      owner_type: "squad",
+      base_git_states: [],
+      execution_mode: "squad",
+      plan_version: 1,
+      revisions: [],
+      created_at: "2026-08-06T00:00:00Z",
+      updated_at: "2026-08-06T00:00:00Z",
+      events: [],
+      messages: [],
+      steps: [
+        {
+          ...stepBase,
+          id: "step-verify",
+          key: "verify",
+          title: "Verify the completed result",
+          stage: "qa",
+          status: "failed",
+          position: 0,
+          capability: "qa",
+          attempt: 2,
+          max_attempts: 2,
+          output: null,
+          error: "complete task failed: POST /api/daemon/tasks/task-1/complete returned 409",
+        },
+        {
+          ...stepBase,
+          id: "step-review",
+          key: "review",
+          title: "Review the completed result",
+          stage: "review",
+          status: "blocked",
+          position: 1,
+          capability: "review",
+          attempt: 1,
+          max_attempts: 2,
+          output: {
+            schema_version: 1,
+            stage: "review",
+            outcome: "blocked",
+            summary: "The completed result still needs one safety fix.",
+            decisions: [],
+            contracts: [],
+            artifacts: [],
+            verification: [],
+            findings: [],
+            risks: [],
+            blockers: ["Cached rows can still be served when the EFS read fails."],
+            next_actions: [],
+          },
+        },
+      ],
+    });
+
+    renderExecution();
+
+    expect(await screen.findByText("Needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Cached rows can still be served when the EFS read fails.")).toBeInTheDocument();
+    expect(screen.getByText("More items need attention (1)")).toBeInTheDocument();
+    expect(screen.queryByText(/complete task failed: POST/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Execution stages" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+
+    expect(await screen.findByText("Technical details")).toBeInTheDocument();
+    expect(screen.getByText(/complete task failed: POST/)).toBeInTheDocument();
   });
 
   it("keeps draft reroutes inside the roster and sends the target model snapshot", async () => {

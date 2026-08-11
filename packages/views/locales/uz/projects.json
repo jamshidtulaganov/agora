@@ -97,6 +97,8 @@
     "toast_local_primary_updated": "Asosiy ish katalogi yangilandi",
     "toast_local_primary_failed": "Asosiy ish katalogini yangilab bo‘lmadi",
     "chat_hint_prefix": "Agent shu yerda joyida ishlaydi:",
+    "local_workspace_count_one": "{{count}} ta mahalliy agent ish joyi",
+    "local_workspace_count_other": "{{count}} ta mahalliy agent ish joyi",
     "toast_local_attached": "Lokal katalog biriktirildi",
     "toast_local_approve_failed": "Papka ruxsatini saqlab bo'lmadi — qayta urinib ko'ring.",
     "local_approve_protected": "Bu papkada tizim yoki hisob ma'lumotlari saqlanadi, uni agent vazifalari uchun ishlatib bo'lmaydi.",

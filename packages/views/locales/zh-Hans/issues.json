@@ -346,6 +346,8 @@
     "send_reply_failed": "发送回复失败",
     "delete_failed": "删除评论失败",
     "reply_count_other": "{{count}} 条回复",
+    "expand_agent_update": "显示智能体更新",
+    "collapse_agent_update": "隐藏智能体更新",
     "leave_comment_placeholder": "留下评论...",
     "new_indicator": "新评论",
     "send_tooltip": "发送",
@@ -548,6 +550,9 @@
     "waiting_dependencies": "等待 {{steps}}",
     "waiting_capacity": "资源可用后即可开始",
     "action_step_attention": "{{title}} 需要处理",
+    "action_needs_attention": "需要处理",
+    "action_failed_hint": "此步骤未能完成。打开详情可查看技术错误或重试。",
+    "action_more": "另有 {{count}} 项需要处理",
     "action_question": "{{title}} 需要你的输入",
     "action_blocked": "{{title}} 已阻塞",
     "action_question_hint": "回答智能体的阻塞问题以继续同一工作单元。",
@@ -588,6 +593,7 @@
     "event_run_completed": "执行已完成",
     "event_run_failed": "执行失败",
     "event_run_cancelled": "执行已取消",
+    "technical_details": "技术详情",
     "event_updated": "执行已更新"
   },
   "live_editor": {

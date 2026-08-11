@@ -321,7 +321,7 @@ function TimelineSkeleton() {
 // recent N entries — a single block of 50 status flips drowns the comment area
 // as badly as N blocks of 1 would. Older entries fold behind a "Show N more
 // activities" line that expands in place.
-const LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT = 8;
+const LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT = 3;
 
 // Collapsible wrapper for an activity block. Older blocks default to a single
 // "N activities" summary line so the timeline isn't dominated by status /
@@ -355,7 +355,7 @@ function ActivityBlock({
   if (!expanded) {
     const count = entries.length;
     return (
-      <div className="pb-3 px-4">
+      <div className="px-3 pb-2">
         <button
           type="button"
           onClick={onToggle}
@@ -383,7 +383,7 @@ function ActivityBlock({
   // fold the whole block back to a single count line.
   const showHeader = hiddenOlderCount === 0;
   return (
-    <div className="pb-3 px-4 flex flex-col gap-3">
+    <div className="flex flex-col gap-2.5 px-3 pb-2">
       {showHeader && (
         <button
           type="button"
@@ -700,7 +700,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(() => new Set());
   const [collapsedActivityIds, setCollapsedActivityIds] = useState<Set<string>>(() => new Set());
   // Block IDs where the user has explicitly chosen to also reveal the older
-  // (pre-last-8) entries within the trailing block. Kept independent of the
+  // (pre-last-3) entries within the trailing block. Kept independent of the
   // expanded/collapsed sets so collapsing then re-expanding preserves the
   // "show all" choice, and so the choice survives the block losing its
   // trailing position when a new comment lands after it.
@@ -1648,7 +1648,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const renderItem = (_i: number, item: TimelineItem): React.ReactElement => {
     if (item.kind === "resolved-bar") {
       return (
-        <div className="pb-3" id={`comment-${item.id}`}>
+        <div className="pb-2" id={`comment-${item.id}`}>
           <ResolvedThreadBar
             entry={item.entry}
             replies={timelineView.threadReplies.get(item.id) ?? EMPTY_REPLIES}
@@ -1670,7 +1670,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       const isNew = lastSeenAt > 0 && latestThreadCommentAt > lastSeenAt;
       return (
         <div
-          className="relative pb-3"
+          className="relative pb-2"
           id={`comment-${item.id}`}
         >
           {isNew && (
@@ -2020,7 +2020,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
           {/* One execution surface: compact issue status, human-facing active
               work, and an advanced drawer for plan/history/Git evidence. */}
-          <div className="mt-8">
+          <div className="mt-6">
             <IssueExecution issueId={id} onOpenWork={() => setLens("work")} />
           </div>
 
@@ -2031,13 +2031,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <QAEvidenceSection issueId={id} status={issue.status} />
           </div>
 
-          <div className="my-8 border-t" />
+          <div className="my-6 border-t" />
 
           {/* Activity / Comments */}
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <h2 className="text-base font-semibold">{t(($) => $.detail.activity_section)}</h2>
+                <h2 className="text-sm font-semibold">{t(($) => $.detail.activity_section)}</h2>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2089,7 +2089,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 key={id}: web's /issues/[id] route doesn't remount on issueId
                 change, so without an explicit key the editor keeps the previous
                 issue's in-memory draft. */}
-            <div className="my-4">
+            <div className="my-3">
               <CommentInput key={id} issueId={id} onSubmit={submitComment} />
             </div>
 
@@ -2131,7 +2131,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                   // flash empty.
                   <TimelineSkeleton />
                 ) : (
-                  <div className="mt-4">
+                  <div className="mt-3">
                     <Virtuoso
                       key={`${wsId}:${id}`}
                       customScrollParent={scrollContainerEl}
@@ -2148,7 +2148,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                   </div>
                 )
               ) : (
-                <div className="mt-4">
+                <div className="mt-3">
                   {items.map((item, i) => (
                     <Fragment key={`${item.kind}:${item.id}`}>
                       {renderItem(i, item)}

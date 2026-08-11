@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen } from "lucide-react";
+import { ChevronDown, FolderOpen } from "lucide-react";
 import { projectResourcesOptions } from "@agora/core/projects";
 import type { LocalDirectoryResourceRef, ProjectResource } from "@agora/core/types";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -48,25 +48,24 @@ export function LocalDirectoryHint({
   if (matches.length === 0) return null;
 
   return (
-    <div className="mt-3 space-y-1 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      {matches.map((resource) => {
-        const ref = resource.resource_ref;
-        const label = (ref.label || resource.label || ref.local_path).trim() ||
-          ref.local_path;
-        return (
-          <div
-            key={resource.id}
-            className="flex items-center gap-2"
-          >
-            <FolderOpen className="size-3 shrink-0" />
-            <span className="truncate">
-              {t(($) => $.resources.chat_hint_prefix)}
-              <span className="font-medium text-foreground"> {label} </span>
-              <span className="font-mono opacity-70">({ref.local_path})</span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
+    <details className="group mt-2 rounded-md border border-dashed bg-muted/25 text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <FolderOpen className="size-3.5 shrink-0" />
+        <span>{t(($) => $.resources.local_workspace_count, { count: matches.length })}</span>
+        <ChevronDown className="ml-auto size-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+      </summary>
+      <div className="space-y-1 border-t border-dashed px-3 py-2">
+        {matches.map((resource) => {
+          const ref = resource.resource_ref;
+          const label = (ref.label || resource.label || ref.local_path).trim() || ref.local_path;
+          return (
+            <div key={resource.id} className="flex min-w-0 items-center gap-2 pl-5">
+              <span className="shrink-0 font-medium text-foreground">{label}</span>
+              <span className="truncate font-mono opacity-60">{ref.local_path}</span>
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }

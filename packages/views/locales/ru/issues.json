@@ -349,6 +349,8 @@
     "delete_failed": "Не удалось удалить комментарий",
     "reply_count_one": "{{count}} ответ",
     "reply_count_other": "{{count}} ответов",
+    "expand_agent_update": "Показать сообщение агента",
+    "collapse_agent_update": "Скрыть сообщение агента",
     "leave_comment_placeholder": "Оставьте комментарий...",
     "new_indicator": "Новый комментарий",
     "send_tooltip": "Отправить",
@@ -559,6 +561,9 @@
     "waiting_dependencies": "Ожидает: {{steps}}",
     "waiting_capacity": "Готово к запуску при наличии ресурса",
     "action_step_attention": "{{title}} требует внимания",
+    "action_needs_attention": "Требуется внимание",
+    "action_failed_hint": "Этот этап не завершился. Откройте подробности, чтобы проверить техническую ошибку или повторить попытку.",
+    "action_more": "Другие элементы требуют внимания: {{count}}",
     "action_question": "Для {{title}} нужен ваш ответ",
     "action_blocked": "{{title}} заблокирован",
     "action_question_hint": "Ответьте на блокирующий вопрос агента, чтобы продолжить этот же этап.",
@@ -599,6 +604,7 @@
     "event_run_completed": "Выполнение завершено",
     "event_run_failed": "Выполнение завершилось ошибкой",
     "event_run_cancelled": "Выполнение отменено",
+    "technical_details": "Технические подробности",
     "event_updated": "Выполнение обновлено"
   },
   "live_editor": {

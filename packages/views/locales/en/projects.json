@@ -102,6 +102,8 @@
     "toast_local_primary_updated": "Primary working directory updated",
     "toast_local_primary_failed": "Failed to update the primary working directory",
     "chat_hint_prefix": "Agent will work in-place at",
+    "local_workspace_count_one": "{{count}} local agent workspace",
+    "local_workspace_count_other": "{{count}} local agent workspaces",
     "toast_local_attached": "Local directory attached",
     "toast_local_approve_failed": "Could not record the folder approval — try again.",
     "local_approve_protected": "This folder holds system or credential data and can't be used for agent tasks.",
