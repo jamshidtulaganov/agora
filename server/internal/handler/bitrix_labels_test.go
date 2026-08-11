@@ -7,12 +7,13 @@ import (
 
 func TestBitrixTagToLabelName(t *testing.T) {
 	cases := map[string]string{
-		"bug":              "type:bug",
-		"баг":              "type:bug",
-		"#BugReport":       "type:bug",
-		"feature":          "type:feature",
-		"фича":             "type:feature",
-		"новый функционал": "type:feature",
+		// Type-class tags are left for AI triage — not mirrored as labels.
+		"bug":              "",
+		"баг":              "",
+		"#BugReport":       "",
+		"feature":          "",
+		"фича":             "",
+		"новый функционал": "",
 		"server":           "server",
 		"DevOps":           "server",
 		"urgent":           "urgent",
@@ -27,8 +28,8 @@ func TestBitrixTagToLabelName(t *testing.T) {
 }
 
 func TestBitrixTagsToLabelNamesDedupesAliases(t *testing.T) {
-	got := bitrixTagsToLabelNames([]string{"баг", "bug", "BugReport", "urgent", "urgent"})
-	want := map[string]bool{"type:bug": true, "urgent": true}
+	got := bitrixTagsToLabelNames([]string{"баг", "bug", "BugReport", "urgent", "urgent", "server"})
+	want := map[string]bool{"urgent": true, "server": true}
 	if len(got) != len(want) {
 		t.Fatalf("names = %v, want %v", got, want)
 	}
@@ -78,9 +79,12 @@ func TestBitrixWebhookAttachesTagLabels(t *testing.T) {
 		}
 		got[name] = true
 	}
-	for _, want := range []string{"type:bug", "urgent", "ai"} {
+	for _, want := range []string{"urgent", "ai"} {
 		if !got[want] {
 			t.Errorf("missing label %q; have %v", want, got)
 		}
+	}
+	if got["type:bug"] || got["bug"] || got["баг"] {
+		t.Errorf("type-class Bitrix tags must not become labels (AI triage owns type:*); have %v", got)
 	}
 }

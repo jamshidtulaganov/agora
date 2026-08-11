@@ -18,9 +18,10 @@ import (
 const bitrixLabelNameMaxLen = 64
 
 // syncBitrixTagsAsLabels mirrors Bitrix task tags onto Agora issue labels.
-// Alias spellings (баг, BugReport, …) collapse to a canonical label name so the
-// board stays consistent. Known type tags become type:bug / type:feature to
-// match triage conventions. Best-effort and additive — never detaches labels a
+// Alias spellings collapse to a canonical name. Type-class tags (bug/feature
+// and their RU/UZ synonyms) are skipped here — intake triage (AI) owns
+// type:bug|feature|question from title/description/media, because portal tags
+// are too noisy to trust. Best-effort and additive — never detaches labels a
 // human may have added in Agora.
 func (h *Handler) syncBitrixTagsAsLabels(ctx context.Context, wsID, issueID pgtype.UUID, task *bitrix.Task) {
 	if task == nil || len(task.Tags) == 0 {
@@ -74,20 +75,18 @@ func canonicalizeBitrixTag(tag string) string {
 }
 
 // bitrixTagToLabelName maps a Bitrix tag onto the Agora label name we attach.
-// bug/feature land under the type: prefix used by intake triage; everything
-// else uses the canonical (or raw normalized) tag string.
+// Returns "" for type-class aliases (bug/feature) so the triage agent decides
+// type:*; everything else uses the canonical (or raw normalized) tag string.
 func bitrixTagToLabelName(tag string) string {
 	canonical := canonicalizeBitrixTag(tag)
 	if canonical == "" {
 		return ""
 	}
-	var name string
 	switch canonical {
 	case "bug", "feature":
-		name = "type:" + canonical
-	default:
-		name = canonical
+		return ""
 	}
+	name := canonical
 	if utf8.RuneCountInString(name) > bitrixLabelNameMaxLen {
 		name = string([]rune(name)[:bitrixLabelNameMaxLen])
 	}

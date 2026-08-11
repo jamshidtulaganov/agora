@@ -28,8 +28,11 @@ import (
 // triage means is pinned by the server, not by the agent's own persona.
 const bitrixTriagePrompt = "[AUTOMATED DIRECTIVE — intake triage] " +
 	"TRIAGE this newly-imported Bitrix ticket (intake pass, SUGGEST-ONLY). " +
-	"(1) CLASSIFY — attach labels via the agora CLI: `type:bug` / `type:feature` / `type:question`; " +
-	"`module:<name>` using the module names from the PROJECT RISK MAP in your context (pick every module the " +
+	"(1) CLASSIFY — decide the work type yourself from the title, description, comments, and attachments. " +
+	"Bitrix tags are noisy (mixed RU/UZ/EN, typos, #prefixes) — do NOT trust them for type. " +
+	"Attach exactly one of: `type:bug` (defect / wrong behavior / regression), `type:feature` (new or changed capability), " +
+	"or `type:question` (clarification / investigation with no clear deliverable yet). " +
+	"Also attach `module:<name>` using the module names from the PROJECT RISK MAP in your context (pick every module the " +
 	"ticket plausibly touches); `risk:<tier>` = the HIGHEST tier among those modules (critical|guarded|safe; " +
 	"no match → risk:guarded, never safe). " +
 	"(2) ENRICH — post ONE comment IN THE ISSUE'S LANGUAGE (Russian/Uzbek) that gives the future implementer a head start: " +
