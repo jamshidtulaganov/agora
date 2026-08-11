@@ -69,6 +69,21 @@ describe("ActiveTaskRow", () => {
     expect(screen.getByText("View transcript")).toBeInTheDocument();
     expect(mockState.taskMessagesOptions).not.toHaveBeenCalled();
   });
+
+  it("uses the issue title for direct runs without a trigger summary", () => {
+    renderWithI18n(
+      <ActiveTaskRow
+        task={makeTask({ trigger_summary: undefined })}
+        issueId="issue-1"
+        fallbackText="Build the SD Bridge knowledge base"
+      />,
+    );
+
+    expect(
+      screen.getByText("Build the SD Bridge knowledge base"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Initial run")).not.toBeInTheDocument();
+  });
 });
 
 describe("PastRow View pull request", () => {

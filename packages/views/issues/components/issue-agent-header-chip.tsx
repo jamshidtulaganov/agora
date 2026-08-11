@@ -38,10 +38,12 @@ import { useT } from "../../i18n";
 
 interface IssueAgentHeaderChipProps {
   issueId: string;
+  issueTitle?: string;
 }
 
 export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
   issueId,
+  issueTitle,
 }: IssueAgentHeaderChipProps) {
   const wsId = useWorkspaceId();
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -68,16 +70,24 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
   // No active work → render nothing.
   if (running.length === 0 && queued.length === 0) return null;
 
-  return <ActiveChip issueId={issueId} running={running} queued={queued} />;
+  return (
+    <ActiveChip
+      issueId={issueId}
+      issueTitle={issueTitle}
+      running={running}
+      queued={queued}
+    />
+  );
 });
 
 interface ActiveChipProps {
   issueId: string;
+  issueTitle?: string;
   running: AgentTask[];
   queued: AgentTask[];
 }
 
-function ActiveChip({ issueId, running, queued }: ActiveChipProps) {
+function ActiveChip({ issueId, issueTitle, running, queued }: ActiveChipProps) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
 
@@ -147,7 +157,12 @@ function ActiveChip({ issueId, running, queued }: ActiveChipProps) {
           </div>
           <div className="flex flex-col gap-0.5">
             {activeTasks.map((task) => (
-              <ActiveTaskRow key={task.id} task={task} issueId={issueId} />
+              <ActiveTaskRow
+                key={task.id}
+                task={task}
+                issueId={issueId}
+                fallbackText={issueTitle}
+              />
             ))}
           </div>
         </PopoverContent>

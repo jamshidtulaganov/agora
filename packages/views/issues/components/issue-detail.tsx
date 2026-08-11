@@ -1741,7 +1741,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             {/* Live "agent is working" chip, leftmost in the right cluster so
                 it never overlaps the title (which truncates to make room).
                 It self-hides when no agent is active. */}
-            <IssueAgentHeaderChip issueId={id} />
+            <IssueAgentHeaderChip issueId={id} issueTitle={issue.title} />
             {onDone && issue.status !== "done" && issue.status !== "cancelled" && (
               <Tooltip>
                 <TooltipTrigger

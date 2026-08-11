@@ -222,7 +222,7 @@ function readPrUrl(result: unknown): string | null {
 
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
 
-function useTriggerText(task: AgentTask): string {
+function useTriggerText(task: AgentTask, fallbackText?: string): string {
   const { t } = useT("issues");
   const isRetry = !!task.parent_task_id;
   const retryPrefix = isRetry
@@ -239,6 +239,7 @@ function useTriggerText(task: AgentTask): string {
   }
   if (task.autopilot_run_id) return t(($) => $.execution_log.trigger_autopilot);
   if (task.trigger_comment_id) return t(($) => $.execution_log.trigger_comment);
+  if (fallbackText?.trim()) return fallbackText.trim();
   return t(($) => $.execution_log.trigger_initial);
 }
 
@@ -263,16 +264,18 @@ function useStatusLabel(status: AgentTask["status"]): string {
 export function ActiveTaskRow({
   task,
   issueId,
+  fallbackText,
 }: {
   task: AgentTask;
   issueId: string;
+  fallbackText?: string;
 }) {
   const { t } = useT("issues");
   const [cancelling, setCancelling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const tone = STATUS_TONE[task.status];
   const label = useStatusLabel(task.status);
-  const trigger = useTriggerText(task);
+  const trigger = useTriggerText(task, fallbackText);
 
   // Running rows show a live-ticking elapsed timer (the ticking digits carry
   // "alive", the duration carries "how long"). Only running rows tick.

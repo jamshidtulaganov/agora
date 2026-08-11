@@ -54,8 +54,16 @@ vi.mock("@agora/ui/components/ui/popover", async () => {
 });
 
 vi.mock("./execution-log-section", () => ({
-  ActiveTaskRow: ({ task }: { task: AgentTask }) => (
-    <div data-testid="active-task-row">{task.id}</div>
+  ActiveTaskRow: ({
+    task,
+    fallbackText,
+  }: {
+    task: AgentTask;
+    fallbackText?: string;
+  }) => (
+    <div data-testid="active-task-row">
+      {task.id}:{fallbackText}
+    </div>
   ),
 }));
 
@@ -106,7 +114,12 @@ describe("IssueAgentHeaderChip", () => {
   it("shows the active agent name without event count or elapsed time", () => {
     mockState.snapshot = [makeTask({})];
 
-    renderWithI18n(<IssueAgentHeaderChip issueId="issue-1" />);
+    renderWithI18n(
+      <IssueAgentHeaderChip
+        issueId="issue-1"
+        issueTitle="Build the SD Bridge knowledge base"
+      />,
+    );
 
     expect(
       screen.getByRole("button", { name: "Walt is working" }),
@@ -120,11 +133,16 @@ describe("IssueAgentHeaderChip", () => {
   it("keeps the header popover card with active task rows", () => {
     mockState.snapshot = [makeTask({ id: "task-running" })];
 
-    renderWithI18n(<IssueAgentHeaderChip issueId="issue-1" />);
+    renderWithI18n(
+      <IssueAgentHeaderChip
+        issueId="issue-1"
+        issueTitle="Build the SD Bridge knowledge base"
+      />,
+    );
 
     expect(screen.getByTestId("agent-popover-content")).toBeInTheDocument();
     expect(screen.getByTestId("active-task-row")).toHaveTextContent(
-      "task-running",
+      "task-running:Build the SD Bridge knowledge base",
     );
     expect(mockState.taskMessagesOptions).not.toHaveBeenCalled();
   });
