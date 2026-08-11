@@ -83,6 +83,7 @@ func (h *Handler) DeleteTelegramFixtureMessages(w http.ResponseWriter, r *http.R
 		if err := h.telegramBot.DeleteMessage(r.Context(), target.ChatID, target.MessageID); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error":               "telegram failed to delete a selected message",
+				"telegram_error":      err.Error(),
 				"deleted_message_ids": deleted,
 			})
 			return
