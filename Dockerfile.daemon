@@ -37,10 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code
 
 # Cursor Agent CLI — supports non-interactive automation with CURSOR_API_KEY.
-# The installer puts the binary under the build user's home; copy it into the
-# system PATH because runtime HOME is the persistent /data volume.
+# The installer puts a launcher plus its JS bundle under the build user's home.
+# Keep the launcher as a symlink so its relative bundle path remains valid,
+# while exposing it on the system PATH when runtime HOME becomes /data.
 RUN curl https://cursor.com/install -fsS | bash \
-    && install -m 0755 /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
+    && ln -s /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
     && cursor-agent --version
 
 # Feishu/Lark OpenAPI MCP — pre-installed so agents with a Lark Bot bound get
