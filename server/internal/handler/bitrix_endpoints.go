@@ -152,6 +152,12 @@ func (h *Handler) ListBitrixUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := make([]BitrixUserResponse, 0, len(users))
 	for _, u := range users {
+		// When a personal-sync allowlist is configured, keep the operator UI on
+		// that same fail-closed boundary. Showing every portal user suggests they
+		// are importable even though syncBitrixTaskWithState will reject them.
+		if !bitrixUserAllowedEmail(&u) {
+			continue
+		}
 		resp = append(resp, BitrixUserResponse{
 			ID:       u.ID,
 			Name:     u.FullName(),
@@ -358,6 +364,16 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]bool{}
 	taskIDs := make([]string, 0, len(req.TaskIDs))
 	resp := BitrixImportResponse{Errors: []string{}}
+	selectorTasks := map[string]map[string]bool{}
+	selectorOrder := make([]bitrixImportProgressSelector, 0, len(req.GroupIDs)+len(req.UserIDs))
+	ensureSelector := func(kind, id string) string {
+		key := kind + ":" + id
+		if _, ok := selectorTasks[key]; !ok {
+			selectorTasks[key] = map[string]bool{}
+			selectorOrder = append(selectorOrder, bitrixImportProgressSelector{Kind: kind, ID: id})
+		}
+		return key
+	}
 
 	addID := func(id string) bool {
 		id = strings.TrimSpace(id)
@@ -382,15 +398,23 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 			if gid == "" {
 				continue
 			}
+			selectorKey := ensureSelector("group", gid)
 			tasks, err := st.client.ListTasks(ctx, gid, st.tag)
 			if err != nil {
 				resp.Errors = append(resp.Errors, "list group "+gid+": "+err.Error())
 				continue
 			}
 			for i := range tasks {
-				if !addID(tasks[i].ID) {
+				id := strings.TrimSpace(tasks[i].ID)
+				if !addID(id) {
+					if id != "" && seen[id] {
+						selectorTasks[selectorKey][id] = true
+					}
 					withinCap = false
 					break
+				}
+				if id != "" && seen[id] {
+					selectorTasks[selectorKey][id] = true
 				}
 			}
 			if !withinCap {
@@ -405,15 +429,23 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 			if uid == "" {
 				continue
 			}
+			selectorKey := ensureSelector("user", uid)
 			tasks, err := st.client.ListTasksByUser(ctx, uid, st.tag)
 			if err != nil {
 				resp.Errors = append(resp.Errors, "list user "+uid+": "+err.Error())
 				continue
 			}
 			for i := range tasks {
-				if !addID(tasks[i].ID) {
+				id := strings.TrimSpace(tasks[i].ID)
+				if !addID(id) {
+					if id != "" && seen[id] {
+						selectorTasks[selectorKey][id] = true
+					}
 					withinCap = false
 					break
+				}
+				if id != "" && seen[id] {
+					selectorTasks[selectorKey][id] = true
 				}
 			}
 			if !withinCap {
@@ -421,12 +453,16 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	for i := range selectorOrder {
+		key := selectorOrder[i].Kind + ":" + selectorOrder[i].ID
+		selectorOrder[i].TaskIDs = selectorTasks[key]
+	}
 
 	// Per-task sync (downloads + enrichment) runs in the background so a big or
 	// video-heavy group doesn't blow the request budget. The board updates live
 	// over the websocket as each issue is created/reconciled. A lightweight
 	// in-memory progress tracker lets the import UI show a live "synced X/N".
-	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st, selectorOrder)
 
 	resp.Accepted = len(taskIDs)
 	writeJSON(w, http.StatusAccepted, resp)
@@ -493,7 +529,11 @@ func (h *Handler) ImportMyBitrixTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st, []bitrixImportProgressSelector{{
+		Kind:    "user",
+		ID:      bitrixID,
+		TaskIDs: seen,
+	}})
 	resp.Accepted = len(taskIDs)
 	writeJSON(w, http.StatusAccepted, resp)
 }
@@ -580,7 +620,15 @@ func (h *Handler) SyncBitrixProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
+	groupTasks := make(map[string]bool, len(taskIDs))
+	for _, id := range taskIDs {
+		groupTasks[id] = true
+	}
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st, []bitrixImportProgressSelector{{
+		Kind:    "group",
+		ID:      groupID,
+		TaskIDs: groupTasks,
+	}})
 
 	// Stamp the last-sync time now (the sync is enqueued + streams in over the
 	// websocket). Mirrors the Zoho zoho_synced_at settings merge. A fresh short
@@ -610,36 +658,95 @@ func (h *Handler) SyncBitrixProject(w http.ResponseWriter, r *http.Request) {
 // practice); a new run overwrites the previous snapshot.
 var bitrixImportProgressState struct {
 	sync.Mutex
+	RunID   uint64
 	Total   int
 	Synced  int
 	Running bool
+	Items   []BitrixImportProgressItem
+	// TaskItems maps a Bitrix task id to the indexes of selector rows that
+	// should advance when that task completes.
+	TaskItems map[string][]int
 }
 
-func bitrixImportProgressStart(total int) {
+type bitrixImportProgressSelector struct {
+	Kind    string
+	ID      string
+	TaskIDs map[string]bool
+}
+
+// BitrixImportProgressItem is one selected workgroup/user inside a live run.
+// It lets the UI show truthful per-selector progress instead of repeating the
+// global X/N value beside every selected row.
+type BitrixImportProgressItem struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Total   int    `json:"total"`
+	Synced  int    `json:"synced"`
+	Running bool   `json:"running"`
+}
+
+func bitrixImportProgressStart(total int, selectors []bitrixImportProgressSelector) uint64 {
 	bitrixImportProgressState.Lock()
+	bitrixImportProgressState.RunID++
+	runID := bitrixImportProgressState.RunID
 	bitrixImportProgressState.Total = total
 	bitrixImportProgressState.Synced = 0
 	bitrixImportProgressState.Running = total > 0
+	bitrixImportProgressState.Items = make([]BitrixImportProgressItem, 0, len(selectors))
+	bitrixImportProgressState.TaskItems = map[string][]int{}
+	for _, selector := range selectors {
+		itemIndex := len(bitrixImportProgressState.Items)
+		item := BitrixImportProgressItem{
+			Kind:    selector.Kind,
+			ID:      selector.ID,
+			Total:   len(selector.TaskIDs),
+			Running: len(selector.TaskIDs) > 0,
+		}
+		bitrixImportProgressState.Items = append(bitrixImportProgressState.Items, item)
+		for taskID := range selector.TaskIDs {
+			bitrixImportProgressState.TaskItems[taskID] = append(bitrixImportProgressState.TaskItems[taskID], itemIndex)
+		}
+	}
 	bitrixImportProgressState.Unlock()
+	return runID
 }
 
-func bitrixImportProgressInc() {
+func bitrixImportProgressInc(runID uint64, taskID string) {
 	bitrixImportProgressState.Lock()
+	if bitrixImportProgressState.RunID != runID {
+		bitrixImportProgressState.Unlock()
+		return
+	}
 	bitrixImportProgressState.Synced++
+	for _, itemIndex := range bitrixImportProgressState.TaskItems[taskID] {
+		item := &bitrixImportProgressState.Items[itemIndex]
+		item.Synced++
+		if item.Synced >= item.Total {
+			item.Running = false
+		}
+	}
 	bitrixImportProgressState.Unlock()
 }
 
-func bitrixImportProgressFinish() {
+func bitrixImportProgressFinish(runID uint64) {
 	bitrixImportProgressState.Lock()
+	if bitrixImportProgressState.RunID != runID {
+		bitrixImportProgressState.Unlock()
+		return
+	}
 	bitrixImportProgressState.Running = false
+	for i := range bitrixImportProgressState.Items {
+		bitrixImportProgressState.Items[i].Running = false
+	}
 	bitrixImportProgressState.Unlock()
 }
 
 // BitrixImportProgressResponse mirrors the import progress for the UI poll.
 type BitrixImportProgressResponse struct {
-	Total   int  `json:"total"`
-	Synced  int  `json:"synced"`
-	Running bool `json:"running"`
+	Total   int                        `json:"total"`
+	Synced  int                        `json:"synced"`
+	Running bool                       `json:"running"`
+	Items   []BitrixImportProgressItem `json:"items"`
 }
 
 // GetBitrixImportProgress returns the live progress of the most recent import.
@@ -656,6 +763,7 @@ func (h *Handler) GetBitrixImportProgress(w http.ResponseWriter, r *http.Request
 		Total:   bitrixImportProgressState.Total,
 		Synced:  bitrixImportProgressState.Synced,
 		Running: bitrixImportProgressState.Running,
+		Items:   append([]BitrixImportProgressItem(nil), bitrixImportProgressState.Items...),
 	}
 	bitrixImportProgressState.Unlock()
 	writeJSON(w, http.StatusOK, resp)

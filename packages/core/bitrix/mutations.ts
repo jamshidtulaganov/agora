@@ -12,6 +12,10 @@ export function useImportBitrixTasks() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: BitrixImportRequest) => api.importBitrixTasks(req),
+    // Authorization/configuration failures are deterministic. Retrying a 403
+    // made one click hammer the import endpoint several times while the UI hid
+    // the actual error.
+    retry: false,
     onSettled: () => {
       qc.invalidateQueries({ queryKey: bitrixKeys.all });
       qc.invalidateQueries({ queryKey: ["issues"] });

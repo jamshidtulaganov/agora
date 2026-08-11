@@ -625,17 +625,17 @@ func (h *Handler) PollBitrixUserTasks(ctx context.Context) {
 // ctx + cancel (it also used ctx to resolve the task ids); this helper invokes
 // cancel() once the goroutine finishes. Shared by the bulk import
 // (ImportBitrixTasks) and the per-project sync (SyncBitrixProject).
-func (h *Handler) startBitrixTaskSync(ctx context.Context, cancel context.CancelFunc, taskIDs []string, cfg bitrix.RouteConfig, st *bitrixSyncState) {
-	bitrixImportProgressStart(len(taskIDs))
+func (h *Handler) startBitrixTaskSync(ctx context.Context, cancel context.CancelFunc, taskIDs []string, cfg bitrix.RouteConfig, st *bitrixSyncState, selectors []bitrixImportProgressSelector) {
+	runID := bitrixImportProgressStart(len(taskIDs), selectors)
 	go func() {
 		defer cancel()
 		for _, id := range taskIDs {
 			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
 				slog.Warn("bitrix sync: task sync failed", "task_id", id, "error", err)
 			}
-			bitrixImportProgressInc()
+			bitrixImportProgressInc(runID, id)
 		}
-		bitrixImportProgressFinish()
+		bitrixImportProgressFinish(runID)
 		slog.Info("bitrix sync: background sync finished",
 			"requested", len(taskIDs), "created", st.created, "updated", st.updated, "skipped", st.skipped)
 	}()

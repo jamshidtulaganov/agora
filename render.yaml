@@ -82,7 +82,10 @@ services:
       - key: BITRIX_OUTBOUND_USER_EMAIL
         value: j.tulaaganov@salesdoc.io
       - key: AGORA_BITRIX_BULK_IMPORT
-        value: "false"
+        # The endpoint remains fail-closed to the two emails above, and requires
+        # a workspace owner/admin. Enable the operator UI for the initial/manual
+        # Jamshid + Shaxzod imports.
+        value: "true"
       - key: APP_ENV
         value: production
       - key: ALLOW_SIGNUP

@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string -- internal Bitrix import admin panel; i18n is a follow-up */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DatabaseZap, Loader2, RefreshCw, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -10,6 +10,7 @@ import {
   bitrixImportProgressOptions,
   useImportBitrixTasks,
   type BitrixImportResponse,
+  type BitrixImportProgressItem,
 } from "@agora/core/bitrix";
 import { Button } from "@agora/ui/components/ui/button";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
@@ -18,6 +19,52 @@ import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "../../layout/page-header";
 
 type Mode = "groups" | "users";
+
+function SelectorProgress({
+  item,
+  pending,
+}: {
+  item?: BitrixImportProgressItem;
+  pending: boolean;
+}) {
+  if (pending) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" /> Resolving…
+      </span>
+    );
+  }
+  if (!item) return <span className="text-xs text-muted-foreground/40">—</span>;
+
+  const percent = item.total ? Math.min(100, Math.round((item.synced / item.total) * 100)) : 100;
+  return (
+    <span className="inline-flex items-center justify-end gap-2" aria-label={`${item.synced} of ${item.total} synced`}>
+      <span className="relative size-7 shrink-0">
+        <svg className="size-7 -rotate-90" viewBox="0 0 28 28" aria-hidden="true">
+          <circle cx="14" cy="14" r="11" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted" />
+          <circle
+            cx="14"
+            cy="14"
+            r="11"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            pathLength="100"
+            strokeDasharray={`${percent} 100`}
+            className="text-primary transition-all"
+          />
+        </svg>
+        <span className="absolute inset-0 grid place-items-center text-[8px] font-medium tabular-nums">
+          {percent}
+        </span>
+      </span>
+      <span className="min-w-10 text-right text-xs tabular-nums text-muted-foreground">
+        {item.total ? `${item.synced}/${item.total}` : "No tasks"}
+      </span>
+    </span>
+  );
+}
 
 /**
  * Bitrix import browser. Import EITHER by workgroup (each group → a project,
@@ -41,14 +88,18 @@ export function BitrixSyncPanel() {
   const [polling, setPolling] = useState(false);
   const progressQuery = useQuery(bitrixImportProgressOptions(polling));
   const progress = progressQuery.data;
-  // Stop polling once the backend reports the run finished.
-  if (polling && progress && !progress.running) {
-    // defer state update out of render
-    queueMicrotask(() => setPolling(false));
-  }
+  // Stop polling once the backend reports the run finished, but keep the final
+  // snapshot rendered so a fast import doesn't make its progress disappear.
+  useEffect(() => {
+    if (polling && progress && !progress.running) setPolling(false);
+  }, [polling, progress]);
 
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
+  const progressBySelector = useMemo(
+    () => new Map((progress?.items ?? []).map((item) => [`${item.kind}:${item.id}`, item])),
+    [progress?.items],
+  );
 
   const q = filter.trim().toLowerCase();
   const visibleGroups = useMemo(
@@ -99,13 +150,16 @@ export function BitrixSyncPanel() {
   }
   function runImport() {
     if (!totalSelected) return;
+    setPolling(false);
     setResult(null);
     importMut.mutate(
       { group_ids: selectedGroupIds, user_ids: selectedUserIds },
       {
         onSuccess: (r) => {
           setResult(r);
-          if (r.accepted) setPolling(true);
+          // Fetch at least one progress snapshot even for a zero-task run, so
+          // every selected user gets a truthful "No tasks" completion state.
+          setPolling(true);
         },
       },
     );
@@ -133,7 +187,11 @@ export function BitrixSyncPanel() {
           >
             <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
           </Button>
-          <Button size="sm" onClick={runImport} disabled={!totalSelected || importMut.isPending}>
+          <Button
+            size="sm"
+            onClick={runImport}
+            disabled={!totalSelected || importMut.isPending || progress?.running}
+          >
             {importMut.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
             Import{totalSelected ? ` ${totalSelected}` : ""}
           </Button>
@@ -187,7 +245,13 @@ export function BitrixSyncPanel() {
           </div>
         )}
 
-        {progress && progress.total > 0 && (polling || progress.running) && (
+        {importMut.isError && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Import failed: {(importMut.error as Error)?.message}
+          </div>
+        )}
+
+        {progress && progress.total > 0 && (polling || progress.running || result !== null) && (
           <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
             <div className="mb-1.5 flex items-center justify-between text-xs">
               <span className="font-medium">
@@ -243,6 +307,7 @@ export function BitrixSyncPanel() {
               <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
               <span className="flex-1">{mode === "groups" ? "Workgroup" : "User"}</span>
               <span className="w-44">{mode === "groups" ? "Workspace" : "Email"}</span>
+              <span className="w-32 text-right">Progress</span>
             </div>
 
             {mode === "groups"
@@ -266,6 +331,12 @@ export function BitrixSyncPanel() {
                           <span className="text-muted-foreground/60">unrouted</span>
                         )}
                       </span>
+                      <span className="w-32 text-right">
+                        <SelectorProgress
+                          item={progressBySelector.get(`group:${g.id}`)}
+                          pending={importMut.isPending && !!selected[g.id]}
+                        />
+                      </span>
                     </div>
                   );
                 })
@@ -281,6 +352,12 @@ export function BitrixSyncPanel() {
                       {u.position ? <span className="text-muted-foreground/60"> · {u.position}</span> : null}
                     </span>
                     <span className="w-44 truncate text-xs text-muted-foreground">{u.email}</span>
+                    <span className="w-32 text-right">
+                      <SelectorProgress
+                        item={progressBySelector.get(`user:${u.id}`)}
+                        pending={importMut.isPending && !!selected[u.id]}
+                      />
+                    </span>
                   </div>
                 ))}
 

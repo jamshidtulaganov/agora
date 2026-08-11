@@ -44,6 +44,16 @@ export interface BitrixImportProgress {
   total: number;
   synced: number;
   running: boolean;
+  items: BitrixImportProgressItem[];
+}
+
+/** Progress for one selected Bitrix user or workgroup inside an import run. */
+export interface BitrixImportProgressItem {
+  kind: "user" | "group";
+  id: string;
+  total: number;
+  synced: number;
+  running: boolean;
 }
 
 /** Tally of an import run. */
