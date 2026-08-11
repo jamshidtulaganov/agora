@@ -318,6 +318,42 @@ func (h *Handler) resolveProjectByTitle(ctx context.Context, wsID pgtype.UUID, t
 	return id, true
 }
 
+// bitrixProjectSquadAssignee returns the squad bound to a resolved target
+// project. Project workforce binding is more specific than the portal-wide
+// Bitrix responsible/review routing, so callers apply this last. That prevents a
+// configured review squad from conflicting with project.squad_id and causing a
+// processed import to create no issue.
+func (h *Handler) bitrixProjectSquadAssignee(ctx context.Context, wsID, projectID pgtype.UUID, st *bitrixSyncState) (pgtype.Text, pgtype.UUID, bool) {
+	if !projectID.Valid {
+		return pgtype.Text{}, pgtype.UUID{}, false
+	}
+	key := util.UUIDToString(projectID)
+	if squadID, ok := st.projectSquads[key]; ok {
+		if !squadID.Valid {
+			return pgtype.Text{}, pgtype.UUID{}, false
+		}
+		return pgtype.Text{String: "squad", Valid: true}, squadID, true
+	}
+
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          projectID,
+		WorkspaceID: wsID,
+	})
+	if err != nil {
+		st.projectSquads[key] = pgtype.UUID{}
+		if err != pgx.ErrNoRows {
+			slog.Warn("bitrix sync: resolve project squad failed",
+				"project_id", key, "workspace_id", util.UUIDToString(wsID), "error", err)
+		}
+		return pgtype.Text{}, pgtype.UUID{}, false
+	}
+	st.projectSquads[key] = project.SquadID
+	if !project.SquadID.Valid {
+		return pgtype.Text{}, pgtype.UUID{}, false
+	}
+	return pgtype.Text{String: "squad", Valid: true}, project.SquadID, true
+}
+
 // getOrCreateBitrixSprint returns the Agora sprint id for a sprint-named Bitrix
 // workgroup, creating it under the given host project on first sight. It mirrors
 // getOrCreateBitrixProject exactly, but the durable "bitrix_group:<id>" marker

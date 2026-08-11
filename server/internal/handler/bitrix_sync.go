@@ -426,6 +426,10 @@ type bitrixSyncState struct {
 	// when no such project), so title-prefix routing resolves each named product
 	// project (sd-main / sd-cs / sd-billing) once per batch.
 	projectByTitle map[string]pgtype.UUID
+	// projectSquads maps a resolved project id to its bound squad id (zero when
+	// unbound). Project workforce binding is authoritative over Bitrix's generic
+	// responsible/review assignee and is resolved once per project per batch.
+	projectSquads map[string]pgtype.UUID
 	// routing maps "<workspaceID>" -> the project-routing config loaded from
 	// workspace.settings (title-prefix rules + default project). A present key
 	// means "loaded" (even when both fields are empty); absent triggers a load.
@@ -474,6 +478,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		userCache:      map[string]*bitrix.User{},
 		commentAuthors: map[string]bitrixAuthorRef{},
 		projectByTitle: map[string]pgtype.UUID{},
+		projectSquads:  map[string]pgtype.UUID{},
 		routing:        map[string]bitrixRoutingConfig{},
 		importContent:  true,
 	}
@@ -758,6 +763,11 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 				"task_id", task.ID, "status", mappedStatus)
 		}
 
+		// Resolve the task's group to its Agora target (project + optional sprint)
+		// before the assignee. A squad-bound project owns its workforce and must
+		// override a conflicting generic Bitrix review squad.
+		targetProject, targetSprint := h.resolveBitrixTarget(ctx, ws.ID, task, st)
+
 		// Re-resolve the assignee from RESPONSIBLE_ID; an ONTASKUPDATE may have
 		// reassigned the Bitrix task. Apply only when it actually differs, via a
 		// RAW bus-free update (no EventIssueUpdated publish, to avoid an
@@ -766,6 +776,9 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 		if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
 			assigneeType, assigneeID = reviewType, reviewID
+		}
+		if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, targetProject, st); ok {
+			assigneeType, assigneeID = projectType, projectSquadID
 		}
 		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.bitrixSetIssueAssignee(ctx, existing.ID, ws.ID, assigneeType, assigneeID); err != nil {
@@ -799,13 +812,6 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 				h.importBitrixAttachments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
 			}
 		}
-
-		// Resolve the task's group to its Agora target (project + optional sprint).
-		// For a group already mapped to a project this returns that project with no
-		// sprint (case (1) of resolveBitrixTarget), so re-syncing an issue that
-		// predates sprint-mapping never spuriously mints a sprint — the new-syncs-
-		// only rule holds on the update path too.
-		targetProject, targetSprint := h.resolveBitrixTarget(ctx, ws.ID, task, st)
 
 		// Backfill the project for issues created before the group→project mapping
 		// existed (the create path sets ProjectID; older synced issues have none).
@@ -868,8 +874,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
+	responsibleIsWorkspaceMember := assigneeType.Valid
 	if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
 		assigneeType, assigneeID = reviewType, reviewID
+	}
+	if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, projectID, st); ok {
+		assigneeType, assigneeID = projectType, projectSquadID
 	}
 
 	// Per-user scope: only import a task that belongs to one of THIS workspace's
@@ -878,7 +888,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// importing it unassigned, so the webhook/poller never pull tasks that aren't
 	// any member's own. Self-import + auto-pool fetch the acting user's own tasks,
 	// so this only filters a routed task the responsible isn't a member for.
-	if bitrixImportOwnOnly() && !assigneeType.Valid {
+	if bitrixImportOwnOnly() && !responsibleIsWorkspaceMember {
 		slog.Info("bitrix sync: responsible is not a workspace member — skipping import (own-only)",
 			"task_id", task.ID, "responsible_id", task.ResponsibleID, "workspace", slug)
 		st.skipped++

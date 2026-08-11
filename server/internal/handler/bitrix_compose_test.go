@@ -2,8 +2,62 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 )
+
+// TestBitrixProjectBindingOwnsAssignee pins the project-workforce contract for
+// imports: once routing resolves a squad-bound project, that project's squad
+// must win over the Bitrix responsible/review fallback. Otherwise the issue
+// service rejects the import as an out-of-squad assignment while progress still
+// advances, leaving a misleading 200/200 run with no created issues.
+func TestBitrixProjectBindingOwnsAssignee(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+	portal := newBitrixRichPortal(t)
+	configureBitrixEnvRich(t, portal.srv.URL)
+
+	leaderID := createHandlerTestAgent(t, "Bitrix bound squad leader", []byte("[]"))
+	var squadID, projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, leader_id, creator_id)
+		VALUES ($1::uuid, $2, $3::uuid, $4::uuid)
+		RETURNING id::text
+	`, testWorkspaceID, fmt.Sprintf("Bitrix bound squad %d", time.Now().UnixNano()), leaderID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	projectTitle := fmt.Sprintf("Bitrix bound project %d", time.Now().UnixNano())
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title, status, priority, squad_id)
+		VALUES ($1::uuid, $2, 'planned', 'none', $3::uuid)
+		RETURNING id::text
+	`, testWorkspaceID, projectTitle, squadID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	const taskID = "bx-compose-bound-squad"
+	cleanupBitrixIssues(t, taskID)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1::uuid`, projectID)
+		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1::uuid`, squadID)
+	})
+	setWorkspaceBitrixRouting(t, `{"bitrix_default_project":`+jsonStr(projectTitle)+`}`)
+	portal.setTask(taskID, `{"id":"`+taskID+`","title":"Bound project task","status":2,"tags":["ai"]}`)
+
+	if err := testHandler.syncBitrixTaskWithState(ctx, taskID, bitrixRouteConfig(), testHandler.newBitrixSyncState()); err != nil {
+		t.Fatalf("sync task: %v", err)
+	}
+	_, _, assigneeType, assigneeID, count := issueByBitrixTaskID(t, taskID)
+	if count != 1 {
+		t.Fatalf("issue count = %d, want 1", count)
+	}
+	if assigneeType != "squad" || assigneeID != squadID {
+		t.Fatalf("assignee = %s:%s, want bound squad:%s", assigneeType, assigneeID, squadID)
+	}
+}
 
 // TestBitrixComposeNamedRoutingWithSprint verifies the fix for the "tasks pile up
 // flat on every sync" problem: named-project routing (title prefix / default) and
