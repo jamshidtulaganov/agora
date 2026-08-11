@@ -667,7 +667,9 @@ describe("IssueDetail (shared)", () => {
 
     expect(await screen.findByText("Agent work")).toBeInTheDocument();
     expect(screen.getByText("@Experience Capture responsive design evidence")).toBeInTheDocument();
+    expect(screen.getByText("Runtime branch")).toBeInTheDocument();
     expect(screen.getByText("agent/experience/task-completed")).toBeInTheDocument();
+    expect(screen.getByText("runtime")).toBeInTheDocument();
   });
 
   it("hides every optional property row when none are set", async () => {

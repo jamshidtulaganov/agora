@@ -1580,13 +1580,21 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className="min-w-0 truncate font-mono text-[11px] text-foreground/90">
-                        {agentWork.branch}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate font-mono text-[11px] text-foreground/90">
+                          {agentWork.branch}
+                        </span>
+                        <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+                          {t(($) => $.detail.agent_branch_runtime_badge)}
+                        </span>
                       </span>
                     }
                   />
-                  <TooltipContent side="top" className="font-mono text-xs">
-                    {agentWork.branch}
+                  <TooltipContent side="top" className="max-w-sm text-xs">
+                    <span className="font-mono">{agentWork.branch}</span>
+                    <span className="mt-1 block text-muted-foreground">
+                      {t(($) => $.detail.agent_branch_runtime_hint)}
+                    </span>
                   </TooltipContent>
                 </Tooltip>
               </PropRow>

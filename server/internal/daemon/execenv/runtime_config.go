@@ -571,6 +571,7 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- Include the diff in a fenced ```diff``` block: run `git --no-pager diff <base>...HEAD` (or `git --no-pager diff <base>...<branch>`). For a large diff, lead with `git --no-pager diff --stat`, then the meaningful hunks per file (not whole files).\n")
 	b.WriteString("- Add a one-line **per-file summary** (`path — what changed`) and the **before → after** for each behavioral change.\n")
 	b.WriteString("- If you pushed a branch, state the branch and that `git push` returned exit 0, and include the PR or compare URL.\n")
+	b.WriteString("- If you did not push, call the branch a **local runtime branch** and say explicitly that it is not available on the remote. Never use `shipped`, `published`, or imply that a branch exists on GitHub without a successful push or a remote URL.\n")
 	b.WriteString("- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.\n\n")
 
 	// Progress contract — a platform-wide LIVE-view output contract for ALL

@@ -207,6 +207,8 @@ func TestInjectRuntimeConfigShowsCodeChanges(t *testing.T) {
 		"## Showing Code Changes",
 		"git --no-pager diff",
 		"```diff```",
+		"local runtime branch",
+		"not available on the remote",
 		"Never describe a code change without showing its lines",
 	} {
 		if !strings.Contains(s, want) {
