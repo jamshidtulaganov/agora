@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://json.schemastore.org/render.json
 
 # Agora deployment for desktop + backend, with a lightweight public web entry
-# point for browser login and desktop downloads. Docs, daemon, and Telegram
-# Mini App services are not provisioned.
+# point for browser login and desktop downloads and an always-on Claude agent
+# worker. Docs and Telegram Mini App services are not provisioned.
 
 previews:
   generation: off
@@ -164,6 +164,44 @@ services:
       # Docs are intentionally not deployed in this topology.
       - key: DOCS_URL
         value: http://127.0.0.1:4000
+
+  # Outbound-only worker: claims Agora tasks and executes them with Claude Code
+  # even when every developer laptop is offline. HOME and all worktrees live on
+  # the persistent disk so daemon identity and repository clones survive deploys.
+  - type: worker
+    name: agora-daemon-claude
+    runtime: docker
+    repo: https://github.com/jamshidtulaganov/agora
+    branch: master
+    region: frankfurt
+    # Claude plus repository builds need more headroom than Starter's 512 MB.
+    plan: pro
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile.daemon
+    dockerContext: .
+    disk:
+      name: agora-daemon-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: AGORA_PAT
+        sync: false
+      - key: CLAUDE_CODE_OAUTH_TOKEN
+        sync: false
+      - key: AGORA_SERVER_URL
+        value: https://agora-web-7mav.onrender.com
+      - key: AGORA_APP_URL
+        value: https://agora-web-7mav.onrender.com
+      - key: AGORA_WORKSPACES_ROOT
+        value: /data/workspaces
+      - key: AGORA_DAEMON_DEVICE_NAME
+        value: Render 24/7
+      - key: AGORA_AGENT_RUNTIME_NAME
+        value: Claude Render 24/7
+      - key: AGORA_DAEMON_MAX_CONCURRENT_TASKS
+        value: "2"
+      - key: AGORA_DAEMON_AUTO_UPDATE
+        value: "false"
 
 databases:
   - name: agora-db
