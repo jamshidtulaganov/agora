@@ -5,6 +5,7 @@ import {
   registerForegroundSystemNotificationHandler,
   registerSystemNotificationClickHandler,
   requestWebNotificationPermission,
+  summarizeSystemNotificationBody,
   showForegroundSystemNotification,
   showWebNotification,
   type SystemNotificationPayload,
@@ -94,6 +95,30 @@ describe("requestWebNotificationPermission", () => {
 
     await expect(requestWebNotificationPermission()).resolves.toBe("denied");
     expect(FakeNotification.requestPermission).not.toHaveBeenCalled();
+  });
+});
+
+describe("summarizeSystemNotificationBody", () => {
+  it("removes agent protocol blocks and keeps the human-readable result", () => {
+    const raw = [
+      "**PROGRESS:** Dev bosqichi yakunlandi.",
+      "```todo\n- [x] inspect\n- [x] handoff\n```",
+      "Natija issue commentiga yozildi.",
+      "```agora-handoff\n{\"schema_version\":1,\"contracts\":[{\"name\":\"huge\"}]}\n```",
+    ].join("\n\n");
+
+    expect(summarizeSystemNotificationBody(raw)).toBe(
+      "PROGRESS: Dev bosqichi yakunlandi. Natija issue commentiga yozildi.",
+    );
+  });
+
+  it("flattens markdown and caps the preview", () => {
+    const raw = `[README.md](https://example.test/readme) — ${"uzun matn ".repeat(30)}`;
+    const preview = summarizeSystemNotificationBody(raw);
+
+    expect(preview.startsWith("README.md — uzun matn")).toBe(true);
+    expect(preview.length).toBeLessThanOrEqual(140);
+    expect(preview.endsWith("…")).toBe(true);
   });
 });
 

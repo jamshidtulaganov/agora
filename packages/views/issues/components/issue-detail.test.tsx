@@ -500,6 +500,7 @@ function renderIssueDetailWithHighlight(
 describe("IssueDetail (shared)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockViewport.isMobile = false;
     // Default: issue loads successfully
     mockApiObj.getIssue.mockResolvedValue(mockIssue);
@@ -781,6 +782,85 @@ describe("IssueDetail (shared)", () => {
     });
 
     expect(screen.getByText("I can help with this")).toBeInTheDocument();
+  });
+
+  it("shows the most recently active thread first and newest replies first", async () => {
+    mockApiObj.listTimeline.mockResolvedValue([
+      {
+        type: "comment",
+        id: "old-root",
+        actor_type: "member",
+        actor_id: "user-1",
+        content: "Older root with fresh replies",
+        parent_id: null,
+        created_at: "2026-01-10T00:00:00Z",
+        updated_at: "2026-01-10T00:00:00Z",
+        comment_type: "comment",
+      },
+      {
+        type: "comment",
+        id: "middle-root",
+        actor_type: "member",
+        actor_id: "user-1",
+        content: "Newer quiet root",
+        parent_id: null,
+        created_at: "2026-01-20T00:00:00Z",
+        updated_at: "2026-01-20T00:00:00Z",
+        comment_type: "comment",
+      },
+      {
+        type: "comment",
+        id: "older-reply",
+        actor_type: "agent",
+        actor_id: "agent-1",
+        content: "Older reply",
+        parent_id: "old-root",
+        created_at: "2026-01-21T00:00:00Z",
+        updated_at: "2026-01-21T00:00:00Z",
+        comment_type: "comment",
+      },
+      {
+        type: "comment",
+        id: "newest-reply",
+        actor_type: "agent",
+        actor_id: "agent-1",
+        content: "Newest reply",
+        parent_id: "old-root",
+        created_at: "2026-01-22T00:00:00Z",
+        updated_at: "2026-01-22T00:00:00Z",
+        comment_type: "comment",
+      },
+    ] as TimelineEntry[]);
+
+    renderIssueDetail();
+
+    const activeThread = await screen.findByText("Older root with fresh replies");
+    const quietThread = screen.getByText("Newer quiet root");
+    const newestReply = screen.getByText("Newest reply");
+    const olderReply = screen.getByText("Older reply");
+
+    expect(
+      activeThread.compareDocumentPosition(quietThread) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      newestReply.compareDocumentPosition(olderReply) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("marks unseen comments with a compact indicator without changing card spacing", async () => {
+    window.localStorage.setItem("agora:issue-seen:issue-1", "1");
+
+    renderIssueDetail();
+
+    const indicators = await screen.findAllByLabelText("New comment");
+    const indicator = indicators[0]!;
+    const wrapper = indicator.parentElement;
+
+    expect(indicator).toHaveAttribute("data-new-comment-indicator");
+    expect(wrapper).toHaveClass("relative", "pb-3");
+    expect(wrapper?.className).not.toContain("ring-primary");
+    expect(wrapper?.className).not.toContain("-mx-3");
+    expect(wrapper?.className).not.toContain("pt-2");
   });
 
   it("collapses non-trailing activity blocks and expands the last one by default", async () => {

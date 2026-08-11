@@ -44,6 +44,7 @@ import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, Upda
 import { contentReferencesAttachment } from "@agora/core/types";
 import { formatDateOnly } from "@agora/core/issues/date";
 import { formatActivity, type ActivityT } from "./activity-format";
+import { isRedundantAgentCompletionFailure } from "./agent-comment-display";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
@@ -846,16 +847,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // bucketed under their parent's id and rendered nested inside CommentCard.
     // No orphan rescue needed: the timeline is fetched in full, so every
     // reply's parent is always in the same array.
-    // NEWEST FIRST: the timeline arrives oldest-first (ASC); reverse the
-    // top-level entries so the latest comment/activity leads the feed. Replies
-    // inside a thread deliberately KEEP chronological order (a conversation
-    // still reads top-down inside its card) — only the top level flips.
-    const topLevel = timeline
-      .filter((e) => e.type === "activity" || !e.parent_id)
-      .reverse();
     const repliesByParent = new Map<string, TimelineEntry[]>();
     for (const e of timeline) {
-      if (e.type === "comment" && e.parent_id) {
+      if (
+        e.type === "comment" &&
+        e.parent_id &&
+        !isRedundantAgentCompletionFailure(e.content ?? "", e.actor_type)
+      ) {
         const list = repliesByParent.get(e.parent_id) ?? [];
         list.push(e);
         repliesByParent.set(e.parent_id, list);
@@ -867,7 +865,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // the thread is unchanged so unrelated CommentCards keep their memo.
     const prevThreadReplies = prevThreadRepliesRef.current;
     const threadReplies = new Map<string, TimelineEntry[]>();
-    for (const root of topLevel) {
+    const rootEntries = timeline.filter(
+      (e) =>
+        e.type === "activity" ||
+        (!e.parent_id && !isRedundantAgentCompletionFailure(e.content ?? "", e.actor_type)),
+    );
+    for (const root of rootEntries) {
       if (root.type !== "comment") continue;
       const fresh = collectThreadReplies(root.id, repliesByParent);
       const previous = prevThreadReplies.get(root.id);
@@ -877,6 +880,23 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       );
     }
     prevThreadRepliesRef.current = threadReplies;
+
+    // NEWEST FIRST by actual thread activity, not merely root creation time.
+    // A reply to an old thread brings that thread back to the top. Canonical
+    // React Query data remains chronological; only this view is reordered.
+    const latestActivityAt = (entry: TimelineEntry): number => {
+      let latest = new Date(entry.created_at).getTime();
+      if (entry.type === "comment") {
+        for (const reply of threadReplies.get(entry.id) ?? EMPTY_REPLIES) {
+          latest = Math.max(latest, new Date(reply.created_at).getTime());
+        }
+      }
+      return latest;
+    };
+    const topLevel = [...rootEntries].sort((a, b) => {
+      const byTime = latestActivityAt(b) - latestActivityAt(a);
+      return byTime || b.id.localeCompare(a.id);
+    });
 
     // Coalesce consecutive activities from the same actor + action.
     // - task_completed / task_failed: no time limit (these repeat across runs)
@@ -898,7 +918,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           (NO_TIME_LIMIT_ACTIONS.has(entry.action!) ||
             Math.abs(new Date(entry.created_at).getTime() - new Date(prev.created_at).getTime()) <= COALESCE_MS)
         ) {
-          coalesced[coalesced.length - 1] = { ...entry, coalesced_count: (prev.coalesced_count ?? 1) + 1 };
+          // Entries are newest-first. Preserve the newest entry as the block
+          // anchor while folding each older neighbor into its count.
+          coalesced[coalesced.length - 1] = { ...prev, coalesced_count: (prev.coalesced_count ?? 1) + 1 };
           continue;
         }
       }
@@ -928,14 +950,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // resolved thread). Kept in a useMemo so Virtuoso's data identity is stable
   // across unrelated re-renders.
   const items = useMemo<TimelineItem[]>(
-    // Newest-first: reverse the chronological flatten so the latest comment /
-    // activity sits at the TOP of the feed. On a long thread this puts a new
-    // reply in view immediately instead of forcing a scroll to the bottom.
-    // Safe to reverse — every consumer is order-independent: `targetIdx` is a
-    // findIndex on this same array, deep-link scroll is by DOM id/position, and
-    // flattenGroups emits exactly one self-contained item per group (no
-    // resolved-bar/thread ordering pair to break).
-    () => flattenGroups(timelineView.groups, expandedResolved).reverse(),
+    () => flattenGroups(timelineView.groups, expandedResolved),
     [timelineView.groups, expandedResolved],
   );
 
@@ -1644,16 +1659,27 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
     if (item.kind === "comment") {
       const isResolved = !!item.entry.resolved_at;
-      // Tint comments that arrived since the user's last visit (see lastSeenAt).
-      const isNew = lastSeenAt > 0 && new Date(item.entry.created_at).getTime() > lastSeenAt;
+      // Mark comments that arrived since the user's last visit. The indicator
+      // is absolute so unread state never changes card spacing or borders.
+      const latestThreadCommentAt = Math.max(
+        new Date(item.entry.created_at).getTime(),
+        ...(timelineView.threadReplies.get(item.id) ?? EMPTY_REPLIES).map((reply) =>
+          new Date(reply.created_at).getTime(),
+        ),
+      );
+      const isNew = lastSeenAt > 0 && latestThreadCommentAt > lastSeenAt;
       return (
         <div
-          className={cn(
-            "pb-3",
-            isNew && "-mx-3 rounded-lg bg-primary/[0.05] px-3 pt-2 ring-1 ring-inset ring-primary/10",
-          )}
+          className="relative pb-3"
           id={`comment-${item.id}`}
         >
+          {isNew && (
+            <span
+              className="absolute -left-2 top-3 z-10 size-2 rounded-full bg-primary ring-2 ring-background"
+              aria-label={t(($) => $.comment.new_indicator)}
+              data-new-comment-indicator
+            />
+          )}
           <CommentCard
             issueId={id}
             entry={item.entry}

@@ -49,6 +49,12 @@ describe("orchestration display handoffs", () => {
     })).toBe("API contract updated; frontend can now refetch one run.");
   });
 
+  it("does not expose the raw agora-handoff contract", () => {
+    expect(orchestrationHandoffText({
+      output: "Review done.\n```agora-handoff\n{\"schema_version\":1,\"summary\":\"Review done\",\"contracts\":[]}\n```",
+    })).toBe("Review done.");
+  });
+
   it("does not present empty output containers as a handoff", () => {
     expect(orchestrationHandoffText({})).toBe("");
     expect(orchestrationHandoffText([])).toBe("");

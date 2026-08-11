@@ -53,16 +53,16 @@ import { QAEvidenceSection } from "./qa-evidence-section";
 import { DevActivity } from "./dev-lens";
 
 const REVIEW_TAB_QUERY_KEY = "review_tab";
-const REVIEW_TABS = ["activity", "overview", "code", "product", "evidence"] as const;
+const REVIEW_TABS = ["activity", "code", "product", "evidence"] as const;
 type ReviewTab = (typeof REVIEW_TABS)[number];
 
 function isReviewTab(value: string | null): value is ReviewTab {
   return REVIEW_TABS.some((tab) => tab === value);
 }
 
-// Unified Work workspace. Activity and artifact inspection cover the former
-// Dev surface; Decision, findings, gates, and release approval cover Review.
-// They are tabs of one lifecycle rather than separate header stages. Review
+// Unified Work workspace. Activity now includes the decision, findings, gates,
+// and release approval: those signals describe the same execution lifecycle
+// and should not require a second peer tab. Review
 // and release execution remain DAG-owned: this surface can approve the
 // persisted release step or create a versioned correction cycle, but it never
 // creates parallel side tasks.
@@ -353,7 +353,9 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
   const navigation = useNavigation();
   const qc = useQueryClient();
   const { t } = useT("issues");
-  const requestedTab = navigation.searchParams.get(REVIEW_TAB_QUERY_KEY);
+  const requestedValue = navigation.searchParams.get(REVIEW_TAB_QUERY_KEY);
+  // Preserve old Decision deep links after merging that view into Activity.
+  const requestedTab = requestedValue === "overview" ? "activity" : requestedValue;
   const legacyDevTab = navigation.searchParams.get("dev_tab");
   const mappedDevTab = legacyDevTab === "changes"
     ? "code"
@@ -364,12 +366,11 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
         : legacyDevTab === "activity"
           ? "activity"
           : null;
-  const defaultTab = navigation.searchParams.get("lens") === "review" ? "overview" : "activity";
-  const activeTab: ReviewTab = isReviewTab(requestedTab)
+  const requestedActiveTab: ReviewTab = isReviewTab(requestedTab)
     ? requestedTab
     : isReviewTab(mappedDevTab)
       ? mappedDevTab
-      : defaultTab;
+      : "activity";
 
   const [decision, setDecision] = useState<"approve" | "changes" | null>(null);
   const [note, setNote] = useState("");
@@ -379,6 +380,13 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
   const { data: orchestration, isLoading: orchestrationLoading } = useQuery(
     issueOrchestrationOptions(issueId),
   );
+  // Manual verification has no deterministic artifact command to run. Hiding
+  // the empty Checks surface avoids a dead-end "Integrated result required"
+  // screen; agent verification keeps the evidence/checks workspace available.
+  const checksVisible = orchestration?.policy?.verification_mode !== "manual";
+  const activeTab: ReviewTab = requestedActiveTab === "evidence" && !checksVisible
+    ? "activity"
+    : requestedActiveTab;
   const { data: readiness, isLoading } = useQuery({
     queryKey: ["merge-readiness", issueId],
     queryFn: () => api.mergeReadiness(issueId),
@@ -586,10 +594,6 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
               <Radio aria-hidden />
               {t(($) => $.dev_workspace.activity)}
             </TabsTrigger>
-            <TabsTrigger value="overview">
-              <CheckCircle2 aria-hidden />
-              {t(($) => $.review_workspace.overview)}
-            </TabsTrigger>
             <TabsTrigger value="code">
               <FileDiff aria-hidden />
               {t(($) => $.dev_workspace.changes)}
@@ -598,16 +602,15 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
               <Eye aria-hidden />
               {t(($) => $.dev_workspace.preview)}
             </TabsTrigger>
-            <TabsTrigger value="evidence">
-              <ShieldCheck aria-hidden />
-              {t(($) => $.dev_workspace.checks)}
-            </TabsTrigger>
+            {checksVisible && (
+              <TabsTrigger value="evidence">
+                <ShieldCheck aria-hidden />
+                {t(($) => $.dev_workspace.checks)}
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
         <TabsContent value="activity" className="min-h-0 overflow-auto">
-          <DevActivity issueId={issueId} />
-        </TabsContent>
-        <TabsContent value="overview" className="min-h-0 overflow-auto">
           <div className="flex-1 overflow-y-auto">
       <div className="w-full px-8 py-8">
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6">
@@ -886,6 +889,9 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
           </div>
         </div>
       </div>
+      <div className="border-t px-8 py-8">
+        <DevActivity issueId={issueId} />
+      </div>
           </div>
         </TabsContent>
         <TabsContent value="code" className="min-h-0 overflow-auto">
@@ -894,10 +900,12 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
         <TabsContent value="product" className="min-h-0 overflow-auto">
           <ArtifactPreviewPanel issueId={issueId} />
         </TabsContent>
-        <TabsContent value="evidence" className="min-h-0 space-y-4 overflow-auto">
-          <QAEvidenceSection issueId={issueId} status={issue?.status ?? "in_review"} allowRerun={false} />
-          <ArtifactChecksPanel issueId={issueId} />
-        </TabsContent>
+        {checksVisible && (
+          <TabsContent value="evidence" className="min-h-0 space-y-4 overflow-auto">
+            <QAEvidenceSection issueId={issueId} status={issue?.status ?? "in_review"} allowRerun={false} />
+            <ArtifactChecksPanel issueId={issueId} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

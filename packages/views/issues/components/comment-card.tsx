@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@agora/ui/components/ui/card";
@@ -44,6 +44,7 @@ import { deriveThreadResolution } from "./thread-utils";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { parseAgentProtocol } from "./agent-protocol";
 import { AgentProtocolComment } from "./agent-protocol-comment";
+import { humanReadableAgentComment } from "./agent-comment-display";
 
 const highlightedCommentBackgroundClass =
   "bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]";
@@ -125,6 +126,27 @@ interface CommentCardProps {
   onResolvedExpandChange?: (rootId: string, expand: boolean) => void;
   /** ID of the comment to highlight (flash animation). */
   highlightedCommentId?: string | null;
+}
+
+function HumanReadableCommentBody({ entry }: { entry: TimelineEntry }) {
+  const proto = parseAgentProtocol(entry.content ?? "", entry.actor_type);
+  if (proto) {
+    return (
+      <AgentProtocolComment
+        protocol={proto}
+        renderBody={(raw) => (
+          <ReadonlyContent content={raw} attachments={entry.attachments} />
+        )}
+      />
+    );
+  }
+
+  return (
+    <ReadonlyContent
+      content={humanReadableAgentComment(entry.content ?? "", entry.actor_type)}
+      attachments={entry.attachments}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -551,22 +573,7 @@ function CommentRow({
       ) : (
         <>
           <div className="pl-12 pr-4 pt-1 text-sm leading-relaxed text-foreground/85">
-            {(() => {
-              // Agent-protocol comments (a slice-action prompt the orchestrator
-              // posted to drive another agent) render as a human headline +
-              // collapsed prompt instead of an unreadable wall of text.
-              const proto = parseAgentProtocol(entry.content ?? "", entry.actor_type);
-              return proto ? (
-                <AgentProtocolComment
-                  protocol={proto}
-                  renderBody={(raw) => (
-                    <ReadonlyContent content={raw} attachments={entry.attachments} />
-                  )}
-                />
-              ) : (
-                <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
-              );
-            })()}
+            <HumanReadableCommentBody entry={entry} />
           </div>
           <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-12 pr-4" />
           <ReactionBar
@@ -625,9 +632,17 @@ function CommentCardImpl({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const allNestedReplies = replies;
+  // Keep canonical cache data chronological, but show fresh replies first so
+  // a long thread never makes the user scroll to discover what just arrived.
+  const displayedReplies = useMemo(
+    () => [...allNestedReplies].reverse(),
+    [allNestedReplies],
+  );
 
   const replyCount = allNestedReplies.length;
-  const contentPreview = (entry.content ?? "").replace(/\n/g, " ").slice(0, 80);
+  const contentPreview = humanReadableAgentComment(entry.content ?? "", entry.actor_type)
+    .replace(/\n/g, " ")
+    .slice(0, 80);
   const reactions = entry.reactions ?? [];
 
   const isHighlighted = highlightedCommentId === entry.id;
@@ -641,8 +656,8 @@ function CommentCardImpl({
   const threadExpanded = !!expandedResolvedIds?.has(entry.id);
   const replyFolded = replyResolutionId != null && !threadExpanded;
   const foldedReplies = replyResolutionId
-    ? allNestedReplies.filter((r) => r.id !== replyResolutionId)
-    : allNestedReplies;
+    ? displayedReplies.filter((r) => r.id !== replyResolutionId)
+    : displayedReplies;
   const resolutionReply = replyResolutionId
     ? allNestedReplies.find((r) => r.id === replyResolutionId) ?? null
     : null;
@@ -849,22 +864,7 @@ function CommentCardImpl({
             ) : (
               <>
                 <div className="pl-10 text-sm leading-relaxed text-foreground/85">
-                  {(() => {
-              // Agent-protocol comments (a slice-action prompt the orchestrator
-              // posted to drive another agent) render as a human headline +
-              // collapsed prompt instead of an unreadable wall of text.
-              const proto = parseAgentProtocol(entry.content ?? "", entry.actor_type);
-              return proto ? (
-                <AgentProtocolComment
-                  protocol={proto}
-                  renderBody={(raw) => (
-                    <ReadonlyContent content={raw} attachments={entry.attachments} />
-                  )}
-                />
-              ) : (
-                <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
-              );
-            })()}
+                  <HumanReadableCommentBody entry={entry} />
                 </div>
                 <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-10" />
                 <ReactionBar
@@ -927,8 +927,8 @@ function CommentCardImpl({
                   {t(($) => $.comment.resolve.collapse)}
                 </button>
               )}
-              {/* Replies — chronological; the resolution keeps its place with a badge */}
-              {allNestedReplies.map((reply) => (
+              {/* Replies — newest first; the resolution keeps its place with a badge */}
+              {displayedReplies.map((reply) => (
                 <div key={reply.id} id={`comment-${reply.id}`} className={cn("border-t border-border/50 transition-colors duration-700", highlightedCommentId === reply.id && highlightedCommentBackgroundClass)}>
                   <CommentRow
                     issueId={issueId}

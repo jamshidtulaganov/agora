@@ -347,6 +347,7 @@
     "delete_failed": "删除评论失败",
     "reply_count_other": "{{count}} 条回复",
     "leave_comment_placeholder": "留下评论...",
+    "new_indicator": "新评论",
     "send_tooltip": "发送",
     "trigger_source_issue_assignee": "assignee",
     "trigger_source_mention_agent": "@mention",

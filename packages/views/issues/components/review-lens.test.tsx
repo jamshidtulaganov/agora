@@ -70,6 +70,9 @@ vi.mock("./artifact-runtime-panels", () => ({
 vi.mock("./qa-evidence-section", () => ({
   QAEvidenceSection: () => <div>Recorded QA evidence</div>,
 }));
+vi.mock("./dev-lens", () => ({
+  DevActivity: () => <div>Execution activity</div>,
+}));
 
 function baseIssue(over: Record<string, unknown> = {}) {
   return {
@@ -255,6 +258,15 @@ describe("ReviewLensBody", () => {
     expect(screen.queryByRole("button", { name: "Run review" })).not.toBeInTheDocument();
   });
 
+  it("merges Decision into Activity instead of exposing a duplicate peer tab", async () => {
+    renderLens();
+
+    await screen.findByText("No review yet");
+    expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Decision" })).not.toBeInTheDocument();
+    expect(screen.getByText("Execution activity")).toBeInTheDocument();
+  });
+
   it("renders the verdict card: verdict, summary, reviewer, commit, files reviewed", async () => {
     apiMocks.getReviewVerdict.mockResolvedValue(
       passVerdict({
@@ -358,7 +370,7 @@ describe("ReviewLensBody", () => {
     await waitFor(() => expect(approveBtn).toBeEnabled());
   });
 
-  it("keeps changes, preview, and checks as deep-linked work views", async () => {
+  it("keeps changes and preview as deep-linked work views", async () => {
     renderLens();
     fireEvent.click(await screen.findByRole("tab", { name: "Changes" }));
     expect(navigationMocks.replace).toHaveBeenCalledWith(
@@ -373,6 +385,19 @@ describe("ReviewLensBody", () => {
     expect(await screen.findByText("Recorded QA evidence")).toBeInTheDocument();
     expect(screen.getByText("Exact artifact checks")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run QA" })).not.toBeInTheDocument();
+  });
+
+  it("hides Checks and falls back to Activity for manual verification", async () => {
+    navigationMocks.searchParams = new URLSearchParams("lens=review&review_tab=evidence");
+    apiMocks.getIssueOrchestration.mockResolvedValue(
+      activeOrchestration({ policy: { verification_mode: "manual" } }),
+    );
+    renderLens();
+
+    await screen.findByText("No review yet");
+    expect(screen.queryByRole("tab", { name: "Checks" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Exact artifact checks")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("request changes requires a note, then fires api.reviewDecision with it", async () => {

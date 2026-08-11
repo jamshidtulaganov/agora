@@ -350,6 +350,7 @@
     "reply_count_one": "{{count}} ta javob",
     "reply_count_other": "{{count}} ta javob",
     "leave_comment_placeholder": "Izoh qoldiring...",
+    "new_indicator": "Yangi izoh",
     "send_tooltip": "Yuborish",
     "trigger_source_issue_assignee": "mas’ul",
     "trigger_source_mention_agent": "@eslatish",

@@ -40,6 +40,7 @@ import { workspaceKeys, workspaceListOptions } from "../workspace/queries";
 import {
   showForegroundSystemNotification,
   showWebNotification,
+  summarizeSystemNotificationBody,
   type SystemNotificationPayload,
 } from "../platform/system-notification";
 import type { Workspace } from "../types/workspace";
@@ -295,7 +296,7 @@ export async function handleInboxNew(
     itemId: item.id,
     issueKey: item.issue_id ?? item.id,
     title: item.title,
-    body: item.body ?? "",
+    body: summarizeSystemNotificationBody(item.body ?? ""),
   };
   if (isFocused) {
     showForegroundSystemNotification(payload);

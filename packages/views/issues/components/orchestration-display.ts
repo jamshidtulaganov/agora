@@ -6,6 +6,7 @@ import type {
   OrchestrationStage,
   OrchestrationStep,
 } from "@agora/core/types";
+import { humanReadableAgentComment } from "./agent-comment-display";
 
 export type OrchestrationDisplayKind = OrchestrationStage | "integration";
 
@@ -157,7 +158,7 @@ function outputText(value: unknown, depth = 0): string {
  * lines that are already represented by the live-work UI.
  */
 export function orchestrationHandoffText(value: unknown): string {
-  return outputText(value)
+  return humanReadableAgentComment(outputText(value), "agent")
     .replace(/```todo[\s\S]*?```/gi, "")
     .split("\n")
     .filter((line) => !line.trim().startsWith("PROGRESS:"))

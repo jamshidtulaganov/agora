@@ -350,6 +350,7 @@
     "reply_count_one": "{{count}} reply",
     "reply_count_other": "{{count}} replies",
     "leave_comment_placeholder": "Leave a comment...",
+    "new_indicator": "New comment",
     "send_tooltip": "Send",
     "trigger_source_issue_assignee": "assignee",
     "trigger_source_mention_agent": "@mention",

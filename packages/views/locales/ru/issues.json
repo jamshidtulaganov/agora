@@ -350,6 +350,7 @@
     "reply_count_one": "{{count}} ответ",
     "reply_count_other": "{{count}} ответов",
     "leave_comment_placeholder": "Оставьте комментарий...",
+    "new_indicator": "Новый комментарий",
     "send_tooltip": "Отправить",
     "trigger_source_issue_assignee": "исполнитель",
     "trigger_source_mention_agent": "@упоминание",

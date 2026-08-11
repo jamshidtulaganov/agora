@@ -307,7 +307,7 @@ export function DevActivity({ issueId }: { issueId: string }) {
                     key={step.id}
                     step={step}
                     task={task}
-                    instruction={step.instructions.trim() || task?.trigger_summary?.trim() || undefined}
+                    instruction={(step.instructions ?? "").trim() || task?.trigger_summary?.trim() || undefined}
                     defaultOpen={lanes.length <= 2 || inMotion || step.status === "failed" || step.status === "cancelled"}
                   />
                 );

@@ -29,6 +29,32 @@ export interface SystemNotificationPayload {
   body: string;
 }
 
+const NOTIFICATION_PREVIEW_MAX_CHARS = 140;
+
+/**
+ * Turn an inbox body into a notification-sized human preview. Agent comments
+ * may carry fenced todo/handoff contracts that belong in the issue audit log,
+ * not in a transient toast or OS banner.
+ */
+export function summarizeSystemNotificationBody(body: string): string {
+  const plain = body
+    .replace(
+      /```(?:todo|agora-handoff|knowledge-items|qa-manifest|qa-result|test-cases)\b[\s\S]*?```/gi,
+      " ",
+    )
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[*_~`#>|]/g, " ")
+    .replace(/^\s*[-+]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const chars = Array.from(plain);
+  if (chars.length <= NOTIFICATION_PREVIEW_MAX_CHARS) return plain;
+  return `${chars.slice(0, NOTIFICATION_PREVIEW_MAX_CHARS - 1).join("").trimEnd()}…`;
+}
+
 type ClickHandler = (payload: SystemNotificationPayload) => void;
 type ForegroundHandler = (payload: SystemNotificationPayload) => void;
 
