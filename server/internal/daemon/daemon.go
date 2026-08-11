@@ -934,7 +934,7 @@ func (d *Daemon) registerTaskRepos(workspaceID string, repos []RepoData) {
 	}
 
 	type repoCandidate struct {
-		url     string
+		repo    RepoData
 		tracked bool
 	}
 
@@ -958,8 +958,9 @@ func (d *Daemon) registerTaskRepos(workspaceID string, repos []RepoData) {
 		_, inWorkspace := ws.allowedRepoURLs[url]
 		_, inTask := ws.taskRepoURLs[url]
 		ws.taskRepoURLs[url] = struct{}{}
+		repo.URL = url
 		candidates = append(candidates, repoCandidate{
-			url:     url,
+			repo:    repo,
 			tracked: inWorkspace || inTask,
 		})
 	}
@@ -967,10 +968,10 @@ func (d *Daemon) registerTaskRepos(workspaceID string, repos []RepoData) {
 
 	toSync := make([]RepoData, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.tracked && d.repoCache != nil && d.repoCache.Lookup(workspaceID, candidate.url) != "" {
+		if candidate.tracked && d.repoCache != nil && d.repoCache.Lookup(workspaceID, candidate.repo.URL) != "" {
 			continue
 		}
-		toSync = append(toSync, RepoData{URL: candidate.url})
+		toSync = append(toSync, candidate.repo)
 	}
 
 	if d.repoCache != nil && len(toSync) > 0 {
@@ -2847,14 +2848,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, fmt.Errorf("refusing to spawn agent: task has no workspace_id (task_id=%s)", task.ID)
 	}
 
-	// task.Repos is the authoritative repo list for this task — when the
-	// claimed task belongs to a project with github_repo resources the server
-	// has already narrowed it to project repos only. Make sure those URLs are
-	// in the per-workspace allowlist and the local cache, otherwise
-	// `agora repo checkout` would reject project-only URLs that aren't also
-	// bound at the workspace level.
-	d.registerTaskRepos(task.WorkspaceID, task.Repos)
-
 	entry, ok := d.cfg.Agents[provider]
 	if !ok {
 		return TaskResult{}, fmt.Errorf("no agent configured for provider %q", provider)
@@ -2878,6 +2871,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	localAssignments, _ := findLocalDirectoryAssignments(task.ProjectResources, d.cfg.DaemonID)
 	worktreeMode := localAssignments != nil && localAssignments.isWorktreeMode()
 	task.PreprovisionedWorktree = task.OrchestrationStepID != "" && worktreeMode
+	// task.Repos is authoritative for remote-only projects. A project with a
+	// daemon-bound local_directory already has owner-approved source checkouts
+	// (often GitHub clones even when the project also carries GitLab resources),
+	// so cloning the remote resources into a second cache is redundant and can
+	// fail on unrelated remote credentials while the local source is healthy.
+	if localAssignments == nil {
+		d.registerTaskRepos(task.WorkspaceID, task.Repos)
+	}
 
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand

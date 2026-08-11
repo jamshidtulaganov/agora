@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -179,12 +180,14 @@ func provisionLocalWorktreesFromReposAt(ctx context.Context, repos []localRepo, 
 		if readOnly {
 			branch = ""
 		}
-		if err := addWorktreeAt(ctx, repo.SrcPath, target, branch, baseRef, readOnly); err != nil {
+		actualBranch, err := addWorktreeAt(ctx, repo.SrcPath, target, branch, baseRef, readOnly)
+		if err != nil {
 			// Roll back anything already created so a partial failure doesn't
 			// leak worktrees in the user's repos.
 			cleanupWorktrees(ctx, run, log)
 			return nil, err
 		}
+		branch = actualBranch
 		baseSHA, _ := gitOutput(ctx, target, "rev-parse", "HEAD")
 		run.worktrees = append(run.worktrees, provisionedWorktree{SrcRepo: repo.SrcPath, Path: target, Branch: branch, BaseSHA: baseSHA})
 	}
@@ -555,23 +558,75 @@ var worktreeSidecars = []string{
 // addWorktree creates one worktree, reusing an existing branch on retry (a
 // re-claimed task may have left the branch behind).
 func addWorktree(ctx context.Context, srcRepo, target, branch string, log *slog.Logger) error {
-	return addWorktreeAt(ctx, srcRepo, target, branch, "HEAD", false)
+	_, err := addWorktreeAt(ctx, srcRepo, target, branch, "HEAD", false)
+	return err
 }
 
-func addWorktreeAt(ctx context.Context, srcRepo, target, branch, baseRef string, readOnly bool) error {
+func addWorktreeAt(ctx context.Context, srcRepo, target, branch, baseRef string, readOnly bool) (string, error) {
 	if readOnly {
 		if err := gitRun(ctx, srcRepo, "worktree", "add", "--detach", target, baseRef); err != nil {
-			return fmt.Errorf("git detached worktree add for %q at %s: %w", srcRepo, baseRef, err)
+			return "", fmt.Errorf("git detached worktree add for %q at %s: %w", srcRepo, baseRef, err)
 		}
-		return nil
+		return "", nil
 	}
-	if err := gitRun(ctx, srcRepo, "worktree", "add", target, "-b", branch, baseRef); err != nil {
+	if createErr := gitRun(ctx, srcRepo, "worktree", "add", target, "-b", branch, baseRef); createErr != nil {
 		// Branch may already exist (re-claim); add the worktree on it.
-		if reuse := gitRun(ctx, srcRepo, "worktree", "add", target, branch); reuse != nil {
-			return fmt.Errorf("git worktree add for %q: %w", srcRepo, err)
+		if reuseErr := gitRun(ctx, srcRepo, "worktree", "add", target, branch); reuseErr != nil {
+			// A machine may move between the CLI and Desktop profiles. Their
+			// workspace roots differ, while the issue branch deliberately does
+			// not. If the prior profile left that branch checked out in a valid
+			// worktree, Git refuses to check it out again. Continue from the
+			// prior branch tip on a deterministic root-scoped alias instead of
+			// deleting or stealing the other worktree.
+			if priorPath, checkedOut := worktreeForBranch(ctx, srcRepo, branch); checkedOut && !sameCleanPath(priorPath, target) {
+				alias := collisionSafeWorktreeBranch(branch, target)
+				if aliasReuseErr := gitRun(ctx, srcRepo, "worktree", "add", target, alias); aliasReuseErr == nil {
+					return alias, nil
+				}
+				if aliasCreateErr := gitRun(ctx, srcRepo, "worktree", "add", target, "-b", alias, branch); aliasCreateErr == nil {
+					return alias, nil
+				} else {
+					return "", fmt.Errorf("git worktree add for %q: branch %q is already checked out at %q; create root-scoped branch %q: %w", srcRepo, branch, priorPath, alias, aliasCreateErr)
+				}
+			}
+			return "", fmt.Errorf("git worktree add for %q: create branch %q: %v; reuse branch: %w", srcRepo, branch, createErr, reuseErr)
 		}
 	}
-	return nil
+	return branch, nil
+}
+
+func worktreeForBranch(ctx context.Context, srcRepo, branch string) (string, bool) {
+	out, err := gitOutput(ctx, srcRepo, "worktree", "list", "--porcelain")
+	if err != nil || out == "" {
+		return "", false
+	}
+	want := "refs/heads/" + branch
+	current := ""
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			current = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
+		case strings.HasPrefix(line, "branch ") && strings.TrimSpace(strings.TrimPrefix(line, "branch ")) == want:
+			return current, current != ""
+		case line == "":
+			current = ""
+		}
+	}
+	return "", false
+}
+
+func sameCleanPath(a, b string) bool {
+	aAbs, aErr := filepath.Abs(a)
+	bAbs, bErr := filepath.Abs(b)
+	if aErr == nil && bErr == nil {
+		return filepath.Clean(aAbs) == filepath.Clean(bAbs)
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+func collisionSafeWorktreeBranch(branch, target string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(target)))
+	return fmt.Sprintf("%s-root-%x", branch, sum[:4])
 }
 
 // commitWorktreeChanges commits any real (non-sidecar) agent changes in each

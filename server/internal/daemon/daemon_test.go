@@ -1831,6 +1831,53 @@ func TestRegisterTaskReposAllowsProjectOnlyURL(t *testing.T) {
 	}
 }
 
+type recordingRepoCache struct {
+	synced chan []repocache.RepoInfo
+}
+
+func (c *recordingRepoCache) Lookup(string, string) string { return "" }
+
+func (c *recordingRepoCache) Sync(_ string, repos []repocache.RepoInfo) error {
+	copyOfRepos := append([]repocache.RepoInfo(nil), repos...)
+	c.synced <- copyOfRepos
+	return nil
+}
+
+func (c *recordingRepoCache) WithRepoLock(_ string, fn func() error) error { return fn() }
+
+func (c *recordingRepoCache) CreateWorktree(repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return nil, nil
+}
+
+func TestRegisterTaskReposPreservesResolvedCredential(t *testing.T) {
+	t.Parallel()
+	cache := &recordingRepoCache{synced: make(chan []repocache.RepoInfo, 1)}
+	d := &Daemon{
+		repoCache: cache,
+		workspaces: map[string]*workspaceState{
+			"ws-1": newWorkspaceState("ws-1", nil, "", nil, nil),
+		},
+	}
+	d.registerTaskRepos("ws-1", []RepoData{{
+		URL: "https://gitlab.example.test/team/private.git",
+		Auth: &RepoAuth{
+			Kind:     "token",
+			Username: "oauth2",
+			Token:    "secret-token",
+		},
+	}})
+	t.Cleanup(d.waitBackgroundSyncs)
+
+	select {
+	case repos := <-cache.synced:
+		if len(repos) != 1 || repos[0].Username != "oauth2" || repos[0].Token != "secret-token" {
+			t.Fatalf("repo credential was dropped before cache sync: %+v", repos)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for task repo sync")
+	}
+}
+
 // Confirms that a workspace refresh wiping allowedRepoURLs does not also wipe
 // task-scoped URLs (project repos). Without the separate taskRepoURLs map a
 // concurrent refresh would silently revoke project-only URLs and the next

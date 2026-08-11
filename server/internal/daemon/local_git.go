@@ -49,7 +49,14 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 
 func gitRun(ctx context.Context, dir string, args ...string) error {
 	full := append([]string{"-C", dir}, args...)
-	return exec.CommandContext(ctx, "git", full...).Run()
+	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if detail := strings.TrimSpace(string(out)); detail != "" {
+		return fmt.Errorf("%s: %w", detail, err)
+	}
+	return err
 }
 
 // gitHeadRef returns the current branch (empty when detached) and the HEAD sha.

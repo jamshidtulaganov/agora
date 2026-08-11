@@ -489,6 +489,11 @@ func runDaemonForeground(cmd *cobra.Command) error {
 	// Set by the Electron Desktop app when it spawns the CLI so the server
 	// can mark those runtimes as "managed" and hide CLI self-update UI.
 	cfg.LaunchedBy = os.Getenv("AGORA_LAUNCHED_BY")
+	instanceLock, err := daemon.AcquireInstanceLock(cfg)
+	if err != nil {
+		return err
+	}
+	defer instanceLock.Release()
 
 	ctx, stop := notifyShutdownContext(context.Background())
 	defer stop()

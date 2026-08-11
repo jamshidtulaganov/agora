@@ -1787,6 +1787,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					resp.Repos = repos
 				}
 			}
+			// Project resources are resolved during claim (after workspace
+			// registration), so they must receive the same per-repo credential
+			// attachment as workspace repos. Without this, private project-only
+			// GitLab repositories reach the daemon as bare URLs and clone fails
+			// even though Settings contains the matching sealed PAT.
+			resp.Repos = h.attachRepoAuth(r.Context(), issue.WorkspaceID, resp.Repos)
 
 			// When a project binds MORE THAN ONE repo, the agent would otherwise
 			// guess which to use and can open an MR against the wrong one

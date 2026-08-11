@@ -664,7 +664,7 @@ func TestReadOnlyInspectionIgnoresMovingSourceMergeability(t *testing.T) {
 	runGit("commit", "-q", "-m", "source moved")
 
 	target := filepath.Join(t.TempDir(), "verification")
-	if err := addWorktreeAt(context.Background(), source, target, "", integratedHead, true); err != nil {
+	if _, err := addWorktreeAt(context.Background(), source, target, "", integratedHead, true); err != nil {
 		t.Fatal(err)
 	}
 	defer gitRun(context.Background(), source, "worktree", "remove", "--force", target)
@@ -730,6 +730,44 @@ func TestProvisionOrReuse_PreservesActualBranchAcrossContinuationKey(t *testing.
 	}
 	if got := continued.worktrees[0].Branch; got != wantBranch {
 		t.Fatalf("reused worktree branch = %q, want actual existing branch %q", got, wantBranch)
+	}
+}
+
+func TestAddWorktreeAt_UsesRootScopedBranchWhenIssueBranchIsCheckedOutElsewhere(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	source := filepath.Join(t.TempDir(), "svc")
+	makeRepo(t, source)
+	ctx := context.Background()
+	branch := "agent/issue-profile-switch/svc"
+	oldTarget := filepath.Join(t.TempDir(), "old-profile", "svc")
+	oldBranch, err := addWorktreeAt(ctx, source, oldTarget, branch, "HEAD", false)
+	if err != nil {
+		t.Fatalf("create old-profile worktree: %v", err)
+	}
+	if oldBranch != branch {
+		t.Fatalf("old worktree branch = %q, want %q", oldBranch, branch)
+	}
+	t.Cleanup(func() { _ = gitRun(context.Background(), source, "worktree", "remove", "--force", oldTarget) })
+
+	if err := os.WriteFile(filepath.Join(oldTarget, "carried.txt"), []byte("from old profile\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitAt(t, oldTarget, "add", "carried.txt")
+	gitAt(t, oldTarget, "commit", "-q", "-m", "old profile work")
+
+	newTarget := filepath.Join(t.TempDir(), "new-profile", "svc")
+	actualBranch, err := addWorktreeAt(ctx, source, newTarget, branch, "HEAD", false)
+	if err != nil {
+		t.Fatalf("create new-profile worktree: %v", err)
+	}
+	t.Cleanup(func() { _ = gitRun(context.Background(), source, "worktree", "remove", "--force", newTarget) })
+	if actualBranch == branch || !strings.HasPrefix(actualBranch, branch+"-root-") {
+		t.Fatalf("new worktree branch = %q, want root-scoped alias of %q", actualBranch, branch)
+	}
+	if got := gitAt(t, newTarget, "show", "HEAD:carried.txt"); got != "from old profile" {
+		t.Fatalf("new root did not continue from old branch tip: %q", got)
 	}
 }
 
