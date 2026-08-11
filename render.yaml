@@ -77,7 +77,7 @@ services:
         value: "true"
       # Agora account email for outbound gate (may differ from Bitrix EMAIL).
       - key: BITRIX_OUTBOUND_USER_EMAIL
-        value: j.tulaaganov@salesdoc.io
+        value: jamshid.swe@gmail.com
       - key: AGORA_BITRIX_BULK_IMPORT
         # Fail-closed to the email allowlist above; owner/admin only. Operator
         # UI for the initial/manual personal import.
