@@ -67,8 +67,15 @@ Agent needs a runtime and Agora CLI access to attach labels.
 3. Purge historical done Bitrix issues (`cleanup-done` or SQL) **after** deploy so the old importer cannot re-pull them.
 4. Confirm `triage_agent_id` if AI type classification is desired.
 
+## Video → stills for planning (follow-up)
+
+- Bitrix import now **kicks async ffmpeg** as soon as a video attachment is stored (not only on agent assign).
+- Claim / `draft_code` inject a dedicated **VIDEO FRAMES FOR PLANNING** block from `*_frame_NNN.jpg` attachments so long truncated descriptions cannot drop the stills.
+- Manual retry remains: `POST /api/issues/{id}/video-frames` (requires `ffmpeg` on the backend host).
+
 ## Intentionally not done in this session
 
-- Dedicated video-analyze plugin for bugs (frames already extract; full analyze skill is follow-up)
+- Dedicated vision “analyze video” agent skill beyond stills in the brief
 - Per-user project map beyond `BITRIX_TARGET_PROJECT`
 - UI mode picker (not needed once `type:*` is the classifier)
+- Frontend “Extract frames” button (API exists)

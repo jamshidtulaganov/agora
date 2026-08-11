@@ -3625,6 +3625,11 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// Fundamental classifier is type:* (bug → debug loop, feature → plan/build).
 			instruction += taskModeInstructionFor(h.issueTaskType(r.Context(), issue))
 			instruction += verifyGateInstruction()
+			// Kick (or reuse) video stills so planning sees UI states from recordings.
+			h.kickVideoFrameExtraction(issue)
+			if frames := h.videoFramesPlanningNote(r.Context(), issue); frames != "" {
+				instruction += "\n\n" + frames
+			}
 			// Give the DEV the intended-behavior source of truth (the docs repo),
 			// not just the ticket — so it builds against what the feature SHOULD
 			// do, the same spec QA later judges it against (closes the dev/QA

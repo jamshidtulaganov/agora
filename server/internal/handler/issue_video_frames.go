@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,6 +195,59 @@ func (h *Handler) extractFramesForIssueLocked(ctx context.Context, wsID, issueID
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixFramesExtractedMetaKey)
 	slog.Info("video frames extracted",
 		"issue_id", util.UUIDToString(issueID), "videos", videos, "frames", len(embeds))
+}
+
+// videoFramesPlanningNote lists stills extracted from issue videos so the agent
+// plan brief always carries them — even when issueBriefNote truncates a long
+// Bitrix description that had the frame markdown only at the end.
+func (h *Handler) videoFramesPlanningNote(ctx context.Context, issue db.Issue) string {
+	if !issue.ID.Valid {
+		return ""
+	}
+	atts, err := h.Queries.ListAttachmentsByIssue(ctx, db.ListAttachmentsByIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	type frame struct{ name, url string }
+	var frames []frame
+	for _, a := range atts {
+		if !isExtractedVideoFrame(a.Filename, a.ContentType) {
+			continue
+		}
+		frames = append(frames, frame{name: a.Filename, url: a.Url})
+	}
+	if len(frames) == 0 {
+		return ""
+	}
+	sort.Slice(frames, func(i, j int) bool { return frames[i].name < frames[j].name })
+	const maxFramesInBrief = 20
+	if len(frames) > maxFramesInBrief {
+		frames = frames[:maxFramesInBrief]
+	}
+	var b strings.Builder
+	b.WriteString("VIDEO FRAMES FOR PLANNING — stills extracted from the issue video(s). " +
+		"Use these images to understand UI states, repro steps, and acceptance cues before coding. " +
+		"Prefer these over re-watching the raw video when they cover the flow:\n")
+	for _, f := range frames {
+		b.WriteString(fmt.Sprintf("- ![ %s ](%s)\n", f.name, f.url))
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// isExtractedVideoFrame reports whether an attachment name matches the
+// `{video}_frame_NNN.jpg` convention used by extractAndStoreFrames.
+func isExtractedVideoFrame(filename, contentType string) bool {
+	name := strings.ToLower(strings.TrimSpace(filename))
+	if !strings.Contains(name, "_frame_") {
+		return false
+	}
+	if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".jpeg") || strings.HasSuffix(name, ".png") {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
 }
 
 // metadataFlagSet reports whether a JSONB metadata blob has key set to a truthy

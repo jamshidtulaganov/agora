@@ -653,6 +653,17 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 	slog.Info("bitrix sync: imported attachments",
 		"task_id", taskID, "issue_id", util.UUIDToString(issueID),
 		"new", stored, "total", len(seen))
+
+	// Kick async ffmpeg as soon as a video lands so planning/triage claims can
+	// use stills without waiting for agent-assign. No-op when no new videos.
+	for _, e := range embeds {
+		if bitrix.IsVideo(e.name, e.contentType) {
+			if issue, err := h.Queries.GetIssue(ctx, issueID); err == nil {
+				h.kickVideoFrameExtraction(issue)
+			}
+			break
+		}
+	}
 }
 
 // storeBitrixAttachment uploads bytes to Storage and records the attachment row

@@ -1634,6 +1634,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					if note := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); note != "" {
 						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
 					}
+					// Separate from the truncated description brief so long Bitrix
+					// specs cannot push frame markdown out of the planning context.
+					if frames := h.videoFramesPlanningNote(r.Context(), issue); frames != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + frames)
+					}
 				}
 			}
 

@@ -1,10 +1,42 @@
 package handler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
+
+func TestIsExtractedVideoFrame(t *testing.T) {
+	cases := []struct {
+		name, ctype string
+		want        bool
+	}{
+		{"demo_frame_001.jpg", "image/jpeg", true},
+		{"demo_frame_012.JPEG", "image/jpeg", true},
+		{"demo_frame_001.png", "image/png", true},
+		{"demo.mp4", "video/mp4", false},
+		{"screenshot.jpg", "image/jpeg", false},
+		{"frame_only.jpg", "image/jpeg", false}, // needs _frame_ infix from extractor
+		{"x_frame_y.webp", "image/webp", true},  // image/* content-type fallback
+	}
+	for _, c := range cases {
+		if got := isExtractedVideoFrame(c.name, c.ctype); got != c.want {
+			t.Errorf("isExtractedVideoFrame(%q,%q) = %v, want %v", c.name, c.ctype, got, c.want)
+		}
+	}
+}
+
+func TestVideoFramesPlanningNoteEmptyWithoutFrames(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	note := testHandler.videoFramesPlanningNote(context.Background(), db.Issue{})
+	if note != "" {
+		t.Fatalf("expected empty note for invalid issue, got %q", note)
+	}
+}
 
 // The per-issue frame-extraction lock is what keeps the on-assign background
 // kick and the claim-time synchronous pass from running ffmpeg on the same
