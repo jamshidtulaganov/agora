@@ -629,6 +629,47 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Add property")).toBeInTheDocument();
   });
 
+  it("shows the latest agent task brief and reported branch in the right sidebar", async () => {
+    mockApiObj.listTasksByIssue.mockResolvedValue([
+      {
+        id: "task-running",
+        agent_id: "agent-1",
+        runtime_id: "runtime-1",
+        issue_id: mockIssue.id,
+        status: "running",
+        priority: 1,
+        dispatched_at: "2026-01-03T00:00:00Z",
+        started_at: "2026-01-03T00:00:01Z",
+        completed_at: null,
+        result: null,
+        error: null,
+        created_at: "2026-01-03T00:00:00Z",
+        trigger_summary: "[@Experience](mention://agent/agent-1) Capture responsive design evidence",
+      },
+      {
+        id: "task-completed",
+        agent_id: "agent-1",
+        runtime_id: "runtime-1",
+        issue_id: mockIssue.id,
+        status: "completed",
+        priority: 1,
+        dispatched_at: "2026-01-02T00:00:00Z",
+        started_at: "2026-01-02T00:00:01Z",
+        completed_at: "2026-01-02T00:10:00Z",
+        result: { branch_name: "agent/experience/task-completed" },
+        error: null,
+        created_at: "2026-01-02T00:00:00Z",
+        trigger_summary: "Older task",
+      },
+    ]);
+
+    renderIssueDetail();
+
+    expect(await screen.findByText("Agent work")).toBeInTheDocument();
+    expect(screen.getByText("@Experience Capture responsive design evidence")).toBeInTheDocument();
+    expect(screen.getByText("agent/experience/task-completed")).toBeInTheDocument();
+  });
+
   it("hides every optional property row when none are set", async () => {
     // Override the default fixture: nothing optional set.
     mockApiObj.getIssue.mockResolvedValue({

@@ -2940,7 +2940,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	var env *execenv.Environment
 	var orchestrationWorktrees *worktreeRun
 	defer func() {
-		if taskErr != nil || taskResult.Status != "completed" || task.OrchestrationStepID == "" {
+		if taskErr != nil || taskResult.Status != "completed" {
 			return
 		}
 		state := worktreeMergeState{Status: "unavailable"}
@@ -2959,7 +2959,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		} else if env != nil && env.WorkDir != "" {
 			state = inspectManagedWorktreeState(ctx, env.WorkDir, task.OrchestrationReadOnly)
 		}
-		if task.OrchestrationStepKind == "integration" {
+		if task.OrchestrationStepID != "" && task.OrchestrationStepKind == "integration" {
 			var repoDirs []string
 			if orchestrationWorktrees != nil && len(orchestrationWorktrees.worktrees) > 0 {
 				for _, worktree := range orchestrationWorktrees.worktrees {

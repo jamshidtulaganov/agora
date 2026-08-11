@@ -40,7 +40,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { AvatarGroup, AvatarGroupCount } from "@agora/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
-import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@agora/core/types";
+import type { AgentTask, Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@agora/core/types";
 import { contentReferencesAttachment } from "@agora/core/types";
 import { formatDateOnly } from "@agora/core/issues/date";
 import { formatActivity, type ActivityT } from "./activity-format";
@@ -77,7 +77,7 @@ import { useWorkspacePaths } from "@agora/core/paths";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useRecentContextStore } from "@agora/core/chat";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@agora/core/issues/queries";
+import { issueKeys, issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@agora/core/issues/queries";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@agora/core/labels";
@@ -97,6 +97,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { ProgressRing } from "./progress-ring";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useT } from "../../i18n";
+import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
 
 // Reads a string-valued key off an issue's metadata bag, null when absent or
 // not a string. Used for the stage-cast agent ids (cast_qa_agent_id, ...).
@@ -106,6 +107,25 @@ function metaString(meta: unknown, key: string): string | null {
     if (typeof v === "string") return v;
   }
   return null;
+}
+
+function taskBranchName(task: AgentTask): string | null {
+  if (!task.result || typeof task.result !== "object") return null;
+  const result = task.result as Record<string, unknown>;
+  if (typeof result.branch_name === "string" && result.branch_name.trim()) {
+    return result.branch_name.trim();
+  }
+  if (!Array.isArray(result.git_states)) return null;
+  for (const state of result.git_states) {
+    if (!state || typeof state !== "object") continue;
+    const branch = (state as Record<string, unknown>).branch;
+    if (typeof branch === "string" && branch.trim()) return branch.trim();
+  }
+  return null;
+}
+
+function taskTimestamp(task: AgentTask): number {
+  return Date.parse(task.started_at ?? task.dispatched_at ?? task.created_at) || 0;
 }
 
 function SubscriberPopoverContent({
@@ -1000,6 +1020,26 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Token usage
   const { data: usage } = useQuery(issueUsageOptions(id));
 
+  // The rail shows the current agent brief and the most recently reported
+  // working branch. This shares the task-runs cache with ExecutionLogSection,
+  // so task lifecycle websocket invalidations keep both surfaces in sync.
+  const { data: agentTasks = [] } = useQuery({
+    queryKey: issueKeys.tasks(id),
+    queryFn: () => api.listTasksByIssue(id),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const agentWork = useMemo(() => {
+    const ordered = [...agentTasks].sort((a, b) => taskTimestamp(b) - taskTimestamp(a));
+    const activeStatuses = new Set(["queued", "dispatched", "waiting_local_directory", "running"]);
+    const task = ordered.find((candidate) => activeStatuses.has(candidate.status)) ?? ordered[0] ?? null;
+    const branch = ordered.map(taskBranchName).find((candidate): candidate is string => !!candidate) ?? null;
+    const description = task?.trigger_summary?.trim()
+      ? stripMentionMarkdown(task.trigger_summary.trim())
+      : null;
+    return { task, branch, description };
+  }, [agentTasks]);
+
   // Attachments uploaded against this issue. Drives the description
   // editor's click-time fresh-sign download: NodeViews match
   // `src`/`href` against this list to resolve an attachment id before
@@ -1508,6 +1548,49 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 agentId={metaString(issue.metadata, "cast_review_agent_id")}
               />
             </PropRow>
+          </div>
+        </InspectorSection>
+      )}
+
+      {/* Keep the agent's concrete brief and git handoff visible without
+          making people hunt through the activity transcript. Branch metadata
+          arrives from the daemon's terminal task result; the brief is useful
+          immediately while the task is queued or running. */}
+      {(agentWork.description || agentWork.branch) && (
+        <InspectorSection title={t(($) => $.detail.section_agent_work)} defaultOpen>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+            {agentWork.description && (
+              <PropRow label={t(($) => $.detail.prop_agent_task)} interactive={false}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="min-w-0 truncate text-foreground/90">
+                        {agentWork.description}
+                      </span>
+                    }
+                  />
+                  <TooltipContent side="top" className="max-w-sm">
+                    {agentWork.description}
+                  </TooltipContent>
+                </Tooltip>
+              </PropRow>
+            )}
+            {agentWork.branch && (
+              <PropRow label={t(($) => $.detail.prop_agent_branch)} interactive={false}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="min-w-0 truncate font-mono text-[11px] text-foreground/90">
+                        {agentWork.branch}
+                      </span>
+                    }
+                  />
+                  <TooltipContent side="top" className="font-mono text-xs">
+                    {agentWork.branch}
+                  </TooltipContent>
+                </Tooltip>
+              </PropRow>
+            )}
           </div>
         </InspectorSection>
       )}
