@@ -32,6 +32,9 @@ const bitrixTriagePrompt = "[AUTOMATED DIRECTIVE — intake triage] " +
 	"Bitrix tags are noisy (mixed RU/UZ/EN, typos, #prefixes) — do NOT trust them for type. " +
 	"Attach exactly one of: `type:bug` (defect / wrong behavior / regression), `type:feature` (new or changed capability), " +
 	"or `type:question` (clarification / investigation with no clear deliverable yet). " +
+	"Also attach exactly one work MODE that steers how the implementer agent runs: " +
+	"`mode:debugging` for bugs/regressions (reproduce → root-cause → verify), " +
+	"`mode:planning` for features/questions (clarify acceptance + options before coding). " +
 	"Also attach `module:<name>` using the module names from the PROJECT RISK MAP in your context (pick every module the " +
 	"ticket plausibly touches); `risk:<tier>` = the HIGHEST tier among those modules (critical|guarded|safe; " +
 	"no match → risk:guarded, never safe). " +

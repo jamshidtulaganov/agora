@@ -2766,15 +2766,18 @@ func branchInstructionFor(isGitLab bool, branch string) string {
 // "feature", or "chore" ("" when untyped). The human tags the type (no
 // auto-classify), so this just reflects their intent into how the agent works.
 func (h *Handler) issueTaskType(ctx context.Context, issue db.Issue) string {
-	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
-		IssueID:     issue.ID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err != nil {
-		return ""
-	}
-	for _, l := range labels {
-		switch strings.ToLower(strings.TrimSpace(l.Name)) {
+	return resolveTaskType(h.issueLabelNames(ctx, issue.ID))
+}
+
+// issueWorkMode maps mode:* labels (with type:* fallback) to the agent work
+// mode: "debugging" or "planning" ("" when neither is set).
+func (h *Handler) issueWorkMode(ctx context.Context, issue db.Issue) string {
+	return resolveWorkMode(h.issueLabelNames(ctx, issue.ID))
+}
+
+func resolveTaskType(labelNames []string) string {
+	for _, name := range labelNames {
+		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "type:bug":
 			return "bug"
 		case "type:feature":
@@ -2786,28 +2789,86 @@ func (h *Handler) issueTaskType(ctx context.Context, issue db.Issue) string {
 	return ""
 }
 
-// taskModeInstructionFor returns the type-specific approach appended to a
-// draft_code action so the agent works like a real engineer for that kind of
-// work: a BUG gets a reproduce → root-cause → verify debugger loop; a FEATURE
-// gets design-variants-first. PURE (unit-tested without a DB).
-func taskModeInstructionFor(taskType string) string {
-	switch taskType {
-	case "bug":
-		return " This is a BUG (type:bug) — work like a debugger, not a patcher: " +
+// resolveWorkMode prefers an explicit mode:* label; otherwise derives debugging
+// from type:bug and planning from type:feature / type:question.
+func resolveWorkMode(labelNames []string) string {
+	hasDebug, hasPlan := false, false
+	typeBug, typeFeature, typeQuestion := false, false, false
+	for _, name := range labelNames {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "mode:debugging":
+			hasDebug = true
+		case "mode:planning":
+			hasPlan = true
+		case "type:bug":
+			typeBug = true
+		case "type:feature":
+			typeFeature = true
+		case "type:question":
+			typeQuestion = true
+		}
+	}
+	switch {
+	case hasDebug:
+		return "debugging"
+	case hasPlan:
+		return "planning"
+	case typeBug:
+		return "debugging"
+	case typeFeature, typeQuestion:
+		return "planning"
+	default:
+		return ""
+	}
+}
+
+// workModeInstructionFor returns the mode-specific approach for draft_code.
+// debugging = reproduce/root-cause loop; planning = clarify + options first.
+// PURE (unit-tested without a DB).
+func workModeInstructionFor(mode string) string {
+	switch mode {
+	case "debugging":
+		return " WORK MODE = debugging (mode:debugging): work like a debugger, not a patcher: " +
 			"(1) REPRODUCE it first with a failing test or a concrete runnable repro that currently FAILS; " +
 			"(2) trace the ROOT CAUSE — and check the ACTUAL installed version of any library/framework you touch " +
 			"(read its types/docs) instead of assuming an API from memory; " +
 			"(3) apply the smallest fix that addresses the cause; " +
 			"(4) prove the failing test/repro now PASSES. Show failing-before / passing-after in the PR."
-	case "feature":
-		return " This is a FEATURE (type:feature) — work like a product engineer: " +
-			"(1) when any UI is involved, lay out 2-3 DESIGN VARIANTS (layout/interaction options + tradeoffs) and get " +
+	case "planning":
+		return " WORK MODE = planning (mode:planning): think before you code: " +
+			"(1) restate acceptance criteria and open questions; attach or keep `needs:spec` if critical details are missing; " +
+			"(2) when any UI is involved, lay out 2-3 DESIGN VARIANTS (layout/interaction options + tradeoffs) and get " +
 			"the direction reviewed — defer to the designer agent's variants if one is already posted — before " +
-			"committing to a single build; (2) build the chosen approach; (3) verify the new behavior with a test that " +
-			"exercises it. Note which variant you built and why."
+			"committing to a single build; (3) outline the implementation plan (files/modules touched); " +
+			"(4) only then build the chosen approach and verify the new behavior with a test. Note which variant you built and why."
 	default:
 		return ""
 	}
+}
+
+// taskModeInstructionFor returns the type-specific approach appended to a
+// draft_code action so the agent works like a real engineer for that kind of
+// work: a BUG gets a reproduce → root-cause → verify debugger loop; a FEATURE
+// gets design-variants-first. PURE (unit-tested without a DB). Prefer
+// workModeInstructionFor when a mode:* label (or type-derived mode) is present.
+func taskModeInstructionFor(taskType string) string {
+	switch taskType {
+	case "bug":
+		return workModeInstructionFor("debugging")
+	case "feature":
+		return workModeInstructionFor("planning")
+	default:
+		return ""
+	}
+}
+
+// draftCodeModeInstruction picks mode:* (or type-derived mode) instructions for
+// a draft_code run. Empty when the issue is untyped/unmoded.
+func draftCodeModeInstruction(labelNames []string) string {
+	if mode := resolveWorkMode(labelNames); mode != "" {
+		return workModeInstructionFor(mode)
+	}
+	return taskModeInstructionFor(resolveTaskType(labelNames))
 }
 
 // verifyGateInstruction is the universal "prove it works before you call it
@@ -3625,7 +3686,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		// feature → design-variants-first) and always carries the verify gate
 		// so the agent proves the change works before opening the PR.
 		if req.Kind == sliceActionDraftCode {
-			instruction += taskModeInstructionFor(h.issueTaskType(r.Context(), issue))
+			// Prefer explicit mode:debugging / mode:planning (triage sets these);
+			// fall back to type:bug → debugging / type:feature → planning.
+			instruction += draftCodeModeInstruction(h.issueLabelNames(r.Context(), issue.ID))
 			instruction += verifyGateInstruction()
 			// Give the DEV the intended-behavior source of truth (the docs repo),
 			// not just the ticket — so it builds against what the feature SHOULD
