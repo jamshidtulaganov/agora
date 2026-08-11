@@ -34,6 +34,14 @@ services:
       # only non-secret server metadata and blank header placeholders.
       - key: AGORA_MCP_SECRET_KEY
         generateValue: true
+      # Seal per-workspace source-control PATs used for private clones and the
+      # claim-time GitLab pipeline MCP. Existing values are preserved on sync.
+      - key: AGORA_GIT_SECRET_KEY
+        generateValue: true
+      # Seal per-workspace Figma PATs. The backend injects the token only into
+      # Figma-linked agent tasks; it never lives in workspace or agent JSON.
+      - key: AGORA_FIGMA_SECRET_KEY
+        generateValue: true
       - key: APP_ENV
         value: production
       - key: ALLOW_SIGNUP
