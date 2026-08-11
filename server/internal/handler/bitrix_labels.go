@@ -95,9 +95,9 @@ func bitrixTagToLabelName(tag string) string {
 
 func bitrixLabelColor(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "type:bug", "mode:debugging":
+	case "type:bug":
 		return "#ef4444"
-	case "type:feature", "mode:planning":
+	case "type:feature":
 		return "#2563eb"
 	case "server", "task":
 		return "#6b7280"

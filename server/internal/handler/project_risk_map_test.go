@@ -256,7 +256,7 @@ func TestEnforceQAGateBeforeDone_RiskTierSignoff(t *testing.T) {
 // set and FORBID any routing/status mutation.
 func TestBitrixTriagePromptContract(t *testing.T) {
 	for _, want := range []string{
-		"SUGGEST-ONLY", "type:bug", "mode:debugging", "mode:planning",
+		"SUGGEST-ONLY", "type:bug", "type:feature", "type:* is the fundamental",
 		"module:<name>", "risk:<tier>", "needs:spec",
 		"never safe", "do NOT change status, assignee, project",
 		"IN THE ISSUE'S LANGUAGE",

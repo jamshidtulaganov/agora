@@ -7,17 +7,23 @@ import (
 
 func TestTaskModeInstructionFor(t *testing.T) {
 	bug := taskModeInstructionFor("bug")
-	for _, want := range []string{"debugging", "REPRODUCE", "ROOT CAUSE", "installed version", "PASSES"} {
+	for _, want := range []string{"BUG", "REPRODUCE", "ROOT CAUSE", "installed version", "PASSES"} {
 		if !strings.Contains(bug, want) {
 			t.Errorf("bug mode missing %q: %s", want, bug)
 		}
 	}
+	if strings.Contains(bug, "mode:debugging") {
+		t.Error("bug instruction must not reference mode:* labels")
+	}
 
 	feat := taskModeInstructionFor("feature")
-	for _, want := range []string{"planning", "DESIGN VARIANTS", "designer", "acceptance"} {
+	for _, want := range []string{"FEATURE", "DESIGN VARIANTS", "designer", "acceptance"} {
 		if !strings.Contains(feat, want) {
 			t.Errorf("feature mode missing %q: %s", want, feat)
 		}
+	}
+	if strings.Contains(feat, "mode:planning") {
+		t.Error("feature instruction must not reference mode:* labels")
 	}
 
 	// chore + untyped get no mode clause (only the universal verify gate applies).
@@ -29,32 +35,22 @@ func TestTaskModeInstructionFor(t *testing.T) {
 	}
 }
 
-func TestResolveWorkMode(t *testing.T) {
+func TestResolveTaskType(t *testing.T) {
 	cases := []struct {
 		labels []string
 		want   string
 	}{
-		{[]string{"mode:debugging"}, "debugging"},
-		{[]string{"mode:planning"}, "planning"},
-		{[]string{"mode:debugging", "mode:planning"}, "debugging"},
-		{[]string{"type:bug"}, "debugging"},
-		{[]string{"type:feature"}, "planning"},
-		{[]string{"type:question"}, "planning"},
-		{[]string{"mode:planning", "type:bug"}, "planning"}, // explicit mode wins
+		{[]string{"type:bug"}, "bug"},
+		{[]string{"type:feature"}, "feature"},
+		{[]string{"type:question"}, "feature"}, // planning path via feature instructions
+		{[]string{"type:chore"}, "chore"},
 		{[]string{"urgent"}, ""},
 		{nil, ""},
 	}
 	for _, c := range cases {
-		if got := resolveWorkMode(c.labels); got != c.want {
-			t.Errorf("resolveWorkMode(%v) = %q, want %q", c.labels, got, c.want)
+		if got := resolveTaskType(c.labels); got != c.want {
+			t.Errorf("resolveTaskType(%v) = %q, want %q", c.labels, got, c.want)
 		}
-	}
-}
-
-func TestDraftCodeModeInstructionPrefersExplicitMode(t *testing.T) {
-	got := draftCodeModeInstruction([]string{"type:bug", "mode:planning"})
-	if !strings.Contains(got, "mode:planning") || strings.Contains(got, "mode:debugging") {
-		t.Fatalf("explicit planning mode should win over type:bug; got %s", got)
 	}
 }
 
