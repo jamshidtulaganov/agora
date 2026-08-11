@@ -9,13 +9,6 @@ export {
   type DesignVerdict,
 } from "./proposal";
 export {
-  DesignManifestSchema,
-  parseDesignManifest,
-  type DesignManifest,
-  type DesignManifestKind,
-  type DesignManifestSource,
-} from "./manifest";
-export {
   DesignAuditSchema,
   parseDesignAuditBlock,
   latestDesignAudit,
@@ -26,3 +19,13 @@ export {
   pairDesignScreenshots,
   type DesignScreenshotPair,
 } from "./screenshots";
+export {
+  DesignContextDocumentSchema,
+  DesignContextRevisionSchema,
+  DesignContextStateSchema,
+  EMPTY_DESIGN_CONTEXT_REVISION,
+  EMPTY_DESIGN_CONTEXT_STATE,
+  type DesignContextDocument,
+  type DesignContextRevision,
+  type DesignContextState,
+} from "./context";

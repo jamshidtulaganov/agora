@@ -40,7 +40,7 @@ PR). Re-confirm exact lines after later phases move code.
 | Behavior | File:line |
 |---|---|
 | `design_proposal` slice-action kind + recipe (analyze-not-build, node-scoped, block schema, language rule, blocked protocol) | `server/internal/handler/slice_action.go` (`sliceActionDesignProposal`, `buildSliceInstruction`) |
-| Recipe assembly appends Figma how-to + design-manifest context | `server/internal/handler/slice_action.go` (`CreateSliceAction` design_proposal branch) |
+| Recipe assembly appends Figma how-to + task-scoped approved Design context | `server/internal/handler/slice_action.go` (`CreateSliceAction` design_proposal branch) |
 | Designer-agent resolution (project.settings.design_agent → design squad leader) | `server/internal/handler/design_action.go` (`resolveDesignerAgent`); routed in `resolveSliceActionAgent` |
 | Block parse (none/invalid/ok/blocked, fail-closed) | `server/internal/service/design_proposal.go` (`ParseDesignProposalBlock`) |
 | Server-side capture: attach `design:proposed`, activity, inbox notify — both agent-comment ingest points | `server/internal/service/design_proposal.go` (`CaptureDesignProposal`); wired at `comment.go` + `task.go` |
@@ -48,16 +48,18 @@ PR). Re-confirm exact lines after later phases move code.
 | Review endpoint `POST /api/issues/{id}/design-review` (approve / request_changes + overrides; 404/409 matrix) | `server/internal/handler/design_review.go` (`CreateDesignReview`); route in `cmd/server/router.go` |
 | Filename contract `figma-<node-id-dashed>.png` pairs a screen render to its comment attachment | recipe + `packages/views/issues/components/design-review-dialog.tsx` |
 
-## design manifest (Phase 3)
+## Design context revisions (Phase 3)
 
 | Behavior | File:line |
 |---|---|
-| `gen_design_manifest` slice-action kind + recipe (tokens vs inventory, legacy frequency-rank, 150-line cap, Variables-API prohibition) | `server/internal/handler/slice_action.go` (`sliceActionGenDesignManifest`, `buildSliceInstruction`) |
-| Manifest context injector (rendered into designer + draft_code + every claim) | `server/internal/handler/design_action.go` (`sliceActionDesignManifestContext`, `renderDesignManifestContext`); wired in `slice_action.go` + `daemon.go` |
-| Capture onto project.settings.design_manifest (key-scoped jsonb_set; manual-source → propose-via-comment) | `server/internal/service/design_manifest.go` (`CaptureDesignManifest`); wired at `comment.go` + `task.go` |
-| Key-scoped write queries (never clobber sibling settings) | `server/pkg/db/queries/project.sql` (`SetProjectDesignManifest`, `SetProjectSettingKey`) |
-| Human editor endpoint `PUT /api/projects/{id}/design-manifest` (manifest source=manual, design_agent, design_auto) | `server/internal/handler/design_manifest.go` (`PutProjectDesignManifest`) |
-| Agent-generation trigger `POST /api/projects/{id}/design-manifest/sync` (chore issue + fire designer) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignManifest`) |
+| `gen_design_context` action + legacy `gen_design_manifest` alias | `server/internal/handler/slice_action.go` (`sliceActionGenDesignContext`, `buildSliceInstruction`) |
+| Strict schema, provenance validation, hashing, freshness, deterministic workspace/project merge | `server/internal/designcontext/context.go` |
+| Task-scoped approved-context injector (design references/labels/keywords only) | `server/internal/handler/design_action.go` (`sliceActionDesignContextForTask`, `renderDesignContext`) |
+| Agent output captured as a pending proposal, never directly activated | `server/internal/service/design_context.go` (`CaptureDesignContext`); wired at `comment.go` + `task.go` |
+| Normalized revision storage and optimistic approval queries | `server/migrations/188_design_context_revision.up.sql`; `server/pkg/db/queries/design_context.sql` |
+| Member read plus owner/admin propose/approve/reject endpoints | `server/internal/handler/design_context.go`; routes in `server/cmd/server/router.go` |
+| Agent-generation trigger `POST /api/projects/{id}/design-context/sync` | `server/internal/handler/design_context.go` (`SyncProjectDesignContext`) |
+| Human-readable approval diff on the generated chore issue | `packages/views/issues/components/design-context-review-section.tsx` |
 | Lazy bootstrap inside design_proposal | `server/internal/handler/slice_action.go` (design_proposal recipe BOOTSTRAP clause) |
 
 ## decomposition + promotion (Phase 4)
@@ -76,9 +78,9 @@ PR). Re-confirm exact lines after later phases move code.
 | Behavior | File:line |
 |---|---|
 | `design_audit` slice-action kind + recipe (off-token / duplicates / unmanaged / proposed_tokens; read-only; no fabrication) | `server/internal/handler/slice_action.go` (`sliceActionDesignAudit`, `buildSliceInstruction`) |
-| Project trigger `POST /api/projects/{id}/design-audit` (shared chore-issue helper with manifest sync) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignAudit`, `fireProjectDesignChore`); route in `cmd/server/router.go` |
+| Project trigger `POST /api/projects/{id}/design-context/audit` (shared chore-issue helper with context sync) | `server/internal/handler/design_context.go` (`SyncProjectDesignAudit`, `fireProjectDesignChore`); route in `cmd/server/router.go` |
 | Audit block schema + extractor (lenient, agent-only, newest wins) | `packages/core/design/audit.ts` (`DesignAuditSchema`, `latestDesignAudit`) |
-| Read-only audit report render on the chore issue | `packages/views/issues/components/design-audit-section.tsx`; "Audit" button in `project-design-section.tsx` |
+| Read-only audit report render on the chore issue | `packages/views/issues/components/design-audit-section.tsx` |
 | Apply a finding → codemod issue (token adoption / component extraction) `POST /api/issues/{id}/design-apply` | `server/internal/handler/design_apply.go` (`ApplyDesignAudit`, `composeCodemodIssue`); "Apply" buttons in `design-audit-section.tsx` |
 
 ## External facts (not in-repo)

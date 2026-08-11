@@ -59,24 +59,12 @@ export interface ProjectSettings {
   // RFC3339 timestamp of the last Bitrix sync for a Bitrix-linked project (set
   // by the per-project sync endpoint). Absent until the project is first synced.
   bitrix_synced_at?: string;
-  // The project's design system, injected into designer + implementation runs.
-  // Agent-generated (gen_design_manifest) or human-edited; source="manual" makes
-  // agent captures propose-via-comment instead of overwriting. Read leniently
-  // via DesignManifestSchema in @agora/core/design.
-  design_manifest?: Record<string, unknown>;
-  // Agent UUID that runs gen_design_manifest / design_proposal (the designer
+  // Agent UUID that runs gen_design_context / design_proposal (the designer
   // analyst). When unset, design actions fall back to a "design" squad leader.
   design_agent?: string;
   // Auto-fire policy for design proposals on incoming issues (Phase 6):
   // off | epics | all. Absent defaults to epics when the feature is enabled.
   design_auto?: string;
-  // Human-authored project conventions (Markdown) — the coding rules, lint/style
-  // preferences, and design patterns an existing codebase already follows.
-  // Injected into EVERY agent run on the project (dev, QA, design alike) via the
-  // claim path, so agents match the house style instead of re-inventing it. The
-  // "Learn from repo" action drafts this by studying the repo's config; a human
-  // owns and edits the final text.
-  conventions?: string;
   // Ordered deploy targets for the deploy slice action (MCP-P1,
   // docs/deploy-mcp-integration.md §3). Non-secret routing only — the GitLab
   // PAT lives sealed in git_credential, never here. Read leniently via

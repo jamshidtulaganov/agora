@@ -557,17 +557,6 @@
     "error_required_fields": "Majburiy maydonlarni to'ldiring",
     "error_at_least_one_event": "Kamida bitta hodisani tanlang"
   },
-  "workspace_design": {
-    "title": "Umumiy dizayn tizimi",
-    "description": "Har bir loyiha baza sifatida meros oladigan workspace-darajali dizayn tizimi — barcha ilovalar bitta tizimga yaqinlashadi, har loyiha faqat o'zining xususiyatlarini qayta belgilaydi. Har bir dizayner va implementatsiya ishga tushishiga kiritiladi.",
-    "kind_tokens": "tokenlar",
-    "kind_inventory": "inventar",
-    "components_count": "{{count}} ta komponent",
-    "revision": "rev",
-    "invalid_json": "Manifest to'g'ri JSON bo'lishi kerak",
-    "save": "Saqlash",
-    "saved_toast": "Umumiy dizayn tizimi saqlandi"
-  },
   "zoho": {
     "section_title": "Zoho",
     "connection": {

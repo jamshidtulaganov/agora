@@ -378,7 +378,7 @@ interface ReadonlyContentProps {
 // here is display-only — the human sees the readable summary, not a wall of
 // machine JSON. DISPLAY-ONLY: never mutate stored content with this.
 const AGENT_MACHINE_FENCE =
-  /(^|\n)[ \t]*```(?:qa-result|design-proposal|design-manifest|test-cases|knowledge-items)[ \t]*\n[\s\S]*?\n[ \t]*```[ \t]*(?=\n|$)/g;
+  /(^|\n)[ \t]*```(?:qa-result|design-proposal|design-context|design-manifest|test-cases|knowledge-items)[ \t]*\n[\s\S]*?\n[ \t]*```[ \t]*(?=\n|$)/g;
 
 /** Strip agent machine-payload fenced blocks for human display. Exported for
  * unit tests; applied only in the readonly render path. */

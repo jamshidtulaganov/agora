@@ -216,30 +216,9 @@
   "chip": {
     "fallback_label": "Loyiha"
   },
-  "design": {
-    "title": "Dizayn tizimi",
-    "description": "Loyihaning ma'lum dizayn tizimi — dizayner va implementatsiya ishga tushishlariga kiritiladi, shunda agentlar komponentlarni qayta ixtiro qilmasdan qayta ishlatadi.",
-    "kind_tokens": "tokenlar",
-    "kind_inventory": "inventar",
-    "components_count": "{{count}} ta komponent",
-    "revision": "rev",
-    "source_agent": "agent",
-    "source_manual": "qo'lda",
-    "source_mixed": "aralash",
-    "agent_label": "Dizayner agent",
-    "agent_placeholder": "Yo'q (Design squad'ga qaytish)",
-    "figma_library_label": "Figma kutubxona fayl kaliti",
-    "edit_json": "Manifest (JSON)",
-    "invalid_json": "Manifest to'g'ri JSON bo'lishi kerak",
-    "save_json": "Saqlash",
-    "saved_toast": "Dizayn manifest saqlandi",
-    "generate_button": "Agent bilan yaratish",
-    "generate_fired_toast": "Manifest yaratish navbatga qo'yildi",
-    "sync_running": "Manifest sinxronizatsiyasi allaqachon ishlayapti",
-    "empty_state": "Hali dizayn manifest yo'q. Uni dizayner agent bilan yarating yoki quyiga joylashtiring.",
-    "audit_button": "Audit",
-    "audit_fired_toast": "Dizayn audit navbatga qo'yildi",
-    "audit_running": "Audit allaqachon ishlayapti"
+  "agent_setup": {
+    "title": "Agent sozlamalari",
+    "description": "Agent bajaradigan ishlar uchun ixtiyoriy jarayon sozlamalari. Ko‘pchilik loyihalar ish maydoni sozlamalaridan foydalanishi mumkin."
   },
   "squad": {
     "no_squad": "Squad yo‘q",

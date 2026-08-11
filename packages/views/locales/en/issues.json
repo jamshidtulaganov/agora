@@ -1253,6 +1253,25 @@
     "apply_fired": "Created: {{title}}",
     "apply_failed": "Failed to create the task"
   },
+  "design_context": {
+    "title": "Design context",
+    "pending": "Review required",
+    "description": "Generated from authoritative sources. Review the change before it becomes active agent context.",
+    "revision": "Revision {{revision}} based on revision {{base}}",
+    "diff": "{{tokens}} token changes · {{components}} new components",
+    "sources": "{{count}} authoritative sources",
+    "freshness": "Freshness: {{status}}",
+    "token_changes": "Token changes",
+    "component_changes": "Component changes",
+    "convention_changes": "Convention changes",
+    "source_list": "Source provenance",
+    "admin_required": "An owner or admin must review this proposal.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approved": "Design context approved",
+    "rejected": "Design context rejected",
+    "review_failed": "Failed to review Design context"
+  },
   "design_lens": {
     "empty": "No design references on this issue.",
     "screenshots_empty": "No screenshots yet — they appear here after a design-compare QA run."

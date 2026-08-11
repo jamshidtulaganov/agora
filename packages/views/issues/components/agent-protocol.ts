@@ -54,6 +54,7 @@ const BACKEND_KIND: Record<string, AgentProtocolKind> = {
   compile_tests: "gen_tests",
   design_proposal: "design",
   gen_design_manifest: "design",
+  gen_design_context: "design",
   design_audit: "design",
   draft_code: "delegate",
   deploy: "delegate",
@@ -72,7 +73,7 @@ const KIND_RULES: Array<{ kind: AgentProtocolKind; re: RegExp }> = [
   { kind: "write_tests", re: /\bWrite tests\b/i },
   { kind: "write_docs", re: /\bWrite documentation\b|auto[_ ]?docs/i },
   { kind: "review", re: /\bReview the relevant part\b|post your findings as a comment/i },
-  { kind: "design", re: /design[-_ ]?proposal|design manifest|design audit/i },
+  { kind: "design", re: /design[-_ ]?proposal|design (?:manifest|context|audit)/i },
 ];
 
 /**

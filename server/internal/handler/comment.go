@@ -1106,8 +1106,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		}
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureDesignProposal(r.Context(), issue, comment, parseUUID(authorID))
-		h.TaskService.CaptureDesignManifest(r.Context(), issue, comment, parseUUID(authorID))
-		h.TaskService.CaptureProjectConventions(r.Context(), issue, comment, parseUUID(authorID))
+		h.TaskService.CaptureDesignContext(r.Context(), issue, comment, parseUUID(authorID))
 		h.TaskService.CaptureKnowledgeItems(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureQAManifest(r.Context(), issue, comment.Content, parseUUID(authorID))
 

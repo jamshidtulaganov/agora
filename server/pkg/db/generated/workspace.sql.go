@@ -261,9 +261,7 @@ type SetWorkspaceSettingKeyParams struct {
 	ID    pgtype.UUID `json:"id"`
 }
 
-// KEY-SCOPED write of a single workspace.settings key via jsonb_set — the same
-// clobber-safe pattern as SetProjectSettingKey. Used for the workspace-level
-// design manifest (the shared design system projects inherit).
+// KEY-SCOPED write of a single workspace.settings key via jsonb_set.
 func (q *Queries) SetWorkspaceSettingKey(ctx context.Context, arg SetWorkspaceSettingKeyParams) (Workspace, error) {
 	row := q.db.QueryRow(ctx, setWorkspaceSettingKey, arg.Key, arg.Value, arg.ID)
 	var i Workspace

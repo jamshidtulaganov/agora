@@ -1253,6 +1253,25 @@
     "apply_fired": "Yaratildi: {{title}}",
     "apply_failed": "Vazifa yaratib bo'lmadi"
   },
+  "design_context": {
+    "title": "Dizayn konteksti",
+    "pending": "Ko‘rib chiqish kerak",
+    "description": "Ishonchli manbalardan yaratildi. Agentlar uchun faollashtirishdan oldin o‘zgarishni tekshiring.",
+    "revision": "{{base}}-tahrirga asoslangan {{revision}}-tahrir",
+    "diff": "{{tokens}} ta token o‘zgarishi · {{components}} ta yangi komponent",
+    "sources": "{{count}} ta ishonchli manba",
+    "freshness": "Dolzarblik: {{status}}",
+    "token_changes": "Token o‘zgarishlari",
+    "component_changes": "Komponent o‘zgarishlari",
+    "convention_changes": "Qoidalar o‘zgarishlari",
+    "source_list": "Manba kelib chiqishi",
+    "admin_required": "Taklifni egasi yoki administrator ko‘rib chiqishi kerak.",
+    "approve": "Tasdiqlash",
+    "reject": "Rad etish",
+    "approved": "Dizayn konteksti tasdiqlandi",
+    "rejected": "Dizayn konteksti rad etildi",
+    "review_failed": "Dizayn kontekstini ko‘rib chiqib bo‘lmadi"
+  },
   "design_lens": {
     "empty": "Bu vazifada dizayn havolalari yo'q.",
     "screenshots_empty": "Hali skrinshotlar yo'q — ular dizayn solishtiruvi QA ishga tushgach shu yerda ko'rinadi."

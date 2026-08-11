@@ -221,29 +221,8 @@
   "chip": {
     "fallback_label": "Project"
   },
-  "design": {
-    "title": "Design system",
-    "description": "The project's known design system, injected into designer and implementation runs so agents reuse components instead of re-inventing them.",
-    "kind_tokens": "tokens",
-    "kind_inventory": "inventory",
-    "components_count": "{{count}} components",
-    "revision": "rev",
-    "source_agent": "agent",
-    "source_manual": "manual",
-    "source_mixed": "mixed",
-    "agent_label": "Design agent",
-    "agent_placeholder": "None (fall back to a Design squad)",
-    "figma_library_label": "Figma library file key",
-    "edit_json": "Manifest (JSON)",
-    "invalid_json": "Manifest must be valid JSON",
-    "save_json": "Save",
-    "saved_toast": "Design manifest saved",
-    "generate_button": "Generate with agent",
-    "generate_fired_toast": "Manifest generation queued",
-    "sync_running": "A manifest sync is already running",
-    "empty_state": "No design manifest yet. Generate one with the designer agent, or paste it below.",
-    "audit_button": "Audit",
-    "audit_fired_toast": "Design audit queued",
-    "audit_running": "An audit is already running"
+  "agent_setup": {
+    "title": "Agent setup",
+    "description": "Optional workflow defaults for agent-run work. Most projects can use the workspace defaults."
   }
 }

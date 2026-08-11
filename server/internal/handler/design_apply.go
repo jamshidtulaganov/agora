@@ -176,7 +176,7 @@ func composeCodemodIssue(audit designAudit, req applyDesignAuditRequest) (title,
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("Add the token to the project's token source (tokens.css / theme or tailwind config) if it does not exist, then replace the raw values with a reference to it. Follow the PROJECT DESIGN SYSTEM manifest.\n\n")
+		b.WriteString("Add the token to the project's authoritative token source (tokens.css / theme or tailwind config) if it does not exist, then replace the raw values with a reference to it. Use the approved Design context as derived guidance.\n\n")
 		b.WriteString("This is a PURE token-adoption refactor: the rendered appearance must NOT change. Open a pull request for review.")
 		return title, b.String()
 	case "component":
@@ -198,7 +198,7 @@ func composeCodemodIssue(audit designAudit, req applyDesignAuditRequest) (title,
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("Create the shared component matching the existing design system, replace each occurrence with it, and keep the rendered appearance identical. Follow the PROJECT DESIGN SYSTEM manifest. Open a pull request for review.")
+		b.WriteString("Create the shared component matching the existing design system, replace each occurrence with it, and keep the rendered appearance identical. Use the approved Design context as derived guidance. Open a pull request for review.")
 		return title, b.String()
 	}
 	return "", ""

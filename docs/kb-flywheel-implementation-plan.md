@@ -527,8 +527,8 @@ func (s *TaskService) CaptureKnowledgeItems(ctx context.Context, issue db.Issue,
 
 **Wire-in** (two lines each):
 - `handler/comment.go` inside the `authorType == "agent"` block (~line 1058, after
-  `CaptureProjectConventions`): `h.TaskService.CaptureKnowledgeItems(r.Context(), issue, comment.Content, parseUUID(authorID))`.
-- `service/task.go` `createAgentComment` (~line 2436, after `CaptureDesignManifest`):
+  the design capture calls): `h.TaskService.CaptureKnowledgeItems(r.Context(), issue, comment.Content, parseUUID(authorID))`.
+- `service/task.go` `createAgentComment` (~line 2436, after `CaptureDesignContext`):
   `s.CaptureKnowledgeItems(ctx, issue, originalContent, agentID)` — **pre-expansion** content
   per §5.3 step 1a.
 

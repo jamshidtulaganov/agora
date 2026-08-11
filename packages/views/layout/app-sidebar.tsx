@@ -31,7 +31,6 @@ import {
   BookOpenText,
   SquarePen,
   CircleUser,
-  Rocket,
   FolderKanban,
   BarChart3,
   X,
@@ -113,7 +112,6 @@ const EMPTY_INBOX: Awaited<ReturnType<typeof api.listInbox>> = [];
 type NavKey =
   | "inbox"
   | "myIssues"
-  | "qa"
   | "policy"
   | "issues"
   | "projects"
@@ -133,7 +131,6 @@ type NavKey =
 type NavLabelKey =
   | "inbox"
   | "my_issues"
-  | "qa"
   | "policy"
   | "issues"
   | "projects"
@@ -152,7 +149,8 @@ type NavLabelKey =
 const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
-  { key: "qa", labelKey: "qa", icon: Rocket },
+  // Release remains reachable from issue review flows and direct URLs. It is
+  // not a primary personal destination, so it does not occupy the sidebar.
   // "policy" (fleet cockpit) removed from the nav — the route stays reachable by
   // URL; agent fleet health/details will live inside the agent detail page.
 ];
@@ -185,7 +183,7 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
  * `plugins` and `mcp` all shipped as links that 404'd on desktop because
  * nobody added the matching route. See apps/desktop routes.test.tsx.
  *
- * Covers all three groups — `personalNav` entries (inbox / my-issues / qa) are
+ * Covers all three groups — `personalNav` entries (inbox / my-issues) are
  * workspace-scoped URLs too, not global ones.
  */
 export const SIDEBAR_WORKSPACE_NAV_KEYS: NavKey[] = [

@@ -30,6 +30,9 @@ vi.mock("./design-proposal-section", () => ({
 vi.mock("./design-audit-section", () => ({
   DesignAuditSection: () => <div data-testid="design-audit" />,
 }));
+vi.mock("./design-context-review-section", () => ({
+  DesignContextReviewSection: () => <div data-testid="design-context-review" />,
+}));
 vi.mock("./design-screenshot-compare", () => ({
   DesignScreenshotCompare: () => <div data-testid="design-screenshot-compare" />,
 }));
@@ -135,5 +138,13 @@ describe("DesignLensBody", () => {
     renderLens();
 
     await screen.findByTestId("qa-design-compare");
+  });
+
+  it("opens the Design lens for a pending Design context proposal", async () => {
+    apiMocks.getIssue.mockResolvedValue(baseIssue());
+    apiMocks.listTimeline.mockResolvedValue([{ type: "comment", id: "c1", actor_type: "agent", actor_id: "a1", content: "<!-- design-context-proposal -->", created_at: "" }]);
+    renderLens();
+
+    await screen.findByTestId("design-context-review");
   });
 });

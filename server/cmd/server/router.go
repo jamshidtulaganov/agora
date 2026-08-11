@@ -721,6 +721,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Figma credential status is member-visible for the same
 					// reason; it never returns token material (last4 only).
 					r.Get("/figma-credential", h.GetFigmaCredentialStatus)
+					// Approved and pending Design context revisions are member-visible;
+					// mutations live in the owner/admin group below.
+					r.Get("/design-context", h.GetWorkspaceDesignContext)
 					// Zoho connection status is member-visible likewise; it
 					// never returns secret material (dc / client_id / probe).
 					r.Get("/zoho-connection", h.GetZohoConnectionStatus)
@@ -807,9 +810,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/figma-credential", h.PutFigmaCredential)
 					r.Delete("/figma-credential", h.DeleteFigmaCredential)
-					// Workspace-level shared design manifest — the base every
-					// project in the workspace inherits.
-					r.Put("/design-manifest", h.PutWorkspaceDesignManifest)
+					// Design context is a reviewed cache. A write creates a proposal;
+					// a separate human action activates or rejects it.
+					r.With(handler.RequireHumanActor).Put("/design-context", h.ProposeWorkspaceDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/approve", h.ApproveWorkspaceDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/reject", h.RejectWorkspaceDesignContext)
+					// Legacy route kept at the installed-desktop API boundary. It now
+					// creates a proposal and never activates unreviewed content.
+					r.With(handler.RequireHumanActor).Put("/design-manifest", h.ProposeWorkspaceDesignContext)
 				})
 
 				// Remote-MCP credentials: sealed auth (bearer tokens) for
@@ -1066,7 +1074,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// would void the knowledge review gate.
 					r.Get("/knowledge/items", h.ListKnowledgeItems)
 					r.With(handler.RequireHumanActor).Post("/knowledge/items", h.CreateKnowledgeItem)
-					r.Post("/conventions/learn", h.LearnProjectConventions)
 					r.Post("/base-suite/build", h.BuildProjectBaseSuite)
 					r.Get("/autonomy-report", h.ProjectAutonomyReport)
 					// QA manifest — the app's known navigation map injected into
@@ -1076,15 +1083,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// (CLI: agora project qa-manifest set).
 					r.Post("/qa-manifest/build", h.BuildProjectQAManifest)
 					r.Put("/qa-manifest", h.SetProjectQAManifest)
-					// Design manifest — the project's known design system,
-					// injected into designer + implementation runs. PUT is the
-					// human editor (key-scoped, never clobbers sibling settings);
-					// sync fires the designer agent to (re)generate it.
-					r.Put("/design-manifest", h.PutProjectDesignManifest)
-					r.Post("/design-manifest/sync", h.SyncProjectDesignManifest)
-					// Design-system audit: scan the repo against the manifest for
-					// off-token values, duplicated markup, and proposed tokens.
-					r.Post("/design-audit", h.SyncProjectDesignAudit)
+					// Design context is generated and reviewed, never edited as a
+					// project settings blob. Only approved revisions reach runtime.
+					r.Get("/design-context", h.GetProjectDesignContext)
+					r.With(handler.RequireHumanActor).Put("/design-context", h.ProposeProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/approve", h.ApproveProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/reject", h.RejectProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/sync", h.SyncProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-context/audit", h.SyncProjectDesignAudit)
+					// Installed-client aliases preserve the old transport contract but
+					// inherit the new proposal/approval semantics.
+					r.With(handler.RequireHumanActor).Put("/design-manifest", h.ProposeProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-manifest/sync", h.SyncProjectDesignContext)
+					r.With(handler.RequireHumanActor).Post("/design-audit", h.SyncProjectDesignAudit)
 					// Per-project pipeline config — override the QA / sprint /
 					// review / automation flags for THIS project's issues. Read =
 					// any member; write = owner/admin, human-only (an agent must

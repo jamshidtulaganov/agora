@@ -216,6 +216,15 @@ import { createRequestId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
+  DesignContextRevisionSchema,
+  DesignContextStateSchema,
+  EMPTY_DESIGN_CONTEXT_REVISION,
+  EMPTY_DESIGN_CONTEXT_STATE,
+  type DesignContextDocument,
+  type DesignContextRevision,
+  type DesignContextState,
+} from "../design/context";
+import {
   AgentTemplateSchema,
   AgentTemplateSummaryListSchema,
   AttachmentResponseSchema,
@@ -2364,15 +2373,6 @@ export class ApiClient {
     });
   }
 
-  // Triggers the lead agent to study the project's connected repo config +
-  // patterns and propose the project's coding conventions (saved to
-  // project.settings.conventions). 202 = queued.
-  async learnProjectConventions(id: string): Promise<{ status: string }> {
-    return this.fetch(`/api/projects/${id}/conventions/learn`, {
-      method: "POST",
-    });
-  }
-
   // Project resources
   async listProjectResources(
     projectId: string,
@@ -3371,46 +3371,51 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/pull-requests`);
   }
 
-  // Project design manifest — key-scoped writes (never clobber sibling settings).
-  // Any subset of {manifest, design_agent, design_auto} may be sent.
-  async putDesignManifest(
+  async getProjectDesignContext(projectId: string): Promise<DesignContextState> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/design-context`);
+    return parseWithFallback(raw, DesignContextStateSchema, EMPTY_DESIGN_CONTEXT_STATE, {
+      endpoint: "GET /api/projects/{id}/design-context",
+    });
+  }
+
+  async proposeProjectDesignContext(
     projectId: string,
-    body: {
-      manifest?: Record<string, unknown>;
-      design_agent?: string;
-      design_auto?: string;
-    },
-  ): Promise<Project> {
-    return this.fetch(`/api/projects/${projectId}/design-manifest`, {
+    context: DesignContextDocument,
+    expectedRevision: number,
+  ): Promise<DesignContextRevision> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/design-context`, {
       method: "PUT",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ context, expected_revision: expectedRevision }),
+    });
+    return parseWithFallback(raw, DesignContextRevisionSchema, EMPTY_DESIGN_CONTEXT_REVISION, {
+      endpoint: "PUT /api/projects/{id}/design-context",
     });
   }
 
-  // Fire the designer agent to (re)generate the project's design manifest.
-  async syncDesignManifest(projectId: string): Promise<{ status: string; issue_id: string }> {
-    return this.fetch(`/api/projects/${projectId}/design-manifest/sync`, {
+  async reviewProjectDesignContext(
+    projectId: string,
+    action: "approve" | "reject",
+    expectedRevision: number,
+    reason = "",
+  ): Promise<DesignContextRevision> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/design-context/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ expected_revision: expectedRevision, reason }),
+    });
+    return parseWithFallback(raw, DesignContextRevisionSchema, EMPTY_DESIGN_CONTEXT_REVISION, {
+      endpoint: `POST /api/projects/{id}/design-context/${action}`,
+    });
+  }
+
+  async syncDesignContext(projectId: string): Promise<{ status: string; issue_id: string }> {
+    return this.fetch(`/api/projects/${projectId}/design-context/sync`, {
       method: "POST",
     });
   }
 
-  // Fire a design-system audit: the designer agent scans the repo against the
-  // manifest and reports off-token values, duplicated markup, and proposed
-  // tokens. Returns the chore issue id where the report is posted.
-  async syncDesignAudit(projectId: string): Promise<{ status: string; issue_id: string }> {
-    return this.fetch(`/api/projects/${projectId}/design-audit`, {
+  async auditDesignContext(projectId: string): Promise<{ status: string; issue_id: string }> {
+    return this.fetch(`/api/projects/${projectId}/design-context/audit`, {
       method: "POST",
-    });
-  }
-
-  // Workspace-level shared design manifest — the base every project inherits.
-  async putWorkspaceDesignManifest(
-    workspaceId: string,
-    manifest: Record<string, unknown>,
-  ): Promise<{ status: string; revision: number }> {
-    return this.fetch(`/api/workspaces/${workspaceId}/design-manifest`, {
-      method: "PUT",
-      body: JSON.stringify({ manifest }),
     });
   }
 

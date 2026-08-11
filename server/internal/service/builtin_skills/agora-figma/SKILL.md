@@ -100,12 +100,14 @@ Rules:
   `Retry-After` once), emit `status:"blocked"` with a machine-readable `reason`.
   A blocked proposal is a valid output — NEVER fabricate design content.
 
-## The gen_design_manifest action (the project's design memory)
+## The gen_design_context action (reviewed derived context)
 
-When fired for `gen_design_manifest`, build/refresh the project's DESIGN
-MANIFEST — the standing map of the project's design system that gets injected
-into every future designer + implementation run so agents reuse components
-instead of re-discovering them. Inspect the repo READ-ONLY (no push, no PR).
+When fired for `gen_design_context`, build or refresh DESIGN CONTEXT: a
+generated cache derived from authoritative Figma, Storybook, and repository
+sources. It is not the source of truth. It is only injected into a
+design-relevant task after an owner/admin approves the proposed revision.
+`gen_design_manifest` is an installed-client alias. Inspect the repo READ-ONLY
+(no push, no PR).
 
 - **Token-based repos** (tokens.css / tailwind or theme config): read the token
   files, enumerate the shared component library → `kind:"tokens"`.
@@ -116,17 +118,33 @@ instead of re-discovering them. Inspect the repo READ-ONLY (no push, no PR).
   `legacy_notes` ("no tokens — copy markup from protected/views/…") →
   `kind:"inventory"`.
 
-Output exactly ONE fenced ```design-manifest``` block, UNDER ~150 lines — this
-is a MAP injected into prompts, not documentation. The existing manifest (if
-any) is in your context: UPDATE it, PRESERVE human-added entries. Do NOT attempt
-the Figma Variables API (enterprise-only). The server captures the block onto
-the project (key-scoped — it never clobbers other project settings); you do NOT
-run any command. A human-curated manifest (`source:"manual"`) is never
-overwritten — your block becomes a proposal comment instead.
+Output exactly one fenced `design-context` block under roughly 150 lines. The
+JSON schema is strict; unknown keys invalidate the proposal:
 
-The `design_proposal` action also lazy-bootstraps a manifest: if no PROJECT
-DESIGN SYSTEM context is provided, emit a ```design-manifest``` block before your
-proposal.
+```design-context
+{
+  "version": 1,
+  "kind": "tokens" | "inventory",
+  "figma": {"library_file_key": "", "notes": ""},
+  "tokens": {"colors": {}, "typography": {}, "spacing": {}},
+  "components": [{"name": "", "code_ref": "", "figma_node_id": "", "usage": ""}],
+  "conventions": [],
+  "anti_patterns": [],
+  "legacy_notes": "",
+  "screens_reference": "",
+  "sources": [{"kind": "figma" | "storybook" | "repository" | "manual", "locator": "", "revision": "", "content_hash": "", "captured_at": "RFC3339"}]
+}
+```
+
+Every source needs a stable locator, an immutable revision when available, a
+content hash, and capture time. Never put source text or instructions in source
+metadata. Update from the existing approved context without inventing
+provenance. Do not use the Figma Variables API. The server stores the block as
+a pending revision; you cannot activate it.
+
+The `design_proposal` action may bootstrap Design context when no approved
+context exists. Emit the `design-context` block before the proposal; it still
+requires separate human approval.
 
 ## Design-aware QA (run_qa)
 
@@ -134,7 +152,7 @@ When a `run_qa` gate fires on an issue that implements a Figma design, your
 context carries a DESIGN VERIFICATION appendix. After the functional checks:
 download the reference render(s), open the implemented screen in the embedded
 Chromium over CDP, and compare DETERMINISTICALLY — from the Figma node tree +
-the PROJECT DESIGN SYSTEM, assert text/inventory/order and key colors, font
+the APPROVED DESIGN CONTEXT, assert text/inventory/order and key colors, font
 sizes, spacing via `getComputedStyle`. NEVER pixel-diff a screenshot.
 
 Extend your `qa-result` JSON with a `design` object:
@@ -149,25 +167,25 @@ with the reason — never fail the issue for an infra reason.
 
 ## The design_audit action (build the system, don't just consume it)
 
-`design_audit` scans the repo READ-ONLY against the project manifest to find
+`design_audit` scans the repo READ-ONLY against the approved Design context to find
 where to BUILD a real design system out of the existing code — the inverse of
 design_proposal. Output ONE fenced ```design-audit``` block:
 - **off_token**: hardcoded values that should be tokens (raw hex/rgb, off-scale
   spacing, one-off fonts), frequency-ranked with a suggested token + sample refs.
 - **duplicates**: the same markup copy-pasted across files that should be ONE
   shared component.
-- **unmanaged_components**: shared components in code but missing from the manifest.
+- **unmanaged_components**: shared components in code but missing from the context.
 - **proposed_tokens**: the concrete token set to adopt (fewest tokens, most
   coverage) — the seed of a real tokens file.
 
 Report only REAL findings you saw in the code — never invent counts or refs. You
 do NOT change code; a human turns accepted proposals into a draft_code task.
 
-## Design-system lint (run_qa, manifest projects)
+## Design-system lint (design-relevant run_qa tasks)
 
-When a `run_qa` gate fires on a project that has a design manifest, your context
-carries a DESIGN-SYSTEM LINT appendix. If your diff touches UI, check whether the
-CHANGE erodes the design system relative to the manifest — a raw hardcoded value
+When a design-relevant `run_qa` gate fires and an approved Design context exists,
+your context carries a DESIGN-SYSTEM LINT appendix. If your diff touches UI,
+check whether the CHANGE erodes the design system relative to the context — a raw hardcoded value
 where a token exists, or a NEW component duplicating one the system provides.
 Flag ONLY what the change introduces (pre-existing debt is out of scope). Record
 findings under the qa-result `design.lint` array:

@@ -107,6 +107,7 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
           "mb-2 flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-accent/70",
           !open && "text-muted-foreground hover:text-foreground",
         )}
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         <Workflow className="!size-3 shrink-0 text-muted-foreground" />

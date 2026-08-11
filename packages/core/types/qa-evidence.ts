@@ -25,7 +25,7 @@ export interface QACommand {
 }
 
 // One design mismatch — an implemented value that diverges from the Figma
-// reference / design-manifest token. Deterministic (getComputedStyle / DOM),
+// reference / approved Design context token. Deterministic (getComputedStyle / DOM),
 // never a pixel diff.
 export interface QADesignMismatch {
   kind: "color" | "typography" | "spacing" | "layout" | "missing_element" | "other";

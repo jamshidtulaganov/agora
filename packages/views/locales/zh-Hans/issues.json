@@ -1238,6 +1238,25 @@
     "apply_fired": "已创建：{{title}}",
     "apply_failed": "创建任务失败"
   },
+  "design_context": {
+    "title": "设计上下文",
+    "pending": "需要审核",
+    "description": "由权威来源生成。审核变更后，它才会成为智能体的有效上下文。",
+    "revision": "版本 {{revision}}，基于版本 {{base}}",
+    "diff": "{{tokens}} 项 token 变更 · {{components}} 个新组件",
+    "sources": "{{count}} 个权威来源",
+    "freshness": "新鲜度：{{status}}",
+    "token_changes": "令牌变更",
+    "component_changes": "组件变更",
+    "convention_changes": "约定变更",
+    "source_list": "来源追溯",
+    "admin_required": "此提案必须由所有者或管理员审核。",
+    "approve": "批准",
+    "reject": "拒绝",
+    "approved": "设计上下文已批准",
+    "rejected": "设计上下文已拒绝",
+    "review_failed": "设计上下文审核失败"
+  },
   "design_lens": {
     "empty": "该 issue 没有设计引用。",
     "screenshots_empty": "暂无截图——设计对比 QA 运行后将显示在此处。"

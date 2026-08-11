@@ -11,6 +11,7 @@ import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
 import { DesignScreenshotCompare } from "./design-screenshot-compare";
 import { QADesignCompare } from "../../qa/components/qa-design-compare";
+import { DesignContextReviewSection } from "./design-context-review-section";
 
 // The Design lens — a visual workbench, matching the QA/Dev lenses' wide
 // two-column shape (docs/design-stage-research.md §4, Phase 2). PRIMARY
@@ -47,6 +48,7 @@ export function DesignLensBody({ issueId }: { issueId: string }) {
   const audit = latestDesignAudit(comments);
   const designResult = evidence?.result?.design ?? null;
   const labelNames = new Set((issue?.labels ?? []).map((l) => l.name));
+  const hasContextProposal = comments.some((comment) => comment.content.includes("<!-- design-context-proposal -->"));
 
   const hasSignals =
     figmaRefs.length > 0 ||
@@ -55,6 +57,7 @@ export function DesignLensBody({ issueId }: { issueId: string }) {
     labelNames.has("design:approved") ||
     labelNames.has("design:changes_requested") ||
     audit !== null ||
+    hasContextProposal ||
     designResult !== null;
 
   if (isLoading || !issue) {
@@ -74,6 +77,7 @@ export function DesignLensBody({ issueId }: { issueId: string }) {
               <DesignScreenshotCompare issueId={issueId} />
             </div>
             <div className="order-1 mb-6 lg:order-2 lg:mb-0 [&>*+*]:mt-6 [&>*+*]:border-t [&>*+*]:pt-6">
+              {issue.project_id ? <DesignContextReviewSection projectId={issue.project_id} /> : null}
               <DesignProposalSection issueId={issueId} />
               <DesignAuditSection issueId={issueId} />
               <QADesignCompare design={designResult} issueId={issueId} visual="full" />

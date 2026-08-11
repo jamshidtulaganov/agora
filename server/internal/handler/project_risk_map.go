@@ -147,7 +147,7 @@ func (h *Handler) issueRiskOwners(ctx context.Context, issue db.Issue) []string 
 
 // sliceActionRiskMapContext injects the project risk map into an agent's
 // instructions. Returns "" when the project has none. Mirrors the other
-// project ride-alongs (qa manifest, conventions, design manifest).
+// project ride-alongs (QA manifest and approved Design context).
 func (h *Handler) sliceActionRiskMapContext(ctx context.Context, issue db.Issue) string {
 	entries, ok := h.projectRiskMap(ctx, issue)
 	if !ok {

@@ -19,7 +19,7 @@ describe("stripAgentMachineBlocks", () => {
   });
 
   it("strips design-proposal / test-cases / knowledge-items too", () => {
-    for (const lang of ["design-proposal", "test-cases", "knowledge-items", "design-manifest"]) {
+    for (const lang of ["design-proposal", "test-cases", "knowledge-items", "design-context", "design-manifest"]) {
       const c = `Summary line.\n\n\`\`\`${lang}\n{"x":1}\n\`\`\``;
       const out = stripAgentMachineBlocks(c);
       expect(out).toBe("Summary line.");

@@ -320,6 +320,26 @@ type DeployEvent struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type DesignContextRevision struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	Revision        int32              `json:"revision"`
+	BaseRevision    int32              `json:"base_revision"`
+	Status          string             `json:"status"`
+	Context         []byte             `json:"context"`
+	ContextHash     string             `json:"context_hash"`
+	SourceHash      string             `json:"source_hash"`
+	Sources         []byte             `json:"sources"`
+	ProposedByType  string             `json:"proposed_by_type"`
+	ProposedByID    pgtype.UUID        `json:"proposed_by_id"`
+	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
+	GeneratedAt     pgtype.Timestamptz `json:"generated_at"`
+	ProposedAt      pgtype.Timestamptz `json:"proposed_at"`
+	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
+	RejectionReason string             `json:"rejection_reason"`
+}
+
 type Feedback struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

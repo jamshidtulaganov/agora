@@ -436,6 +436,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
       <button
         type="button"
         className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         {t(($) => $.resources.section_header)}

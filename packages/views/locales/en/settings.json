@@ -557,17 +557,6 @@
     "error_required_fields": "Fill in the required fields",
     "error_at_least_one_event": "Select at least one event"
   },
-  "workspace_design": {
-    "title": "Shared design system",
-    "description": "The workspace-level design system every project inherits as its base — so all your apps converge on one system, each project overriding only its specifics. Injected into every designer and implementation run.",
-    "kind_tokens": "tokens",
-    "kind_inventory": "inventory",
-    "components_count": "{{count}} components",
-    "revision": "rev",
-    "invalid_json": "Manifest must be valid JSON",
-    "save": "Save",
-    "saved_toast": "Shared design system saved"
-  },
   "zoho": {
     "section_title": "Zoho",
     "connection": {

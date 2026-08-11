@@ -40,23 +40,10 @@ RETURNING *;
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
 DELETE FROM project WHERE id = $1 AND workspace_id = $2;
 
--- name: SetProjectDesignManifest :one
--- KEY-SCOPED write of project.settings.design_manifest. Unlike UpdateProject
--- (which replaces the whole settings blob from a client-side snapshot and so
--- races concurrent writes to sibling keys like qa_manifest), this touches ONLY
--- the design_manifest key via jsonb_set, so an agent capture and a human edit
--- can never clobber each other's other settings. Workspace-guarded.
-UPDATE project SET
-    settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{design_manifest}', sqlc.arg('manifest')::jsonb, true),
-    updated_at = now()
-WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
-RETURNING *;
-
 -- name: SetProjectSettingKey :one
 -- KEY-SCOPED write of a single scalar settings key (design_agent, design_auto).
--- Same jsonb_set rationale as SetProjectDesignManifest — the key is passed as a
--- text path element so one endpoint can set any of the scalar design keys
--- without a read-modify-write of the whole blob.
+-- The key is passed as a text path element so one endpoint can set any of the
+-- scalar design keys without a read-modify-write of the whole blob.
 UPDATE project SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[sqlc.arg('key')::text], sqlc.arg('value')::jsonb, true),
     updated_at = now()

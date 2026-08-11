@@ -83,9 +83,7 @@ UPDATE workspace SET
 WHERE id = sqlc.arg('id');
 
 -- name: SetWorkspaceSettingKey :one
--- KEY-SCOPED write of a single workspace.settings key via jsonb_set — the same
--- clobber-safe pattern as SetProjectSettingKey. Used for the workspace-level
--- design manifest (the shared design system projects inherit).
+-- KEY-SCOPED write of a single workspace.settings key via jsonb_set.
 UPDATE workspace SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[sqlc.arg('key')::text], sqlc.arg('value')::jsonb, true),
     updated_at = now()

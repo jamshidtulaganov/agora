@@ -216,30 +216,9 @@
   "chip": {
     "fallback_label": "项目"
   },
-  "design": {
-    "title": "设计系统",
-    "description": "项目已知的设计系统，注入到设计与实现运行中，让智能体复用组件而非重复造轮子。",
-    "kind_tokens": "tokens",
-    "kind_inventory": "清单",
-    "components_count": "{{count}} 个组件",
-    "revision": "版本",
-    "source_agent": "智能体",
-    "source_manual": "手动",
-    "source_mixed": "混合",
-    "agent_label": "设计智能体",
-    "agent_placeholder": "无（回退到 Design 小队）",
-    "figma_library_label": "Figma 库文件 Key",
-    "edit_json": "清单（JSON）",
-    "invalid_json": "清单必须是有效的 JSON",
-    "save_json": "保存",
-    "saved_toast": "设计清单已保存",
-    "generate_button": "用智能体生成",
-    "generate_fired_toast": "已排队生成清单",
-    "sync_running": "清单同步已在进行中",
-    "empty_state": "尚无设计清单。用设计智能体生成，或在下方粘贴。",
-    "audit_button": "审计",
-    "audit_fired_toast": "已排队设计审计",
-    "audit_running": "审计已在进行中"
+  "agent_setup": {
+    "title": "智能体设置",
+    "description": "智能体任务的可选工作流默认值。大多数项目可直接使用工作区默认设置。"
   },
   "squad": {
     "no_squad": "无小队",

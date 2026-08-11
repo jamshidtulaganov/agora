@@ -1657,7 +1657,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 
 			// Lean-brief gate: on a flag-gated medium (un-escalated, un-tiered)
 			// task, skip the heavy navigation blocks below (QA manifest, QA docs,
-			// design manifest) to keep first-turn input small and avoid priming a
+			// Design context) to keep first-turn input small and avoid priming a
 			// small change to over-build. Same predicate as the model + QA-scope
 			// downgrades, so a medium task is coherently lean end to end. Escalated
 			// / explicitly-tiered issues keep the full brief.
@@ -1696,23 +1696,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionQADocsContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
-				// The project design system rides along too, so a delegated dev
-				// building UI reuses known components instead of re-inventing them.
-				if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
-					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
-				}
 			}
 
-			// Kept even on a lean brief: conventions (house style — matters more,
-			// not less, with QA scoped down), self-verify, and figma access are
-			// cheap and quality-relevant, so they ride along on EVERY claim.
+			// Kept even on a lean brief: self-verify and Figma access are cheap and
+			// quality-relevant, so they ride along on EVERY claim.
 			if resp.Agent != nil {
-				// Project conventions (human-authored coding rules) ride along on
-				// EVERY claim so any agent — dev, QA, design — writes to the
-				// project's house style instead of re-inventing it.
-				if note := h.sliceActionProjectConventionsContext(r.Context(), issue); note != "" {
-					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
-				}
 				// Self-verify (close the vibe-coding loop): a build agent should
 				// RUN + LOOK at a UI/behavior change in the SAME shared daemon
 				// browser the human watches, not just assume it works. Advisory —

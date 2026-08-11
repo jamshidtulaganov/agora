@@ -181,4 +181,9 @@ describe("PinRow", () => {
     render(<AppSidebar />);
     expect(await screen.findByText("MUL-123 Keep this pin")).toBeInTheDocument();
   });
+
+  it("does not render Release as a personal navigation item", () => {
+    render(<AppSidebar />);
+    expect(screen.queryByText("Release")).not.toBeInTheDocument();
+  });
 });

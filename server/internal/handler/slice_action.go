@@ -52,7 +52,8 @@ const (
 	sliceActionRunTests          = "run_test_cases"
 	sliceActionCompileTests      = "compile_tests"
 	sliceActionDesignProposal    = "design_proposal"
-	sliceActionGenDesignManifest = "gen_design_manifest"
+	sliceActionGenDesignContext  = "gen_design_context"
+	sliceActionGenDesignManifest = "gen_design_manifest" // installed-client alias
 	sliceActionDesignAudit       = "design_audit"
 	sliceActionDeploy            = "deploy"
 )
@@ -62,7 +63,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignContext, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
 		return true
 	default:
 		return false
@@ -234,7 +235,7 @@ func buildSliceInstruction(kind, scope string) string {
 			"render URLs expire — never hot-link them). " +
 			"(2) INVENTORY: list every distinct screen / state — name, Figma node id, one-line purpose, and the visible " +
 			"elements, INCLUDING empty / loading / error states, not just the happy path. " +
-			"(3) MAP against the PROJECT DESIGN SYSTEM context below. If none is provided, first inspect the " +
+			"(3) MAP against the APPROVED DESIGN CONTEXT below. If none is provided, first inspect the " +
 			"repository READ-ONLY (do not push, do not open a PR) to enumerate existing components / partials / shared " +
 			"styles. Classify EVERY element as REUSE (name the exact existing component / file), EXTEND (an existing " +
 			"component plus what must change), or NEW (justify why nothing existing fits). Prefer reuse aggressively — " +
@@ -260,14 +261,14 @@ func buildSliceInstruction(kind, scope string) string {
 			"\"\"}],\"sub_issues\":[{\"title\":\"\",\"description\":\"\",\"screens\":[\"\"],\"node_ids\":[\"\"]," +
 			"\"depends_on\":[0]}],\"open_questions\":[\"\"]}`. The JSON must be valid and self-contained. Budget: one " +
 			"structured read per frame, one batched image download — stay within the Figma rate budget. " +
-			"BOOTSTRAP: if NO PROJECT DESIGN SYSTEM context was provided below, first derive one from the repo " +
+			"BOOTSTRAP: if NO APPROVED DESIGN CONTEXT was provided below, first derive one from authoritative sources " +
 			"(read-only): detect tokens vs a legacy inventory, enumerate the shared components, and emit ONE fenced " +
-			"```design-manifest block (kind/tokens/components/conventions/anti_patterns/legacy_notes) BEFORE your " +
-			"proposal — the platform captures it onto the project so future runs are faster."
-	case sliceActionGenDesignManifest:
-		base = "Build or refresh this project's DESIGN MANIFEST — the project's known design-system map that is " +
-			"injected into every designer + implementation run so agents build against the KNOWN system instead of " +
-			"re-discovering it. Work AUTONOMOUSLY (no questions) and inspect the repository READ-ONLY (do not push, do " +
+			"```design-context block (version/kind/tokens/components/conventions/anti_patterns/sources) BEFORE your " +
+			"proposal — the platform stores it as a pending proposal for owner/admin review."
+	case sliceActionGenDesignContext, sliceActionGenDesignManifest:
+		base = "Build or refresh this project's DESIGN CONTEXT — a generated, reviewable cache derived from authoritative sources. It is " +
+			"used only by design-relevant runs after an owner/admin approves it. It is NOT a source of truth. " +
+			"Agents use it to avoid re-discovering established design facts. Work AUTONOMOUSLY (no questions) and inspect the repository READ-ONLY (do not push, do " +
 			"not open a PR). " +
 			"(1) REPO CENSUS: detect the stack. TOKEN-BASED repos (tokens.css / a tailwind or theme config / CSS custom " +
 			"properties): read the token files and enumerate the shared component library → set kind=\"tokens\". " +
@@ -278,14 +279,13 @@ func buildSliceInstruction(kind, scope string) string {
 			"(2) FIGMA CENSUS (only if a library file key is configured in your context): read the published styles + " +
 			"component names NODE-SCOPED and map them to repo components by name similarity; leave figma_node_id blank " +
 			"when unsure — never invent a mapping. Do NOT attempt the Figma Variables API (enterprise-only). " +
-			"(3) OUTPUT exactly ONE fenced ```design-manifest code block containing ONLY a JSON object with this shape: " +
-			"`{\"kind\":\"tokens\"|\"inventory\",\"figma\":{\"library_file_key\":\"\",\"notes\":\"\"},\"tokens\":" +
+			"(3) OUTPUT exactly ONE fenced ```design-context code block containing ONLY a JSON object with this strict shape: " +
+			"`{\"version\":1,\"kind\":\"tokens\"|\"inventory\",\"figma\":{\"library_file_key\":\"\",\"notes\":\"\"},\"tokens\":" +
 			"{\"colors\":{\"name\":\"#hex\"},\"typography\":{\"name\":\"…\"},\"spacing\":{\"name\":\"…\"}},\"components\":" +
 			"[{\"name\":\"\",\"code_ref\":\"path\",\"figma_node_id\":null|\"\",\"usage\":\"\"}],\"conventions\":[\"\"]," +
-			"\"anti_patterns\":[\"\"],\"legacy_notes\":\"\",\"screens_reference\":\"\"}`. Keep it UNDER ~150 lines — this " +
-			"is a MAP injected into prompts, not documentation. The existing manifest (if any) is in your context: " +
-			"UPDATE it and PRESERVE any human-added entries. The server captures this block onto the project; you do " +
-			"NOT need to run any command."
+			"\"anti_patterns\":[\"\"],\"legacy_notes\":\"\",\"screens_reference\":\"\",\"sources\":[{\"kind\":\"figma\"|\"storybook\"|\"repository\"|\"manual\",\"locator\":\"file key, URL, or repo path\",\"revision\":\"git SHA or source revision\",\"content_hash\":\"SHA-256 or immutable source hash\",\"captured_at\":\"RFC3339\"}]}`. " +
+			"Every source requires locator, content_hash, and captured_at; never put source text or instructions in these metadata fields. Keep it UNDER ~150 lines. " +
+			"The existing APPROVED context (if any) is below: update it without inventing provenance. The server stores this block as a proposal; you do NOT activate it."
 	case sliceActionDesignAudit:
 		base = "AUDIT this project's design-system HEALTH — find where the code diverges from the design system and " +
 			"where the de-facto system should be formalized, so the team can BUILD a real design system out of a " +
@@ -828,7 +828,7 @@ func mediumTierApplies(labels map[string]bool) bool {
 }
 
 // leanBriefApplies reports whether the heavy navigation context blocks (QA
-// manifest, QA docs, design manifest) should be SKIPPED on this claim to keep a
+// manifest, QA docs, Design context) should be SKIPPED on this claim to keep a
 // small task's brief lean — less first-turn input, less priming to over-build.
 // Same gate as the model + QA-scope downgrades: the medium-tier flag is on and
 // the issue is un-escalated/un-tiered (mediumTierApplies). risk:guarded/critical
@@ -2434,7 +2434,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// the same run's instructions (daemon.go) — appending again would duplicate.
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += h.sliceActionQAManifestContext(ctx, issue)
-	instruction += h.sliceActionDesignManifestContext(ctx, issue)
+	instruction += h.sliceActionDesignContextForTask(ctx, issue)
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	instruction += h.sliceActionProjectBaseSuiteContext(ctx, issue)
 	// The issue's own DEFINED test cases are part of the gate, not a separate
@@ -3634,7 +3634,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += h.sliceActionQADocsContext(r.Context(), issue)
 			// A UI change builds against the project's known design system, so
 			// reuse beats re-inventing components. "" when no manifest.
-			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+			instruction += h.sliceActionDesignContextForTask(r.Context(), issue)
 			// Design is an INPUT to the build, not a separate SDLC stage (Agora's
 			// ICP is small vibe-coding teams, usually without a dedicated
 			// designer): when the issue references a Figma design, hand the dev
@@ -3661,7 +3661,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		// into the same run's instructions (see daemon.go).
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
 		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
-		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+		instruction += h.sliceActionDesignContextForTask(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		// The issue's own DEFINED test cases are part of the gate — see
@@ -3722,25 +3722,25 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	}
 	// design_proposal reads the issue's Figma designs and maps them against the
 	// project's design system. Append the Figma how-to (fileKey/nodeId calls) and
-	// the project design manifest.
+	// the approved project Design context.
 	if req.Kind == sliceActionDesignProposal {
 		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
 			instruction += "\n\n" + note
 		}
-		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+		instruction += h.sliceActionDesignContextContext(r.Context(), issue)
 	}
-	// gen_design_manifest builds/refreshes the project design system. Hand the
-	// agent the CURRENT manifest so it updates (not clobbers) human entries, and
+	// gen_design_context builds/refreshes the generated context. Hand the
+	// agent the current approved context so it updates rather than re-derives it, and
 	// the Figma how-to when the issue references a library file.
-	if req.Kind == sliceActionGenDesignManifest {
+	if req.Kind == sliceActionGenDesignContext || req.Kind == sliceActionGenDesignManifest {
 		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
 			instruction += "\n\n" + note
 		}
-		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+		instruction += h.sliceActionDesignContextContext(r.Context(), issue)
 	}
-	// design_audit scans the repo against the project design manifest.
+	// design_audit scans the repo against the approved project Design context.
 	if req.Kind == sliceActionDesignAudit {
-		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+		instruction += h.sliceActionDesignContextContext(r.Context(), issue)
 	}
 	// deploy carries the environment-specific target contract computed above:
 	// which GitLab project/ref to trigger (or which command to run) and the

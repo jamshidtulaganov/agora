@@ -494,46 +494,6 @@ func (q *Queries) SetProjectConfigKey(ctx context.Context, arg SetProjectConfigK
 	return i, err
 }
 
-const setProjectDesignManifest = `-- name: SetProjectDesignManifest :one
-UPDATE project SET
-    settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{design_manifest}', $1::jsonb, true),
-    updated_at = now()
-WHERE id = $2 AND workspace_id = $3
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id
-`
-
-type SetProjectDesignManifestParams struct {
-	Manifest    []byte      `json:"manifest"`
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-}
-
-// KEY-SCOPED write of project.settings.design_manifest. Unlike UpdateProject
-// (which replaces the whole settings blob from a client-side snapshot and so
-// races concurrent writes to sibling keys like qa_manifest), this touches ONLY
-// the design_manifest key via jsonb_set, so an agent capture and a human edit
-// can never clobber each other's other settings. Workspace-guarded.
-func (q *Queries) SetProjectDesignManifest(ctx context.Context, arg SetProjectDesignManifestParams) (Project, error) {
-	row := q.db.QueryRow(ctx, setProjectDesignManifest, arg.Manifest, arg.ID, arg.WorkspaceID)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Title,
-		&i.Description,
-		&i.Icon,
-		&i.Status,
-		&i.LeadType,
-		&i.LeadID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Priority,
-		&i.Settings,
-		&i.SquadID,
-	)
-	return i, err
-}
-
 const setProjectSettingKey = `-- name: SetProjectSettingKey :one
 UPDATE project SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[$1::text], $2::jsonb, true),
@@ -550,9 +510,8 @@ type SetProjectSettingKeyParams struct {
 }
 
 // KEY-SCOPED write of a single scalar settings key (design_agent, design_auto).
-// Same jsonb_set rationale as SetProjectDesignManifest — the key is passed as a
-// text path element so one endpoint can set any of the scalar design keys
-// without a read-modify-write of the whole blob.
+// The key is passed as a text path element so one endpoint can set any of the
+// scalar design keys without a read-modify-write of the whole blob.
 func (q *Queries) SetProjectSettingKey(ctx context.Context, arg SetProjectSettingKeyParams) (Project, error) {
 	row := q.db.QueryRow(ctx, setProjectSettingKey,
 		arg.Key,

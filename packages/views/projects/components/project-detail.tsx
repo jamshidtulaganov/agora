@@ -45,10 +45,8 @@ import { useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
-import { ProjectConventionsSection } from "./project-conventions-section";
 import { ProjectSquadPicker } from "./project-squad-picker";
-import { ProjectExecutionSection } from "./project-execution-section";
-import { ProjectDesignSection } from "./project-design-section";
+import { ProjectAgentSetupSection } from "./project-agent-setup-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
 import { ProjectSprintsSection } from "./project-sprints-section";
 import { IssuesHeader } from "../../issues/components/issues-header";
@@ -881,14 +879,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
 
-      {/* Conventions — human-authored coding rules injected into every agent run */}
-      <ProjectConventionsSection projectId={projectId} />
-
-      {/* Defaults inherited by every new issue orchestration run */}
-      <ProjectExecutionSection projectId={projectId} />
-
-      {/* Design system manifest (designer + implementation runs) */}
-      <ProjectDesignSection projectId={projectId} />
+      {/* Optional agent workflow defaults live behind one entry point. */}
+      <ProjectAgentSetupSection projectId={projectId} />
 
       {/* Bitrix sync — last-sync time + manual re-sync (Bitrix-linked projects
           only, and only when the deployment has Bitrix configured) */}

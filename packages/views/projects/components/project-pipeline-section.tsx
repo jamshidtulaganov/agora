@@ -89,9 +89,13 @@ export function ProjectPipelineSection({
   const setBool = (entry: ProjectConfigEntry, next: boolean) => {
     setConfig.mutate({ key: entry.key, value: next ? "true" : "false" }, { onError });
   };
-  const setInt = (entry: ProjectConfigEntry, raw: string) => {
+  const setValue = (entry: ProjectConfigEntry, raw: string) => {
     const v = raw.trim();
-    if (v === "" || !/^\d+$/.test(v)) return; // ignore empties / non-numbers
+    if (v === "") {
+      reset(entry);
+      return;
+    }
+    if (entry.kind === "int" && !/^\d+$/.test(v)) return;
     if (v === entry.value) return;
     setConfig.mutate({ key: entry.key, value: v }, { onError });
   };
@@ -150,7 +154,7 @@ export function ProjectPipelineSection({
                     key={entry.key}
                     entry={entry}
                     onToggle={(next) => setBool(entry, next)}
-                    onSetInt={(v) => setInt(entry, v)}
+                    onSetValue={(v) => setValue(entry, v)}
                     onReset={() => reset(entry)}
                     busy={setConfig.isPending || resetConfig.isPending}
                   />
@@ -170,13 +174,13 @@ export function ProjectPipelineSection({
 function ConfigRow({
   entry,
   onToggle,
-  onSetInt,
+  onSetValue,
   onReset,
   busy,
 }: {
   entry: ProjectConfigEntry;
   onToggle: (next: boolean) => void;
-  onSetInt: (value: string) => void;
+  onSetValue: (value: string) => void;
   onReset: () => void;
   busy: boolean;
 }) {
@@ -226,10 +230,10 @@ function ConfigRow({
           <Switch checked={truthy} disabled={busy} onCheckedChange={onToggle} />
         ) : (
           <input
-            type="number"
+            type={entry.kind === "int" ? "number" : "text"}
             defaultValue={entry.value}
             disabled={busy}
-            onBlur={(e) => onSetInt(e.target.value)}
+            onBlur={(e) => onSetValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}

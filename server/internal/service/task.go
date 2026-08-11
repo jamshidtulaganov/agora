@@ -2645,9 +2645,9 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// Persist a design_proposal agent's ```design-proposal``` block: attach the
 	// design:proposed label + notify the issue's humans.
 	s.CaptureDesignProposal(ctx, issue, comment, agentID)
-	// Persist a gen_design_manifest agent's ```design-manifest``` block onto the
-	// project (key-scoped; never clobbers a human-curated manifest).
-	s.CaptureDesignManifest(ctx, issue, comment, agentID)
+	// Persist a gen_design_context agent's strict block as a pending revision.
+	// A human owner/admin must approve it before any runtime can consume it.
+	s.CaptureDesignContext(ctx, issue, comment, agentID)
 	// Persist a synthesizer's ```knowledge-items``` block as knowledge_item
 	// rows and recompile the KB. Pre-expansion content on purpose (see above).
 	s.CaptureKnowledgeItems(ctx, issue, originalContent, agentID)
