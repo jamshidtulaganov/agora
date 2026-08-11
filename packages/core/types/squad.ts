@@ -1,3 +1,5 @@
+import type { ModelRoutingMode } from "./orchestration";
+
 export type SquadMemberType = "agent" | "member";
 
 export type SquadActivityOutcome = "action" | "no_action" | "failed";
@@ -14,6 +16,7 @@ export interface Squad {
   name: string;
   description: string;
   instructions: string;
+  model_routing_mode: ModelRoutingMode;
   avatar_url: string | null;
   leader_id: string;
   creator_id: string;
@@ -58,6 +61,7 @@ export interface UpdateSquadRequest {
   instructions?: string;
   leader_id?: string;
   avatar_url?: string;
+  model_routing_mode?: ModelRoutingMode;
 }
 
 export interface AddSquadMemberRequest {

@@ -48,6 +48,7 @@ agora squad list --output json
 agora squad get <squad-id> --output json
 agora squad create --name <name> --leader <agent-name-or-id> --output json
 agora squad update <squad-id> --instructions "<leader coordination policy>" --output json
+agora squad update <squad-id> --model-routing-mode balanced --output json
 agora squad delete <squad-id>
 ```
 
@@ -95,6 +96,10 @@ records the leader's issue evaluation rather than changing squad configuration.
   prompt impact unless source proves a consumer.
 - `instructions` — squad-level instructions added to the squad leader briefing,
   not directly injected into every squad member.
+- `model_routing_mode` — default model policy for new persisted squad runs.
+  The Squad detail **Auto models** switch maps off to `pinned` and on to
+  `balanced`; allowed API/CLI values are `pinned`, `cost`, `balanced`, and
+  `intelligence`.
 - `avatar_url` — optional squad avatar URL.
 - `leader_id` — agent ID of the squad leader; the runtime target for
   squad-routed work.
@@ -401,38 +406,18 @@ access, then continue with a safe current member or wait for the human change.
 Inside a run, parallel work uses versioned DAG routes; provider-native child
 threads remain unsupported and invisible to Agora lifecycle tracking.
 
-**Model/difficulty selection.** Persisted orchestration supports a creation-time
-`model_routing_mode` with four values. `pinned` is the compatibility default and
-preserves the roster/custom-step pins. `cost`, `balanced`, and `intelligence`
-all use frontier reasoning for the plan step, then choose efficient, balanced,
-or frontier provider-native model/thinking pins per downstream step. Risk
-signals escalate instead of downgrading. The run policy records the router
-version, exact decision, reason, and signals for every routed step. Explicit
-model/thinking values on a custom plan remain authoritative; only unpinned
-custom steps are routed. Codex, Claude, Gemini, and Cursor have profiles;
-unknown providers preserve their existing agent pin. The router selects within
-the assigned agent's runtime and never silently changes the worker/provider,
-credentials, skills, or artifact location.
+**Model selection.** Persisted runs accept `model_routing_mode` values `pinned`,
+`cost`, `balanced`, or `intelligence`. Adaptive modes use frontier planning and
+route later steps by cost, scope, and risk; the policy records every exact pin
+and reason. Codex, Claude, Gemini, Antigravity, and Cursor have profiles; unknown
+providers retain their pin. The router never changes the assigned worker or
+runtime. Explicit custom-step pins remain authoritative.
 
-Outside persisted runs, `applyIssueCostTier`
-(`server/internal/handler/daemon.go`) resolves an ordinary task's model+thinking
-from issue tier labels at claim time:
-
-- `tier:trivial` → haiku, no thinking
-- `tier:light` → sonnet, no thinking
-- `tier:heavy` → opus, high thinking (the one tier that RAISES capability)
-- no tier → the agent's own configured model/thinking
-
-Labels are the race-free, per-issue lever: a lead can tier an issue up or
-down without mutating a shared agent's config. Beyond those labels, or for a
-subagent the lead creates fresh, set the agent directly — both `agora agent
-create` and `agora agent update` take `--model` AND `--thinking-level`
-(e.g. `--model claude-opus-4-8 --thinking-level high` for the hardest work,
-`--model claude-sonnet-5` for fast execution). Note the timing: model and
-thinking are read at ordinary-task CLAIM time. Persisted orchestration snapshots
-both per step and preserves them through retry/failover/reroute. With `pinned`,
-configure the roster before creating its run; with an adaptive mode, inspect the
-recorded plan decisions before starting a draft proposal.
+For squad execution, precedence is run request → project default → squad default
+→ `pinned`. Auto models writes the squad default for future squad runs only; it
+does not mutate agent pins or affect solo/human runs. Ordinary non-run tasks use
+claim-time labels: `tier:trivial` (haiku), `tier:light` (sonnet), `tier:heavy`
+(opus/high), or the agent default. See the source map for timing and audit detail.
 
 ## Autopilot behavior
 
@@ -503,8 +488,9 @@ authorizes them.
 - A squad leader is not capability-restricted — its task-token can create,
   configure, and archive other agents via the same `agora agent` CLI a human
   uses. Nothing special has to be granted for "leader" behavior.
-- `tier:trivial`/`tier:light` labels are the ONLY automatic model selection.
-  Everything above that is a leader judgment call, not the platform choosing.
+- ordinary tasks use `tier:*` labels for automatic claim-time selection;
+  persisted orchestration can instead resolve auditable per-step pins through
+  `model_routing_mode=cost|balanced|intelligence` at run creation.
 
 ## References
 

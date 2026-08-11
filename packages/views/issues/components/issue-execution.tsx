@@ -748,7 +748,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   const [customizing, setCustomizing] = useState(false);
   const [strategy, setStrategy] = useState<"automatic" | ExecutionStrategy>("automatic");
   const [progression, setProgression] = useState<ProgressionPolicy>("automatic");
-  const [modelRouting, setModelRouting] = useState<ModelRoutingMode>("pinned");
+  const [modelRouting, setModelRouting] = useState<ModelRoutingMode | "inherit">("inherit");
   const [squadId, setSquadId] = useState("");
   const [maxConcurrency, setMaxConcurrency] = useState(3);
   const [reviewPlanFirst, setReviewPlanFirst] = useState(false);
@@ -770,12 +770,11 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   useEffect(() => {
     setStrategy("automatic");
     setProgression(projectDefaults?.progression_policy ?? "automatic");
-    setModelRouting(projectDefaults?.model_routing_mode ?? "pinned");
+    setModelRouting("inherit");
     setMaxConcurrency(projectDefaults?.max_concurrency ?? 3);
     setReviewPlanFirst(projectDefaults?.review_plan_first ?? false);
   }, [
     projectDefaults?.progression_policy,
-    projectDefaults?.model_routing_mode,
     projectDefaults?.max_concurrency,
     projectDefaults?.review_plan_first,
   ]);
@@ -815,7 +814,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
           ...(strategy === "automatic" ? {} : { execution_strategy: strategy }),
           ...(strategy === "squad" && squadId ? { squad_id: squadId } : {}),
           progression_policy: progression,
-          model_routing_mode: modelRouting,
+          ...(modelRouting === "inherit" ? {} : { model_routing_mode: modelRouting }),
           ...(usesSquadDAG ? { policy: { max_concurrency: maxConcurrency } } : {}),
         },
       },
@@ -949,7 +948,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
             <fieldset className="sm:col-span-2">
               <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.model_routing_legend)}</legend>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {(["pinned", "cost", "balanced", "intelligence"] as const).map((option) => (
+                {(["inherit", "pinned", "cost", "balanced", "intelligence"] as const).map((option) => (
                   <Button
                     key={option}
                     type="button"

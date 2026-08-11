@@ -22,6 +22,7 @@ import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Label } from "@agora/ui/components/ui/label";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Switch } from "@agora/ui/components/ui/switch";
 import {
   Popover,
   PopoverContent,
@@ -60,7 +61,7 @@ import {
 } from "../../issues/components/pickers/property-picker";
 import { ChevronDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, CreateAgentRequest, MemberWithUser } from "@agora/core/types";
+import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, CreateAgentRequest, MemberWithUser, UpdateSquadRequest } from "@agora/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
@@ -123,7 +124,7 @@ export function SquadDetailPage() {
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   const updateSquadMut = useMutation({
-    mutationFn: (data: { name?: string; description?: string; instructions?: string; avatar_url?: string; leader_id?: string }) => api.updateSquad(squadId, data),
+    mutationFn: (data: UpdateSquadRequest) => api.updateSquad(squadId, data),
     onSuccess: () => {
       refetchSquad();
       refetchMembers();
@@ -250,9 +251,19 @@ export function SquadDetailPage() {
           leaderName={getEntityName("agent", squad.leader_id)}
           creatorName={getEntityName("member", squad.creator_id)}
           uploadingAvatar={updateSquadMut.isPending}
+          canManage={isWorkspaceAdmin}
+          autoModelsPending={updateSquadMut.isPending}
           onUploadAvatar={(url) => updateSquadMut.mutateAsync({ avatar_url: url })}
           onRename={async (next) => { await updateSquadMut.mutateAsync({ name: next.trim() }); }}
           onUpdateDescription={async (next) => { await updateSquadMut.mutateAsync({ description: next }); }}
+          onSetAutoModels={async (enabled) => {
+            try {
+              await updateSquadMut.mutateAsync({ model_routing_mode: enabled ? "balanced" : "pinned" });
+              toast.success(t(($) => $.inspector.auto_models_saved));
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : t(($) => $.inspector.auto_models_failed));
+            }
+          }}
         />
 
         <SquadOverviewPane
@@ -803,18 +814,24 @@ function SquadDetailInspector({
   leaderName,
   creatorName,
   uploadingAvatar,
+  canManage,
+  autoModelsPending,
   onUploadAvatar,
   onRename,
   onUpdateDescription,
+  onSetAutoModels,
 }: {
   squad: Squad;
   memberCount: number;
   leaderName: string;
   creatorName: string;
   uploadingAvatar: boolean;
+  canManage: boolean;
+  autoModelsPending: boolean;
   onUploadAvatar: (url: string) => Promise<unknown>;
   onRename: (next: string) => Promise<void>;
   onUpdateDescription: (next: string) => Promise<void>;
+  onSetAutoModels: (enabled: boolean) => Promise<void>;
 }) {
   const { t } = useT("squads");
   const timeAgo = useTimeAgo();
@@ -871,6 +888,42 @@ function SquadDetailInspector({
           <InspectorRow label="Updated">
             <span className="text-muted-foreground">{timeAgo(squad.updated_at)}</span>
           </InspectorRow>
+        </div>
+      </div>
+
+      {/* Execution defaults — intentionally squad-scoped. The switch changes
+          routing for future squad runs; it does not rewrite agent model pins. */}
+      <div className="px-5 py-4">
+        <div className="mb-2 -mx-2 px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          {t(($) => $.inspector.execution_section)}
+        </div>
+        <div className="flex items-start gap-3 rounded-md border bg-muted/20 p-3">
+          <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Sparkles className="size-3.5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="squad-auto-models" className="text-xs font-medium">
+                {t(($) => $.inspector.auto_models)}
+              </Label>
+              <Switch
+                id="squad-auto-models"
+                size="sm"
+                checked={squad.model_routing_mode !== "pinned"}
+                onCheckedChange={(checked) => void onSetAutoModels(checked)}
+                disabled={!canManage || autoModelsPending}
+                aria-describedby="squad-auto-models-hint"
+              />
+            </div>
+            <p id="squad-auto-models-hint" className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {t(($) => $.inspector.auto_models_hint)}
+            </p>
+            {!canManage && (
+              <p className="mt-1 text-[10px] text-muted-foreground/80">
+                {t(($) => $.inspector.auto_models_admin_only)}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </aside>

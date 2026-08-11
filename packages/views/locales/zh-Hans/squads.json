@@ -7,6 +7,12 @@
   },
   "inspector": {
     "details_section": "详情",
+    "execution_section": "执行",
+    "auto_models": "自动选择模型",
+    "auto_models_hint": "新的小队运行将使用前沿模型规划、经济模型处理常规任务，并根据风险自动升级。",
+    "auto_models_admin_only": "工作区管理员可以更改此设置。",
+    "auto_models_saved": "自动模型设置已保存",
+    "auto_models_failed": "无法更新自动模型设置",
     "archive_button": "归档"
   },
   "archive_dialog": {

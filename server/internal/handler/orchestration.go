@@ -1731,13 +1731,6 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "model_routing_mode must be pinned, cost, balanced, or intelligence")
 		return
 	}
-	modelRoutingMode := normalizeModelRoutingMode(req.ModelRoutingMode)
-	if modelRoutingMode == "" {
-		modelRoutingMode = projectDefaults.ModelRoutingMode
-	}
-	if modelRoutingMode == "" {
-		modelRoutingMode = modelRoutingPinned
-	}
 	if strings.TrimSpace(req.ProgressionPolicy) != "" && normalizeProgressionPolicy(req.ProgressionPolicy) == "" {
 		writeError(w, http.StatusBadRequest, "progression_policy must be automatic, gated, or manual")
 		return
@@ -1818,6 +1811,11 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "squad_id is required when the issue is not assigned to a squad")
 		return
 	}
+	modelRoutingMode := resolveModelRoutingMode(
+		req.ModelRoutingMode,
+		projectDefaults.ModelRoutingMode,
+		h.squadModelRoutingMode(r.Context(), issue, routing, executionStrategy),
+	)
 	plannerMembers := []orchestrationPlannerMember(nil)
 	if executionStrategy == "squad" {
 		leader, leaderErr := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{

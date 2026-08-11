@@ -7,6 +7,12 @@
   },
   "inspector": {
     "details_section": "Details",
+    "execution_section": "Execution",
+    "auto_models": "Auto models",
+    "auto_models_hint": "For new squad runs, use frontier planning, efficient routine execution, and risk-based escalation.",
+    "auto_models_admin_only": "Workspace admins can change this setting.",
+    "auto_models_saved": "Auto models setting saved",
+    "auto_models_failed": "Failed to update Auto models",
     "archive_button": "Archive"
   },
   "archive_dialog": {

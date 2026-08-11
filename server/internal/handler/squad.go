@@ -22,20 +22,21 @@ import (
 // ── Response types ──────────────────────────────────────────────────────────
 
 type SquadResponse struct {
-	ID            string                       `json:"id"`
-	WorkspaceID   string                       `json:"workspace_id"`
-	Name          string                       `json:"name"`
-	Description   string                       `json:"description"`
-	Instructions  string                       `json:"instructions"`
-	AvatarURL     *string                      `json:"avatar_url"`
-	LeaderID      string                       `json:"leader_id"`
-	CreatorID     string                       `json:"creator_id"`
-	CreatedAt     string                       `json:"created_at"`
-	UpdatedAt     string                       `json:"updated_at"`
-	ArchivedAt    *string                      `json:"archived_at"`
-	ArchivedBy    *string                      `json:"archived_by"`
-	MemberCount   int                          `json:"member_count"`
-	MemberPreview []SquadMemberPreviewResponse `json:"member_preview"`
+	ID               string                       `json:"id"`
+	WorkspaceID      string                       `json:"workspace_id"`
+	Name             string                       `json:"name"`
+	Description      string                       `json:"description"`
+	Instructions     string                       `json:"instructions"`
+	ModelRoutingMode string                       `json:"model_routing_mode"`
+	AvatarURL        *string                      `json:"avatar_url"`
+	LeaderID         string                       `json:"leader_id"`
+	CreatorID        string                       `json:"creator_id"`
+	CreatedAt        string                       `json:"created_at"`
+	UpdatedAt        string                       `json:"updated_at"`
+	ArchivedAt       *string                      `json:"archived_at"`
+	ArchivedBy       *string                      `json:"archived_by"`
+	MemberCount      int                          `json:"member_count"`
+	MemberPreview    []SquadMemberPreviewResponse `json:"member_preview"`
 }
 
 type SquadMemberPreviewResponse struct {
@@ -62,19 +63,20 @@ type SquadMemberResponse struct {
 
 func squadToResponse(s db.Squad) SquadResponse {
 	return SquadResponse{
-		ID:            uuidToString(s.ID),
-		WorkspaceID:   uuidToString(s.WorkspaceID),
-		Name:          s.Name,
-		Description:   s.Description,
-		Instructions:  s.Instructions,
-		AvatarURL:     textToPtr(s.AvatarUrl),
-		LeaderID:      uuidToString(s.LeaderID),
-		CreatorID:     uuidToString(s.CreatorID),
-		CreatedAt:     timestampToString(s.CreatedAt),
-		UpdatedAt:     timestampToString(s.UpdatedAt),
-		ArchivedAt:    timestampToPtr(s.ArchivedAt),
-		ArchivedBy:    uuidToPtr(s.ArchivedBy),
-		MemberPreview: []SquadMemberPreviewResponse{},
+		ID:               uuidToString(s.ID),
+		WorkspaceID:      uuidToString(s.WorkspaceID),
+		Name:             s.Name,
+		Description:      s.Description,
+		Instructions:     s.Instructions,
+		ModelRoutingMode: s.ModelRoutingMode,
+		AvatarURL:        textToPtr(s.AvatarUrl),
+		LeaderID:         uuidToString(s.LeaderID),
+		CreatorID:        uuidToString(s.CreatorID),
+		CreatedAt:        timestampToString(s.CreatedAt),
+		UpdatedAt:        timestampToString(s.UpdatedAt),
+		ArchivedAt:       timestampToPtr(s.ArchivedAt),
+		ArchivedBy:       uuidToPtr(s.ArchivedBy),
+		MemberPreview:    []SquadMemberPreviewResponse{},
 	}
 }
 
@@ -320,11 +322,12 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         *string `json:"name"`
-		Description  *string `json:"description"`
-		Instructions *string `json:"instructions"`
-		LeaderID     *string `json:"leader_id"`
-		AvatarURL    *string `json:"avatar_url"`
+		Name             *string `json:"name"`
+		Description      *string `json:"description"`
+		Instructions     *string `json:"instructions"`
+		LeaderID         *string `json:"leader_id"`
+		AvatarURL        *string `json:"avatar_url"`
+		ModelRoutingMode *string `json:"model_routing_mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -344,6 +347,14 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AvatarURL != nil {
 		params.AvatarUrl = pgtype.Text{String: *req.AvatarURL, Valid: true}
+	}
+	if req.ModelRoutingMode != nil {
+		mode := normalizeModelRoutingMode(*req.ModelRoutingMode)
+		if mode == "" {
+			writeError(w, http.StatusBadRequest, "model_routing_mode must be pinned, cost, balanced, or intelligence")
+			return
+		}
+		params.ModelRoutingMode = pgtype.Text{String: mode, Valid: true}
 	}
 	if req.LeaderID != nil {
 		lid, ok := parseUUIDOrBadRequest(w, *req.LeaderID, "leader_id")

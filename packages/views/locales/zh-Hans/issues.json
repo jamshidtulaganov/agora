@@ -484,6 +484,7 @@
     "progression_hint": "Gated 只在声明的审批点暂停。Manual 会在每批新工作就绪前暂停。",
     "model_routing_legend": "如何选择模型？",
     "model_routing_hint": "规划始终使用前沿推理。自适应模式会为后续每个步骤固定更经济或更强的模型，并记录原因。",
+    "model_routing_inherit": "使用默认设置",
     "model_routing_pinned": "代理默认",
     "model_routing_cost": "成本优先",
     "model_routing_balanced": "均衡",

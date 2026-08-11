@@ -60,6 +60,32 @@ func normalizeModelRoutingMode(value string) string {
 	}
 }
 
+// resolveModelRoutingMode keeps the precedence explicit and testable. A run
+// request is the narrowest override, followed by the project default and then
+// the squad's Auto-models preference. Existing squads remain pinned unless an
+// administrator opts them in.
+func resolveModelRoutingMode(requested, projectDefault, squadDefault string) string {
+	for _, candidate := range []string{requested, projectDefault, squadDefault} {
+		if mode := normalizeModelRoutingMode(candidate); mode != "" {
+			return mode
+		}
+	}
+	return modelRoutingPinned
+}
+
+func (h *Handler) squadModelRoutingMode(ctx context.Context, issue db.Issue, routing orchestrationRouting, strategy string) string {
+	if strategy != "squad" || routing.OwnerType != "squad" || !routing.OwnerID.Valid {
+		return ""
+	}
+	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+		ID: routing.OwnerID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	return normalizeModelRoutingMode(squad.ModelRoutingMode)
+}
+
 func orchestrationProviderModels(provider string) (orchestrationProviderProfile, bool) {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "codex":
@@ -79,6 +105,12 @@ func orchestrationProviderModels(provider string) (orchestrationProviderProfile,
 			Efficient: orchestrationModelProfile{Model: "flash"},
 			Balanced:  orchestrationModelProfile{Model: "pro"},
 			Frontier:  orchestrationModelProfile{Model: "pro"},
+		}, true
+	case "antigravity":
+		return orchestrationProviderProfile{
+			Efficient: orchestrationModelProfile{Model: "gemini-3.6-flash-high"},
+			Balanced:  orchestrationModelProfile{Model: "gemini-3.1-pro-high"},
+			Frontier:  orchestrationModelProfile{Model: "gemini-3.1-pro-high"},
 		}, true
 	case "cursor":
 		return orchestrationProviderProfile{

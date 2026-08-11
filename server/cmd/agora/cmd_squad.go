@@ -102,6 +102,7 @@ func runSquadGet(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Name:         %s\n", strVal(squad, "name"))
 	fmt.Printf("Description:  %s\n", strVal(squad, "description"))
 	fmt.Printf("Leader ID:    %s\n", strVal(squad, "leader_id"))
+	fmt.Printf("Model routing: %s\n", strVal(squad, "model_routing_mode"))
 	fmt.Printf("Created:      %s\n", strVal(squad, "created_at"))
 	if inst := strVal(squad, "instructions"); inst != "" {
 		fmt.Printf("Instructions: %s\n", inst)
@@ -203,9 +204,18 @@ func runSquadUpdate(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetString("avatar-url")
 		body["avatar_url"] = v
 	}
+	if cmd.Flags().Changed("model-routing-mode") {
+		v, _ := cmd.Flags().GetString("model-routing-mode")
+		switch v {
+		case "pinned", "cost", "balanced", "intelligence":
+			body["model_routing_mode"] = v
+		default:
+			return fmt.Errorf("--model-routing-mode must be pinned, cost, balanced, or intelligence")
+		}
+	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use flags like --name, --description, --instructions, --leader")
+		return fmt.Errorf("no fields to update; use flags like --name, --description, --instructions, --leader, --model-routing-mode")
 	}
 
 	var result map[string]any
@@ -517,6 +527,7 @@ func init() {
 	squadUpdateCmd.Flags().String("instructions", "", "New instructions")
 	squadUpdateCmd.Flags().String("leader", "", "New leader agent (name or ID)")
 	squadUpdateCmd.Flags().String("avatar-url", "", "New avatar URL")
+	squadUpdateCmd.Flags().String("model-routing-mode", "", "Model routing: pinned, cost, balanced, or intelligence")
 	squadUpdateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// delete

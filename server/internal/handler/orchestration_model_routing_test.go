@@ -85,6 +85,7 @@ func TestAdaptiveModelRouteProviderProfiles(t *testing.T) {
 	}{
 		{provider: "claude", model: "claude-opus-4-8", thinking: "xhigh", tier: "frontier"},
 		{provider: "gemini", model: "pro", tier: "frontier"},
+		{provider: "antigravity", model: "gemini-3.1-pro-high", tier: "frontier"},
 		{provider: "cursor", model: "auto", tier: "provider_auto"},
 		{provider: "unknown", tier: "pinned"},
 	}
@@ -104,5 +105,27 @@ func TestNormalizeModelRoutingModeRejectsUnknownValues(t *testing.T) {
 	}
 	if got := normalizeModelRoutingMode("automatic"); got != "" {
 		t.Fatalf("unknown mode should be rejected, got %q", got)
+	}
+}
+
+func TestResolveModelRoutingModePrecedence(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		project   string
+		squad     string
+		want      string
+	}{
+		{name: "request overrides project and squad", requested: "intelligence", project: "cost", squad: "balanced", want: modelRoutingIntelligence},
+		{name: "project overrides squad", project: "cost", squad: "balanced", want: modelRoutingCost},
+		{name: "squad supplies auto default", squad: "balanced", want: modelRoutingBalanced},
+		{name: "legacy default stays pinned", want: modelRoutingPinned},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveModelRoutingMode(tt.requested, tt.project, tt.squad); got != tt.want {
+				t.Fatalf("resolveModelRoutingMode() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

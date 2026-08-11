@@ -112,6 +112,37 @@ func TestUpdateSquadLeaderNormalizesMemberRoles(t *testing.T) {
 	}
 }
 
+func TestUpdateSquadModelRoutingMode(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	leaderID := createHandlerTestAgent(t, "Squad Routing Leader", nil)
+	squadID := createSquadFixture(t, leaderID)
+
+	w := httptest.NewRecorder()
+	testHandler.UpdateSquad(w, squadRequest(t, http.MethodPut, squadID, map[string]any{
+		"model_routing_mode": "balanced",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateSquad: got %d: %s", w.Code, w.Body.String())
+	}
+	var persisted string
+	if err := testPool.QueryRow(context.Background(), `SELECT model_routing_mode FROM squad WHERE id = $1`, squadID).Scan(&persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted != modelRoutingBalanced {
+		t.Fatalf("model_routing_mode = %q, want %q", persisted, modelRoutingBalanced)
+	}
+
+	w = httptest.NewRecorder()
+	testHandler.UpdateSquad(w, squadRequest(t, http.MethodPut, squadID, map[string]any{
+		"model_routing_mode": "auto",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid model_routing_mode: got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestDeleteSquadTransfersReferencesBeforeArchive(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

@@ -259,12 +259,14 @@ describe("SquadListSchema member preview drift", () => {
 
   it("defaults preview fields when an older backend omits them", () => {
     const parsed = SquadListSchema.parse([baseSquad]);
+    expect(parsed[0]?.model_routing_mode).toBe("pinned");
     expect(parsed[0]?.member_count).toBe(0);
     expect(parsed[0]?.member_preview).toEqual([]);
   });
 
   it("defaults preview fields on a single squad response", () => {
     const parsed = SquadSchema.parse(baseSquad);
+    expect(parsed.model_routing_mode).toBe("pinned");
     expect(parsed.member_count).toBe(0);
     expect(parsed.member_preview).toEqual([]);
   });

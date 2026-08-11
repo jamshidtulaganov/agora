@@ -48,8 +48,13 @@ risk/scope signals. Generated plans are fully routed. Explicit model or thinking
 pins in custom plans remain authoritative; only unpinned custom steps are routed.
 Routing selects within the already assigned agent's runtime; it never silently
 changes the worker, provider, credentials, skills, or artifact location.
-The first provider profiles are Codex, Claude, Gemini, and Cursor. Default plans
-then separate responsibility from execution control:
+Squads expose an **Auto models** switch that stores `balanced` as their default
+for new squad runs. Resolution order is an explicit run request, then project
+default, then squad default, then `pinned`; solo and human runs do not inherit a
+squad setting. Switching Auto models off restores `pinned` without rewriting
+any agent's configured model.
+The first provider profiles are Codex, Claude, direct Gemini, Antigravity, and
+Cursor. Default plans then separate responsibility from execution control:
 
 - a directly assigned agent remains the development worker;
 - a squad-owned issue resolves `squad.leader_id` as both controller and the

@@ -36,6 +36,12 @@ func TestSquadMemberSetRoleCommandIsRegistered(t *testing.T) {
 	}
 }
 
+func TestSquadUpdateModelRoutingModeFlagIsRegistered(t *testing.T) {
+	if squadUpdateCmd.Flags().Lookup("model-routing-mode") == nil {
+		t.Fatal("squad update command missing --model-routing-mode")
+	}
+}
+
 func TestRunSquadMemberSetRolePatchesRole(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("AGORA_TOKEN", "test-token")

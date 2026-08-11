@@ -14,6 +14,7 @@ Source:
 server/migrations/084_squad.up.sql                # base table: name, description, leader_id, creator_id
 server/migrations/085_squad_archive.up.sql        # archived_at, archived_by columns
 server/migrations/088_squad_instructions.up.sql   # instructions column
+server/migrations/188_squad_model_routing_mode.up.sql # squad model-routing default
 server/pkg/db/queries/squad.sql
 packages/core/types/squad.ts
 ```
@@ -21,7 +22,8 @@ packages/core/types/squad.ts
 Key facts:
 
 - `squad` stores `name`, `description`, `leader_id`, `creator_id` (084), archive
-  metadata `archived_at`/`archived_by` (085), and `instructions` (088).
+  metadata `archived_at`/`archived_by` (085), `instructions` (088), and the
+  `model_routing_mode` default for new squad runs (188).
 - `squad_member` stores `member_type`, `member_id`, and `role`.
 - `member_type` is constrained to `agent` or `member`.
 - issue `assignee_type` supports `squad`.
@@ -505,7 +507,8 @@ Contracts:
 - ordinary tasks use `applyIssueCostTier` for label-driven model/thinking
   selection at claim time (daemon.go); persisted orchestration separately uses
   `applyAdaptiveModelRouting` at plan creation when `model_routing_mode` is
-  `cost`, `balanced`, or `intelligence`. `pinned` remains the default.
+  `cost`, `balanced`, or `intelligence`. Codex, Claude, Gemini, Antigravity,
+  and Cursor have profiles; `pinned` remains the default.
 
 ## Persisted issue orchestration
 
@@ -519,6 +522,7 @@ server/migrations/187_orchestration_thinking_override.up.sql
 server/pkg/db/queries/orchestration.sql
 server/internal/handler/orchestration.go
 server/internal/handler/orchestration_model_routing.go # provider profiles, risk/scope policy, audit decisions
+packages/views/squads/components/squad-detail-page.tsx # squad Auto models switch
 server/internal/service/task.go              # orchestration task snapshot + terminal callback
 server/internal/handler/daemon.go             # authoritative per-step model/thinking route
 server/internal/daemon/prompt.go              # per-step handoff contract
@@ -531,6 +535,11 @@ server/internal/handler/orchestration_squad_selection_test.go # capability propo
 ```
 
 Contracts:
+
+- model-routing precedence is explicit run request → project default → squad
+  `model_routing_mode` → `pinned`; squad defaults apply only to squad execution;
+- the Squad detail Auto-models switch writes `balanced` when on and `pinned`
+  when off without changing any agent's runtime/model assignment;
 
 - one issue can have only one active (`draft`, `running`, or
   `waiting_approval`) orchestration run;

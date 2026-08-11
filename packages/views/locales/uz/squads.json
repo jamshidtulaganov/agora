@@ -7,6 +7,12 @@
   },
   "inspector": {
     "details_section": "Tafsilotlar",
+    "execution_section": "Bajarish",
+    "auto_models": "Modellarni avtomatik tanlash",
+    "auto_models_hint": "Yangi Squad ishlarida rejalash uchun kuchli, oddiy bajarish uchun tejamkor model va xavf bo‘lsa avtomatik kuchaytirish ishlatiladi.",
+    "auto_models_admin_only": "Bu sozlamani workspace administratori o‘zgartira oladi.",
+    "auto_models_saved": "Avtomatik model tanlash sozlamasi saqlandi",
+    "auto_models_failed": "Avtomatik model tanlashni yangilab bo‘lmadi",
     "archive_button": "Arxivlash"
   },
   "archive_dialog": {

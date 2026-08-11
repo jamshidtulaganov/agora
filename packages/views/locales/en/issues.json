@@ -495,6 +495,7 @@
     "progression_hint": "Gated pauses only at declared approvals. Manual pauses before each newly-ready batch.",
     "model_routing_legend": "How should models be selected?",
     "model_routing_hint": "Planning always gets frontier reasoning. Adaptive modes pin cheaper or stronger models per later step and record why.",
+    "model_routing_inherit": "Use defaults",
     "model_routing_pinned": "Agent defaults",
     "model_routing_cost": "Cost first",
     "model_routing_balanced": "Balanced",
