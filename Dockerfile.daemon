@@ -2,9 +2,9 @@
 #
 # Runs `agora daemon` 24/7 so a workspace's agents execute even when the
 # owner's laptop is off/asleep. Authenticates to the backend with a user PAT
-# (mul_...) and runs Claude Code as the agent runtime (BYO key via
-# ANTHROPIC_API_KEY, or a `claude setup-token` OAuth token in
-# CLAUDE_CODE_OAUTH_TOKEN).
+# (mul_...) and runs Claude Code and Cursor Agent as remote runtimes. Claude
+# uses ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN; Cursor uses
+# CURSOR_API_KEY. Credentials are injected at runtime, never baked in.
 #
 # Build context MUST be the repo root (the builder copies server/):
 #   fly deploy --config deploy/fly/daemon/fly.toml --dockerfile Dockerfile.daemon .
@@ -35,6 +35,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Claude Code CLI — the agent runtime the daemon spawns once per task.
 RUN npm install -g @anthropic-ai/claude-code
+
+# Cursor Agent CLI — supports non-interactive automation with CURSOR_API_KEY.
+# The installer puts the binary under the build user's home; copy it into the
+# system PATH because runtime HOME is the persistent /data volume.
+RUN curl https://cursor.com/install -fsS | bash \
+    && install -m 0755 /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
+    && cursor-agent --version
 
 # Feishu/Lark OpenAPI MCP — pre-installed so agents with a Lark Bot bound get
 # the lark_* tools (messages, docs, calendar, Bitable) without a cold npx fetch

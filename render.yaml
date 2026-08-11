@@ -166,8 +166,9 @@ services:
         value: http://127.0.0.1:4000
 
   # Outbound-only worker: claims Agora tasks and executes them with Claude Code
-  # even when every developer laptop is offline. HOME and all worktrees live on
-  # the persistent disk so daemon identity and repository clones survive deploys.
+  # or Cursor Agent even when every developer laptop is offline. HOME and all
+  # worktrees live on the persistent disk so daemon identity and repository
+  # clones survive deploys.
   - type: worker
     name: agora-daemon-claude
     runtime: docker
@@ -187,6 +188,8 @@ services:
       - key: AGORA_PAT
         sync: false
       - key: CLAUDE_CODE_OAUTH_TOKEN
+        sync: false
+      - key: CURSOR_API_KEY
         sync: false
       - key: AGORA_SERVER_URL
         value: https://agora-web-7mav.onrender.com
