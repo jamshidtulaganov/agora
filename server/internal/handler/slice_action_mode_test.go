@@ -56,6 +56,29 @@ func TestResolveTaskType(t *testing.T) {
 	}
 }
 
+func TestIssueGitBranchName(t *testing.T) {
+	cases := []struct {
+		name   string
+		prefix string
+		number int32
+		id     string
+		labels []string
+		want   string
+	}{
+		{name: "feature by default", prefix: "ISSUE", number: 12, id: "8669600a-d950", want: "feature/issue-12"},
+		{name: "typed bug", prefix: "OCT", number: 42, labels: []string{"type:bug"}, want: "fix/oct-42"},
+		{name: "legacy bug", prefix: "OCT", number: 43, labels: []string{"bug"}, want: "fix/oct-43"},
+		{name: "uuid fallback", id: "8669600a-d950-4c7e", want: "feature/8669600a"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := issueGitBranchName(tc.prefix, tc.number, tc.id, tc.labels); got != tc.want {
+				t.Fatalf("issueGitBranchName() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestQuestionWorkInstructionDoesNotAssumeCode(t *testing.T) {
 	got := taskModeInstructionFor("question")
 	for _, want := range []string{"INVESTIGATE AND PLAN", "Do not assume", "Only modify code", "next decision"} {

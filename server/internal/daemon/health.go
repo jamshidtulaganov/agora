@@ -73,6 +73,7 @@ type repoCheckoutRequest struct {
 	Ref          string `json:"ref,omitempty"`
 	AgentName    string `json:"agent_name"`
 	TaskID       string `json:"task_id"`
+	BranchName   string `json:"branch_name,omitempty"`
 	SprintBranch string `json:"sprint_branch,omitempty"`
 }
 
@@ -200,6 +201,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			Ref:                 req.Ref,
 			AgentName:           req.AgentName,
 			TaskID:              req.TaskID,
+			BranchName:          req.BranchName,
 			CoAuthoredByEnabled: d.workspaceCoAuthoredByEnabled(req.WorkspaceID),
 		})
 		if err != nil {

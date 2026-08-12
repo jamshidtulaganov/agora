@@ -2671,7 +2671,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		agentName = task.Agent.Name
 	}
 	for _, assignment := range assignments.All {
-		localGit, gitErr := prepareLocalDirGit(ctx, assignment.AbsPath, agentName, task.ID, taskLog)
+		localGit, gitErr := prepareLocalDirGit(ctx, assignment.AbsPath, agentName, task.ID, taskLog, task.BranchName)
 		if gitErr != nil {
 			taskLog.Error("local_directory: git prepare failed", "path", assignment.AbsPath, "error", gitErr)
 			for _, prepared := range localGits {
@@ -3253,6 +3253,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"AGORA_AGENT_ID":     task.AgentID,
 		"AGORA_TASK_ID":      task.ID,
 		"AGORA_TASK_SLOT":    strconv.Itoa(slot),
+	}
+	if task.BranchName != "" {
+		agentEnv["AGORA_BRANCH_NAME"] = task.BranchName
 	}
 	// Shared, persistent dependency caches (WorkspacesRoot/.depcache): pnpm's
 	// content-addressed store turns `pnpm install` into hardlinks and the

@@ -96,6 +96,20 @@ func TestPrepareLocalDirGit_CleanTree(t *testing.T) {
 	}
 }
 
+func TestPrepareLocalDirGit_PreferredIssueBranch(t *testing.T) {
+	dir := gitFixture(t)
+	g, err := prepareLocalDirGit(context.Background(), dir, "Dev Agent", "task-abcd1234", slog.Default(), "feature/issue-12")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if g.branch != "feature/issue-12" {
+		t.Fatalf("branch = %q, want feature/issue-12", g.branch)
+	}
+	if cur := gitAt(t, dir, "symbolic-ref", "--short", "HEAD"); cur != "feature/issue-12" {
+		t.Fatalf("HEAD on %q, want feature/issue-12", cur)
+	}
+}
+
 func TestFinalize_NoCommits_RestoresBranch(t *testing.T) {
 	dir := gitFixture(t)
 	ctx := context.Background()

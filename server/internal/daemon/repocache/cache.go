@@ -432,6 +432,7 @@ type WorktreeParams struct {
 	Ref                 string // optional branch, tag, or commit to base the worktree on
 	AgentName           string // for branch naming
 	TaskID              string // for branch naming uniqueness
+	BranchName          string // optional server-selected issue branch
 	CoAuthoredByEnabled bool   // install prepare-commit-msg hook for Co-authored-by trailer
 }
 
@@ -494,8 +495,12 @@ func (c *Cache) CreateWorktree(params WorktreeParams) (*WorktreeResult, error) {
 		return nil, fmt.Errorf("cannot resolve default branch for %s: bare cache at %s has no usable refs (origin/* is empty or ambiguous and bare HEAD has no match). The cache may be corrupted; delete it and retry", params.RepoURL, barePath)
 	}
 
-	// Build branch name: agent/{sanitized-name}/{short-task-id}
-	branchName := fmt.Sprintf("agent/%s/%s", sanitizeName(params.AgentName), shortID(params.TaskID))
+	// Prefer the server-selected feature/<issue> or fix/<issue> branch. Older
+	// servers omit it, so mixed-version deployments retain the legacy name.
+	branchName := strings.TrimSpace(params.BranchName)
+	if branchName == "" {
+		branchName = fmt.Sprintf("agent/%s/%s", sanitizeName(params.AgentName), shortID(params.TaskID))
+	}
 
 	// Derive directory name from repo URL.
 	dirName := repoNameFromURL(params.RepoURL)

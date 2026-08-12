@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -49,6 +50,49 @@ func resolveTaskType(labelNames []string) string {
 	default:
 		return ""
 	}
+}
+
+// issueGitBranchName returns the stable, human-readable branch used by an
+// ordinary issue task. Bugs use fix/*; every other issue uses feature/* so an
+// untyped feature cannot fall back to an opaque agent/task UUID branch.
+func issueGitBranchName(issuePrefix string, issueNumber int32, issueID string, labelNames []string) string {
+	kind := "feature"
+	for _, name := range labelNames {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "type:bug", "bug":
+			kind = "fix"
+		}
+	}
+
+	identifier := ""
+	if prefix := gitBranchSlug(issuePrefix); prefix != "" && issueNumber > 0 {
+		identifier = fmt.Sprintf("%s-%d", prefix, issueNumber)
+	}
+	if identifier == "" {
+		identifier = gitBranchSlug(issueID)
+		if len(identifier) > 8 {
+			identifier = identifier[:8]
+		}
+	}
+	if identifier == "" {
+		return ""
+	}
+	return kind + "/" + identifier
+}
+
+func gitBranchSlug(value string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // taskModeInstructionFor returns the issue-type execution contract used by

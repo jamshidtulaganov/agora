@@ -18,8 +18,9 @@ import (
 //   - Pre-existing uncommitted work is snapshotted to a recoverable ref
 //     (`git stash create` + refs/agora/backup/<task>) before the agent runs —
 //     a zero-touch backup that never moves a file in the working tree.
-//   - Agent commits land on a throwaway branch (agent/<name>/<task>), never on
-//     the user's branch. If the agent made NO commits (a read-only QA run, an
+//   - Agent commits land on an isolated issue branch (feature/* or fix/*;
+//     legacy servers fall back to agent/<name>/<task>), never on the user's
+//     branch. If the agent made NO commits (a read-only QA run, an
 //     inspection task), the branch is torn down and the user's original branch
 //     is restored, so their repo is exactly where they left it. This is why we
 //     need no server-side "is this a QA task?" marker: branching by *actual
@@ -36,7 +37,7 @@ type localDirGit struct {
 	dir         string // the user's working tree (assignment.AbsPath)
 	origRef     string // branch name HEAD was on, or "" when HEAD was detached
 	origHead    string // sha HEAD pointed at before the agent ran
-	branch      string // agent/<name>/<short-task> we created, "" if none
+	branch      string // isolated issue/agent branch we created, "" if none
 	snapshotRef string // refs/agora/backup/<short-task> when the tree started dirty
 	finalized   bool
 }
@@ -99,7 +100,7 @@ func localAgentBranchName(agentName, taskID string) string {
 // non-fatal (logged, backup skipped); a branch-creation failure IS returned —
 // running without isolation would let agent commits land on the user's branch,
 // which is the exact harm this prevents.
-func prepareLocalDirGit(ctx context.Context, dir, agentName, taskID string, log *slog.Logger) (*localDirGit, error) {
+func prepareLocalDirGit(ctx context.Context, dir, agentName, taskID string, log *slog.Logger, preferredBranch ...string) (*localDirGit, error) {
 	if !isGitWorkTree(ctx, dir) {
 		return nil, nil
 	}
@@ -134,6 +135,9 @@ func prepareLocalDirGit(ctx context.Context, dir, agentName, taskID string, log 
 	}
 
 	branchName := localAgentBranchName(agentName, taskID)
+	if len(preferredBranch) > 0 && strings.TrimSpace(preferredBranch[0]) != "" {
+		branchName = strings.TrimSpace(preferredBranch[0])
+	}
 	if err := gitRun(ctx, dir, "checkout", "-b", branchName); err != nil {
 		// Retry as a plain checkout: a task that was already started once
 		// (daemon restart / re-claim) may have left the branch behind.
