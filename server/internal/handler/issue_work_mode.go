@@ -55,13 +55,19 @@ func resolveTaskType(labelNames []string) string {
 // issueGitBranchName returns the stable, human-readable branch used by an
 // ordinary issue task. Bugs use fix/*; every other issue uses feature/* so an
 // untyped feature cannot fall back to an opaque agent/task UUID branch.
-func issueGitBranchName(issuePrefix string, issueNumber int32, issueID string, labelNames []string) string {
+func issueGitBranchName(issuePrefix string, issueNumber int32, issueID, issueTitle string, labelNames []string) string {
 	kind := "feature"
+	hasExplicitFeature := false
 	for _, name := range labelNames {
 		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "type:bug", "bug":
 			kind = "fix"
+		case "type:feature":
+			hasExplicitFeature = true
 		}
+	}
+	if kind != "fix" && !hasExplicitFeature && titleLooksLikeFix(issueTitle) {
+		kind = "fix"
 	}
 
 	identifier := ""
@@ -78,6 +84,18 @@ func issueGitBranchName(issuePrefix string, issueNumber int32, issueID string, l
 		return ""
 	}
 	return kind + "/" + identifier
+}
+
+func titleLooksLikeFix(title string) bool {
+	for _, word := range strings.FieldsFunc(strings.ToLower(title), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	}) {
+		switch word {
+		case "fix", "bug", "defect", "regression", "broken":
+			return true
+		}
+	}
+	return false
 }
 
 func gitBranchSlug(value string) string {

@@ -181,8 +181,12 @@ func (c *Client) ClaimTask(ctx context.Context, runtimeID string) (*Task, error)
 	return resp.Task, nil
 }
 
-func (c *Client) StartTask(ctx context.Context, taskID string) error {
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/start", taskID), map[string]any{}, nil)
+func (c *Client) StartTask(ctx context.Context, taskID string, branchNames ...string) error {
+	branchName := ""
+	if len(branchNames) > 0 {
+		branchName = strings.TrimSpace(branchNames[0])
+	}
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/start", taskID), map[string]any{"branch_name": branchName}, nil)
 }
 
 // MarkTaskWaitingLocalDirectory parks a freshly-dispatched task in the

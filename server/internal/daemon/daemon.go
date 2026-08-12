@@ -3133,7 +3133,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 					// (folder attached read-only). Either forces a detached, no-branch
 					// worktree — nothing lands in the user's checkout.
 					readOnly := task.OrchestrationReadOnly || localAssignments.isReadOnly()
-					run, _, perr := provisionOrReuseWorktreesForRootsAt(ctx, localAssignments.absPaths(), isolationKey, workDir, baseRefs, readOnly, taskLog)
+					run, _, perr := provisionOrReuseWorktreesForRootsAt(ctx, localAssignments.absPaths(), isolationKey, workDir, baseRefs, readOnly, taskLog, task.BranchName)
 					if perr == nil && task.OrchestrationStepID != "" {
 						orchestrationWorktrees = run
 					}
@@ -3175,7 +3175,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// taskfailure.Classify path records the failure with the same
 	// "start task failed: <…>" string and the same failure_reason
 	// taxonomy as before — see MUL-2946 for the classifier contract.
-	if err := d.client.StartTask(ctx, task.ID); err != nil {
+	if err := d.client.StartTask(ctx, task.ID, task.BranchName); err != nil {
 		return TaskResult{}, fmt.Errorf("start task failed: %w", err)
 	}
 	_ = d.client.ReportProgress(ctx, task.ID, fmt.Sprintf("Launching %s", provider), 1, 2)

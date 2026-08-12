@@ -1195,8 +1195,12 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 
 // StartTask transitions a dispatched task to running.
 // Issue status is NOT changed here — the agent manages it via the CLI.
-func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID) (*db.AgentTaskQueue, error) {
-	task, err := s.Queries.StartAgentTask(ctx, taskID)
+func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, branchNames ...string) (*db.AgentTaskQueue, error) {
+	branchName := ""
+	if len(branchNames) > 0 {
+		branchName = strings.TrimSpace(branchNames[0])
+	}
+	task, err := s.Queries.StartAgentTask(ctx, db.StartAgentTaskParams{ID: taskID, BranchName: branchName})
 	if err != nil {
 		return nil, fmt.Errorf("start task: %w", err)
 	}

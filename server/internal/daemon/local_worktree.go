@@ -108,7 +108,7 @@ func detectLocalReposForRoots(ctx context.Context, roots []string) ([]localRepo,
 type provisionedWorktree struct {
 	SrcRepo string // the developer's checkout the worktree hangs off
 	Path    string // the worktree directory inside the env
-	Branch  string // agent/<issue>/<repo>
+	Branch  string // feature/<issue>, fix/<issue>, or a unique orchestration branch
 	BaseSHA string // source HEAD when this isolated attempt was created
 }
 
@@ -147,7 +147,7 @@ func provisionLocalWorktreesForRootsAt(ctx context.Context, roots []string, issu
 	return provisionLocalWorktreesFromReposAt(ctx, repos, strings.Join(roots, string(os.PathListSeparator)), issueKey, workDir, baseRefs, readOnly, log)
 }
 
-func provisionLocalWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, error) {
+func provisionLocalWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger, preferredBranch ...string) (*worktreeRun, error) {
 	if len(repos) == 0 {
 		return nil, fmt.Errorf("local_directory %q contains no git repositories (worktree isolation needs at least one)", parent)
 	}
@@ -177,6 +177,9 @@ func provisionLocalWorktreesFromReposAt(ctx context.Context, repos []localRepo, 
 			}
 		}
 		branch := localAgentBranchName(issueKey, repo.Name)
+		if len(preferredBranch) > 0 && strings.TrimSpace(preferredBranch[0]) != "" {
+			branch = strings.TrimSpace(preferredBranch[0])
+		}
 		if readOnly {
 			branch = ""
 		}
@@ -700,15 +703,15 @@ func provisionOrReuseWorktreesAt(ctx context.Context, parent, issueKey, workDir 
 	return provisionOrReuseWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log)
 }
 
-func provisionOrReuseWorktreesForRootsAt(ctx context.Context, roots []string, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, bool, error) {
+func provisionOrReuseWorktreesForRootsAt(ctx context.Context, roots []string, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger, preferredBranch ...string) (*worktreeRun, bool, error) {
 	repos, err := detectLocalReposForRoots(ctx, roots)
 	if err != nil {
 		return nil, false, err
 	}
-	return provisionOrReuseWorktreesFromReposAt(ctx, repos, strings.Join(roots, string(os.PathListSeparator)), issueKey, workDir, baseRefs, readOnly, log)
+	return provisionOrReuseWorktreesFromReposAt(ctx, repos, strings.Join(roots, string(os.PathListSeparator)), issueKey, workDir, baseRefs, readOnly, log, preferredBranch...)
 }
 
-func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, bool, error) {
+func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger, preferredBranch ...string) (*worktreeRun, bool, error) {
 	if len(repos) == 0 {
 		return nil, false, fmt.Errorf("local_directory %q contains no git repositories", parent)
 	}
@@ -735,6 +738,8 @@ func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo
 			branch, _ := gitOutput(ctx, target, "symbolic-ref", "--short", "-q", "HEAD")
 			if readOnly {
 				branch = ""
+			} else if len(preferredBranch) > 0 {
+				branch = migrateLegacyIssueBranch(ctx, target, branch, strings.TrimSpace(preferredBranch[0]), log)
 			}
 			reuse.worktrees = append(reuse.worktrees, provisionedWorktree{
 				SrcRepo: repo.SrcPath, Path: target, Branch: branch, BaseSHA: baseSHA,
@@ -755,11 +760,28 @@ func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo
 	for _, repo := range repos {
 		_ = gitRun(ctx, repo.SrcPath, "worktree", "prune")
 	}
-	run, err := provisionLocalWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log)
+	run, err := provisionLocalWorktreesFromReposAt(ctx, repos, parent, issueKey, workDir, baseRefs, readOnly, log, preferredBranch...)
 	if err == nil {
 		touchDir(workDir)
 	}
 	return run, false, err
+}
+
+// migrateLegacyIssueBranch upgrades an existing issue-scoped worktree from
+// agent/<opaque ids> to the server-selected feature/<issue> or fix/<issue>
+// name without moving HEAD or losing commits. A collision is left untouched:
+// preserving an existing branch is safer than stealing another worktree.
+func migrateLegacyIssueBranch(ctx context.Context, worktreePath, current, preferred string, log *slog.Logger) string {
+	if preferred == "" || current == preferred || !strings.HasPrefix(current, "agent/") {
+		return current
+	}
+	if err := gitRun(ctx, worktreePath, "branch", "-m", preferred); err != nil {
+		log.Warn("local_directory: legacy issue branch rename failed; keeping existing branch",
+			"path", worktreePath, "branch", current, "preferred_branch", preferred, "error", err)
+		return current
+	}
+	log.Info("local_directory: renamed legacy issue branch", "path", worktreePath, "from", current, "to", preferred)
+	return preferred
 }
 
 // touchDir bumps a directory's modified time so the idle-TTL sweep treats it as

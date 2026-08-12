@@ -487,7 +487,14 @@ RETURNING *;
 -- the transition so a future read can't conflate "currently waiting" with
 -- "previously waited".
 UPDATE agent_task_queue
-SET status = 'running', started_at = now(), wait_reason = NULL
+SET status = 'running',
+    started_at = now(),
+    wait_reason = NULL,
+    result = CASE
+      WHEN @branch_name::text <> '' THEN
+        COALESCE(result, '{}'::jsonb) || jsonb_build_object('branch_name', @branch_name::text)
+      ELSE result
+    END
 WHERE id = $1 AND status IN ('dispatched', 'waiting_local_directory')
 RETURNING *;
 

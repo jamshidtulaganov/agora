@@ -3120,10 +3120,22 @@ func (q *Queries) RestoreAgent(ctx context.Context, id pgtype.UUID) (Agent, erro
 
 const startAgentTask = `-- name: StartAgentTask :one
 UPDATE agent_task_queue
-SET status = 'running', started_at = now(), wait_reason = NULL
+SET status = 'running',
+    started_at = now(),
+    wait_reason = NULL,
+    result = CASE
+      WHEN $2::text <> '' THEN
+        COALESCE(result, '{}'::jsonb) || jsonb_build_object('branch_name', $2::text)
+      ELSE result
+    END
 WHERE id = $1 AND status IN ('dispatched', 'waiting_local_directory')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override, run_mode
 `
+
+type StartAgentTaskParams struct {
+	ID         pgtype.UUID `json:"id"`
+	BranchName string      `json:"branch_name"`
+}
 
 // Transitions a task to running. Accepts either 'dispatched' (the normal
 // claim → run flow) or 'waiting_local_directory' (the daemon held the row in
@@ -3131,8 +3143,8 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
 // the lock was acquired the daemon flips here). wait_reason is cleared on
 // the transition so a future read can't conflate "currently waiting" with
 // "previously waited".
-func (q *Queries) StartAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
-	row := q.db.QueryRow(ctx, startAgentTask, id)
+func (q *Queries) StartAgentTask(ctx context.Context, arg StartAgentTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, startAgentTask, arg.ID, arg.BranchName)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,

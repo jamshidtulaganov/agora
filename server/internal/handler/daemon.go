@@ -1482,7 +1482,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if ws, wsErr := h.Queries.GetWorkspace(r.Context(), issue.WorkspaceID); wsErr == nil {
 					prefix = ws.IssuePrefix
 				}
-				resp.BranchName = issueGitBranchName(prefix, issue.Number, uuidToString(issue.ID), h.issueLabelNames(r.Context(), issue.ID))
+				resp.BranchName = issueGitBranchName(prefix, issue.Number, uuidToString(issue.ID), issue.Title, h.issueLabelNames(r.Context(), issue.ID))
 			}
 			// Retrieval query material for the daemon's repo context pack.
 			// Capped because a 40k-char description would bloat every claim
@@ -2382,6 +2382,15 @@ func (h *Handler) ListPendingTasksByRuntime(w http.ResponseWriter, r *http.Reque
 // StartTask marks a dispatched task as running.
 func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
+	var req struct {
+		BranchName string `json:"branch_name"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
 
 	// Verify the caller owns this task's workspace.
 	_, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
@@ -2389,7 +2398,7 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.TaskService.StartTask(r.Context(), parseUUID(taskID))
+	task, err := h.TaskService.StartTask(r.Context(), parseUUID(taskID), req.BranchName)
 	if err != nil {
 		slog.Warn("start task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())

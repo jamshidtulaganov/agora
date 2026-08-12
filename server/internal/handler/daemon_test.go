@@ -1833,7 +1833,7 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 
 	// Same-workspace daemon token must succeed — this is the bug in #1224.
 	w = httptest.NewRecorder()
-	req = newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/start", nil,
+	req = newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/start", map[string]string{"branch_name": "feature/issue-12"},
 		testWorkspaceID, "legit-daemon")
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
@@ -1848,6 +1848,13 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 	}
 	if status != "running" {
 		t.Fatalf("expected task status 'running' after StartTask, got %q", status)
+	}
+	var result []byte
+	if err := testPool.QueryRow(ctx, `SELECT result FROM agent_task_queue WHERE id = $1`, taskID).Scan(&result); err != nil {
+		t.Fatalf("post-check: read task result: %v", err)
+	}
+	if !strings.Contains(string(result), `"branch_name": "feature/issue-12"`) {
+		t.Fatalf("running task result does not expose branch_name: %s", result)
 	}
 }
 

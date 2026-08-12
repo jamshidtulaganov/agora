@@ -708,6 +708,61 @@ func TestProvisionOrReuse_ReusesDevWorktree(t *testing.T) {
 	}
 }
 
+func TestProvisionOrReuse_UsesPreferredIssueBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	env := filepath.Join(t.TempDir(), "wt", "issue-12")
+
+	run, reused, err := provisionOrReuseWorktreesForRootsAt(
+		context.Background(), []string{parent}, "8669600a", env, nil, false,
+		slog.Default(), "feature/issue-12",
+	)
+	if err != nil || reused {
+		t.Fatalf("first call should provision (reused=%v err=%v)", reused, err)
+	}
+	t.Cleanup(func() { cleanupWorktrees(context.Background(), run, slog.Default()) })
+	if got := run.worktrees[0].Branch; got != "feature/issue-12" {
+		t.Fatalf("branch = %q, want feature/issue-12", got)
+	}
+}
+
+func TestProvisionOrReuse_RenamesLegacyIssueBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	env := filepath.Join(t.TempDir(), "wt", "issue-12")
+
+	legacy, reused, err := provisionOrReuseWorktrees(ctx, parent, "8669600a", env, slog.Default())
+	if err != nil || reused {
+		t.Fatalf("legacy provision failed (reused=%v err=%v)", reused, err)
+	}
+	t.Cleanup(func() { cleanupWorktrees(context.Background(), legacy, slog.Default()) })
+	legacyBranch := legacy.worktrees[0].Branch
+	if !strings.HasPrefix(legacyBranch, "agent/") {
+		t.Fatalf("expected legacy agent branch, got %q", legacyBranch)
+	}
+
+	migrated, reused, err := provisionOrReuseWorktreesForRootsAt(
+		ctx, []string{parent}, "8669600a", env, nil, false,
+		slog.Default(), "feature/issue-12",
+	)
+	if err != nil || !reused {
+		t.Fatalf("migration reuse failed (reused=%v err=%v)", reused, err)
+	}
+	if got := migrated.worktrees[0].Branch; got != "feature/issue-12" {
+		t.Fatalf("migrated branch = %q, want feature/issue-12", got)
+	}
+	if got := gitAt(t, migrated.worktrees[0].Path, "symbolic-ref", "--short", "HEAD"); got != "feature/issue-12" {
+		t.Fatalf("HEAD branch = %q, want feature/issue-12", got)
+	}
+}
+
 func TestProvisionOrReuse_PreservesActualBranchAcrossContinuationKey(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
