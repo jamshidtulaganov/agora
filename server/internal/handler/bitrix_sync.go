@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -925,7 +924,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// import.
 	projectID, sprintID := h.resolveBitrixTarget(ctx, ws.ID, task, st)
 
-	draft := bitrix.MapTaskToIssue(task)
+	draft := bitrix.MapTaskToIssue(task, bitrix.PortalOrigin(bitrixWebhookURL()))
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
@@ -1656,15 +1655,11 @@ func bitrixTaskURL(taskID string) string {
 	if id == "" {
 		return ""
 	}
-	raw := bitrixWebhookURL()
-	if raw == "" {
+	origin := bitrix.PortalOrigin(bitrixWebhookURL())
+	if origin == "" {
 		return ""
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host + "/company/personal/user/0/tasks/task/view/" + id + "/"
+	return origin + "/company/personal/user/0/tasks/task/view/" + id + "/"
 }
 
 // bitrixTaskGroupName resolves the task's Bitrix workgroup ("project") name,

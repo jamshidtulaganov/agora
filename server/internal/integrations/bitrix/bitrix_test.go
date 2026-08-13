@@ -421,12 +421,12 @@ func TestParseWebhookEvent(t *testing.T) {
 }
 
 func TestMapTaskToIssue(t *testing.T) {
-	d := MapTaskToIssue(&Task{Title: "Hello", Description: "world", Status: "3"})
+	d := MapTaskToIssue(&Task{Title: "Hello", Description: "world", Status: "3"}, "")
 	if d.Title != "Hello" || d.Description != "world" || d.Status != StatusInProgress {
 		t.Fatalf("draft = %+v", d)
 	}
 	// Empty title falls back to a placeholder including the id.
-	d2 := MapTaskToIssue(&Task{ID: "42", Status: "5"})
+	d2 := MapTaskToIssue(&Task{ID: "42", Status: "5"}, "")
 	if d2.Title != "Bitrix task 42" || d2.Status != StatusDone {
 		t.Fatalf("draft = %+v", d2)
 	}

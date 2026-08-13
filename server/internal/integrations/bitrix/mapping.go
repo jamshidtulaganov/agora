@@ -199,10 +199,12 @@ type IssueDraft struct {
 	Status      string
 }
 
-// MapTaskToIssue projects a Bitrix task onto an IssueDraft. Title falls back to
+// MapTaskToIssue projects a Bitrix task onto an IssueDraft. portalOrigin is
+// passed through to BBCodeToMarkdown so portal-internal links become absolute.
+// Title falls back to
 // a stable placeholder so an issue is never created with an empty title (which
 // the create path rejects).
-func MapTaskToIssue(task *Task) IssueDraft {
+func MapTaskToIssue(task *Task, portalOrigin string) IssueDraft {
 	title := strings.TrimSpace(task.Title)
 	if title == "" {
 		id := strings.TrimSpace(task.ID)
@@ -214,7 +216,7 @@ func MapTaskToIssue(task *Task) IssueDraft {
 	}
 	return IssueDraft{
 		Title:       title,
-		Description: BBCodeToMarkdown(task.Description),
+		Description: BBCodeToMarkdown(task.Description, portalOrigin),
 		Status:      MapStatus(task.Status),
 	}
 }
