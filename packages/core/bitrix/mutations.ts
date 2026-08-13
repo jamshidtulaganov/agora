@@ -23,6 +23,21 @@ export function useImportBitrixTasks() {
   });
 }
 
+/** Stop the in-flight import run. Invalidates the progress query so the panel
+ * immediately reflects the stop instead of waiting for the next poll tick. */
+export function useCancelBitrixImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.cancelBitrixImport(),
+    retry: false,
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: bitrixKeys.all });
+      // Tasks imported before the stop are real issues — refresh the board.
+      qc.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
+
 /** Import tasks assigned to the authenticated user's linked Bitrix identity.
  * Unlike the selector import, this is available to every workspace member. */
 export function useImportMyBitrixTasks() {

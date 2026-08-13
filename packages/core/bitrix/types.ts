@@ -46,7 +46,18 @@ export interface BitrixImportProgress {
   total: number;
   synced: number;
   running: boolean;
+  /** Stopped by an operator rather than finishing. Optional: an older backend
+   * omits it, and absent must not read as "cancelled". */
+  cancelled?: boolean;
   items: BitrixImportProgressItem[];
+}
+
+/** Result of asking the backend to stop the in-flight import. `cancelled` is
+ * false when there was no live run to stop. */
+export interface BitrixImportCancelResponse {
+  cancelled: boolean;
+  synced: number;
+  total: number;
 }
 
 /** Progress for one selected Bitrix user or workgroup inside an import run. */

@@ -668,6 +668,14 @@ var bitrixImportProgressState struct {
 	// TaskItems maps a Bitrix task id to the indexes of selector rows that
 	// should advance when that task completes.
 	TaskItems map[string][]int
+	// Cancel stops the in-flight run's context. Held here because the run is a
+	// detached goroutine: the HTTP request that started it has already returned,
+	// so this global is the only handle a later cancel request can reach.
+	Cancel context.CancelFunc
+	// Cancelled records that the run was stopped by an operator rather than
+	// finishing, so the UI reports "cancelled at X/N" instead of a silent stop
+	// that looks identical to a crash.
+	Cancelled bool
 }
 
 type bitrixImportProgressSelector struct {
@@ -687,13 +695,21 @@ type BitrixImportProgressItem struct {
 	Running bool   `json:"running"`
 }
 
-func bitrixImportProgressStart(total int, selectors []bitrixImportProgressSelector) uint64 {
+func bitrixImportProgressStart(total int, selectors []bitrixImportProgressSelector, cancel context.CancelFunc) uint64 {
 	bitrixImportProgressState.Lock()
+	// A new run supersedes the previous snapshot. Cancel whatever the old handle
+	// pointed at first: without this, starting a second import would orphan the
+	// first goroutine with no way left to stop it.
+	if bitrixImportProgressState.Running && bitrixImportProgressState.Cancel != nil {
+		bitrixImportProgressState.Cancel()
+	}
 	bitrixImportProgressState.RunID++
 	runID := bitrixImportProgressState.RunID
 	bitrixImportProgressState.Total = total
 	bitrixImportProgressState.Synced = 0
 	bitrixImportProgressState.Running = total > 0
+	bitrixImportProgressState.Cancel = cancel
+	bitrixImportProgressState.Cancelled = false
 	bitrixImportProgressState.Items = make([]BitrixImportProgressItem, 0, len(selectors))
 	bitrixImportProgressState.TaskItems = map[string][]int{}
 	for _, selector := range selectors {
@@ -737,18 +753,43 @@ func bitrixImportProgressFinish(runID uint64) {
 		return
 	}
 	bitrixImportProgressState.Running = false
+	bitrixImportProgressState.Cancel = nil
 	for i := range bitrixImportProgressState.Items {
 		bitrixImportProgressState.Items[i].Running = false
 	}
 	bitrixImportProgressState.Unlock()
 }
 
+// bitrixImportProgressCancel stops the live run. Returns whether there was one to
+// stop, so the endpoint can answer honestly instead of pretending it cancelled
+// something. The Synced/Total counters are deliberately left as they are: the
+// tasks already imported stay imported, and the partial count is the useful
+// answer to "how far did it get".
+func bitrixImportProgressCancel() (cancelled bool, synced, total int) {
+	bitrixImportProgressState.Lock()
+	defer bitrixImportProgressState.Unlock()
+	synced = bitrixImportProgressState.Synced
+	total = bitrixImportProgressState.Total
+	if !bitrixImportProgressState.Running || bitrixImportProgressState.Cancel == nil {
+		return false, synced, total
+	}
+	bitrixImportProgressState.Cancel()
+	bitrixImportProgressState.Cancel = nil
+	bitrixImportProgressState.Cancelled = true
+	bitrixImportProgressState.Running = false
+	for i := range bitrixImportProgressState.Items {
+		bitrixImportProgressState.Items[i].Running = false
+	}
+	return true, synced, total
+}
+
 // BitrixImportProgressResponse mirrors the import progress for the UI poll.
 type BitrixImportProgressResponse struct {
-	Total   int                        `json:"total"`
-	Synced  int                        `json:"synced"`
-	Running bool                       `json:"running"`
-	Items   []BitrixImportProgressItem `json:"items"`
+	Total     int                        `json:"total"`
+	Synced    int                        `json:"synced"`
+	Running   bool                       `json:"running"`
+	Cancelled bool                       `json:"cancelled"`
+	Items     []BitrixImportProgressItem `json:"items"`
 }
 
 // GetBitrixImportProgress returns the live progress of the most recent import.
@@ -762,13 +803,42 @@ func (h *Handler) GetBitrixImportProgress(w http.ResponseWriter, r *http.Request
 	}
 	bitrixImportProgressState.Lock()
 	resp := BitrixImportProgressResponse{
-		Total:   bitrixImportProgressState.Total,
-		Synced:  bitrixImportProgressState.Synced,
-		Running: bitrixImportProgressState.Running,
-		Items:   append([]BitrixImportProgressItem(nil), bitrixImportProgressState.Items...),
+		Total:     bitrixImportProgressState.Total,
+		Synced:    bitrixImportProgressState.Synced,
+		Running:   bitrixImportProgressState.Running,
+		Cancelled: bitrixImportProgressState.Cancelled,
+		Items:     append([]BitrixImportProgressItem(nil), bitrixImportProgressState.Items...),
 	}
 	bitrixImportProgressState.Unlock()
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// BitrixImportCancelResponse reports whether a live run was actually stopped and
+// how far it got. Tasks already imported are kept — cancelling stops the rest of
+// the queue, it does not roll back.
+type BitrixImportCancelResponse struct {
+	Cancelled bool `json:"cancelled"`
+	Synced    int  `json:"synced"`
+	Total     int  `json:"total"`
+}
+
+// CancelBitrixImport stops the in-flight import. Gated by requireBitrixOperator
+// for the same reason as the progress read: the run is a process-wide,
+// cross-workspace job, so a plain member must not be able to halt another
+// tenant's import.
+func (h *Handler) CancelBitrixImport(w http.ResponseWriter, r *http.Request) {
+	if !h.requireBitrixOperator(w, r) {
+		return
+	}
+	cancelled, synced, total := bitrixImportProgressCancel()
+	if cancelled {
+		slog.Info("bitrix import: cancelled by operator", "synced", synced, "total", total)
+	}
+	writeJSON(w, http.StatusOK, BitrixImportCancelResponse{
+		Cancelled: cancelled,
+		Synced:    synced,
+		Total:     total,
+	})
 }
 
 // --- POST /api/bitrix/cleanup-done ----------------------------------------

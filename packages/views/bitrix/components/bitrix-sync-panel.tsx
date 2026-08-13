@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { DatabaseZap, Loader2, RefreshCw, Search } from "lucide-react";
+import { DatabaseZap, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   bitrixGroupsOptions,
@@ -10,6 +10,7 @@ import {
   bitrixImportProgressOptions,
   useImportBitrixTasks,
   useImportMyBitrixTasks,
+  useCancelBitrixImport,
   type BitrixImportResponse,
   type BitrixImportProgressItem,
 } from "@agora/core/bitrix";
@@ -85,6 +86,7 @@ export function BitrixSyncPanel() {
   const usersQuery = useQuery(bitrixUsersOptions());
   const importMut = useImportBitrixTasks();
   const importMineMut = useImportMyBitrixTasks();
+  const cancelMut = useCancelBitrixImport();
 
   // Poll live import progress while a run is in flight (started this session).
   const [polling, setPolling] = useState(false);
@@ -281,22 +283,55 @@ export function BitrixSyncPanel() {
 
         {progress && progress.total > 0 && (polling || progress.running || result !== null) && (
           <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
-            <div className="mb-1.5 flex items-center justify-between text-xs">
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
               <span className="font-medium">
-                {progress.running ? "Importing…" : "Import complete"}
+                {progress.running
+                  ? "Importing…"
+                  : progress.cancelled === true
+                    ? "Import cancelled"
+                    : "Import complete"}
               </span>
-              <span className="font-mono tabular-nums text-muted-foreground">
-                {progress.synced}/{progress.total}
+              <span className="flex items-center gap-2">
+                <span className="font-mono tabular-nums text-muted-foreground">
+                  {progress.synced}/{progress.total}
+                </span>
+                {progress.running ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => cancelMut.mutate()}
+                    disabled={cancelMut.isPending}
+                  >
+                    {cancelMut.isPending ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <X className="size-3" />
+                    )}
+                    Stop
+                  </Button>
+                ) : null}
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-primary transition-all"
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  progress.cancelled === true && !progress.running
+                    ? "bg-muted-foreground"
+                    : "bg-primary",
+                )}
                 style={{
                   width: `${progress.total ? Math.round((progress.synced / progress.total) * 100) : 0}%`,
                 }}
               />
             </div>
+            {progress.cancelled === true && !progress.running ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Stopped after {progress.synced} of {progress.total}. Tasks already imported were
+                kept — re-run to finish the rest.
+              </p>
+            ) : null}
           </div>
         )}
 

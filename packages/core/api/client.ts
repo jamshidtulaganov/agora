@@ -173,6 +173,7 @@ import type {
   BitrixImportRequest,
   BitrixImportResponse,
   BitrixImportProgress,
+  BitrixImportCancelResponse,
   BitrixSyncResult,
 } from "../bitrix/types";
 import {
@@ -2534,6 +2535,12 @@ export class ApiClient {
 
   async getBitrixImportProgress(): Promise<BitrixImportProgress> {
     return this.fetch(`/api/bitrix/import/progress`);
+  }
+
+  /** Stop the in-flight import. Tasks already imported are kept; this halts the
+   * remaining queue. Returns cancelled=false when no run was live. */
+  async cancelBitrixImport(): Promise<BitrixImportCancelResponse> {
+    return this.fetch(`/api/bitrix/import/cancel`, { method: "POST" });
   }
 
   async listBitrixTasks(groupId: string): Promise<BitrixTask[]> {

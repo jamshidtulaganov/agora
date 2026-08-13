@@ -670,6 +670,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// import another user's task. Requires a linked Bitrix account (412 else).
 		r.Post("/api/bitrix/import/mine", h.ImportMyBitrixTasks)
 		r.Get("/api/bitrix/import/progress", h.GetBitrixImportProgress)
+		// Stop the in-flight import. Already-imported tasks stay; this halts the
+		// remaining queue so a mistargeted 500-task run isn't a 20-minute wait.
+		r.Post("/api/bitrix/import/cancel", h.CancelBitrixImport)
 		// Operator one-shot: delete Bitrix-mirrored issues already in done/cancelled.
 		r.Post("/api/bitrix/cleanup-done", h.CleanupBitrixDoneIssues)
 		r.Post("/api/bitrix/register-webhook", h.RegisterBitrixWebhook)
