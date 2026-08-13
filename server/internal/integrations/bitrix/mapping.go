@@ -17,6 +17,7 @@ const (
 	StatusInProgress = "in_progress"
 	StatusInReview   = "in_review"
 	StatusDone       = "done"
+	StatusBlocked    = "blocked"
 	StatusCancelled  = "cancelled"
 )
 
@@ -91,32 +92,52 @@ func MapStatus(bitrixStatus string) string {
 }
 
 // MapStage maps a Bitrix scrum/kanban STAGE name (the live column the dev team
-// drags a task through — Новые / Code Review / Testing / Сделаны …) to an Agora
-// status. Stages are matched by KEYWORD (substring, case-insensitive) because
-// the exact labels differ per sprint and mix Russian/English. Returns "" for an
-// empty or unrecognized stage so the caller falls back to the coarse STATUS
-// mapping. Order matters: more specific buckets (done/review/test) are checked
-// before the generic in-progress/todo ones.
+// drags a task through — Новые / Code Review / Ready for release / Сделаны …) to
+// an Agora status. Stages are matched by KEYWORD (substring, case-insensitive)
+// because the exact labels differ per sprint group and mix Russian/English, with
+// typos ("Ready fo release", "Reayd For Testing"). Returns "" for an empty or
+// unrecognized stage so the caller falls back to the coarse STATUS mapping.
+//
+// ORDER IS LOAD-BEARING — each rule below is placed to beat a specific
+// collision, so do not reorder without re-reading these:
+//
+//   - release BEFORE done: "Готов к релизу" contains "готов". A release-ready
+//     task is awaiting deploy, not finished; mapping it to done also archives
+//     the mirror (AGORA_BITRIX_ARCHIVE_DONE) and it disappears from the board.
+//   - done matches "готово", never bare "готов", for the same reason.
+//   - dev-testing BEFORE testing: the developer's own pass is still dev work,
+//     while "Ready for testing"/"Testing" is handed to QA.
+//   - todo carries "к выполнен" (К выполнению = To Do) which must not be
+//     confused with "выполня" (Выполняются = in progress).
 func MapStage(stage string) string {
 	s := strings.ToLower(strings.TrimSpace(stage))
 	if s == "" {
 		return ""
 	}
 	switch {
-	case containsAny(s, "сделан", "done", "complete", "завершен", "готов", "closed"):
-		return StatusDone
 	case containsAny(s, "fail", "cancel", "отмен", "отклон"):
 		return StatusCancelled
+	case containsAny(s, "block", "блок"):
+		return StatusBlocked
+	case containsAny(s, "release", "релиз"):
+		// Ready for release / Ready fo release / Ready For Release / Готов к релизу
+		// — code is finished and reviewed, the deploy is the remaining gate.
+		return StatusInReview
+	case containsAny(s, "сделан", "готово", "done", "complete", "завершен", "closed"):
+		return StatusDone
+	case containsAny(s, "dev test", "dev тест", "разработчик тест"):
+		return StatusInProgress
 	case containsAny(s, "review", "ревью", "ревю", "merg", "мерж"):
 		return StatusInReview
 	case containsAny(s, "test", "тест", "qa", "проверк"):
 		return StatusInReview
+	case containsAny(s, "return", "возврат", "вернул"):
+		// QA/reviewer sent it back — the ball is with the developer again.
+		return StatusInProgress
 	case containsAny(s, "выполня", "progress", "doing", "develop", "разработ", "в работе", "процесс"):
 		return StatusInProgress
-	case containsAny(s, "block", "блок"):
-		// No Agora "blocked" status — a blocked task is still actively worked.
-		return StatusInProgress
-	case containsAny(s, "нов", "new", "todo", "unready", "given", "backlog", "бэклог", "очеред"):
+	case containsAny(s, "нов", "new", "to do", "todo", "к выполнен", "unready", "given",
+		"backlog", "бэклог", "очеред", "draft", "черновик", "обсужда", "discussion", "перенес"):
 		return StatusTodo
 	default:
 		return ""
@@ -142,6 +163,9 @@ func containsAny(s string, subs ...string) bool {
 //	backlog     -> 6 (deferred)
 //	todo        -> 2 (pending)
 //	in_progress -> 3 (in progress)
+//	blocked     -> 3 (in progress)  — Bitrix has no blocked code; the task is
+//	                                  still open and owned, and the kanban stage
+//	                                  move carries the "Blocker" signal instead.
 //	in_review   -> 4 (supposedly completed / awaiting acceptance)
 //	done        -> 5 (completed)
 //	cancelled   -> 7 (declined)
@@ -154,7 +178,7 @@ func BitrixStatusFromIssue(issueStatus string) string {
 		return "6"
 	case StatusTodo:
 		return "2"
-	case StatusInProgress:
+	case StatusInProgress, StatusBlocked:
 		return "3"
 	case StatusInReview:
 		return "4"

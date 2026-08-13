@@ -445,7 +445,7 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if stages, sErr := client.GetTaskStages(r.Context(), g); sErr == nil {
-			for id, title := range stages {
+			for id, title := range bitrix.StageTitles(stages) {
 				stageNames[id] = title
 			}
 		}

@@ -444,28 +444,75 @@ func TestNewClientTrailingSlash(t *testing.T) {
 	}
 }
 
-// TestMapStage covers the keyword stage→status mapping against the real Bitrix
-// kanban stages discovered on the SD portal (Новые / Blocker / Выполняются /
-// Code Review / Testing(Mobile|Web) / Сделаны) plus the English board variants
-// (Unready / Doing / Need Reviewing / Ready Merging / Completed / Failed). An
-// empty or unrecognized stage returns "" so the caller falls back to STATUS.
+// TestMapStage covers the keyword stage→status mapping against the FULL kanban
+// vocabulary read off the SD portal (task.stages.get across the sprint groups),
+// including its typos ("Ready fo release", "Reayd For Testing") and its
+// Russian/English mixing, plus the English board variants (Unready / Doing /
+// Need Reviewing / Ready Merging / Completed / Failed). An empty or
+// unrecognized stage returns "" so the caller falls back to STATUS.
+//
+// The collision cases are the reason this table is exhaustive rather than
+// representative:
+//
+//   - "Готов к релизу" must NOT read as done ("готов" is a done keyword) or the
+//     mirror gets archived while the release is still pending.
+//   - "К выполнению" (To Do) must not be dragged into in_progress by the
+//     "выполня" keyword that "Выполняются" needs.
+//   - "Blocker(s)" belongs in Agora's own blocked column, which exists.
 func TestMapStage(t *testing.T) {
 	cases := map[string]string{
-		"Новые":                  StatusTodo,
-		"Blocker":                StatusInProgress,
-		"Выполняются":            StatusInProgress,
-		"Code Review":            StatusInReview,
+		// Group 105 / 91 / 93 — the older boards.
+		"Новые":              StatusTodo,
+		"Обсуждается":        StatusTodo,
+		"Need to discussion": StatusTodo,
+		"Перенесем в To Do":  StatusTodo,
+		"Отмененные":         StatusCancelled,
+		"К выполнению":       StatusTodo,
+		"В работе":           StatusInProgress,
+		"READY FOR TESTING":  StatusInReview,
+		"Тестирование":       StatusInReview,
+		"Нужен Merge":        StatusInReview,
+		"Готов к релизу":     StatusInReview,
+		"Готово":             StatusDone,
+		// Sprint groups 149 / 151 / 153 / 155 / 175 / 187.
+		"To Do":                     StatusTodo,
+		"Draft":                     StatusTodo,
+		"Выполняются":               StatusInProgress,
+		"Returned":                  StatusInProgress,
+		"Dev testing":               StatusInProgress,
+		"Dev Testing":               StatusInProgress,
+		"Blocker":                   StatusBlocked,
+		"Blockers":                  StatusBlocked,
+		"Code Review":               StatusInReview,
+		"In Code Review":            StatusInReview,
+		"Review":                    StatusInReview,
+		"Ready for testing":         StatusInReview,
 		"Reayd For Testing(Mobile)": StatusInReview,
-		"Ready For Testing (Web)": StatusInReview,
-		"Testing (Mobile)":       StatusInReview,
-		"Сделаны":                StatusDone,
-		"UNREADY TASKS":          StatusTodo,
-		"DOING":                  StatusInProgress,
-		"NEED REVIEWING":         StatusInReview,
-		"READY MERGING":          StatusInReview,
-		"COMPLETED":              StatusDone,
-		"FAILED":                 StatusCancelled,
-		"":                       "",
+		"Ready For Testing (Web)":   StatusInReview,
+		"Testing (Mobile)":          StatusInReview,
+		"Testing web":               StatusInReview,
+		"Тестинг":                   StatusInReview,
+		"Need Merge":                StatusInReview,
+		"Need merge":                StatusInReview,
+		"Ready for release":         StatusInReview,
+		"Ready fo release":          StatusInReview,
+		"Ready For Release":         StatusInReview,
+		"Сделаны":                   StatusDone,
+		"Done":                      StatusDone,
+		// English boards elsewhere on the portal.
+		"UNREADY TASKS":  StatusTodo,
+		"DOING":          StatusInProgress,
+		"NEED REVIEWING": StatusInReview,
+		"READY MERGING":  StatusInReview,
+		"COMPLETED":      StatusDone,
+		"FAILED":         StatusCancelled,
+		// Group 173 uses its kanban as a category axis, not a workflow. Nothing
+		// sane to map — the caller falls back to STATUS and logs the label.
+		"EPIC":  "",
+		"STORY": "",
+		"Front": "",
+		"Баги и медленные стреницы": "",
+		"": "",
 		"Какой-то непонятный этап": "",
 	}
 	for stage, want := range cases {
@@ -614,11 +661,11 @@ func TestResolveDepartmentSubtree(t *testing.T) {
 	depts := []Department{
 		{ID: "1", Name: "Company", Parent: "0"},
 		{ID: "10", Name: "SD Разработка", Parent: "1"},
-		{ID: "11", Name: "Frontend", Parent: "10"},   // child of SD Разработка
-		{ID: "12", Name: "Backend", Parent: "10"},     // child of SD Разработка
-		{ID: "13", Name: "Web UI", Parent: "11"},      // grandchild
-		{ID: "20", Name: "Sales", Parent: "1"},        // sibling — must NOT match
-		{ID: "21", Name: "QA", Parent: "20"},          // under Sales — must NOT match
+		{ID: "11", Name: "Frontend", Parent: "10"}, // child of SD Разработка
+		{ID: "12", Name: "Backend", Parent: "10"},  // child of SD Разработка
+		{ID: "13", Name: "Web UI", Parent: "11"},   // grandchild
+		{ID: "20", Name: "Sales", Parent: "1"},     // sibling — must NOT match
+		{ID: "21", Name: "QA", Parent: "20"},       // under Sales — must NOT match
 	}
 	got := ResolveDepartmentSubtree(depts, []string{"sd разработка"}) // case-insensitive
 	want := map[string]bool{"10": true, "11": true, "12": true, "13": true}
@@ -709,5 +756,61 @@ func TestListUsersPaginatesAllUsers(t *testing.T) {
 	}
 	if !found525 {
 		t.Error("user 525 (page 2) missing — the picker would still hide them")
+	}
+}
+
+// TestGetTaskStagesPortalOrder pins that stages come back in the portal's own
+// SORT order, not numeric id order. Sprint group 153 is the real shape: the
+// original Новые/Выполняются/Сделаны triple (ids 2531/2533/2535) was created
+// first, and the review columns added later carry HIGHER ids while sitting
+// BETWEEN them on the board. Ordering by id would make "the first in_review
+// column" Need Merge instead of Code Review, and an outbound status mirror would
+// skip the whole review chain.
+func TestGetTaskStagesPortalOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"result":{
+			"2531":{"ID":"2531","TITLE":"Новые","SORT":100},
+			"2533":{"ID":"2533","TITLE":"Выполняются","SORT":200},
+			"2879":{"ID":"2879","TITLE":"Code Review","SORT":300},
+			"2877":{"ID":"2877","TITLE":"Need Merge","SORT":400},
+			"2535":{"ID":"2535","TITLE":"Сделаны","SORT":500}
+		}}`)
+	}))
+	defer srv.Close()
+
+	stages, err := NewClient(srv.URL).GetTaskStages(context.Background(), "153")
+	if err != nil {
+		t.Fatalf("GetTaskStages: %v", err)
+	}
+	want := []string{"Новые", "Выполняются", "Code Review", "Need Merge", "Сделаны"}
+	if len(stages) != len(want) {
+		t.Fatalf("got %d stages, want %d", len(stages), len(want))
+	}
+	for i, title := range want {
+		if stages[i].Title != title {
+			t.Errorf("stage[%d] = %q, want %q", i, stages[i].Title, title)
+		}
+	}
+	if titles := StageTitles(stages); titles["2879"] != "Code Review" {
+		t.Errorf("StageTitles[2879] = %q, want Code Review", titles["2879"])
+	}
+}
+
+// TestGetTaskStagesNoKanban: a group without a kanban returns empty, not an
+// error, so the caller degrades to STATUS-only mapping.
+func TestGetTaskStagesNoKanban(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"result":[]}`)
+	}))
+	defer srv.Close()
+
+	stages, err := NewClient(srv.URL).GetTaskStages(context.Background(), "999")
+	if err != nil {
+		t.Fatalf("GetTaskStages: %v", err)
+	}
+	if len(stages) != 0 {
+		t.Fatalf("got %d stages, want 0", len(stages))
 	}
 }

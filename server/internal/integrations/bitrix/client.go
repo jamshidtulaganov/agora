@@ -1310,17 +1310,41 @@ func (c *Client) DownloadFile(ctx context.Context, fileURL string) (data []byte,
 // with FILTER[ID]. Returns ("", nil) when the group is not found (so the caller
 // can fall back to a placeholder name) and a non-nil error only on transport /
 // Bitrix-error failures. Used to label a Bitrix GROUP_ID when ListGroups hasn't
-// GetTaskStages resolves a scrum/kanban entity's stages (its columns) to an
-// id→title map via task.stages.get. entityID is the Bitrix workgroup id (the
-// kanban lives on the group). Bitrix returns result as an object keyed by stage
-// id: {"<id>":{"ID":..,"TITLE":"Code Review",..}}. Returns an empty map (no
-// error) when the entity has no kanban, so the caller degrades to STATUS-only.
-func (c *Client) GetTaskStages(ctx context.Context, entityID string) (map[string]string, error) {
+// Stage is one kanban column of a Bitrix workgroup. Sort is the portal's own
+// column order, which is NOT the numeric id order: columns added later to an
+// existing kanban (Code Review, Need Merge …) carry higher ids than the original
+// Новые/Выполняются/Сделаны triple while sitting between them on the board. Any
+// code that picks "the first column meaning X" must order by Sort.
+type Stage struct {
+	ID    string
+	Title string
+	Sort  int
+}
+
+// StageTitles projects stages onto the id→title map callers use for pure name
+// resolution (analytics breakdowns, stamping bitrix_stage metadata).
+func StageTitles(stages []Stage) map[string]string {
+	out := make(map[string]string, len(stages))
+	for _, s := range stages {
+		if s.ID != "" && s.Title != "" {
+			out[s.ID] = s.Title
+		}
+	}
+	return out
+}
+
+// GetTaskStages resolves a scrum/kanban entity's stages (its columns) via
+// task.stages.get, in portal (Sort) order. entityID is the Bitrix workgroup id
+// (the kanban lives on the group). Bitrix returns result as an object keyed by
+// stage id: {"<id>":{"ID":..,"TITLE":"Code Review","SORT":..}}. Returns an empty
+// slice (no error) when the entity has no kanban, so the caller degrades to
+// STATUS-only.
+func (c *Client) GetTaskStages(ctx context.Context, entityID string) ([]Stage, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
 	}
 	if strings.TrimSpace(entityID) == "" {
-		return map[string]string{}, nil
+		return []Stage{}, nil
 	}
 	endpoint := c.baseURL + "task.stages.get"
 	form := url.Values{}
@@ -1331,9 +1355,9 @@ func (c *Client) GetTaskStages(ctx context.Context, entityID string) (map[string
 		return nil, err
 	}
 	var parsed struct {
-		Result    map[string]rawStage `json:"result"`
-		Error     string              `json:"error"`
-		ErrorDesc string              `json:"error_description"`
+		Result    json.RawMessage `json:"result"`
+		Error     string          `json:"error"`
+		ErrorDesc string          `json:"error_description"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("bitrix: decode task.stages.get: %w", err)
@@ -1341,16 +1365,41 @@ func (c *Client) GetTaskStages(ctx context.Context, entityID string) (map[string
 	if parsed.Error != "" {
 		return nil, fmt.Errorf("bitrix: task.stages.get error %s: %s", parsed.Error, parsed.ErrorDesc)
 	}
-	out := make(map[string]string, len(parsed.Result))
-	for key, st := range parsed.Result {
+	// Two shapes: an object keyed by stage id for a group WITH a kanban, and a
+	// bare [] for a group without one. The array form is not an error — the
+	// caller degrades to STATUS-only mapping for that group.
+	stagesByID := map[string]rawStage{}
+	if trimmed := strings.TrimSpace(string(parsed.Result)); trimmed != "" && trimmed != "null" && !strings.HasPrefix(trimmed, "[") {
+		if err := json.Unmarshal(parsed.Result, &stagesByID); err != nil {
+			return nil, fmt.Errorf("bitrix: decode task.stages.get result: %w", err)
+		}
+	}
+	out := make([]Stage, 0, len(stagesByID))
+	for key, st := range stagesByID {
 		id := firstNonEmpty(st.ID)
 		if id == "" {
 			id = key // the map key is the stage id when the body omits it
 		}
-		if title := firstNonEmpty(st.Title); id != "" && title != "" {
-			out[id] = title
+		title := firstNonEmpty(st.Title)
+		if id == "" || title == "" {
+			continue
 		}
+		order, _ := strconv.Atoi(firstNonEmpty(st.Sort))
+		out = append(out, Stage{ID: id, Title: title, Sort: order})
 	}
+	// Sort, then id, so a kanban whose SORT values collide (or are absent) still
+	// yields a deterministic order instead of Go's random map iteration.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Sort != out[j].Sort {
+			return out[i].Sort < out[j].Sort
+		}
+		a, aerr := strconv.Atoi(out[i].ID)
+		b, berr := strconv.Atoi(out[j].ID)
+		if aerr == nil && berr == nil {
+			return a < b
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 
@@ -1358,6 +1407,7 @@ func (c *Client) GetTaskStages(ctx context.Context, entityID string) (map[string
 type rawStage struct {
 	ID    jsonStr `json:"ID"`
 	Title jsonStr `json:"TITLE"`
+	Sort  jsonStr `json:"SORT"`
 }
 
 // been cached.

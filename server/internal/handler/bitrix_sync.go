@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -420,10 +419,10 @@ type bitrixSyncState struct {
 	// bitrixTriageMaxPerSync cap that keeps a bulk import from flooding the
 	// single triage agent.
 	triaged int
-	// stagesByGroup maps a Bitrix group id -> (stage id -> stage name), lazily
-	// filled from task.stages.get so a batch resolves each kanban's stages once.
-	// A nil inner map caches a failed/absent lookup so it isn't retried per task.
-	stagesByGroup map[string]map[string]string
+	// stagesByGroup maps a Bitrix group id -> its kanban columns in portal order,
+	// lazily filled from task.stages.get so a batch resolves each kanban once. A
+	// nil slice caches a failed/absent lookup so it isn't retried per task.
+	stagesByGroup map[string][]bitrix.Stage
 	// projectByTitle maps "<workspaceID>:<title>" -> project id (zero/Invalid
 	// when no such project), so title-prefix routing resolves each named product
 	// project (sd-main / sd-cs / sd-billing) once per batch.
@@ -476,7 +475,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		projectCache:   map[string]pgtype.UUID{},
 		sprintCache:    map[string]pgtype.UUID{},
 		groupNames:     map[string]string{},
-		stagesByGroup:  map[string]map[string]string{},
+		stagesByGroup:  map[string][]bitrix.Stage{},
 		userCache:      map[string]*bitrix.User{},
 		commentAuthors: map[string]bitrixAuthorRef{},
 		projectByTitle: map[string]pgtype.UUID{},
@@ -746,7 +745,15 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// optional stage→status override applied. Falls back to STATUS when the task
 	// has no resolvable stage.
 	stageName := h.bitrixStageName(ctx, st, task.GroupID, task.StageID)
-	mappedStatus := resolveBitrixIssueStatus(stageName, task.Status, h.bitrixRoutingForWorkspace(ctx, ws.ID, st).StageMap)
+	mappedStatus, stageDecided := resolveBitrixIssueStatus(stageName, task.Status, h.bitrixRoutingForWorkspace(ctx, ws.ID, st).StageMap)
+	if stageName != "" && !stageDecided {
+		// The column exists but nothing maps it, so this issue's status came from
+		// the coarse STATUS and will look wrong on the board. Log the exact label
+		// so it can be added to MapStage or settings.bitrix_stage_map.
+		slog.Warn("bitrix sync: unmapped kanban stage, falling back to STATUS",
+			"task_id", task.ID, "group_id", task.GroupID, "stage", stageName,
+			"bitrix_status", task.Status, "mapped_status", mappedStatus)
+	}
 
 	// Personal mirror: never keep completed/declined Bitrix history on the board.
 	// Skip create for closed tasks; delete any previously synced issue when the
@@ -813,7 +820,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// Always refresh the responsible's display metadata (name/email/position)
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
-		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID)
 		// Bitrix tags → Agora labels (additive; backfills older mirrors too).
 		h.syncBitrixTagsAsLabels(ctx, ws.ID, existing.ID, task)
 		if h.bitrixTaskHasStageRestriction(ctx, task, st) {
@@ -973,7 +980,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
-	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID)
 	// Bitrix tags → Agora labels (bug/feature → type:*, aliases collapsed).
 	h.syncBitrixTagsAsLabels(ctx, ws.ID, res.Issue.ID, task)
 
@@ -1169,10 +1176,24 @@ func (h *Handler) bitrixGroupName(ctx context.Context, groupID string, st *bitri
 // kanban, the lookup fails, or the id isn't in the group's stage set — the
 // caller then falls back to the coarse STATUS mapping.
 func (h *Handler) bitrixStageName(ctx context.Context, st *bitrixSyncState, groupID, stageID string) string {
-	groupID = strings.TrimSpace(groupID)
 	stageID = strings.TrimSpace(stageID)
-	if groupID == "" || stageID == "" {
+	if stageID == "" {
 		return ""
+	}
+	for _, s := range h.bitrixStagesForGroup(ctx, st, groupID) {
+		if s.ID == stageID {
+			return s.Title
+		}
+	}
+	return ""
+}
+
+// bitrixStagesForGroup returns a group's kanban columns in portal order, cached
+// per sync batch. A failed/absent lookup caches nil so it isn't retried per task.
+func (h *Handler) bitrixStagesForGroup(ctx context.Context, st *bitrixSyncState, groupID string) []bitrix.Stage {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return nil
 	}
 	stages, ok := st.stagesByGroup[groupID]
 	if !ok {
@@ -1180,12 +1201,12 @@ func (h *Handler) bitrixStageName(ctx context.Context, st *bitrixSyncState, grou
 		if err != nil {
 			slog.Debug("bitrix sync: task.stages.get failed", "group_id", groupID, "error", err)
 			st.stagesByGroup[groupID] = nil // cache the miss
-			return ""
+			return nil
 		}
 		stages = fetched
 		st.stagesByGroup[groupID] = stages
 	}
-	return stages[stageID]
+	return stages
 }
 
 // resolveBitrixIssueStatus maps a Bitrix task to a Agora status, preferring the
@@ -1194,18 +1215,23 @@ func (h *Handler) bitrixStageName(ctx context.Context, st *bitrixSyncState, grou
 // settings.bitrix_stage_map (exact stage name, case-insensitive); otherwise the
 // keyword default (bitrix.MapStage) applies. Falls back to MapStatus when the
 // task has no resolvable stage.
-func resolveBitrixIssueStatus(stageName, bitrixStatus string, stageMap map[string]string) string {
+// The second return value reports whether the STAGE decided the status. false
+// means the coarse STATUS was used — either the task is off-kanban, or its stage
+// label matched no keyword. The latter is a silent mismatch source (a task
+// parked in "EPIC" or "Ready for release" reporting whatever STATUS happens to
+// say), so callers stamp it on the issue and log it.
+func resolveBitrixIssueStatus(stageName, bitrixStatus string, stageMap map[string]string) (string, bool) {
 	if name := strings.TrimSpace(stageName); name != "" {
 		if stageMap != nil {
 			if mapped, ok := stageMap[strings.ToLower(name)]; ok && strings.TrimSpace(mapped) != "" {
-				return mapped
+				return mapped, true
 			}
 		}
 		if mapped := bitrix.MapStage(name); mapped != "" {
-			return mapped
+			return mapped, true
 		}
 	}
-	return bitrix.MapStatus(bitrixStatus)
+	return bitrix.MapStatus(bitrixStatus), false
 }
 
 // deleteBitrixSyncedIssue hard-deletes a Bitrix-linked issue (and cancels its
@@ -1612,7 +1638,7 @@ func bitrixTaskURL(taskID string) string {
 // even when they're not an Agora member), the live kanban STAGE name, and a
 // deep link back to the original Bitrix task. Best-effort per key; runs on
 // create + re-sync.
-func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName, taskID string) {
+func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName string, stageDecided bool, taskID string) {
 	kv := [][2]string{{"bitrix_responsible_id", strings.TrimSpace(responsibleID)}}
 	if u != nil {
 		kv = append(kv,
@@ -1623,6 +1649,14 @@ func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgty
 	}
 	if s := strings.TrimSpace(stageName); s != "" {
 		kv = append(kv, [2]string{"bitrix_stage", s})
+		// "no" = the status shown in Agora came from the coarse Bitrix STATUS, not
+		// from this column. Always written (never blank) so a later stage move that
+		// IS mapped overwrites it — SetIssueMetadataKey skips empty values.
+		mapped := "no"
+		if stageDecided {
+			mapped = "yes"
+		}
+		kv = append(kv, [2]string{"bitrix_stage_mapped", mapped})
 	}
 	if link := bitrixTaskURL(taskID); link != "" {
 		kv = append(kv, [2]string{"bitrix_task_url", link})
@@ -1912,7 +1946,7 @@ func (h *Handler) mirrorIssueStatusToBitrix(ctx context.Context, issueID string)
 			} else {
 				st := h.newBitrixSyncState()
 				stageMap := h.bitrixRoutingForWorkspace(ctx, issue.WorkspaceID, st).StageMap
-				if stageID := bitrixStageIDForIssueStatus(issue.Status, stages, stageMap); stageID != "" && stageID != task.StageID {
+				if stageID := bitrixStageIDForIssueStatus(issue.Status, stages, task.StageID, stageMap); stageID != "" {
 					if merr := client.MoveTaskToStage(ctx, taskID, stageID); merr != nil {
 						mirrorErrs = append(mirrorErrs, fmt.Errorf("move task stage: %w", merr))
 					}
@@ -1929,33 +1963,45 @@ func (h *Handler) mirrorIssueStatusToBitrix(ctx context.Context, issueID string)
 	return nil
 }
 
-func bitrixStageIDForIssueStatus(issueStatus string, stages, stageMap map[string]string) string {
-	ids := make([]string, 0, len(stages))
-	for id := range stages {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		a, aerr := strconv.Atoi(ids[i])
-		b, berr := strconv.Atoi(ids[j])
-		if aerr == nil && berr == nil {
-			return a < b
-		}
-		return ids[i] < ids[j]
-	})
-	for _, id := range ids {
-		name := strings.TrimSpace(stages[id])
-		mapped := ""
+// bitrixStageIDForIssueStatus picks the kanban column an Agora status should
+// move the portal task to, or "" for "leave it alone".
+//
+// Returning "" when the task's CURRENT column already means issueStatus is the
+// point: several columns collapse onto one Agora status (Code Review, Ready for
+// testing, Testing and Need Merge are all in_review), so a naive
+// first-match-wins picker yanks a task sitting in Testing back to Code Review on
+// every unrelated status event. Only a status the current column does NOT mean
+// is a real move.
+//
+// Candidates are scanned in portal (Sort) order, so a genuine move lands on the
+// EARLIEST column with that meaning — entering in_review means Code Review, not
+// Need Merge. Numeric id order would get this wrong: columns added to an
+// existing kanban carry higher ids than the original Новые/Выполняются/Сделаны.
+func bitrixStageIDForIssueStatus(issueStatus string, stages []bitrix.Stage, currentStageID string, stageMap map[string]string) string {
+	statusOf := func(name string) string {
+		name = strings.TrimSpace(name)
 		if stageMap != nil {
-			mapped = strings.TrimSpace(stageMap[strings.ToLower(name)])
+			if mapped := strings.TrimSpace(stageMap[strings.ToLower(name)]); mapped != "" {
+				return mapped
+			}
 		}
-		if mapped == "" {
-			mapped = bitrix.MapStage(name)
+		return bitrix.MapStage(name)
+	}
+	currentStageID = strings.TrimSpace(currentStageID)
+	target := ""
+	for _, s := range stages {
+		mapped := statusOf(s.Title)
+		if s.ID == currentStageID && mapped == issueStatus {
+			return "" // already in a column that means this status
 		}
-		if mapped == issueStatus {
-			return id
+		if target == "" && mapped == issueStatus {
+			target = s.ID
 		}
 	}
-	return ""
+	if target == currentStageID {
+		return ""
+	}
+	return target
 }
 
 // mirrorQAVerdictToBitrix posts a courtesy QA verdict comment to the linked

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // bitrixMockPortal is a fake Bitrix REST portal. It serves tasks.task.get from
@@ -539,5 +541,101 @@ func TestBitrixAdvisoryLockRoundTrip(t *testing.T) {
 	}
 	if !got3 {
 		t.Fatal("tx3 could not acquire the lock after tx1 released it; lock leaked")
+	}
+}
+
+// TestBitrixStageIDForIssueStatus covers the outbound stage picker against the
+// real shape of an SD sprint kanban, where FOUR columns (Code Review, Ready for
+// testing, Тестинг, Need Merge) all mean in_review and the review columns carry
+// higher ids than Сделаны because they were added to the board later.
+//
+// The no-move cases are the important ones: a first-match-wins picker moved a
+// task sitting in Тестинг back to Code Review on every unrelated status event,
+// writing bogus stage churn into the portal.
+func TestBitrixStageIDForIssueStatus(t *testing.T) {
+	// Portal (SORT) order, which is deliberately NOT id order.
+	stages := []bitrix.Stage{
+		{ID: "2531", Title: "Новые", Sort: 100},
+		{ID: "2533", Title: "Выполняются", Sort: 200},
+		{ID: "2883", Title: "Returned", Sort: 250},
+		{ID: "2879", Title: "Code Review", Sort: 300},
+		{ID: "2881", Title: "Ready for testing", Sort: 400},
+		{ID: "2901", Title: "Тестинг", Sort: 500},
+		{ID: "2877", Title: "Need Merge", Sort: 600},
+		{ID: "2903", Title: "Ready for release", Sort: 700},
+		{ID: "2535", Title: "Сделаны", Sort: 800},
+	}
+
+	cases := []struct {
+		name     string
+		status   string
+		current  string
+		stageMap map[string]string
+		want     string
+	}{
+		{"already in a column meaning in_review stays put", "in_review", "2901", nil, ""},
+		{"need merge also means in_review, no churn", "in_review", "2877", nil, ""},
+		{"entering review lands on the EARLIEST review column", "in_review", "2533", nil, "2879"},
+		{"done moves to Сделаны", "done", "2533", nil, "2535"},
+		{"in_progress from Новые", "in_progress", "2531", nil, "2533"},
+		{"returned already means in_progress", "in_progress", "2883", nil, ""},
+		{"no blocked column on this board — no move", "blocked", "2531", nil, ""},
+		{"unknown status has no column", "backlog", "2531", nil, ""},
+		{
+			name:     "workspace override retargets a column",
+			status:   "in_progress",
+			current:  "2901",
+			stageMap: map[string]string{"тестинг": "in_progress"},
+			want:     "", // the override makes the CURRENT column mean in_progress
+		},
+		{
+			name:     "workspace override frees the task to move for review",
+			status:   "in_review",
+			current:  "2901",
+			stageMap: map[string]string{"тестинг": "in_progress"},
+			want:     "2879",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bitrixStageIDForIssueStatus(tc.status, stages, tc.current, tc.stageMap); got != tc.want {
+				t.Errorf("bitrixStageIDForIssueStatus(%q, current=%q) = %q, want %q",
+					tc.status, tc.current, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveBitrixIssueStatusReportsStageDecision pins the second return value:
+// callers use it to stamp bitrix_stage_mapped and to log the unmapped label. The
+// "Ready for release" and "Готов к релизу" rows are the mismatches this whole
+// change exists to fix — they used to fall through to STATUS.
+func TestResolveBitrixIssueStatusReportsStageDecision(t *testing.T) {
+	cases := []struct {
+		stage        string
+		bitrixStatus string
+		stageMap     map[string]string
+		wantStatus   string
+		wantDecided  bool
+	}{
+		{"Code Review", "3", nil, "in_review", true},
+		{"Ready for release", "3", nil, "in_review", true},
+		{"Готов к релизу", "2", nil, "in_review", true},
+		{"Blockers", "3", nil, "blocked", true},
+		{"To Do", "3", nil, "todo", true},
+		{"К выполнению", "3", nil, "todo", true},
+		// Group 173 uses stages as categories: no keyword, so STATUS decides and
+		// the caller flags it.
+		{"EPIC", "3", nil, "in_progress", false},
+		{"EPIC", "2", map[string]string{"epic": "backlog"}, "backlog", true},
+		// Off-kanban task: no stage at all.
+		{"", "4", nil, "in_review", false},
+	}
+	for _, tc := range cases {
+		gotStatus, gotDecided := resolveBitrixIssueStatus(tc.stage, tc.bitrixStatus, tc.stageMap)
+		if gotStatus != tc.wantStatus || gotDecided != tc.wantDecided {
+			t.Errorf("resolveBitrixIssueStatus(%q, %q) = (%q, %v), want (%q, %v)",
+				tc.stage, tc.bitrixStatus, gotStatus, gotDecided, tc.wantStatus, tc.wantDecided)
+		}
 	}
 }
