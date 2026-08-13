@@ -1,3 +1,5 @@
+import type { TaskExecutionLevelPreference } from "./orchestration";
+
 export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" | "cancelled";
 
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
@@ -6,6 +8,8 @@ export type ProjectExecutionStrategy = "automatic" | "solo" | "squad" | "human";
 export type ProjectModelRoutingMode = "pinned" | "cost" | "balanced" | "intelligence";
 
 export interface ProjectOrchestrationDefaults {
+  // Auto resolves scope and safety from the issue when each run is created.
+  execution_level?: TaskExecutionLevelPreference;
   // "automatic" infers solo/squad/human from the issue owner at run creation.
   execution_strategy: ProjectExecutionStrategy;
   progression_policy: "automatic" | "gated" | "manual";

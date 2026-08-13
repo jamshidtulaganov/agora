@@ -1331,6 +1331,39 @@ describe("OrchestrationRunSchema — execution semantics", () => {
     expect(parsed.steps[0]?.thinking_level).toBe("");
   });
 
+  it("parses the resolved task execution level and its audit signals", () => {
+    const parsed = OrchestrationRunSchema.parse({
+      ...baseRun,
+      policy: {
+        task_level: {
+          requested: "auto",
+          resolved: "coordinated",
+          policy_version: 1,
+          score: 6,
+          signals: ["frontend_and_backend", "data_or_schema_migration"],
+        },
+      },
+    });
+
+    expect(parsed.policy.task_level).toEqual({
+      requested: "auto",
+      resolved: "coordinated",
+      policy_version: 1,
+      score: 6,
+      signals: ["frontend_and_backend", "data_or_schema_migration"],
+    });
+  });
+
+  it("drops a malformed task level without making an older desktop lose the run", () => {
+    const parsed = OrchestrationRunSchema.parse({
+      ...baseRun,
+      policy: { task_level: { requested: "future", resolved: null } },
+    });
+
+    expect(parsed.id).toBe("run-1");
+    expect(parsed.policy.task_level).toBeUndefined();
+  });
+
   it("keeps an older server response readable during the compatibility window", () => {
     const parsed = OrchestrationRunSchema.parse(baseRun);
     expect(parsed.execution_strategy).toBe("custom");

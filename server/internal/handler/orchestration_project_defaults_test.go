@@ -24,6 +24,7 @@ func TestCreateIssueOrchestrationInheritsProjectDefaults(t *testing.T) {
 		RETURNING id
 	`, testWorkspaceID, fmt.Sprintf("Orchestration defaults %d", time.Now().UnixNano()), `{
 		"orchestration": {
+			"execution_level": "controlled",
 			"execution_strategy": "solo",
 			"progression_policy": "gated",
 			"max_concurrency": 5,
@@ -78,6 +79,10 @@ func TestCreateIssueOrchestrationInheritsProjectDefaults(t *testing.T) {
 	}
 	if got := policy["max_concurrency"]; got != float64(5) {
 		t.Fatalf("max_concurrency = %#v, want 5", got)
+	}
+	taskLevel, ok := policy["task_level"].(map[string]any)
+	if !ok || taskLevel["requested"] != "controlled" || taskLevel["resolved"] != "controlled" {
+		t.Fatalf("execution level defaults not inherited: %#v", policy["task_level"])
 	}
 	modelRouting, ok := policy["model_routing"].(map[string]any)
 	if !ok || modelRouting["mode"] != modelRoutingBalanced || modelRouting["router_version"] != float64(orchestrationModelRouterVersion) {

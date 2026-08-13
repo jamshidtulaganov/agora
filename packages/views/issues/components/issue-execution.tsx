@@ -45,6 +45,7 @@ import type {
   OrchestrationRun,
   OrchestrationStep,
   ProgressionPolicy,
+  TaskExecutionLevelPreference,
 } from "@agora/core/types";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { Badge } from "@agora/ui/components/ui/badge";
@@ -160,6 +161,48 @@ function progressionLabel(progression: ProgressionPolicy, t: IssuesT) {
   }
 }
 
+const TASK_EXECUTION_LEVELS: TaskExecutionLevelPreference[] = [
+  "auto", "assist", "direct", "standard", "coordinated", "controlled",
+];
+
+function taskExecutionLevelLabel(level: TaskExecutionLevelPreference, t: IssuesT): string {
+  switch (level) {
+    case "auto": return t(($) => $.execution_surface.level_auto);
+    case "assist": return t(($) => $.execution_surface.level_assist);
+    case "direct": return t(($) => $.execution_surface.level_direct);
+    case "standard": return t(($) => $.execution_surface.level_standard);
+    case "coordinated": return t(($) => $.execution_surface.level_coordinated);
+    case "controlled": return t(($) => $.execution_surface.level_controlled);
+  }
+}
+
+function taskExecutionLevelDescription(level: TaskExecutionLevelPreference, t: IssuesT): string {
+  switch (level) {
+    case "auto": return t(($) => $.execution_surface.level_auto_hint);
+    case "assist": return t(($) => $.execution_surface.level_assist_hint);
+    case "direct": return t(($) => $.execution_surface.level_direct_hint);
+    case "standard": return t(($) => $.execution_surface.level_standard_hint);
+    case "coordinated": return t(($) => $.execution_surface.level_coordinated_hint);
+    case "controlled": return t(($) => $.execution_surface.level_controlled_hint);
+  }
+}
+
+function taskExecutionSignalLabel(signal: string, t: IssuesT): string {
+  switch (signal) {
+    case "large_scope": return t(($) => $.execution_surface.level_signal_large_scope);
+    case "cross_repository": return t(($) => $.execution_surface.level_signal_cross_repository);
+    case "frontend_and_backend": return t(($) => $.execution_surface.level_signal_frontend_and_backend);
+    case "multiple_surfaces": return t(($) => $.execution_surface.level_signal_multiple_surfaces);
+    case "data_or_schema_migration": return t(($) => $.execution_surface.level_signal_data_migration);
+    case "governed_file_handling": return t(($) => $.execution_surface.level_signal_file_handling);
+    case "security_or_permissions": return t(($) => $.execution_surface.level_signal_security);
+    case "privileged_or_destructive_operation": return t(($) => $.execution_surface.level_signal_privileged);
+    case "billing_or_financial_change": return t(($) => $.execution_surface.level_signal_financial);
+    case "safety_floor_applied": return t(($) => $.execution_surface.level_signal_safety_floor);
+    default: return signal.replaceAll("_", " ");
+  }
+}
+
 function taskForStep(step: OrchestrationStep, taskByID: Map<string, AgentTask>) {
   return step.task_id ? taskByID.get(step.task_id) : undefined;
 }
@@ -192,6 +235,7 @@ function ExecutionStatusBar({
   const completed = run.steps.filter((step) => COMPLETE_STEP_STATUSES.has(step.status)).length;
   const active = run.steps.filter((step) => step.status === "running" || step.status === "queued").length;
   const status = runStatus(run, t);
+  const taskLevel = run.policy.task_level?.resolved;
   const manualBatchPaused = isManualOrchestrationBatchPaused(run);
   const canStart = run.status === "draft" || manualBatchPaused;
   const progress = run.steps.length > 0 ? Math.round((completed / run.steps.length) * 100) : 0;
@@ -212,6 +256,11 @@ function ExecutionStatusBar({
               {t(($) => $.detail.orchestration_progress, { completed, count: run.steps.length })}
               {active > 0 ? ` · ${t(($) => $.detail.orchestration_active, { count: active })}` : ""}
             </span>
+            {taskLevel && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[9px]">
+                {taskExecutionLevelLabel(taskLevel, t)}
+              </Badge>
+            )}
           </div>
           <div
             className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-muted"
@@ -582,6 +631,7 @@ function ExecutionDrawer({ run, open, onOpenChange, onOpenWork, agents }: { run:
     ...run.revisions.map((value) => ({ kind: "revision" as const, id: value.id, createdAt: value.created_at, value })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const roster = run.policy.squad_roster ?? [];
+  const taskLevel = run.policy.task_level;
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(94vw,42rem)] gap-0 sm:max-w-2xl">
@@ -605,6 +655,26 @@ function ExecutionDrawer({ run, open, onOpenChange, onOpenWork, agents }: { run:
           )}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+          {taskLevel && (
+            <section className="mb-5 rounded-lg border bg-muted/15 px-3 py-3" aria-label={t(($) => $.execution_surface.level_legend)}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold">
+                  {taskExecutionLevelLabel(taskLevel.resolved, t)}
+                </span>
+                {taskLevel.requested === "auto" && (
+                  <Badge variant="outline" className="h-5 text-[9px]">{t(($) => $.execution_surface.level_resolved_automatically)}</Badge>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                {taskExecutionLevelDescription(taskLevel.resolved, t)}
+              </p>
+              {taskLevel.signals.length > 0 && (
+                <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                  {t(($) => $.execution_surface.level_signals, { signals: taskLevel.signals.map((signal) => taskExecutionSignalLabel(signal, t)).join(" · ") })}
+                </p>
+              )}
+            </section>
+          )}
           {roster.length > 0 && (
             <section className="mb-5" aria-labelledby={`roster-${run.id}`}>
               <div className="mb-2 flex items-center justify-between gap-3">
@@ -675,6 +745,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [customizing, setCustomizing] = useState(false);
   const [strategy, setStrategy] = useState<"automatic" | ExecutionStrategy>("automatic");
+  const [executionLevel, setExecutionLevel] = useState<TaskExecutionLevelPreference>("auto");
   const [progression, setProgression] = useState<ProgressionPolicy>("automatic");
   const [modelRouting, setModelRouting] = useState<ModelRoutingMode | "inherit">("inherit");
   const [squadId, setSquadId] = useState("");
@@ -697,11 +768,13 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
   const projectDefaults = project?.settings?.orchestration;
   useEffect(() => {
     setStrategy("automatic");
+    setExecutionLevel(projectDefaults?.execution_level ?? "auto");
     setProgression(projectDefaults?.progression_policy ?? "automatic");
     setModelRouting("inherit");
     setMaxConcurrency(projectDefaults?.max_concurrency ?? 3);
     setReviewPlanFirst(projectDefaults?.review_plan_first ?? false);
   }, [
+    projectDefaults?.execution_level,
     projectDefaults?.progression_policy,
     projectDefaults?.max_concurrency,
     projectDefaults?.review_plan_first,
@@ -739,6 +812,7 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
         issueId,
         data: {
           auto_start: !reviewPlanFirst,
+          ...(executionLevel === "auto" ? {} : { execution_level: executionLevel }),
           ...(strategy === "automatic" ? {} : { execution_strategy: strategy }),
           ...(strategy === "squad" && squadId ? { squad_id: squadId } : {}),
           progression_policy: progression,
@@ -806,6 +880,22 @@ export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpe
                 ? t(($) => $.execution_surface.project_defaults_hint)
                 : t(($) => $.detail.orchestration_empty)}
             </p>
+            <fieldset className="sm:col-span-2">
+              <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.level_legend)}</legend>
+              <NativeSelect
+                name="orchestration_execution_level"
+                aria-label={t(($) => $.execution_surface.level_legend)}
+                value={executionLevel}
+                onChange={(event) => setExecutionLevel(event.target.value as TaskExecutionLevelPreference)}
+                size="sm"
+                className="mt-2 w-full text-xs sm:max-w-sm"
+              >
+                {TASK_EXECUTION_LEVELS.map((level) => (
+                  <NativeSelectOption key={level} value={level}>{taskExecutionLevelLabel(level, t)}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{taskExecutionLevelDescription(executionLevel, t)}</p>
+            </fieldset>
             <fieldset>
               <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t(($) => $.execution_surface.strategy_legend)}</legend>
               <div className="mt-2 flex flex-wrap gap-1.5">

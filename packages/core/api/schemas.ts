@@ -113,7 +113,16 @@ const SquadRosterPolicyEntrySchema = z.object({
   is_leader: z.boolean().optional(),
 }).loose();
 
+const TaskExecutionLevelResolutionSchema = z.object({
+  requested: z.enum(["auto", "assist", "direct", "standard", "coordinated", "controlled"]),
+  resolved: z.enum(["assist", "direct", "standard", "coordinated", "controlled"]),
+  policy_version: z.number().default(1),
+  score: z.number().default(0),
+  signals: z.array(z.string()).nullish().transform((value) => value ?? []),
+}).loose();
+
 const OrchestrationPolicySchema = z.object({
+  task_level: TaskExecutionLevelResolutionSchema.optional().catch(undefined),
   max_concurrency: z.number().optional(),
   parallel_workers: z.number().optional(),
   squad_id: z.string().optional(),
