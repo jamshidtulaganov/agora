@@ -25,6 +25,18 @@ services:
       BITRIX_GROUP_MAP: ${BITRIX_GROUP_MAP:-}
       BITRIX_INBOUND_SECRET: ${BITRIX_INBOUND_SECRET:-}
       BITRIX_PUSH_STATUS: ${BITRIX_PUSH_STATUS:-}
+      BITRIX_PUSH_HUMAN_COMMENTS: ${BITRIX_PUSH_HUMAN_COMMENTS:-}
+      BITRIX_PUSH_SYSTEM_COMMENTS: ${BITRIX_PUSH_SYSTEM_COMMENTS:-}
+      BITRIX_SYNC_POLL_INTERVAL: ${BITRIX_SYNC_POLL_INTERVAL:-}
+      # Personal-mirror scope + rolling import window. Without these listed here
+      # they never reach os.Getenv inside the container, so local testing would
+      # silently run with an OPEN scope and no window.
+      BITRIX_SYNC_USER_EMAILS: ${BITRIX_SYNC_USER_EMAILS:-}
+      BITRIX_SYNC_USER_STAGE_RULES: ${BITRIX_SYNC_USER_STAGE_RULES:-}
+      BITRIX_REVIEW_SQUAD_ID: ${BITRIX_REVIEW_SQUAD_ID:-}
+      BITRIX_TARGET_PROJECT: ${BITRIX_TARGET_PROJECT:-}
+      AGORA_BITRIX_IMPORT_WINDOW_DAYS: ${AGORA_BITRIX_IMPORT_WINDOW_DAYS:-}
+      AGORA_BITRIX_ARCHIVE_DONE: ${AGORA_BITRIX_ARCHIVE_DONE:-}
       # Restrict Bitrix member provisioning to a department (Отдел), comma-
       # separated names — e.g. "SD Разработка". Empty = provision every
       # responsible (pre-department behaviour).
