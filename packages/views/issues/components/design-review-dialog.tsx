@@ -1,16 +1,22 @@
 /* eslint-disable i18next/no-literal-string -- design review dialog; i18n follow-up */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Blocks, ExternalLink, Images, ListTree, Loader2, Palette } from "lucide-react";
 import { api } from "@agora/core/api";
 import { issueKeys } from "@agora/core/issues/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import type { DesignProposal, ParsedDesignProposal, DesignVerdict } from "@agora/core/design";
 import type { Attachment } from "@agora/core/types";
-import { Dialog, DialogContent } from "@agora/ui/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@agora/ui/components/ui/dialog";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
@@ -42,6 +48,44 @@ const VERDICT_STYLES: Record<DesignVerdict, string> = {
   new: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
 };
 
+interface FigmaEmbed {
+  sourceUrl: string;
+  embedUrl: string;
+}
+
+function figmaEmbedFrom(
+  ref: DesignProposal["figma"][number] | undefined,
+): FigmaEmbed | null {
+  if (!ref?.url) return null;
+
+  let source: URL;
+  try {
+    source = new URL(ref.url);
+  } catch {
+    return null;
+  }
+
+  if (source.protocol !== "https:" || !["figma.com", "www.figma.com"].includes(source.hostname)) {
+    return null;
+  }
+
+  const match = source.pathname.match(
+    /^\/(design|file|proto|board|slides|deck)\/([A-Za-z0-9]{10,})(\/[^?#]*)?/,
+  );
+  if (!match) return null;
+
+  const kind = match[1] === "file" ? "design" : match[1];
+  const fileKey = match[2];
+  const fileName = match[3] ?? "";
+  const embed = new URL(`https://embed.figma.com/${kind}/${fileKey}${fileName}`);
+  const nodeId = source.searchParams.get("node-id") || ref.node_id.replaceAll(":", "-");
+  if (nodeId) embed.searchParams.set("node-id", nodeId);
+  embed.searchParams.set("embed-host", "agora");
+  embed.searchParams.set("theme", "system");
+
+  return { sourceUrl: source.toString(), embedUrl: embed.toString() };
+}
+
 export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewDialogProps) {
   const { t } = useT("issues");
   const qc = useQueryClient();
@@ -68,6 +112,11 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   const attachmentFor = (render: string): Attachment | undefined => {
     if (!render || !version) return undefined;
     return version.attachments.find((a) => a.filename === render);
+  };
+
+  const attachmentUrl = (attachment: Attachment): string => {
+    const raw = attachment.download_url || attachment.markdown_url || attachment.url;
+    return resolvePublicFileUrl(raw) ?? raw;
   };
 
   const refresh = () => {
@@ -128,39 +177,150 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   };
 
   const counts = useMemo(() => countVerdicts(proposal), [proposal]);
+  const figmaEmbed = useMemo(
+    () => proposal?.figma.map((ref) => figmaEmbedFrom(ref)).find(Boolean) ?? null,
+    [proposal],
+  );
+  const reviewItemCount = proposal
+    ? proposal.screens.length
+      + proposal.components.length
+      + proposal.deviations.length
+      + proposal.sub_issues.length
+      + proposal.open_questions.length
+    : 0;
+  const hasReviewContent = reviewItemCount > 0;
+  const canApprove = Boolean(
+    proposal
+      && hasReviewContent
+      && version?.parsed.state !== "blocked",
+  );
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[85vh] max-h-[85vh] w-[min(92vw,900px)] max-w-[900px] flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-h-[min(92dvh,920px)] sm:w-[min(94vw,1180px)] sm:max-w-[1180px]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold">{t(($) => $.design_proposal.review_title)}</h2>
-          {versions.length > 1 && (
-            <select
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-              value={versionIdx}
-              onChange={(e) => setVersionIdx(Number(e.target.value))}
-              aria-label={t(($) => $.design_proposal.revision)}
-            >
-              {versions.map((_, i) => (
-                <option key={i} value={i}>
-                  {t(($) => $.design_proposal.revision)} v{i + 1}
-                  {i === versions.length - 1 ? " ✓" : ""}
-                </option>
-              ))}
-            </select>
-          )}
+        <div className="shrink-0 border-b border-border bg-muted/20 px-5 py-4 pr-14 sm:px-6 sm:py-5 sm:pr-14">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-violet-500 shadow-xs">
+                <Palette className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="text-base font-semibold leading-6 text-pretty">
+                  {t(($) => $.design_proposal.review_title)}
+                </DialogTitle>
+                <DialogDescription className="mt-0.5 max-w-xl text-xs leading-5 text-pretty">
+                  {t(($) => $.design_proposal.review_description)}
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              {versions.length > 1 ? (
+                <select
+                  className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  value={versionIdx}
+                  onChange={(e) => setVersionIdx(Number(e.target.value))}
+                  aria-label={t(($) => $.design_proposal.revision)}
+                >
+                  {versions.map((_, i) => (
+                    <option key={i} value={i}>
+                      {t(($) => $.design_proposal.revision)} v{i + 1}
+                      {i === versions.length - 1 ? " ✓" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground shadow-xs">
+                  {t(($) => $.design_proposal.revision)} v1
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
           {!proposal ? (
-            <p className="text-sm text-muted-foreground">{t(($) => $.design_proposal.invalid_hint)}</p>
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-5 py-8 text-center">
+              <Palette className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+              <h3 className="mt-3 text-sm font-semibold">{t(($) => $.design_proposal.invalid_title)}</h3>
+              <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground text-pretty">
+                {t(($) => $.design_proposal.invalid_hint)}
+              </p>
+            </div>
           ) : (
             <>
               {version?.parsed.state === "blocked" && (
                 <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
                   {t(($) => $.design_proposal.status_blocked)}
                   {proposal.reason ? ` — ${proposal.reason}` : ""}
+                </div>
+              )}
+
+              {version?.parsed.state === "ok" && !hasReviewContent && (
+                <div className="rounded-xl border border-dashed border-border bg-muted/20 px-5 py-8 text-center">
+                  <Palette className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+                  <h3 className="mt-3 text-sm font-semibold">
+                    {t(($) => $.design_proposal.empty_title)}
+                  </h3>
+                  <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground text-pretty">
+                    {t(($) => $.design_proposal.empty_body)}
+                  </p>
+                </div>
+              )}
+
+              {figmaEmbed && (
+                <section className="overflow-hidden rounded-xl border border-border bg-background shadow-xs">
+                  <div className="flex min-w-0 items-center justify-between gap-4 border-b border-border bg-muted/20 px-4 py-3">
+                    <div className="min-w-0">
+                      <h3 className="text-xs font-semibold">
+                        {t(($) => $.design_proposal.figma_preview)}
+                      </h3>
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {t(($) => $.design_proposal.figma_preview_description)}
+                      </p>
+                    </div>
+                    <a
+                      href={figmaEmbed.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground shadow-xs outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden="true" />
+                      {t(($) => $.figma_links.open_in_figma)}
+                    </a>
+                  </div>
+                  <iframe
+                    src={figmaEmbed.embedUrl}
+                    title={t(($) => $.design_proposal.figma_embed_title)}
+                    allowFullScreen
+                    loading="eager"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    className="h-[min(52dvh,520px)] min-h-80 w-full bg-muted/10"
+                  />
+                </section>
+              )}
+
+              {hasReviewContent && (
+                <div
+                  className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-xl border border-border bg-muted/15"
+                  aria-label={t(($) => $.design_proposal.review_coverage)}
+                >
+                  <ReviewMetric
+                    icon={<Images className="size-3.5" aria-hidden="true" />}
+                    value={proposal.screens.length}
+                    label={t(($) => $.design_proposal.screens)}
+                  />
+                  <ReviewMetric
+                    icon={<Blocks className="size-3.5" aria-hidden="true" />}
+                    value={proposal.components.length}
+                    label={t(($) => $.design_proposal.components)}
+                  />
+                  <ReviewMetric
+                    icon={<ListTree className="size-3.5" aria-hidden="true" />}
+                    value={proposal.sub_issues.length}
+                    label={t(($) => $.design_proposal.sub_issues)}
+                  />
                 </div>
               )}
 
@@ -173,13 +333,16 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {proposal.screens.map((screen, i) => {
                       const att = attachmentFor(screen.render);
+                      const imageUrl = att ? attachmentUrl(att) : "";
                       return (
                         <figure key={i} className="space-y-1">
                           {att ? (
-                            <a href={att.download_url || att.url} target="_blank" rel="noreferrer">
+                            <a href={imageUrl} target="_blank" rel="noreferrer">
                               <img
-                                src={att.download_url || att.url}
+                                src={imageUrl}
                                 alt={screen.name}
+                                width={640}
+                                height={360}
                                 className="aspect-video w-full rounded-md border border-border object-cover"
                               />
                             </a>
@@ -304,32 +467,29 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
                 </section>
               )}
 
-              {proposal.figma.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {proposal.figma.map((f, i) => (
-                    <a
-                      key={i}
-                      href={f.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink className="size-3" /> {t(($) => $.figma_links.open_in_figma)}
-                    </a>
-                  ))}
-                </div>
-              )}
             </>
           )}
         </div>
 
         {/* Triage bar */}
-        <div className="space-y-2 border-t border-border px-5 py-3">
+        <div className="shrink-0 space-y-3 border-t border-border bg-muted/20 px-5 py-4 sm:px-6">
+          <div className="flex items-baseline justify-between gap-3">
+            <label htmlFor="design-review-note" className="text-xs font-medium text-foreground">
+              {t(($) => $.design_proposal.review_note_label)}
+            </label>
+            <span id="design-review-note-hint" className="text-[11px] text-muted-foreground">
+              {t(($) => $.design_proposal.review_note_hint)}
+            </span>
+          </div>
           <Textarea
+            id="design-review-note"
+            name="design-review-note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={t(($) => $.design_proposal.changes_note_placeholder)}
-            className="min-h-[2.5rem] text-xs"
+            autoComplete="off"
+            aria-describedby="design-review-note-hint"
+            className="max-h-32 min-h-16 resize-y bg-background text-xs"
           />
           {supersedePrompt ? (
             <div className="flex items-center justify-between gap-2">
@@ -358,7 +518,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
               </div>
             </div>
           ) : (
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -371,7 +531,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
                   t(($) => $.design_proposal.request_changes)
                 )}
               </Button>
-              <Button size="sm" onClick={() => setConfirmApprove(true)} disabled={!!submitting || !proposal || version?.parsed.state === "blocked"}>
+              <Button size="sm" onClick={() => setConfirmApprove(true)} disabled={!!submitting || !canApprove}>
                 {t(($) => $.design_proposal.approve)}
               </Button>
             </div>
@@ -379,6 +539,16 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReviewMetric({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-center gap-2 px-3 py-2.5 text-xs">
+      <span className="shrink-0 text-muted-foreground">{icon}</span>
+      <span className="font-semibold tabular-nums text-foreground">{value}</span>
+      <span className="truncate text-muted-foreground">{label}</span>
+    </div>
   );
 }
 
