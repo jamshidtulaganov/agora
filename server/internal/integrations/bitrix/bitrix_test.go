@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // --- flexible decoder -------------------------------------------------------
@@ -812,5 +813,77 @@ func TestGetTaskStagesNoKanban(t *testing.T) {
 	}
 	if len(stages) != 0 {
 		t.Fatalf("got %d stages, want 0", len(stages))
+	}
+}
+
+// TestWithinRecencyWindow covers the rolling import window that replaces a
+// hardcoded sprint-group list. The portal creates a sprint group every couple of
+// weeks (Спринт 12 / Sprint(12) / Спринт (13) / Спринт (14) — the last created
+// the same day this was written), so a fixed list silently stops importing the
+// sprint the team just moved to.
+func TestWithinRecencyWindow(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	ts := func(d time.Time) string { return d.Format(time.RFC3339) }
+
+	cases := []struct {
+		name string
+		task *Task
+		days int
+		want bool
+	}{
+		{
+			name: "created inside the window",
+			task: &Task{CreatedAt: ts(now.AddDate(0, 0, -3))},
+			days: 30, want: true,
+		},
+		{
+			name: "old but changed today — active work must not age out",
+			task: &Task{CreatedAt: ts(now.AddDate(0, -6, 0)), ChangedAt: ts(now.AddDate(0, 0, -1))},
+			days: 30, want: true,
+		},
+		{
+			name: "old and untouched",
+			task: &Task{CreatedAt: ts(now.AddDate(0, -6, 0)), ChangedAt: ts(now.AddDate(0, -5, 0))},
+			days: 30, want: false,
+		},
+		{
+			name: "exactly on the cutoff counts as inside",
+			task: &Task{CreatedAt: ts(now.AddDate(0, 0, -30))},
+			days: 30, want: true,
+		},
+		{
+			name: "window disabled imports everything",
+			task: &Task{CreatedAt: ts(now.AddDate(0, -24, 0))},
+			days: 0, want: true,
+		},
+		{
+			name: "negative window is treated as disabled",
+			task: &Task{CreatedAt: ts(now.AddDate(0, -24, 0))},
+			days: -5, want: true,
+		},
+		{
+			// The dates are only present when the caller SELECTed them. Failing
+			// closed here would silently stop importing everything.
+			name: "no parseable dates fails OPEN",
+			task: &Task{},
+			days: 30, want: true,
+		},
+		{
+			name: "unparseable garbage fails OPEN",
+			task: &Task{CreatedAt: "not a date", ChangedAt: "also not"},
+			days: 30, want: true,
+		},
+		{
+			name: "nil task",
+			task: nil,
+			days: 30, want: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := WithinRecencyWindow(c.task, c.days, now); got != c.want {
+				t.Errorf("WithinRecencyWindow(%+v, %d) = %v, want %v", c.task, c.days, got, c.want)
+			}
+		})
 	}
 }

@@ -1,6 +1,9 @@
 package bitrix
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // aiTag is the tag (case-insensitive) that marks a Bitrix task as one Agora
 // should sync. Bitrix stays the task master; only tasks explicitly flagged
@@ -266,4 +269,37 @@ func ResolveWorkspaceSlug(task *Task, cfg RouteConfig) string {
 	}
 
 	return cfg.DefaultSlug
+}
+
+// WithinRecencyWindow reports whether a task counts as current work: created OR
+// last changed within `days` of `now`.
+//
+// Both dates matter. Created-only would drop a task opened two months ago that
+// the team is actively commenting on today; changed-only would be equivalent in
+// practice but reads as an accident. A window is used instead of a sprint-group
+// allowlist because sprint groups are created continuously (Спринт 12, 13, 14 …),
+// so any fixed list is stale within days and silently stops importing the sprint
+// the team just moved to.
+//
+// days <= 0 disables the filter (everything is in scope). A task whose timestamps
+// are BOTH unparseable is treated as in-scope: the dates are only present when the
+// caller SELECTed them, and failing closed there would silently stop importing
+// everything.
+func WithinRecencyWindow(task *Task, days int, now time.Time) bool {
+	if days <= 0 || task == nil {
+		return true
+	}
+	cutoff := now.AddDate(0, 0, -days)
+	created, okCreated := ParseTime(task.CreatedAt)
+	changed, okChanged := ParseTime(task.ChangedAt)
+	if !okCreated && !okChanged {
+		return true
+	}
+	if okCreated && !created.Before(cutoff) {
+		return true
+	}
+	if okChanged && !changed.Before(cutoff) {
+		return true
+	}
+	return false
 }

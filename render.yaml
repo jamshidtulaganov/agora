@@ -84,6 +84,14 @@ services:
         value: 5m
       - key: AGORA_BITRIX_USER_POLL_INTERVAL
         value: 5m
+      # Only current work crosses into Agora: tasks created or changed in the
+      # last 30 days. Deliberately a rolling window rather than a sprint-group
+      # allowlist — the portal opens a new sprint group every couple of weeks
+      # (Спринт 12 / Sprint(12) / Спринт (13) / Спринт (14)), so a fixed list
+      # stops importing the sprint the team just moved to. Tasks that age out are
+      # ARCHIVED, not deleted, and unarchive if they get activity again.
+      - key: AGORA_BITRIX_IMPORT_WINDOW_DAYS
+        value: "30"
       # Status is now two-way: an Agora status change moves the linked task's
       # kanban COLUMN (and aligns coarse STATUS) on the portal. This writes into
       # shared team sprint boards, including for agent-driven status changes.

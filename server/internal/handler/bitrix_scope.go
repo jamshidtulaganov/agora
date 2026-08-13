@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
@@ -61,11 +63,32 @@ func bitrixSyncUserStageRules() (map[string]map[string]bool, error) {
 	return out, nil
 }
 
+// bitrixImportWindowDays is the rolling recency window, in days: only tasks
+// created or changed inside it are current work. 0 (default) disables it.
+//
+// A window rather than a sprint-group allowlist because the portal creates a new
+// sprint group every couple of weeks (Спринт 12, Sprint(12), Спринт (13), Спринт
+// (14) …). A fixed list stops importing the sprint the team just moved to, and
+// nobody notices until work goes missing.
+func bitrixImportWindowDays() int {
+	return config.Int("AGORA_BITRIX_IMPORT_WINDOW_DAYS", 0)
+}
+
 // bitrixTaskInConfiguredScope enforces the personal-user boundary before the
 // task reaches workspace/project routing. Lookup failures fail closed when an
 // allowlist exists: a transient user API failure must not broaden a private
 // sync into another person's work.
+//
+// The recency window is enforced here too, so a task that ages out follows the
+// same path as one that leaves an allowed stage: the caller ARCHIVES the linked
+// issue (history kept, off the active board) instead of deleting it.
 func (h *Handler) bitrixTaskInConfiguredScope(ctx context.Context, task *bitrix.Task, st *bitrixSyncState) bool {
+	if !bitrix.WithinRecencyWindow(task, bitrixImportWindowDays(), time.Now()) {
+		slog.Debug("bitrix sync: task outside the import window",
+			"task_id", task.ID, "created", task.CreatedAt, "changed", task.ChangedAt,
+			"window_days", bitrixImportWindowDays())
+		return false
+	}
 	allowedEmails := bitrixSyncUserEmails()
 	if len(allowedEmails) == 0 {
 		return true

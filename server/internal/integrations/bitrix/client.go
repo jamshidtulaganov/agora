@@ -111,6 +111,10 @@ type Task struct {
 	// about offsets across portals; callers parse with ParseTime.
 	CreatedAt string
 	ClosedAt  string
+	// ChangedAt is the last modification time. It is what makes a recency window
+	// track ACTIVITY rather than age: a task opened months ago but commented on
+	// today is live work, and filtering on CreatedAt alone would drop it.
+	ChangedAt string
 }
 
 // ParseTime parses a Bitrix timestamp, returning ok=false for the empty string
@@ -211,6 +215,8 @@ type rawTask struct {
 	// Lifecycle timestamps — present only when the request SELECTs them.
 	CreatedDate      jsonStr `json:"createdDate"`
 	CreatedDateUpper jsonStr `json:"CREATED_DATE"`
+	ChangedDate      jsonStr `json:"changedDate"`
+	ChangedDateUpper jsonStr `json:"CHANGED_DATE"`
 	ClosedDate       jsonStr `json:"closedDate"`
 	ClosedDateUpper  jsonStr `json:"CLOSED_DATE"`
 	// Task comment CHAT id — newer tasks keep discussion in a chat dialog
@@ -297,6 +303,7 @@ func (rt rawTask) toTask() Task {
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
 		Tags:          []string(tags),
 		CreatedAt:     firstNonEmpty(rt.CreatedDate, rt.CreatedDateUpper),
+		ChangedAt:     firstNonEmpty(rt.ChangedDate, rt.ChangedDateUpper),
 		ClosedAt:      firstNonEmpty(rt.ClosedDate, rt.ClosedDateUpper),
 	}
 }
@@ -459,7 +466,8 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	form.Set("taskId", taskID)
 	// Ask Bitrix to return the fields we map. Bitrix ignores unknown select
 	// entries, so over-asking is safe and forward-compatible.
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "CHAT_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS"} {
+	// CREATED_DATE / CHANGED_DATE drive the import recency window.
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "CHAT_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
 		form.Add("select[]", f)
 	}
 
@@ -636,7 +644,7 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 		if t := strings.TrimSpace(tag); t != "" {
 			form.Set("filter[TAG]", t)
 		}
-		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
 			form.Add("select[]", f)
 		}
 		form.Set("order[ID]", "DESC")

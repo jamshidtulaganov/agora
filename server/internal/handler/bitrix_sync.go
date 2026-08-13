@@ -846,9 +846,14 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 			task.GroupID, h.bitrixTaskGroupName(ctx, task, st))
 		// Bitrix tags → Agora labels (additive; backfills older mirrors too).
 		h.syncBitrixTagsAsLabels(ctx, ws.ID, existing.ID, task)
-		if h.bitrixTaskHasStageRestriction(ctx, task, st) {
+		// Reaching here means the task IS in scope, so undo an earlier
+		// out-of-scope archive. Both gates that archive must be able to unarchive:
+		// a stage-restricted task re-entering its review column, and a dormant task
+		// that got activity and re-entered the recency window. Without the second,
+		// a revived task would stay invisible on the board forever.
+		if h.bitrixTaskHasStageRestriction(ctx, task, st) || bitrixImportWindowDays() > 0 {
 			if err := h.Queries.SetIssueArchived(ctx, db.SetIssueArchivedParams{ID: existing.ID, Archived: false}); err != nil {
-				slog.Warn("bitrix sync: unarchive re-entered review task failed", "task_id", task.ID, "error", err)
+				slog.Warn("bitrix sync: unarchive in-scope task failed", "task_id", task.ID, "error", err)
 			}
 		}
 

@@ -78,6 +78,7 @@ var Registry = []Def{
 	// ---- Bitrix integration --------------------------------------------
 	{Key: "BITRIX_PUSH_STATUS", Kind: KindBool, Category: "Bitrix", Label: "Push status to Bitrix", Description: "Mirror Agora issue status transitions back to the linked Bitrix task."},
 	{Key: "AGORA_BITRIX_ARCHIVE_DONE", Kind: KindBool, Category: "Bitrix", Label: "Archive done Bitrix tasks", Description: "Archive the Bitrix task when its Agora issue is completed."},
+	{Key: "AGORA_BITRIX_IMPORT_WINDOW_DAYS", Kind: KindInt, Category: "Bitrix", Label: "Import window (days)", Description: "Only import Bitrix tasks created or changed within this many days; tasks that age out are archived, not deleted. 0 disables the window."},
 	{Key: "AGORA_BITRIX_USER_POLL_INTERVAL", Kind: KindInt, Category: "Bitrix", Label: "Bitrix user poll interval (s)", Description: "Seconds between per-user Bitrix task imports (0 disables polling).", Default: "0"},
 	{Key: "AGORA_BITRIX_TAG_ALIASES", Kind: KindString, Category: "Bitrix", Label: "Bitrix tag synonyms", Description: "JSON map of canonical tag \u2192 every spelling that means it, e.g. {\"bug\":[\"bug\",\"\u0431\u0430\u0433\",\"BugReport\"]}. Tags are typed by hand in more than one language, so an exact-match filter answers \"how many bugs\" with whichever spelling the asker guessed. Empty uses the built-in defaults."},
 
