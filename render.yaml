@@ -57,9 +57,24 @@ services:
         value: sales-doctor
       - key: BITRIX_TARGET_PROJECT
         value: Bitrix
-      # Bitrix portal EMAIL (one "a": tulaganov). Agora login may differ.
+      # Bitrix portal EMAILs (note "tulaganov" with one "a", and "tojiyev" —
+      # both differ from the Agora logins). Jamshid mirrors in full; Shaxzod
+      # (Bitrix 527, frontend teammate, 79 open tasks) is stage-restricted below
+      # so only the columns Jamshid actually reviews cross into Agora.
       - key: BITRIX_SYNC_USER_EMAILS
-        value: j.tulaganov@salesdoc.io
+        value: j.tulaganov@salesdoc.io,s.tojiyev@salesdoc.io
+      # Per-user column allowlist, keyed by LOWERCASED stage name. Every spelling
+      # in use across the sprint groups must be listed — the match is exact, and
+      # the boards mix "Need Merge"/"Need merge" and carry the typo "Ready fo
+      # release" (149). Names collide across groups once lowercased, so one entry
+      # covers the same column in every sprint.
+      - key: BITRIX_SYNC_USER_STAGE_RULES
+        value: '{"s.tojiyev@salesdoc.io":["code review","in code review","review","need merge","нужен merge"]}'
+      # Squad that owns stage-restricted review work (Shaxzod's tasks land here
+      # instead of on him, so the agent review flow picks them up). Workspace-
+      # specific UUID — set in the Render dashboard, not committed.
+      - key: BITRIX_REVIEW_SQUAD_ID
+        sync: false
       - key: BITRIX_PROVISION_ASSIGNEES
         value: "true"
       # Webhooks provide real-time sync; polling reconciles missed deliveries.
@@ -67,10 +82,15 @@ services:
         value: 5m
       - key: AGORA_BITRIX_USER_POLL_INTERVAL
         value: 5m
-      # Bitrix owns task state. Only Jamshid-authored comments/files mirror
-      # outbound; agent and system activity stays private inside Agora.
+      # Status is now two-way: an Agora status change moves the linked task's
+      # kanban COLUMN (and aligns coarse STATUS) on the portal. This writes into
+      # shared team sprint boards, including for agent-driven status changes.
+      # It is in the config registry, so Settings → Configs → Bitrix is the
+      # instant kill switch — no redeploy needed to turn it back off.
+      # Only Jamshid-authored comments/files mirror outbound; agent and system
+      # activity stays private inside Agora.
       - key: BITRIX_PUSH_STATUS
-        value: "false"
+        value: "true"
       - key: BITRIX_PUSH_SYSTEM_COMMENTS
         value: "false"
       - key: BITRIX_PUSH_HUMAN_COMMENTS
