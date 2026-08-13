@@ -29,7 +29,7 @@ var (
 	// Conservative: strip only known leftover bbcode tags, not arbitrary
 	// "[word]" — otherwise it would eat the "[text]" of a converted markdown
 	// link (RE2 has no lookahead to exclude a following "(").
-	bbLeftover = regexp.MustCompile(`(?i)\[/?(?:color|size|font|center|right|left|justify|quote|code|table|thead|tbody|tr|td|th|spoiler|video|h[1-6]|sub|sup|hr|attach|attachment|cut|p)(=[^\]]*)?\]`)
+	bbLeftover   = regexp.MustCompile(`(?i)\[/?(?:color|size|font|center|right|left|justify|quote|code|table|thead|tbody|tr|td|th|spoiler|video|h[1-6]|sub|sup|hr|attach|attachment|cut|p)(=[^\]]*)?\]`)
 	bbBlankLines = regexp.MustCompile(`\n{3,}`)
 	// Markdown link target that is root-relative ("](/crm/deal/details/19951/)").
 	// Bitrix writes portal-internal links without an origin, so these arrive as
