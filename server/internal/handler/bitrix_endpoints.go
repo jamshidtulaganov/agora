@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -933,4 +934,175 @@ func (h *Handler) cleanupClosedBitrixIssues(ctx context.Context, wsID pgtype.UUI
 		deleted++
 	}
 	return deleted, nil
+}
+
+// --- POST /api/bitrix/relink ------------------------------------------------
+
+// bitrixTruthyParam reads a query flag with the same vocabulary the Bitrix env
+// flags accept, so "?dry_run=true" and "?dry_run=1" behave identically.
+func bitrixTruthyParam(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// BitrixRelinkResponse reports the backfill of portal-relative links.
+type BitrixRelinkResponse struct {
+	DryRun          bool `json:"dry_run"`
+	IssuesScanned   int  `json:"issues_scanned"`
+	IssuesUpdated   int  `json:"issues_updated"`
+	CommentsScanned int  `json:"comments_scanned"`
+	CommentsUpdated int  `json:"comments_updated"`
+}
+
+// RelinkBitrixPortalLinks rewrites root-relative Bitrix links already stored in
+// issue descriptions and comments onto the portal origin.
+//
+// The importer fix only affects NEW conversions: re-sync reconciles status and
+// assignee but never rewrites a description, and comment import dedups on
+// bitrix_comment_id, so content imported before the fix keeps links like
+// "](/workgroups/group/105/)" — which the desktop router resolves as an app route
+// and answers 404.
+//
+// Idempotent: it rewrites only what still matches, so a second run reports zero
+// updates. Pass ?dry_run=1 to count without writing.
+func (h *Handler) RelinkBitrixPortalLinks(w http.ResponseWriter, r *http.Request) {
+	if !h.requireBitrixOperator(w, r) {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+	origin := bitrix.PortalOrigin(bitrixWebhookURL())
+	if origin == "" {
+		writeError(w, http.StatusServiceUnavailable, "bitrix portal origin unavailable")
+		return
+	}
+	dryRun := bitrixTruthyParam(r.URL.Query().Get("dry_run"))
+
+	cfg := bitrixRouteConfig()
+	slugs := map[string]bool{}
+	if s := strings.ToLower(strings.TrimSpace(cfg.DefaultSlug)); s != "" {
+		slugs[s] = true
+	}
+	for _, s := range cfg.GroupMap {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			slugs[s] = true
+		}
+	}
+	if s := strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_SYNC_WORKSPACE_SLUG"))); s != "" {
+		slugs[s] = true
+	}
+
+	resp := BitrixRelinkResponse{DryRun: dryRun}
+	for slug := range slugs {
+		ws, err := h.Queries.GetWorkspaceBySlug(r.Context(), slug)
+		if err != nil {
+			continue
+		}
+		if err := h.relinkBitrixWorkspace(r.Context(), ws.ID, origin, dryRun, &resp); err != nil {
+			slog.Warn("bitrix relink failed", "workspace", slug, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to relink bitrix content: "+err.Error())
+			return
+		}
+	}
+	slog.Info("bitrix relink complete",
+		"dry_run", dryRun, "issues_updated", resp.IssuesUpdated, "comments_updated", resp.CommentsUpdated)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// relinkBitrixWorkspace rewrites one workspace's Bitrix-linked issues + their
+// comments. Scoped to issues carrying bitrix_task_id so native Agora content is
+// never touched, and pre-filtered on "](/" in SQL so the scan stays cheap.
+func (h *Handler) relinkBitrixWorkspace(ctx context.Context, wsID pgtype.UUID, origin string, dryRun bool, resp *BitrixRelinkResponse) error {
+	type row struct {
+		id   pgtype.UUID
+		text string
+	}
+
+	issueRows, err := h.DB.Query(ctx,
+		`SELECT id, description FROM issue
+		  WHERE workspace_id = $1 AND metadata ? $2
+		    AND description LIKE '%](/%'`,
+		wsID, bitrixTaskIDMetaKey)
+	if err != nil {
+		return err
+	}
+	var issues []row
+	for issueRows.Next() {
+		var it row
+		var desc pgtype.Text
+		if err := issueRows.Scan(&it.id, &desc); err != nil {
+			issueRows.Close()
+			return err
+		}
+		it.text = desc.String
+		issues = append(issues, it)
+	}
+	issueRows.Close()
+	if err := issueRows.Err(); err != nil {
+		return err
+	}
+
+	for _, it := range issues {
+		resp.IssuesScanned++
+		next := bitrix.AbsolutizePortalLinks(it.text, origin)
+		if next == it.text {
+			continue
+		}
+		resp.IssuesUpdated++
+		if dryRun {
+			continue
+		}
+		if _, err := h.DB.Exec(ctx,
+			`UPDATE issue SET description = $1, updated_at = now() WHERE id = $2 AND workspace_id = $3`,
+			next, it.id, wsID); err != nil {
+			return err
+		}
+	}
+
+	commentRows, err := h.DB.Query(ctx,
+		`SELECT c.id, c.content FROM comment c
+		   JOIN issue i ON i.id = c.issue_id
+		  WHERE i.workspace_id = $1 AND i.metadata ? $2
+		    AND c.content LIKE '%](/%'`,
+		wsID, bitrixTaskIDMetaKey)
+	if err != nil {
+		return err
+	}
+	var comments []row
+	for commentRows.Next() {
+		var ct row
+		if err := commentRows.Scan(&ct.id, &ct.text); err != nil {
+			commentRows.Close()
+			return err
+		}
+		comments = append(comments, ct)
+	}
+	commentRows.Close()
+	if err := commentRows.Err(); err != nil {
+		return err
+	}
+
+	for _, ct := range comments {
+		resp.CommentsScanned++
+		next := bitrix.AbsolutizePortalLinks(ct.text, origin)
+		if next == ct.text {
+			continue
+		}
+		resp.CommentsUpdated++
+		if dryRun {
+			continue
+		}
+		if _, err := h.DB.Exec(ctx,
+			`UPDATE comment SET content = $1, updated_at = now() WHERE id = $2`,
+			next, ct.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

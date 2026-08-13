@@ -675,6 +675,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/bitrix/import/cancel", h.CancelBitrixImport)
 		// Operator one-shot: delete Bitrix-mirrored issues already in done/cancelled.
 		r.Post("/api/bitrix/cleanup-done", h.CleanupBitrixDoneIssues)
+		// Backfill: rewrite portal-relative links already stored in imported
+		// descriptions/comments onto the portal origin. ?dry_run=1 counts only.
+		r.Post("/api/bitrix/relink", h.RelinkBitrixPortalLinks)
 		r.Post("/api/bitrix/register-webhook", h.RegisterBitrixWebhook)
 
 		// SD: Zoho Projects importer (Phase 1, one-way Zoho -> Agora). Unlike

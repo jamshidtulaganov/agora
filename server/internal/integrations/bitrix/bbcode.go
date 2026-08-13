@@ -60,10 +60,15 @@ func PortalOrigin(webhookURL string) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// absolutizePortalLinks rewrites root-relative markdown link targets onto the
+// AbsolutizePortalLinks rewrites root-relative markdown link targets onto the
 // portal origin so they open in Bitrix instead of being resolved as app routes.
 // A blank origin (Bitrix not configured) returns the input untouched.
-func absolutizePortalLinks(s, portalOrigin string) string {
+//
+// Exported because the backfill of already-imported content MUST use the same
+// implementation as the importer. A second regex written for the migration would
+// be free to drift from this one, and the two disagreeing is precisely the bug
+// that would go unnoticed.
+func AbsolutizePortalLinks(s, portalOrigin string) string {
 	origin := strings.TrimRight(strings.TrimSpace(portalOrigin), "/")
 	if origin == "" || !strings.Contains(s, "](/") {
 		return s
@@ -94,7 +99,7 @@ func absolutizePortalLinks(s, portalOrigin string) string {
 // relative link (the common short-comment case).
 func BBCodeToMarkdown(s, portalOrigin string) string {
 	if !strings.Contains(s, "[") {
-		return absolutizePortalLinks(s, portalOrigin)
+		return AbsolutizePortalLinks(s, portalOrigin)
 	}
 	// Content-bearing tags first (capture inner text / target).
 	s = bbURLLabeled.ReplaceAllString(s, "[$2]($1)")
@@ -119,6 +124,6 @@ func BBCodeToMarkdown(s, portalOrigin string) string {
 	s = bbBlankLines.ReplaceAllString(s, "\n\n")
 	// Last: the [url=...] conversion above has produced the markdown links whose
 	// targets need absolutizing.
-	s = absolutizePortalLinks(s, portalOrigin)
+	s = AbsolutizePortalLinks(s, portalOrigin)
 	return strings.TrimSpace(s)
 }

@@ -116,3 +116,22 @@ func TestPortalOrigin(t *testing.T) {
 		}
 	}
 }
+
+// TestAbsolutizePortalLinksIsIdempotent is what makes the backfill safe to run
+// more than once: the second pass must find nothing left to rewrite, and must not
+// stack origins into "https://host/https://host/...".
+func TestAbsolutizePortalLinksIsIdempotent(t *testing.T) {
+	const origin = "https://salesdoc.bitrix24.kz"
+	in := "[a](/workgroups/group/105/) and [b](/crm/deal/details/1/) and [c](/uploads/ws/x.mp4)"
+	once := AbsolutizePortalLinks(in, origin)
+	twice := AbsolutizePortalLinks(once, origin)
+	if once != twice {
+		t.Errorf("not idempotent:\n once = %q\ntwice = %q", once, twice)
+	}
+	if strings.Count(once, origin) != 2 {
+		t.Errorf("expected exactly 2 rewrites, got %q", once)
+	}
+	if !strings.Contains(once, "](/uploads/ws/x.mp4)") {
+		t.Errorf("Agora upload path was rewritten: %q", once)
+	}
+}
