@@ -9,9 +9,9 @@ import { issueKeys, issueDetailOptions, issueTimelineOptions } from "@agora/core
 import { useWorkspaceId } from "@agora/core/hooks";
 import { figmaRefsFrom } from "@agora/core/figma";
 import { extractDesignProposals } from "@agora/core/design";
-import type { Attachment } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import { DesignReviewDialog, type DesignProposalVersion } from "./design-review-dialog";
+import { designProposalAttachments } from "./design-proposal-attachments";
 import { useT } from "../../i18n";
 
 // Sidebar section for the design stage: when an issue references a Figma design
@@ -35,8 +35,9 @@ export function DesignProposalSection({ issueId }: { issueId: string }) {
 
   // Map comment timeline entries into the shape the extractor reads (it keys on
   // author_type/author_id; timeline entries carry actor_type/actor_id), and
-  // keep each entry's attachments so the review dialog can resolve screen
-  // renders by filename.
+  // keep the issue timeline so the review dialog can resolve screen renders by
+  // filename. A schema-correction revision may intentionally reuse evidence
+  // attached to an earlier proposal comment.
   const { versions, latestState } = useMemo(() => {
     const comments = timeline
       .filter((e) => e.type === "comment")
@@ -47,14 +48,10 @@ export function DesignProposalSection({ issueId }: { issueId: string }) {
         content: e.content ?? "",
         created_at: e.created_at,
       }));
-    const attachmentsByComment = new Map<string, Attachment[]>();
-    for (const e of timeline) {
-      if (e.type === "comment" && e.attachments) attachmentsByComment.set(e.id, e.attachments);
-    }
     const parsed = extractDesignProposals(comments);
     const vers: DesignProposalVersion[] = parsed.map((p) => ({
       parsed: p,
-      attachments: attachmentsByComment.get(p.commentId) ?? [],
+      attachments: designProposalAttachments(timeline, p.commentId, p.createdAt),
     }));
     return { versions: vers, latestState: parsed.length ? parsed[parsed.length - 1]!.state : null };
   }, [timeline]);
@@ -137,7 +134,7 @@ export function DesignProposalSection({ issueId }: { issueId: string }) {
         )}
 
         <div className="flex flex-wrap gap-1.5">
-          {latestState === "ok" && (
+          {versions.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => setReviewOpen(true)}>
               {t(($) => $.design_proposal.open_review)}
             </Button>
