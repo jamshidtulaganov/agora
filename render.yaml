@@ -71,10 +71,12 @@ services:
       - key: BITRIX_SYNC_USER_STAGE_RULES
         value: '{"s.tojiyev@salesdoc.io":["code review","in code review","review","need merge","нужен merge"]}'
       # Squad that owns stage-restricted review work (Shaxzod's tasks land here
-      # instead of on him, so the agent review flow picks them up). Workspace-
-      # specific UUID — set in the Render dashboard, not committed.
+      # instead of on him, so the agent review flow picks them up). This is the
+      # "Shaxzod Code Review" squad in the sales-doctor workspace. Not a secret —
+      # an internal row id — so it lives here rather than in the dashboard, which
+      # keeps the blueprint reproducible.
       - key: BITRIX_REVIEW_SQUAD_ID
-        sync: false
+        value: 9b2c64b6-9167-49bd-b0b4-302c2ee60e3e
       - key: BITRIX_PROVISION_ASSIGNEES
         value: "true"
       # Webhooks provide real-time sync; polling reconciles missed deliveries.
