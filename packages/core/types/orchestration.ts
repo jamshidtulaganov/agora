@@ -11,6 +11,16 @@ export type OrchestrationRunStatus =
 export type ExecutionStrategy = "human" | "solo" | "squad" | "custom";
 export type ProgressionPolicy = "automatic" | "gated" | "manual";
 export type ModelRoutingMode = "pinned" | "cost" | "balanced" | "intelligence";
+export type TaskExecutionLevel = "assist" | "direct" | "standard" | "coordinated" | "controlled";
+export type TaskExecutionLevelPreference = "auto" | TaskExecutionLevel;
+
+export interface TaskExecutionLevelResolution {
+  requested: TaskExecutionLevelPreference;
+  resolved: TaskExecutionLevel;
+  policy_version: number;
+  score: number;
+  signals: string[];
+}
 
 export type OrchestrationStepStatus =
   | "pending"
@@ -150,6 +160,7 @@ export interface SquadRosterPolicyEntry {
 }
 
 export interface OrchestrationPolicy extends Record<string, unknown> {
+  task_level?: TaskExecutionLevelResolution;
   max_concurrency?: number;
   parallel_workers?: number;
   plan_shape?: "lean" | "full" | "custom";
@@ -246,6 +257,7 @@ export interface CreateOrchestrationStepRequest {
 }
 
 export interface CreateOrchestrationRequest {
+  execution_level?: TaskExecutionLevelPreference;
   execution_strategy?: ExecutionStrategy;
   progression_policy?: ProgressionPolicy;
   model_routing_mode?: ModelRoutingMode;

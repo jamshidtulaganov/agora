@@ -11,16 +11,18 @@ import {
   useUpdateProject,
 } from "@agora/core/projects/mutations";
 import { useWorkspaceId } from "@agora/core/hooks";
-import type { ProjectOrchestrationDefaults } from "@agora/core/types";
+import type { ProjectOrchestrationDefaults, TaskExecutionLevelPreference } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Input } from "@agora/ui/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native-select";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { ProjectPipelineSection } from "./project-pipeline-section";
 import { ProjectQASection } from "./project-qa-section";
 
 const BUILT_IN_DEFAULTS: ProjectOrchestrationDefaults = {
+  execution_level: "auto",
   execution_strategy: "automatic",
   progression_policy: "automatic",
   max_concurrency: 3,
@@ -45,6 +47,7 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
   const setProjectConfig = useSetProjectConfig(projectId);
   const resetProjectConfig = useResetProjectConfig(projectId);
   const saved = project?.settings.orchestration ?? BUILT_IN_DEFAULTS;
+  const [executionLevel, setExecutionLevel] = useState<TaskExecutionLevelPreference>(saved.execution_level ?? "auto");
   const [progression, setProgression] = useState<ProjectOrchestrationDefaults["progression_policy"]>(saved.progression_policy);
   const [maxConcurrency, setMaxConcurrency] = useState(saved.max_concurrency);
   const [reviewPlanFirst, setReviewPlanFirst] = useState(saved.review_plan_first);
@@ -53,15 +56,17 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
   const autoReview = projectConfig.find((entry) => entry.key === "AGORA_AUTO_REVIEW_ENABLED");
 
   useEffect(() => {
+    setExecutionLevel(saved.execution_level ?? "auto");
     setProgression(saved.progression_policy);
     setMaxConcurrency(saved.max_concurrency);
     setReviewPlanFirst(saved.review_plan_first);
     setModelRouting(saved.model_routing_mode ?? "pinned");
-  }, [saved.progression_policy, saved.max_concurrency, saved.review_plan_first, saved.model_routing_mode]);
+  }, [saved.execution_level, saved.progression_policy, saved.max_concurrency, saved.review_plan_first, saved.model_routing_mode]);
 
   const save = async () => {
     if (!project) return;
     const orchestration: ProjectOrchestrationDefaults = {
+      execution_level: executionLevel,
       // Kept for wire compatibility. Run topology is derived from the issue
       // assignee (agent=solo, squad=squad, member/unassigned=human).
       execution_strategy: "automatic",
@@ -124,6 +129,26 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             {t(($) => $.execution_defaults.description)}
           </p>
+
+          <label className="block text-xs">
+            <span className="font-medium">{t(($) => $.execution_defaults.execution_level)}</span>
+            <NativeSelect
+              aria-label={t(($) => $.execution_defaults.execution_level)}
+              value={executionLevel}
+              onChange={(event) => setExecutionLevel(event.target.value as TaskExecutionLevelPreference)}
+              size="sm"
+              className="mt-1.5 w-full text-xs"
+            >
+              {(["auto", "assist", "direct", "standard", "coordinated", "controlled"] as const).map((level) => (
+                <NativeSelectOption key={level} value={level}>
+                  {t(($) => $.execution_defaults[`level_${level}`])}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">
+              {t(($) => $.execution_defaults.execution_level_hint)}
+            </span>
+          </label>
 
           <div className="overflow-hidden rounded-lg border bg-muted/15">
             <StaticStageRow

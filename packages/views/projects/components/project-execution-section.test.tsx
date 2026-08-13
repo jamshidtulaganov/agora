@@ -18,6 +18,7 @@ vi.mock("@agora/core/projects/queries", () => ({
       id: "p-1",
       settings: {
         orchestration: {
+          execution_level: "auto",
           execution_strategy: "automatic",
           progression_policy: "automatic",
           max_concurrency: 3,
@@ -85,6 +86,7 @@ describe("ProjectExecutionSection", () => {
     await user.click(screen.getByRole("button", { name: /workflow/i }));
 
     expect(await screen.findByText("Build")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Default execution level" })).toHaveValue("auto");
     expect(screen.getByText("QA")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.getByText("Release")).toBeInTheDocument();

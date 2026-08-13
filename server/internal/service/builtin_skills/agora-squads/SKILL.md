@@ -379,6 +379,9 @@ subagents are unsupported: use DAG steps. A started run is the sole dispatcher.
 Generated DAGs are adaptive: cohesive issues use a lean four-step path; broad
 work keeps parallel integration. `orchestration_shape=lean|full` overrides it.
 
+New runs persist an `auto`-resolved `assist` through `controlled` execution level in
+`policy.task_level`; see [source map](references/squad-source-map.md) for its safety and planning contract.
+
 **Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
 squads per unit of work — one dev squad, one QA squad — each with its own
 leader. Neither leader is subordinate to the other. The main rule: **the two

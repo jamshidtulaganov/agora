@@ -24,6 +24,7 @@ type orchestrationPlanRequest struct {
 	// Mode is the deprecated auto/manual alias. New callers send the two
 	// orthogonal fields below: who executes and how ready work advances.
 	Mode              string `json:"mode"`
+	ExecutionLevel    string `json:"execution_level"`
 	ExecutionStrategy string `json:"execution_strategy"`
 	ProgressionPolicy string `json:"progression_policy"`
 	ModelRoutingMode  string `json:"model_routing_mode"`
@@ -36,6 +37,7 @@ type orchestrationPlanRequest struct {
 }
 
 type projectOrchestrationDefaults struct {
+	ExecutionLevel    string `json:"execution_level"`
 	ExecutionStrategy string `json:"execution_strategy"`
 	ProgressionPolicy string `json:"progression_policy"`
 	MaxConcurrency    int    `json:"max_concurrency"`
@@ -65,6 +67,7 @@ func (h *Handler) orchestrationDefaultsForIssue(ctx context.Context, issue db.Is
 		return projectOrchestrationDefaults{}
 	}
 	defaults := settings.Orchestration
+	defaults.ExecutionLevel = normalizeTaskExecutionLevel(defaults.ExecutionLevel)
 	defaults.ExecutionStrategy = strings.ToLower(strings.TrimSpace(defaults.ExecutionStrategy))
 	if defaults.ExecutionStrategy != "automatic" && !validExecutionStrategy(defaults.ExecutionStrategy) {
 		defaults.ExecutionStrategy = ""
@@ -1456,6 +1459,13 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 }
 
 func defaultOrchestrationStepsWithMembersAndAutomation(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember, configuredConcurrency int, autoQA, autoReview bool) []orchestrationStepRequest {
+	return defaultOrchestrationStepsForExecutionLevel(issue, routing, strategy, members, configuredConcurrency, autoQA, autoReview, "standard")
+}
+
+func defaultOrchestrationStepsForExecutionLevel(issue db.Issue, routing orchestrationRouting, strategy string, members []orchestrationPlannerMember, configuredConcurrency int, autoQA, autoReview bool, executionLevel string) []orchestrationStepRequest {
+	if executionLevel == "assist" {
+		return assistOrchestrationSteps(routing, strategy)
+	}
 	controller := routing.ControllerAgent
 	development := routing.DevelopmentAgent
 	if !development.Valid {
@@ -1538,7 +1548,7 @@ func defaultOrchestrationStepsWithMembersAndAutomation(issue db.Issue, routing o
 	if len(workers) == 0 {
 		workers = []orchestrationPlannerMember{{AgentID: development, Role: "implementation"}}
 	}
-	planShape := inferSquadPlanShape(issue)
+	planShape := planShapeForTaskExecutionLevel(issue, executionLevel)
 	// Lean plans stay lean regardless of whether verification is automated or
 	// human-gated. Otherwise disabling auto-QA/review unexpectedly expands a
 	// cohesive task across every development specialist and adds an integration
@@ -1727,6 +1737,16 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	projectDefaults := h.orchestrationDefaultsForIssue(r.Context(), issue)
+	if strings.TrimSpace(req.ExecutionLevel) != "" && normalizeTaskExecutionLevel(req.ExecutionLevel) == "" {
+		writeError(w, http.StatusBadRequest, "execution_level must be auto, assist, direct, standard, coordinated, or controlled")
+		return
+	}
+	requestedExecutionLevel := req.ExecutionLevel
+	if strings.TrimSpace(requestedExecutionLevel) == "" {
+		requestedExecutionLevel = projectDefaults.ExecutionLevel
+	}
+	taskLevel := resolveTaskExecutionLevel(issue, requestedExecutionLevel)
+	levelDefaults := defaultsForTaskExecutionLevel(taskLevel.Resolved)
 	if strings.TrimSpace(req.ModelRoutingMode) != "" && normalizeModelRoutingMode(req.ModelRoutingMode) == "" {
 		writeError(w, http.StatusBadRequest, "model_routing_mode must be pinned, cost, balanced, or intelligence")
 		return
@@ -1739,7 +1759,12 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "mode must be auto or manual")
 		return
 	}
-	progressionPolicy := progressionPolicyForIssue(issue, req.ProgressionPolicy, req.Mode, projectDefaults.ProgressionPolicy)
+	projectProgressionPolicy := projectDefaults.ProgressionPolicy
+	if projectProgressionPolicy == "" {
+		projectProgressionPolicy = levelDefaults.ProgressionPolicy
+	}
+	progressionPolicy := progressionPolicyForIssue(issue, req.ProgressionPolicy, req.Mode, projectProgressionPolicy)
+	progressionPolicy = progressionForTaskExecutionLevel(taskLevel.Resolved, progressionPolicy)
 	if progressionPolicy == "" {
 		writeError(w, http.StatusBadRequest, "progression_policy must be automatic, gated, or manual")
 		return
@@ -1811,9 +1836,13 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "squad_id is required when the issue is not assigned to a squad")
 		return
 	}
+	projectModelRoutingMode := projectDefaults.ModelRoutingMode
+	if projectModelRoutingMode == "" {
+		projectModelRoutingMode = levelDefaults.ModelRoutingMode
+	}
 	modelRoutingMode := resolveModelRoutingMode(
 		req.ModelRoutingMode,
-		projectDefaults.ModelRoutingMode,
+		projectModelRoutingMode,
 		h.squadModelRoutingMode(r.Context(), issue, routing, executionStrategy),
 	)
 	plannerMembers := []orchestrationPlannerMember(nil)
@@ -1836,7 +1865,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		}
 		plannerMembers = h.orchestrationPlannerMembers(r.Context(), issue, routing, executionStrategy)
 	}
-	configuredConcurrency := 3
+	configuredConcurrency := levelDefaults.MaxConcurrency
 	if projectDefaults.MaxConcurrency > 0 {
 		configuredConcurrency = projectDefaults.MaxConcurrency
 	}
@@ -1848,9 +1877,9 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	autoQA := h.autoQAEnabled(r.Context(), issue)
 	autoReview := h.autoReviewEnabled(r.Context(), issue)
 	if !hasCustomPlan {
-		req.Steps = defaultOrchestrationStepsWithMembersAndAutomation(
+		req.Steps = defaultOrchestrationStepsForExecutionLevel(
 			issue, routing, executionStrategy, plannerMembers, configuredConcurrency,
-			autoQA, autoReview,
+			autoQA, autoReview, taskLevel.Resolved,
 		)
 	}
 	if len(req.Steps) > 20 {
@@ -1948,6 +1977,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	req.Policy["owner_type"] = routing.OwnerType
 	req.Policy["owner_id"] = uuidToString(routing.OwnerID)
 	req.Policy["controller_agent_id"] = uuidToString(routing.ControllerAgent)
+	req.Policy["task_level"] = taskLevel
 	req.Policy["execution_strategy"] = executionStrategy
 	req.Policy["progression_policy"] = progressionPolicy
 	req.Policy["model_routing"] = orchestrationModelRoutingPolicy{
@@ -1969,7 +1999,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		if hasCustomPlan {
 			req.Policy["plan_shape"] = "custom"
 		} else {
-			req.Policy["plan_shape"] = inferSquadPlanShape(issue)
+			req.Policy["plan_shape"] = planShapeForTaskExecutionLevel(issue, taskLevel.Resolved)
 		}
 		if roster := buildSquadRosterPolicy(plannerMembers); len(roster) > 0 {
 			req.Policy["squad_roster"] = roster
@@ -1987,12 +2017,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	} else if _, configured := req.Policy["max_concurrency"]; !configured {
 		req.Policy["max_concurrency"] = configuredConcurrency
 	}
-	autoStart := true
-	if req.AutoStart != nil {
-		autoStart = *req.AutoStart
-	} else if projectDefaults.ReviewPlanFirst != nil {
-		autoStart = !*projectDefaults.ReviewPlanFirst
-	}
+	autoStart := autoStartForTaskExecutionLevel(taskLevel.Resolved, req.AutoStart, projectDefaults.ReviewPlanFirst)
 	req.Policy[manualDispatchAuthorizationPolicyKey] = progressionPolicy != "manual" || autoStart
 	policy, _ := json.Marshal(req.Policy)
 	takenOverTasks := 0
@@ -2170,7 +2195,10 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	if autoStart {
 		planEvent = "plan_created"
 	}
-	eventDetails, _ := json.Marshal(map[string]any{"steps": len(req.Steps), "taken_over_tasks": takenOverTasks})
+	eventDetails, _ := json.Marshal(map[string]any{
+		"steps": len(req.Steps), "taken_over_tasks": takenOverTasks,
+		"execution_level": taskLevel.Resolved, "execution_level_requested": taskLevel.Requested,
+	})
 	planCreatedEvent, err := qtx.CreateOrchestrationEvent(r.Context(), db.CreateOrchestrationEventParams{
 		RunID: run.ID, Kind: planEvent, ActorType: "member", ActorID: parseUUID(userID), Details: eventDetails,
 	})

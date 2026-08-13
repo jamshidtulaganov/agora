@@ -113,6 +113,12 @@ Adaptive persisted-run topology is implemented in
 `server/internal/handler/orchestration.go` (`inferSquadPlanShape`,
 `leanSquadWorker`, `defaultOrchestrationStepsWithMembers`). The selected
 `lean|full|custom` shape is stored in run policy as `plan_shape`.
+Execution-level classification, safety floors, and preset defaults are in
+`server/internal/handler/orchestration_level.go`; the versioned resolution is
+stored in run policy as `task_level`. The issue selector and resolved-level
+audit display live in `packages/views/issues/components/issue-execution.tsx`,
+and project inheritance is configured in
+`packages/views/projects/components/project-execution-section.tsx`.
 QA/review topology also follows the effective project-scoped
 `AGORA_AUTO_QA_ENABLED` and `AGORA_AUTO_REVIEW_ENABLED` values. Disabled
 automation becomes an unrouted human approval checkpoint; approving it
@@ -521,6 +527,7 @@ server/migrations/170_orchestration_step_capability.up.sql
 server/migrations/187_orchestration_thinking_override.up.sql
 server/pkg/db/queries/orchestration.sql
 server/internal/handler/orchestration.go
+server/internal/handler/orchestration_level.go       # execution-level resolution, presets, and safety floors
 server/internal/handler/orchestration_model_routing.go # provider profiles, risk/scope policy, audit decisions
 packages/views/squads/components/squad-detail-page.tsx # squad Auto models switch
 server/internal/service/task.go              # orchestration task snapshot + terminal callback
@@ -565,8 +572,9 @@ Contracts:
   and fallback paths from creating a second competing attempt; stale sweeps
   and daemon orphan recovery re-enter the orchestration terminal callback;
 - run topology follows the issue assignee; project defaults supply progression,
-  Squad DAG concurrency, and plan review, while explicit issue-run fields remain
-  one-run overrides;
+  execution level, Squad DAG concurrency, and plan review, while explicit
+  issue-run fields remain one-run overrides; the resolved execution level can
+  raise safety but cannot silently change the run owner;
 - runtime-native subagents are forbidden inside persisted runs; parallel work
   is observable only when represented by versioned DAG steps;
 - a started run is the sole dispatcher: issue reassignment, backlog promotion,

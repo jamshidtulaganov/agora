@@ -147,6 +147,23 @@ describe("IssueExecution idle surface", () => {
     });
   });
 
+  it("sends an explicit execution-level override while leaving topology automatic", async () => {
+    renderExecution();
+    fireEvent.click(await screen.findByRole("button", { name: "Customize" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Execution level" }), {
+      target: { value: "controlled" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Build and run" }));
+
+    await waitFor(() => {
+      expect(mocks.createIssueOrchestration).toHaveBeenCalledWith("issue-1", {
+        auto_start: true,
+        execution_level: "controlled",
+        progression_policy: "gated",
+      });
+    });
+  });
+
   it("does not allow Customize to overwrite defaults while the project is loading", async () => {
     let resolveProject!: (value: unknown) => void;
     mocks.getProject.mockReturnValue(new Promise((resolve) => { resolveProject = resolve; }));
@@ -177,7 +194,15 @@ describe("IssueExecution orchestration response", () => {
       mode: "auto",
       execution_strategy: "solo",
       progression_policy: "automatic",
-      policy: {},
+      policy: {
+        task_level: {
+          requested: "auto",
+          resolved: "coordinated",
+          policy_version: 1,
+          score: 5,
+          signals: ["frontend_and_backend"],
+        },
+      },
       owner_type: "agent",
       base_git_states: [],
       execution_mode: "direct",
@@ -248,6 +273,15 @@ describe("IssueExecution orchestration response", () => {
         { question_id: "question-2", message: "Use v2." },
       );
     });
+  });
+
+  it("shows the resolved execution level and its reasons", async () => {
+    renderExecution();
+
+    expect(await screen.findByText("T3 · Coordinated")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(await screen.findByText("Resolved automatically")).toBeInTheDocument();
+    expect(screen.getByText("Signals: frontend and backend")).toBeInTheDocument();
   });
 
   it("shows one human action on the issue and keeps raw failures in Details", async () => {
