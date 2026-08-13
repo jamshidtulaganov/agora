@@ -52,7 +52,7 @@ import { IssueActionsDropdown, useIssueActions } from "../actions";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
-import { BitrixAssigneeChip, BitrixTaskLink, BitrixSummaryAction } from "../../bitrix";
+import { BitrixAssigneeChip, BitrixTaskLink, BitrixProjectChip, BitrixSummaryAction } from "../../bitrix";
 import { CommentCard } from "./comment-card";
 import { CollapsibleDescription } from "./collapsible-description";
 import { CommentInput } from "./comment-input";
@@ -1397,6 +1397,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     <BitrixAssigneeChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
                   )}
                   <BitrixTaskLink metadata={issue.metadata as Record<string, unknown> | null | undefined} />
+                  <BitrixProjectChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
                   <BitrixSummaryAction
                     issueId={id}
                     metadata={issue.metadata as Record<string, unknown> | null | undefined}

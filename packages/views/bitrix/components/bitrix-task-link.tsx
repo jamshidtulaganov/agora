@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 "use client";
 
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { AlertTriangle, ExternalLink, FolderGit2 } from "lucide-react";
 
 // BitrixTaskLink renders a deep link back to the original task in the Bitrix
 // portal, read from the issue's bitrix_task_url metadata (stamped by the import
@@ -48,5 +48,33 @@ export function BitrixTaskLink({
       <span className="truncate">{stage || "Open in Bitrix"}</span>
       {unmapped ? <AlertTriangle className="size-3 shrink-0 text-warning" /> : null}
     </a>
+  );
+}
+
+/**
+ * BitrixProjectChip names the Bitrix workgroup ("Проект") the task came from.
+ *
+ * It reads metadata rather than the Agora project relation because routing is
+ * lossy in both directions: named-project routing files every workgroup under a
+ * single Agora project, and a sprint is only created for groups whose name looks
+ * like a sprint — so the Agora fields cannot answer "which Bitrix project is
+ * this?". Renders nothing for issues that never came from Bitrix, and nothing for
+ * mirrors imported before the group was stamped.
+ */
+export function BitrixProjectChip({
+  metadata,
+}: {
+  metadata?: Record<string, unknown> | null;
+}) {
+  const group = str(metadata, "bitrix_group_name");
+  if (!group) return null;
+  return (
+    <span
+      title={`Bitrix project: ${group}`}
+      className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+    >
+      <FolderGit2 className="size-3 shrink-0" />
+      <span className="truncate">{group}</span>
+    </span>
   );
 }

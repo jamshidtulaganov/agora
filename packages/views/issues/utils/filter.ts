@@ -11,6 +11,12 @@ export interface IssueFilters {
   includeNoProject: boolean;
   labelFilters: string[];
   sprintFilters: string[];
+  /** Bitrix workgroup ids ("projects" in Bitrix's UI) read from issue
+   * metadata. Kept separate from projectFilters because Bitrix routing collapses
+   * every workgroup into one Agora project, and only sprint-named groups get a
+   * sprint — so neither existing dimension can answer "which Bitrix project did
+   * this come from". OR semantics, mirroring labels. */
+  bitrixGroupFilters?: string[];
   // When `agentRunningFilter` is true, only keep issues whose id is in
   // `runningIssueIds`. The set is derived by the caller from
   // `agentTaskSnapshot` (one pass over running tasks) so filter.ts stays
@@ -29,7 +35,7 @@ export interface IssueFilters {
  * - When both → show matching assignees + unassigned
  */
 export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
-  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds } = filters;
+  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, bitrixGroupFilters, agentRunningFilter, runningIssueIds } = filters;
   const hasAssigneeFilter = assigneeFilters.length > 0 || includeNoAssignee;
   const hasProjectFilter = projectFilters.length > 0 || includeNoProject;
   // Empty set passed without `agentRunningFilter` is a no-op. When the
@@ -94,6 +100,15 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
       // OR semantics, mirroring labels. An issue belongs to at most one sprint
       // (`sprint_id`), so this keeps issues whose sprint is in the selected set.
       if (!issue.sprint_id || !sprintFilters.includes(issue.sprint_id))
+        return false;
+    }
+
+    if (bitrixGroupFilters && bitrixGroupFilters.length > 0) {
+      // Metadata is untyped JSON from the API, so read defensively: a non-string
+      // value (or a non-Bitrix issue) simply fails the filter instead of throwing.
+      const groupId = (issue.metadata as Record<string, unknown> | null | undefined)
+        ?.bitrix_group_id;
+      if (typeof groupId !== "string" || !bitrixGroupFilters.includes(groupId))
         return false;
     }
 

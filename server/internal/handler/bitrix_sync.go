@@ -632,10 +632,21 @@ func (h *Handler) PollBitrixUserTasks(ctx context.Context) {
 // cancel() once the goroutine finishes. Shared by the bulk import
 // (ImportBitrixTasks) and the per-project sync (SyncBitrixProject).
 func (h *Handler) startBitrixTaskSync(ctx context.Context, cancel context.CancelFunc, taskIDs []string, cfg bitrix.RouteConfig, st *bitrixSyncState, selectors []bitrixImportProgressSelector) {
-	runID := bitrixImportProgressStart(len(taskIDs), selectors)
+	runID := bitrixImportProgressStart(len(taskIDs), selectors, cancel)
 	go func() {
 		defer cancel()
-		for _, id := range taskIDs {
+		for i, id := range taskIDs {
+			// Stop between tasks on cancel. Without this check a cancelled run
+			// still walked the whole queue: every remaining task failed fast on
+			// the dead context, so the operator saw a wall of "task sync failed"
+			// warnings and progress kept climbing instead of stopping.
+			if err := ctx.Err(); err != nil {
+				slog.Info("bitrix sync: background sync stopped",
+					"reason", err, "completed", i, "requested", len(taskIDs),
+					"created", st.created, "updated", st.updated, "skipped", st.skipped)
+				bitrixImportProgressFinish(runID)
+				return
+			}
 			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
 				slog.Warn("bitrix sync: task sync failed", "task_id", id, "error", err)
 			}
@@ -832,7 +843,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// Always refresh the responsible's display metadata (name/email/position)
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
-		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID)
+		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID,
+			task.GroupID, h.bitrixTaskGroupName(ctx, task, st))
 		// Bitrix tags → Agora labels (additive; backfills older mirrors too).
 		h.syncBitrixTagsAsLabels(ctx, ws.ID, existing.ID, task)
 		if h.bitrixTaskHasStageRestriction(ctx, task, st) {
@@ -939,9 +951,9 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	}
 
 	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
-		WorkspaceID:  ws.ID,
-		Title:        draft.Title,
-		Description:  strToText(draft.Description),
+		WorkspaceID: ws.ID,
+		Title:       draft.Title,
+		Description: strToText(draft.Description),
 		// Prefer stage-aware mapped status over STATUS-only draft mapping.
 		Status:       mappedStatus,
 		Priority:     "none",
@@ -992,7 +1004,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
-	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID)
+	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID,
+		task.GroupID, h.bitrixTaskGroupName(ctx, task, st))
 	// Bitrix tags → Agora labels (bug/feature → type:*, aliases collapsed).
 	h.syncBitrixTagsAsLabels(ctx, ws.ID, res.Issue.ID, task)
 
@@ -1063,10 +1076,7 @@ func (h *Handler) resolveBitrixSprintUnder(ctx context.Context, wsID, hostProjec
 	if groupID == "" {
 		return pgtype.UUID{}
 	}
-	name := strings.TrimSpace(task.GroupName)
-	if name == "" {
-		name = h.bitrixGroupName(ctx, groupID, st)
-	}
+	name := h.bitrixTaskGroupName(ctx, task, st)
 	if !bitrixGroupIsSprint(name) {
 		return pgtype.UUID{}
 	}
@@ -1136,10 +1146,7 @@ func (h *Handler) resolveBitrixTarget(ctx context.Context, wsID pgtype.UUID, tas
 		return pid, pgtype.UUID{}
 	}
 
-	name := strings.TrimSpace(task.GroupName)
-	if name == "" {
-		name = h.bitrixGroupName(ctx, groupID, st)
-	}
+	name := h.bitrixTaskGroupName(ctx, task, st)
 
 	// (2) Sprint-named group with an sd-main project to host it → sprint under
 	// sd-main.
@@ -1660,12 +1667,37 @@ func bitrixTaskURL(taskID string) string {
 	return u.Scheme + "://" + u.Host + "/company/personal/user/0/tasks/task/view/" + id + "/"
 }
 
+// bitrixTaskGroupName resolves the task's Bitrix workgroup ("project") name,
+// preferring the name the task payload already carries and falling back to a
+// cached group lookup.
+func (h *Handler) bitrixTaskGroupName(ctx context.Context, task *bitrix.Task, st *bitrixSyncState) string {
+	if task == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(task.GroupName); name != "" {
+		return name
+	}
+	groupID := strings.TrimSpace(task.GroupID)
+	if groupID == "" {
+		return ""
+	}
+	return h.bitrixGroupName(ctx, groupID, st)
+}
+
 // setBitrixIssueMetadata records the Bitrix provenance on the issue metadata:
 // the responsible person (id/name/email/position — so the assignee is visible
-// even when they're not an Agora member), the live kanban STAGE name, and a
-// deep link back to the original Bitrix task. Best-effort per key; runs on
-// create + re-sync.
-func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName string, stageDecided bool, taskID string) {
+// even when they're not an Agora member), the live kanban STAGE name, the source
+// workgroup ("project" in Bitrix's UI), and a deep link back to the original
+// task. Best-effort per key; runs on create + re-sync.
+//
+// The group is stamped even though routing already files the issue under an
+// Agora project/sprint, because those are lossy: named-project routing sends
+// every group to one target project, and a sprint is only created for groups
+// whose NAME looks like a sprint — 15 of 44 mirrored issues had no sprint at all,
+// leaving no way to tell which Bitrix project they came from. The raw group id +
+// name make provenance exact, filterable (`?metadata={"bitrix_group_id":"153"}`)
+// and displayable.
+func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName string, stageDecided bool, taskID, groupID, groupName string) {
 	kv := [][2]string{{"bitrix_responsible_id", strings.TrimSpace(responsibleID)}}
 	if u != nil {
 		kv = append(kv,
@@ -1684,6 +1716,12 @@ func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgty
 			mapped = "yes"
 		}
 		kv = append(kv, [2]string{"bitrix_stage_mapped", mapped})
+	}
+	if g := strings.TrimSpace(groupID); g != "" {
+		kv = append(kv, [2]string{"bitrix_group_id", g})
+	}
+	if g := strings.TrimSpace(groupName); g != "" {
+		kv = append(kv, [2]string{"bitrix_group_name", g})
 	}
 	if link := bitrixTaskURL(taskID); link != "" {
 		kv = append(kv, [2]string{"bitrix_task_url", link})

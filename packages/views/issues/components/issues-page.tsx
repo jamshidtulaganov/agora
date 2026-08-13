@@ -46,6 +46,7 @@ export function IssuesPage() {
   // it's threaded through only because filterIssues requires the field. Empty
   // = no-op. (The sprint filter UI lives in the project detail header.)
   const sprintFilters = useIssueViewStore((s) => s.sprintFilters);
+  const bitrixGroupFilters = useIssueViewStore((s) => s.bitrixGroupFilters);
   const sortBy = useIssueViewStore((s) => s.sortBy);
   const sortDirection = useIssueViewStore((s) => s.sortDirection);
   const agentRunningFilter = useIssueViewStore((s) => s.agentRunningFilter);
@@ -130,15 +131,15 @@ export function IssuesPage() {
   const headerIssues = usesAssigneeBoard ? assigneeIssues : scopedIssues;
 
   const issues = useMemo(
-    () => filterIssues(scopedIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
-    [scopedIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(scopedIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, bitrixGroupFilters, agentRunningFilter, runningIssueIds }),
+    [scopedIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, bitrixGroupFilters, agentRunningFilter, runningIssueIds],
   );
 
   // Status-unfiltered companion for Swimlane — same narrowing as `issues`
   // minus the status filter.
   const swimlaneIssues = useMemo(
-    () => filterIssues(scopedIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
-    [scopedIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(scopedIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, bitrixGroupFilters, agentRunningFilter, runningIssueIds }),
+    [scopedIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, bitrixGroupFilters, agentRunningFilter, runningIssueIds],
   );
 
   const activeFilters = useMemo(() => ({
@@ -150,6 +151,7 @@ export function IssuesPage() {
     includeNoProject,
     labelFilters,
     sprintFilters,
+    bitrixGroupFilters,
     agentRunningFilter,
   }), [
     priorityFilters,
@@ -160,6 +162,7 @@ export function IssuesPage() {
     includeNoProject,
     labelFilters,
     sprintFilters,
+    bitrixGroupFilters,
     agentRunningFilter,
   ]);
 

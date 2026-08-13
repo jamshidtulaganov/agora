@@ -45,6 +45,7 @@
     "section_project": "Project",
     "section_label": "Label",
     "section_sprint": "Sprint",
+    "section_bitrix_project": "Bitrix project",
     "members_group": "Members",
     "agents_group": "Agents",
     "squads_group": "Squads",

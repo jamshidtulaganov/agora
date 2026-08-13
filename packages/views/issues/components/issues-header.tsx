@@ -11,6 +11,7 @@ import {
   CircleDot,
   Columns3,
   Filter,
+  FolderGit2,
   FolderKanban,
   FolderMinus,
   List,
@@ -113,6 +114,10 @@ function getActiveFilterCount(state: {
   includeNoProject: boolean;
   labelFilters: string[];
   sprintFilters: string[];
+  // Optional: the view store is persisted, so a shape saved before this filter
+  // existed hydrates without the key. Undefined must read as "no filter", never
+  // crash the header.
+  bitrixGroupFilters?: string[];
 }) {
   let count = 0;
   if (state.statusFilters.length > 0) count++;
@@ -122,6 +127,7 @@ function getActiveFilterCount(state: {
   if (state.projectFilters.length > 0 || state.includeNoProject) count++;
   if (state.labelFilters.length > 0) count++;
   if (state.sprintFilters.length > 0) count++;
+  if ((state.bitrixGroupFilters?.length ?? 0) > 0) count++;
   return count;
 }
 
@@ -134,6 +140,11 @@ function useIssueCounts(allIssues: Issue[]) {
     const project = new Map<string, number>();
     const label = new Map<string, number>();
     const sprint = new Map<string, number>();
+    // Bitrix workgroup ("Проект") counts, keyed by group id with its display
+    // name carried alongside so the menu needs no extra fetch. Stays empty for
+    // workspaces that never imported from Bitrix, which is what keeps the filter
+    // out of the menu entirely there.
+    const bitrixGroups = new Map<string, { name: string; count: number }>();
     let noAssignee = 0;
     let noProject = 0;
 
@@ -166,9 +177,24 @@ function useIssueCounts(allIssues: Issue[]) {
       if (issue.sprint_id) {
         sprint.set(issue.sprint_id, (sprint.get(issue.sprint_id) ?? 0) + 1);
       }
+
+      // Metadata is untyped JSON off the wire — read both keys defensively and
+      // skip the issue unless the id is a usable string.
+      const meta = issue.metadata as Record<string, unknown> | null | undefined;
+      const groupId = meta?.bitrix_group_id;
+      if (typeof groupId === "string" && groupId !== "") {
+        const rawName = meta?.bitrix_group_name;
+        const existing = bitrixGroups.get(groupId);
+        bitrixGroups.set(groupId, {
+          name:
+            existing?.name ||
+            (typeof rawName === "string" && rawName.trim() !== "" ? rawName : groupId),
+          count: (existing?.count ?? 0) + 1,
+        });
+      }
     }
 
-    return { status, priority, assignee, creator, noAssignee, project, noProject, label, sprint };
+    return { status, priority, assignee, creator, noAssignee, project, noProject, label, sprint, bitrixGroups };
   }, [allIssues]);
 }
 
@@ -507,6 +533,68 @@ function LabelSubContent({
 }
 
 // ---------------------------------------------------------------------------
+// Bitrix project (workgroup) sub-menu content
+// ---------------------------------------------------------------------------
+
+// Options come from the loaded issues' metadata rather than a Bitrix API call:
+// the panel must work offline from the portal, and the only groups worth
+// offering are the ones actually present on this board. Sorted by descending
+// issue count so the busy projects sit at the top.
+function BitrixGroupSubContent({
+  groups,
+  selected,
+  onToggle,
+}: {
+  groups: Map<string, { name: string; count: number }>;
+  selected: string[];
+  onToggle: (groupId: string) => void;
+}) {
+  const { t } = useT("issues");
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const rows = useMemo(
+    () =>
+      [...groups.entries()]
+        .map(([id, g]) => ({ id, ...g }))
+        .filter((g) => g.name.toLowerCase().includes(query))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    [groups, query],
+  );
+
+  return (
+    <>
+      <div className="px-2 py-1.5 border-b border-foreground/5">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t(($) => $.filters.placeholder)}
+          className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div className="max-h-64 overflow-y-auto p-1">
+        {rows.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            {t(($) => $.filters.no_results)}
+          </div>
+        ) : (
+          rows.map((g) => (
+            <DropdownMenuCheckboxItem
+              key={g.id}
+              checked={selected.includes(g.id)}
+              onCheckedChange={() => onToggle(g.id)}
+            >
+              <span className="flex-1 truncate">{g.name}</span>
+              <span className="ml-2 text-xs tabular-nums text-muted-foreground">{g.count}</span>
+            </DropdownMenuCheckboxItem>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sprint sub-menu content
 // ---------------------------------------------------------------------------
 
@@ -739,6 +827,7 @@ export function IssueDisplayControls({
   const includeNoProject = useViewStore((s) => s.includeNoProject);
   const labelFilters = useViewStore((s) => s.labelFilters);
   const sprintFilters = useViewStore((s) => s.sprintFilters);
+  const bitrixGroupFilters = useViewStore((s) => s.bitrixGroupFilters) ?? [];
   const sortBy = useViewStore((s) => s.sortBy);
   const sortDirection = useViewStore((s) => s.sortDirection);
   const grouping = useViewStore((s) => s.grouping);
@@ -758,6 +847,7 @@ export function IssueDisplayControls({
     includeNoProject,
     labelFilters,
     sprintFilters,
+    bitrixGroupFilters,
   });
   const hasActiveFilters = activeFilterCount > 0;
 
@@ -1017,6 +1107,29 @@ export function IssueDisplayControls({
                     counts={counts.sprint}
                     selected={sprintFilters}
                     onToggle={act.toggleSprintFilter}
+                  />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+
+            {/* Bitrix project — only for workspaces that mirror Bitrix tasks, so
+                the menu stays unchanged everywhere else. */}
+            {counts.bitrixGroups.size > 0 && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <FolderGit2 className="size-3.5" />
+                  <span className="flex-1">{t(($) => $.filters.section_bitrix_project)}</span>
+                  {bitrixGroupFilters.length > 0 && (
+                    <span className="text-xs text-primary font-medium">
+                      {bitrixGroupFilters.length}
+                    </span>
+                  )}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-auto min-w-52 p-0">
+                  <BitrixGroupSubContent
+                    groups={counts.bitrixGroups}
+                    selected={bitrixGroupFilters}
+                    onToggle={act.toggleBitrixGroupFilter}
                   />
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

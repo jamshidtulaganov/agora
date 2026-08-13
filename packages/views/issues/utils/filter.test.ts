@@ -250,3 +250,63 @@ describe("filterIssues", () => {
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });
 });
+
+describe("bitrixGroupFilters", () => {
+  // The Bitrix workgroup lives in metadata, not in a relation: routing files
+  // every workgroup under one Agora project and only sprint-named groups become
+  // sprints, so this is the only dimension that can answer "which Bitrix
+  // project did this come from".
+  const inIyun = makeIssue({
+    id: "i-iyun",
+    metadata: { bitrix_group_id: "153", bitrix_group_name: "Iyun Sprint (8)" },
+  });
+  const inOther = makeIssue({
+    id: "i-other",
+    metadata: { bitrix_group_id: "175", bitrix_group_name: "Sprint 9" },
+  });
+  const notBitrix = makeIssue({ id: "i-native", metadata: {} });
+
+  it("is a no-op when empty or omitted", () => {
+    expect(filterIssues([inIyun, notBitrix], NO_FILTER)).toHaveLength(2);
+    expect(
+      filterIssues([inIyun, notBitrix], { ...NO_FILTER, bitrixGroupFilters: [] }),
+    ).toHaveLength(2);
+  });
+
+  it("keeps only issues from the selected group", () => {
+    const got = filterIssues([inIyun, inOther, notBitrix], {
+      ...NO_FILTER,
+      bitrixGroupFilters: ["153"],
+    });
+    expect(got.map((i) => i.id)).toEqual(["i-iyun"]);
+  });
+
+  it("ORs multiple selected groups", () => {
+    const got = filterIssues([inIyun, inOther, notBitrix], {
+      ...NO_FILTER,
+      bitrixGroupFilters: ["153", "175"],
+    });
+    expect(got.map((i) => i.id)).toEqual(["i-iyun", "i-other"]);
+  });
+
+  it("excludes non-Bitrix issues once a group is selected", () => {
+    const got = filterIssues([notBitrix], { ...NO_FILTER, bitrixGroupFilters: ["153"] });
+    expect(got).toHaveLength(0);
+  });
+
+  it("survives malformed metadata instead of throwing", () => {
+    // Metadata is untyped JSON off the wire: a numeric id, a null metadata bag,
+    // or a missing key must all simply fail the filter.
+    const numericId = makeIssue({ id: "i-num", metadata: { bitrix_group_id: 153 } });
+    // `metadata` is typed non-nullable, but it is untyped JSON off the wire and a
+    // null bag is a shape the API can actually return — cast to assert the
+    // predicate survives it.
+    const nullMeta = { ...makeIssue({ id: "i-null" }), metadata: null } as unknown as Issue;
+    expect(() =>
+      filterIssues([numericId, nullMeta], { ...NO_FILTER, bitrixGroupFilters: ["153"] }),
+    ).not.toThrow();
+    expect(
+      filterIssues([numericId, nullMeta], { ...NO_FILTER, bitrixGroupFilters: ["153"] }),
+    ).toHaveLength(0);
+  });
+});

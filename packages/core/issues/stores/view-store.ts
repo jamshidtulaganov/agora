@@ -76,6 +76,11 @@ export interface IssueViewState {
   // sprint's issues. Sprints are project-scoped, so this only has meaning on a
   // per-project view store.
   sprintFilters: string[];
+  // Bitrix workgroup ids ("Проект" in Bitrix's UI), read from issue metadata
+  // rather than a relation: Bitrix routing files every workgroup under one Agora
+  // project, and only sprint-named groups become sprints, so neither
+  // projectFilters nor sprintFilters can express "show me Iyun Sprint (8)".
+  bitrixGroupFilters: string[];
   // When true, the list only shows issues that currently have at least one
   // agent task in `running` status. Drives the workspace "agents working"
   // quick filter chip in the issues header. Not persisted across reloads —
@@ -110,6 +115,7 @@ export interface IssueViewState {
   toggleNoProject: () => void;
   toggleLabelFilter: (labelId: string) => void;
   toggleSprintFilter: (sprintId: string) => void;
+  toggleBitrixGroupFilter: (groupId: string) => void;
   /** Replace the sprint filter wholesale. Used by the sprint-row click to set
    *  exactly one sprint (or clear, with []), independent of multi-toggle. */
   setSprintFilter: (sprintIds: string[]) => void;
@@ -140,6 +146,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   includeNoProject: false,
   labelFilters: [],
   sprintFilters: [],
+  bitrixGroupFilters: [],
   agentRunningFilter: false,
   sortBy: "position",
   sortDirection: "asc",
@@ -226,6 +233,12 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
         : [...state.sprintFilters, sprintId],
     })),
   setSprintFilter: (sprintIds) => set({ sprintFilters: sprintIds }),
+  toggleBitrixGroupFilter: (groupId) =>
+    set((state) => ({
+      bitrixGroupFilters: state.bitrixGroupFilters.includes(groupId)
+        ? state.bitrixGroupFilters.filter((id) => id !== groupId)
+        : [...state.bitrixGroupFilters, groupId],
+    })),
   toggleAgentRunningFilter: () =>
     set((state) => ({ agentRunningFilter: !state.agentRunningFilter })),
   hideStatus: (status) =>
@@ -255,6 +268,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
       includeNoProject: false,
       labelFilters: [],
       sprintFilters: [],
+      bitrixGroupFilters: [],
       agentRunningFilter: false,
     }),
   setSortBy: (field) => set({ sortBy: field }),
@@ -309,6 +323,7 @@ export const viewStorePersistOptions = (name: string) => ({
     includeNoProject: state.includeNoProject,
     labelFilters: state.labelFilters,
     sprintFilters: state.sprintFilters,
+    bitrixGroupFilters: state.bitrixGroupFilters,
     sortBy: state.sortBy,
     sortDirection: state.sortDirection,
     cardProperties: state.cardProperties,
