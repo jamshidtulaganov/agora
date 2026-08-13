@@ -639,3 +639,48 @@ func TestResolveBitrixIssueStatusReportsStageDecision(t *testing.T) {
 		}
 	}
 }
+
+// TestBitrixTaskIsClosed guards a DESTRUCTIVE gate: a "closed" task is never
+// imported, and an already-mirrored one is hard-deleted together with its S3
+// attachments. The rows with bitrix_status=5 and an active column are real
+// observations from one prod sync cycle, which dropped 22 tasks that way —
+// including a Bitrix task whose video the human was reading at that moment
+// (issue 4b1dd153, task 36251, STATUS=5, stage "Ready for release").
+func TestBitrixTaskIsClosed(t *testing.T) {
+	cases := []struct {
+		name         string
+		mappedStatus string
+		stageDecided bool
+		bitrixStatus string
+		want         bool
+	}{
+		// The column says the work is finished — closing is correct.
+		{"stage Сделаны", "done", true, "5", true},
+		{"stage Готово with open STATUS", "done", true, "2", true},
+		{"stage Отмененные", "cancelled", true, "3", true},
+		// The column says the work is LIVE while STATUS claims completed. These
+		// are the wrong drops: the column wins, the mirror survives.
+		{"Ready for release with STATUS=5", "in_review", true, "5", false},
+		{"Need Merge with STATUS=5", "in_review", true, "5", false},
+		{"Новые with STATUS=5", "todo", true, "5", false},
+		{"To Do with STATUS=5", "todo", true, "5", false},
+		{"Выполняются with STATUS=5", "in_progress", true, "5", false},
+		{"Returned with STATUS=5", "in_progress", true, "5", false},
+		{"Blockers with STATUS=5", "blocked", true, "5", false},
+		{"declined STATUS under a live column", "in_progress", true, "7", false},
+		// No column signal: STATUS is all there is, so it decides.
+		{"off-kanban completed", "done", false, "5", true},
+		{"off-kanban declined", "todo", false, "7", true},
+		{"off-kanban open", "todo", false, "2", false},
+		{"unmapped column, completed STATUS", "in_review", false, "5", true},
+		{"unmapped column, open STATUS", "in_progress", false, "3", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bitrixTaskIsClosed(tc.mappedStatus, tc.stageDecided, tc.bitrixStatus); got != tc.want {
+				t.Errorf("bitrixTaskIsClosed(%q, stageDecided=%v, %q) = %v, want %v",
+					tc.mappedStatus, tc.stageDecided, tc.bitrixStatus, got, tc.want)
+			}
+		})
+	}
+}

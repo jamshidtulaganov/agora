@@ -757,15 +757,27 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	// Personal mirror: never keep completed/declined Bitrix history on the board.
 	// Skip create for closed tasks; delete any previously synced issue when the
-	// portal task (or its kanban stage) lands in a terminal state.
-	if bitrix.IsClosedStatus(task.Status) || bitrix.IsClosedIssueStatus(mappedStatus) {
+	// portal task lands in a terminal state.
+	//
+	// The KANBAN COLUMN decides this, not the coarse STATUS, for the same reason
+	// it decides the status itself: this team marks tasks completed in STATUS
+	// while the column still says Code Review / Need Merge / Ready for release.
+	// Trusting STATUS here HARD-DELETED live mirrors (and purged their S3
+	// attachments — a Bitrix video the human was reading vanished mid-session),
+	// and silently skipped importing tasks parked in Новые / To Do. One sync
+	// cycle dropped 22 tasks whose column said the work was still active.
+	//
+	// STATUS is still the authority when the task is off-kanban or its column
+	// maps to nothing, because then it is the only signal there is.
+	if bitrixTaskIsClosed(mappedStatus, stageDecided, task.Status) {
 		if found {
 			if err := h.deleteBitrixSyncedIssue(ctx, existing); err != nil {
 				return fmt.Errorf("delete closed bitrix issue: %w", err)
 			}
 			slog.Info("bitrix sync: removed closed Bitrix-linked issue",
 				"issue_id", util.UUIDToString(existing.ID),
-				"task_id", task.ID, "bitrix_status", task.Status, "mapped_status", mappedStatus)
+				"task_id", task.ID, "bitrix_status", task.Status,
+				"mapped_status", mappedStatus, "stage", stageName)
 			st.updated++
 			return nil
 		}
@@ -1207,6 +1219,21 @@ func (h *Handler) bitrixStagesForGroup(ctx context.Context, st *bitrixSyncState,
 		st.stagesByGroup[groupID] = stages
 	}
 	return stages
+}
+
+// bitrixTaskIsClosed decides whether a portal task counts as finished, which is
+// destructive: a closed task is never imported, and an already-mirrored one is
+// HARD-deleted along with its S3 attachments.
+//
+// The kanban COLUMN is the authority whenever it resolved to a status, because
+// this team completes tasks in STATUS while the column still says Code Review /
+// Need Merge / Ready for release. STATUS decides only when there is no column
+// signal at all (off-kanban task, or a label that maps to nothing).
+func bitrixTaskIsClosed(mappedStatus string, stageDecided bool, bitrixStatus string) bool {
+	if bitrix.IsClosedIssueStatus(mappedStatus) {
+		return true
+	}
+	return !stageDecided && bitrix.IsClosedStatus(bitrixStatus)
 }
 
 // resolveBitrixIssueStatus maps a Bitrix task to a Agora status, preferring the
