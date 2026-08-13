@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/telegram"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 	"github.com/jamshidtulaganov/agora/server/internal/util"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
@@ -44,6 +46,9 @@ const (
 	// telegramPollBackoff is the pause after a failed poll — a bot whose token
 	// was revoked must not spin.
 	telegramPollBackoff = 30 * time.Second
+	// A user may answer a bot follow-up without tagging it again. This mirrors
+	// the reference gateway while keeping ordinary room chatter out of Agora.
+	telegramFollowupWindow = 3 * time.Minute
 )
 
 // agentTelegramPollers tracks the running long-poll loops so one can be
@@ -188,12 +193,12 @@ func (h *Handler) pollAgentTelegram(ctx context.Context, row db.TelegramInstalla
 
 // handleAgentGroupMessage turns one addressed group message into agent work.
 //
-// Ignores anything that is not a group message with text. Privacy mode already
-// filters to messages that mention or reply to this bot, so a message reaching
-// here is addressed to this agent.
+// Ignores anything that is not a group message with text. Telegram privacy mode
+// is only defense-in-depth: the code below independently requires a mention, a
+// reply to this bot, or a short follow-up in the sender's own active thread.
 func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramInstallation, update telegramUpdate) {
 	msg := update.Message
-	if msg == nil || msg.Chat == nil || msg.From == nil {
+	if msg == nil || msg.Chat == nil || msg.From == nil || msg.From.IsBot {
 		return
 	}
 	if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
@@ -256,8 +261,29 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 		return
 	}
 
+	chatID := strconv.FormatInt(msg.Chat.ID, 10)
+	explicitlyAddressed := telegramMessageAddressesAgent(
+		text,
+		msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
+			msg.ReplyToMessage.From.IsBot &&
+			strings.EqualFold(strings.TrimPrefix(msg.ReplyToMessage.From.Username, "@"), strings.TrimPrefix(row.BotUsername, "@")),
+		row.BotUsername,
+	)
+	if !explicitlyAddressed {
+		// Privacy mode is defense-in-depth, not an authorization boundary. If an
+		// operator disables it, ordinary group chatter still must not reach a
+		// powerful runtime. Only a recent participant in this exact user thread
+		// gets the short follow-up window used for "yes" / "continue" answers.
+		link, err := h.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+			AgentID: row.AgentID, ChatID: chatID, TelegramUserID: msg.From.ID,
+		})
+		if err != nil || !link.LastEngagedAt.Valid || time.Since(link.LastEngagedAt.Time) > telegramFollowupWindow {
+			return
+		}
+	}
+
 	// Strip the @mention so the agent reads the request, not the addressing.
-	text = strings.TrimSpace(strings.ReplaceAll(text, "@"+row.BotUsername, ""))
+	text = stripTelegramBotMention(text, row.BotUsername)
 	if text == "" {
 		return
 	}
@@ -266,12 +292,14 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 	// time, deliberately: learning it here would mean whichever group first
 	// messaged the bot became its trusted chat, so an invite would grant
 	// itself authorization. The gate above already required the bound chat.
-	chatID := strconv.FormatInt(msg.Chat.ID, 10)
-
-	session, err := h.agentTelegramSession(ctx, row, chatID)
+	initiatorID := h.telegramInitiatorUserID(ctx, row, msg.From.ID)
+	session, err := h.agentTelegramSession(ctx, row, chatID, msg.From.ID, initiatorID)
 	if err != nil {
 		slog.Warn("telegram agent chat: no session", "agent_id", uuidToString(row.AgentID), "error", err)
 		return
+	}
+	if bot, _ := h.agentTelegramClient(ctx, row.AgentID); bot != nil {
+		_ = bot.SendChatAction(ctx, chatID, "typing")
 	}
 
 	// Name the human so the agent knows who it is answering — a group has many
@@ -285,31 +313,55 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 		body = who + ":\n" + text
 	}
 
-	if _, err := h.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+	msgRow, err := h.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
 		ChatSessionID: session.ID,
 		Role:          "user",
 		Content:       body,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Warn("telegram agent chat: create message failed", "error", err)
 		return
 	}
-	if _, err := h.TaskService.EnqueueChatTask(ctx, session, session.CreatorID); err != nil {
+	task, err := h.TaskService.EnqueueChatTaskWithLink(ctx, session, initiatorID,
+		func(qtx *db.Queries, linkedTask db.AgentTaskQueue) error {
+			if linkErr := qtx.LinkChatMessageToTask(ctx, db.LinkChatMessageToTaskParams{
+				ID: msgRow.ID, TaskID: linkedTask.ID,
+			}); linkErr != nil {
+				return linkErr
+			}
+			_, linkErr := qtx.CreateTelegramTaskDelivery(ctx, db.CreateTelegramTaskDeliveryParams{
+				TaskID: linkedTask.ID, AgentID: row.AgentID, ChatID: chatID,
+				TelegramUserID: msg.From.ID, ReplyToMessageID: msg.MessageID,
+			})
+			return linkErr
+		},
+	)
+	if err != nil {
 		slog.Warn("telegram agent chat: enqueue failed", "agent_id", uuidToString(row.AgentID), "error", err)
+		if bot, _ := h.agentTelegramClient(ctx, row.AgentID); bot != nil {
+			message := "Agent hozir javob bera olmaydi. Birozdan keyin qayta urinib ko'ring."
+			if errors.Is(err, service.ErrChatTaskAgentNoRuntime) {
+				message = "Agent runtime'ga ulanmagan. Agora'da runtime sozlang va qayta urinib ko'ring."
+			} else if errors.Is(err, service.ErrChatTaskAgentArchived) {
+				message = "Bu agent arxivlangan va yangi so'rov qabul qilmaydi."
+			}
+			_ = bot.SendMessageReply(ctx, chatID, message, msg.MessageID)
+		}
 		return
 	}
-	slog.Info("telegram agent chat: dispatched", "bot", row.BotUsername, "chat_id", chatID)
+	_ = h.Queries.TouchTelegramChatSession(ctx, session.ID)
+	slog.Info("telegram agent chat: dispatched", "bot", row.BotUsername, "chat_id", chatID, "task_id", uuidToString(task.ID))
 }
 
 // agentTelegramSession returns the session backing this bot's group
 // conversation, creating it on first contact. The link is stored on the
 // installation, so the thread survives a human renaming the session — matching
 // on a title prefix would silently start a new conversation and lose context.
-func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInstallation, chatID string) (db.ChatSession, error) {
+func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInstallation, chatID string, telegramUserID int64, creatorID pgtype.UUID) (db.ChatSession, error) {
 	// The query already restricts to an active session, so a hit is usable as
 	// is; a miss means this chat has no live conversation and needs a new one.
 	if link, err := h.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
-		AgentID: row.AgentID,
-		ChatID:  chatID,
+		AgentID: row.AgentID, ChatID: chatID, TelegramUserID: telegramUserID,
 	}); err == nil {
 		if s, sErr := h.Queries.GetChatSession(ctx, link.ChatSessionID); sErr == nil {
 			return s, nil
@@ -318,15 +370,14 @@ func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInsta
 	session, err := h.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
 		WorkspaceID: row.WorkspaceID,
 		AgentID:     row.AgentID,
-		CreatorID:   row.InstallerUserID,
-		Title:       "Telegram " + chatID + ": " + row.BotUsername,
+		CreatorID:   creatorID,
+		Title:       "Telegram " + chatID + "/" + strconv.FormatInt(telegramUserID, 10) + ": " + row.BotUsername,
 	})
 	if err != nil {
 		return db.ChatSession{}, err
 	}
 	if _, linkErr := h.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
-		AgentID:       row.AgentID,
-		ChatID:        chatID,
+		AgentID: row.AgentID, ChatID: chatID, TelegramUserID: telegramUserID,
 		ChatSessionID: session.ID,
 	}); linkErr != nil {
 		return db.ChatSession{}, linkErr
@@ -337,7 +388,7 @@ func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInsta
 // SendAgentChatReplyToTelegram posts a finished chat task's assistant reply
 // back to the group. No-op unless the session's agent owns a bot bound to a
 // chat, so web-only chats are unaffected.
-func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionID string) {
+func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, taskID, chatSessionID string) {
 	sessionUUID, err := util.ParseUUID(chatSessionID)
 	if err != nil {
 		return
@@ -346,29 +397,68 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 	// several groups can talk to one agent, and an answer belongs to the room
 	// that raised the question. Only a session a group opened has a row here,
 	// so web-only chats no-op.
-	link, err := h.Queries.GetTelegramChatSessionBySession(ctx, sessionUUID)
-	if err != nil {
-		return
+	var agentID pgtype.UUID
+	chatID := ""
+	var replyTo int64
+	var deliveryTaskID pgtype.UUID
+	if taskUUID, parseErr := util.ParseUUID(taskID); parseErr == nil {
+		if delivery, deliveryErr := h.Queries.GetTelegramTaskDeliveryByTask(ctx, taskUUID); deliveryErr == nil {
+			deliveryTaskID = taskUUID
+			agentID = delivery.AgentID
+			chatID = delivery.ChatID
+			replyTo = delivery.ReplyToMessageID
+		}
 	}
-	bot, _ := h.agentTelegramClient(ctx, link.AgentID)
+	if chatID == "" {
+		link, linkErr := h.Queries.GetTelegramChatSessionBySession(ctx, sessionUUID)
+		if linkErr != nil {
+			return
+		}
+		agentID = link.AgentID
+		chatID = link.ChatID
+	}
+	bot, _ := h.agentTelegramClient(ctx, agentID)
 	if bot == nil {
 		return
 	}
-	chatID := link.ChatID
-	messages, err := h.Queries.ListChatMessages(ctx, sessionUUID)
-	if err != nil || len(messages) == 0 {
-		return
-	}
-	// Newest assistant message wins; the list is chronological.
 	reply := ""
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "assistant" {
-			reply = strings.TrimSpace(messages[i].Content)
-			break
+	if deliveryTaskID.Valid {
+		if message, messageErr := h.Queries.GetAssistantChatMessageByTask(ctx, deliveryTaskID); messageErr == nil {
+			reply = strings.TrimSpace(message.Content)
+		}
+	} else {
+		// Compatibility for tasks queued before telegram_task_delivery existed.
+		messages, messagesErr := h.Queries.ListChatMessages(ctx, sessionUUID)
+		if messagesErr != nil {
+			return
+		}
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "assistant" {
+				reply = strings.TrimSpace(messages[i].Content)
+				break
+			}
 		}
 	}
 	if reply == "" {
 		return
+	}
+	deliveryClaimed := false
+	if deliveryTaskID.Valid {
+		if _, claimErr := h.Queries.ClaimTelegramTaskDelivery(ctx, deliveryTaskID); claimErr != nil {
+			// Another completion event already owns or finished this delivery.
+			return
+		}
+		deliveryClaimed = true
+	}
+	markDelivered := func() {
+		if deliveryClaimed {
+			_ = h.Queries.MarkTelegramTaskDeliveryDelivered(ctx, deliveryTaskID)
+		}
+	}
+	releaseDelivery := func() {
+		if deliveryClaimed {
+			_ = h.Queries.ReleaseTelegramTaskDelivery(ctx, deliveryTaskID)
+		}
 	}
 	// A reply carrying a table, or one too long to read in a group, goes out as
 	// a rendered HTML attachment: Telegram displays no markdown table, so the
@@ -384,17 +474,85 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 			slog.Warn("telegram agent chat: pdf render failed, sending text", "error", err)
 		} else if sendErr := bot.SendDocument(ctx, chatID, replyDocumentFilename(now), doc, replyCaption(reply)); sendErr != nil {
 			slog.Warn("telegram agent chat: reply document send failed", "chat_id", chatID, "error", sendErr)
+			releaseDelivery()
 			return
 		} else {
+			markDelivered()
 			slog.Info("telegram agent chat: replied with spreadsheet", "chat_id", chatID)
 			return
 		}
 	}
-	if err := bot.SendMarkdown(ctx, chatID, truncateForTelegram(reply)); err != nil {
+	if err := bot.SendMarkdownReply(ctx, chatID, truncateForTelegram(reply), replyTo); err != nil {
 		slog.Warn("telegram agent chat: reply send failed", "chat_id", chatID, "error", err)
+		releaseDelivery()
 		return
 	}
+	markDelivered()
 	slog.Info("telegram agent chat: replied", "chat_id", chatID)
+}
+
+// telegramInitiatorUserID attributes the task to the real Telegram sender
+// when that identity belongs to this workspace. Raw allowlist users need not
+// have an Agora account, so the installer remains the explicit fallback.
+func (h *Handler) telegramInitiatorUserID(ctx context.Context, row db.TelegramInstallation, telegramUserID int64) pgtype.UUID {
+	userID, err := h.userIDByExternalIdentity(ctx, providerTelegram, strconv.FormatInt(telegramUserID, 10))
+	if err != nil || userID == "" {
+		return row.InstallerUserID
+	}
+	parsed, err := util.ParseUUID(userID)
+	if err != nil {
+		return row.InstallerUserID
+	}
+	if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID: parsed, WorkspaceID: row.WorkspaceID,
+	}); err != nil {
+		return row.InstallerUserID
+	}
+	return parsed
+}
+
+func telegramMessageAddressesAgent(text string, repliesToBot bool, botUsername string) bool {
+	if repliesToBot {
+		return true
+	}
+	return telegramBotMentionIndex(text, botUsername) >= 0
+}
+
+func stripTelegramBotMention(text, botUsername string) string {
+	for {
+		idx := telegramBotMentionIndex(text, botUsername)
+		if idx < 0 {
+			return strings.TrimSpace(text)
+		}
+		needle := "@" + strings.TrimPrefix(strings.TrimSpace(botUsername), "@")
+		text = text[:idx] + text[idx+len(needle):]
+	}
+}
+
+func telegramBotMentionIndex(text, botUsername string) int {
+	username := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(botUsername), "@"))
+	if username == "" {
+		return -1
+	}
+	lower := strings.ToLower(text)
+	needle := "@" + username
+	for start := 0; start < len(lower); {
+		rel := strings.Index(lower[start:], needle)
+		if rel < 0 {
+			return -1
+		}
+		idx := start + rel
+		next := idx + len(needle)
+		if next == len(lower) || !isTelegramUsernameByte(lower[next]) {
+			return idx
+		}
+		start = next
+	}
+	return -1
+}
+
+func isTelegramUsernameByte(b byte) bool {
+	return b == '_' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9'
 }
 
 // decodeTelegramUpdate parses one raw update from getUpdates. A malformed

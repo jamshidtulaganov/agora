@@ -845,6 +845,31 @@ var ErrChatTaskAgentNoRuntime = errors.New("chat task: agent has no runtime")
 // latest message in the silence window. Stored on the task so the daemon brief
 // can attribute the run to the right person. See MUL-2645.
 func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSession, initiatorUserID pgtype.UUID) (db.AgentTaskQueue, error) {
+	return s.enqueueChatTask(ctx, chatSession, initiatorUserID, nil)
+}
+
+// EnqueueChatTaskWithLink atomically creates a chat task and its transport
+// routing metadata before publishing or waking the runtime. External chat
+// gateways use this to guarantee that a fast task cannot complete before its
+// return address is durable. The callback runs inside the task transaction.
+func (s *TaskService) EnqueueChatTaskWithLink(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	initiatorUserID pgtype.UUID,
+	link func(qtx *db.Queries, task db.AgentTaskQueue) error,
+) (db.AgentTaskQueue, error) {
+	if link == nil {
+		return db.AgentTaskQueue{}, errors.New("chat task: delivery linker is required")
+	}
+	return s.enqueueChatTask(ctx, chatSession, initiatorUserID, link)
+}
+
+func (s *TaskService) enqueueChatTask(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	initiatorUserID pgtype.UUID,
+	link func(qtx *db.Queries, task db.AgentTaskQueue) error,
+) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, chatSession.AgentID)
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
@@ -857,13 +882,32 @@ func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSe
 		return db.AgentTaskQueue{}, ErrChatTaskAgentNoRuntime
 	}
 
-	task, err := s.Queries.CreateChatTask(ctx, db.CreateChatTaskParams{
-		AgentID:         chatSession.AgentID,
-		RuntimeID:       agent.RuntimeID,
-		Priority:        2, // medium priority for chat
-		ChatSessionID:   chatSession.ID,
-		InitiatorUserID: initiatorUserID,
-	})
+	create := func(q *db.Queries) (db.AgentTaskQueue, error) {
+		return q.CreateChatTask(ctx, db.CreateChatTaskParams{
+			AgentID:         chatSession.AgentID,
+			RuntimeID:       agent.RuntimeID,
+			Priority:        2, // medium priority for chat
+			ChatSessionID:   chatSession.ID,
+			InitiatorUserID: initiatorUserID,
+		})
+	}
+
+	var task db.AgentTaskQueue
+	if link == nil {
+		task, err = create(s.Queries)
+	} else {
+		err = s.runInTx(ctx, func(qtx *db.Queries) error {
+			created, createErr := create(qtx)
+			if createErr != nil {
+				return createErr
+			}
+			if linkErr := link(qtx, created); linkErr != nil {
+				return linkErr
+			}
+			task = created
+			return nil
+		})
+	}
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("create chat task: %w", err)

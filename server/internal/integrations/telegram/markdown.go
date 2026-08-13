@@ -107,3 +107,20 @@ func (c *BotClient) SendMarkdown(ctx context.Context, chatID, md string) error {
 		ParseMode: "HTML",
 	})
 }
+
+// SendMarkdownReply is SendMarkdown with an exact Telegram reply target. The
+// target is captured when the Agora task is enqueued, so concurrent questions
+// in one group cannot cross their answers.
+func (c *BotClient) SendMarkdownReply(ctx context.Context, chatID, md string, replyTo int64) error {
+	req := sendMessageRequest{
+		ChatID:    chatID,
+		Text:      MarkdownToHTML(md),
+		ParseMode: "HTML",
+	}
+	if replyTo > 0 {
+		req.ReplyParameters = &replyParameters{
+			MessageID: replyTo, AllowSendingWithoutReply: true,
+		}
+	}
+	return c.sendMessage(ctx, req)
+}

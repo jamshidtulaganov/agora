@@ -38,6 +38,11 @@ services:
       # claim-time GitLab pipeline MCP. Existing values are preserved on sync.
       - key: AGORA_GIT_SECRET_KEY
         generateValue: true
+      # Seal per-agent Telegram bot tokens at rest. This key must remain stable:
+      # rotating it makes already-installed bot tokens unreadable. The live
+      # value is managed in Render and must never be committed.
+      - key: AGORA_TELEGRAM_SECRET_KEY
+        sync: false
       # Seal per-workspace Figma PATs. The backend injects the token only into
       # Figma-linked agent tasks; it never lives in workspace or agent JSON.
       - key: AGORA_FIGMA_SECRET_KEY

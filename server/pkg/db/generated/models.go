@@ -1063,10 +1063,12 @@ type TelegramBindingToken struct {
 }
 
 type TelegramChatSession struct {
-	AgentID       pgtype.UUID        `json:"agent_id"`
-	ChatID        string             `json:"chat_id"`
-	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	ChatID         string             `json:"chat_id"`
+	ChatSessionID  pgtype.UUID        `json:"chat_session_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TelegramUserID int64              `json:"telegram_user_id"`
+	LastEngagedAt  pgtype.Timestamptz `json:"last_engaged_at"`
 }
 
 type TelegramInstallation struct {
@@ -1111,6 +1113,17 @@ type TelegramQuestion struct {
 	AnsweredAt  pgtype.Timestamptz `json:"answered_at"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type TelegramTaskDelivery struct {
+	TaskID            pgtype.UUID        `json:"task_id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	ChatID            string             `json:"chat_id"`
+	TelegramUserID    int64              `json:"telegram_user_id"`
+	ReplyToMessageID  int64              `json:"reply_to_message_id"`
+	DeliveryStartedAt pgtype.Timestamptz `json:"delivery_started_at"`
+	DeliveredAt       pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type TestCase struct {

@@ -181,6 +181,7 @@ func registerAgentChatReplyListener(bus *events.Bus, h *handler.Handler) {
 		if sessionID == "" {
 			return
 		}
-		go h.SendAgentChatReplyToTelegram(context.Background(), sessionID)
+		taskID, _ := payload["task_id"].(string)
+		go h.SendAgentChatReplyToTelegram(context.Background(), taskID, sessionID)
 	})
 }

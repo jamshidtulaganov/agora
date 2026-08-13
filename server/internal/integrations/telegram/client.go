@@ -81,10 +81,16 @@ func (c *BotClient) httpClient() *http.Client {
 }
 
 type sendMessageRequest struct {
-	ChatID      string       `json:"chat_id"`
-	Text        string       `json:"text"`
-	ParseMode   string       `json:"parse_mode,omitempty"`
-	ReplyMarkup *replyMarkup `json:"reply_markup,omitempty"`
+	ChatID          string           `json:"chat_id"`
+	Text            string           `json:"text"`
+	ParseMode       string           `json:"parse_mode,omitempty"`
+	ReplyMarkup     *replyMarkup     `json:"reply_markup,omitempty"`
+	ReplyParameters *replyParameters `json:"reply_parameters,omitempty"`
+}
+
+type replyParameters struct {
+	MessageID                int64 `json:"message_id"`
+	AllowSendingWithoutReply bool  `json:"allow_sending_without_reply"`
 }
 
 // replyMarkup models the inline keyboard used by push DMs (a single URL button
@@ -175,6 +181,33 @@ func floodWait(parsed telegramResponse) (time.Duration, bool) {
 // login store already holds the code regardless of delivery.
 func (c *BotClient) SendMessage(ctx context.Context, chatID, text string) error {
 	return c.sendMessage(ctx, sendMessageRequest{ChatID: chatID, Text: text})
+}
+
+// SendMessageReply delivers plain text as a reply to one Telegram message.
+// Telegram may lose the original message to moderation while the agent is
+// working, so allow_sending_without_reply preserves the answer as a normal
+// group message instead of rejecting it entirely.
+func (c *BotClient) SendMessageReply(ctx context.Context, chatID, text string, replyTo int64) error {
+	req := sendMessageRequest{ChatID: chatID, Text: text}
+	if replyTo > 0 {
+		req.ReplyParameters = &replyParameters{
+			MessageID: replyTo, AllowSendingWithoutReply: true,
+		}
+	}
+	return c.sendMessage(ctx, req)
+}
+
+// SendChatAction shows Telegram's transient "typing" status. It is cosmetic
+// and callers deliberately ignore failures; the durable task and reply remain
+// the source of truth.
+func (c *BotClient) SendChatAction(ctx context.Context, chatID, action string) error {
+	if strings.TrimSpace(action) == "" {
+		action = "typing"
+	}
+	return c.call(ctx, "sendChatAction", struct {
+		ChatID string `json:"chat_id"`
+		Action string `json:"action"`
+	}{ChatID: chatID, Action: action})
 }
 
 // DeleteMessage removes one message from a chat. Telegram permits a bot to

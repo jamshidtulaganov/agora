@@ -50,25 +50,51 @@ const archiveTelegramChatSession = `-- name: ArchiveTelegramChatSession :exec
 UPDATE chat_session SET status = 'archived', updated_at = now()
 WHERE status = 'active' AND id IN (
     SELECT tcs.chat_session_id FROM telegram_chat_session tcs
-    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2
+    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND tcs.telegram_user_id = $3
 )
 `
 
 type ArchiveTelegramChatSessionParams struct {
-	AgentID pgtype.UUID `json:"agent_id"`
-	ChatID  string      `json:"chat_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	ChatID         string      `json:"chat_id"`
+	TelegramUserID int64       `json:"telegram_user_id"`
 }
 
-// /reset: retire the chat's current conversation. Archives the session rather
+// /reset: retire this user's current conversation. Archives the session rather
 // than dropping the mapping, so a task still running against it can still
 // deliver its answer.
-// Archives EVERY active session for the chat, not just the newest. The lookup
+// Archives EVERY active session for this user, not just the newest. The lookup
 // above resolves the newest active one, so leaving an older active row behind
-// would make /reset resume a stale conversation instead of starting a fresh
-// one — the exact failure /reset exists to fix.
+// would make /reset resume stale context.
 func (q *Queries) ArchiveTelegramChatSession(ctx context.Context, arg ArchiveTelegramChatSessionParams) error {
-	_, err := q.db.Exec(ctx, archiveTelegramChatSession, arg.AgentID, arg.ChatID)
+	_, err := q.db.Exec(ctx, archiveTelegramChatSession, arg.AgentID, arg.ChatID, arg.TelegramUserID)
 	return err
+}
+
+const claimTelegramTaskDelivery = `-- name: ClaimTelegramTaskDelivery :one
+UPDATE telegram_task_delivery
+SET delivery_started_at = now()
+WHERE task_id = $1 AND delivered_at IS NULL
+  AND (delivery_started_at IS NULL OR delivery_started_at < now() - interval '5 minutes')
+RETURNING task_id, agent_id, chat_id, telegram_user_id, reply_to_message_id, delivery_started_at, delivered_at, created_at
+`
+
+// Completion events may be replayed after an idempotent task report. Lease the
+// outbound row so concurrent/replayed events cannot post the same answer twice.
+func (q *Queries) ClaimTelegramTaskDelivery(ctx context.Context, taskID pgtype.UUID) (TelegramTaskDelivery, error) {
+	row := q.db.QueryRow(ctx, claimTelegramTaskDelivery, taskID)
+	var i TelegramTaskDelivery
+	err := row.Scan(
+		&i.TaskID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.TelegramUserID,
+		&i.ReplyToMessageID,
+		&i.DeliveryStartedAt,
+		&i.DeliveredAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const consumeTelegramBindingToken = `-- name: ConsumeTelegramBindingToken :one
@@ -172,6 +198,43 @@ func (q *Queries) CreateTelegramQuestion(ctx context.Context, arg CreateTelegram
 	return i, err
 }
 
+const createTelegramTaskDelivery = `-- name: CreateTelegramTaskDelivery :one
+INSERT INTO telegram_task_delivery (
+    task_id, agent_id, chat_id, telegram_user_id, reply_to_message_id
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING task_id, agent_id, chat_id, telegram_user_id, reply_to_message_id, delivery_started_at, delivered_at, created_at
+`
+
+type CreateTelegramTaskDeliveryParams struct {
+	TaskID           pgtype.UUID `json:"task_id"`
+	AgentID          pgtype.UUID `json:"agent_id"`
+	ChatID           string      `json:"chat_id"`
+	TelegramUserID   int64       `json:"telegram_user_id"`
+	ReplyToMessageID int64       `json:"reply_to_message_id"`
+}
+
+func (q *Queries) CreateTelegramTaskDelivery(ctx context.Context, arg CreateTelegramTaskDeliveryParams) (TelegramTaskDelivery, error) {
+	row := q.db.QueryRow(ctx, createTelegramTaskDelivery,
+		arg.TaskID,
+		arg.AgentID,
+		arg.ChatID,
+		arg.TelegramUserID,
+		arg.ReplyToMessageID,
+	)
+	var i TelegramTaskDelivery
+	err := row.Scan(
+		&i.TaskID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.TelegramUserID,
+		&i.ReplyToMessageID,
+		&i.DeliveryStartedAt,
+		&i.DeliveredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteExpiredTelegramBindingTokens = `-- name: DeleteExpiredTelegramBindingTokens :exec
 DELETE FROM telegram_binding_token WHERE expires_at < now() - interval '1 day'
 `
@@ -196,35 +259,38 @@ func (q *Queries) DeleteTelegramInstallation(ctx context.Context, arg DeleteTele
 }
 
 const getTelegramChatSession = `-- name: GetTelegramChatSession :one
-SELECT tcs.agent_id, tcs.chat_id, tcs.chat_session_id, tcs.created_at FROM telegram_chat_session tcs
+SELECT tcs.agent_id, tcs.chat_id, tcs.chat_session_id, tcs.created_at, tcs.telegram_user_id, tcs.last_engaged_at FROM telegram_chat_session tcs
 JOIN chat_session cs ON cs.id = tcs.chat_session_id
-WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND cs.status = 'active'
+WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND tcs.telegram_user_id = $3
+  AND cs.status = 'active'
 ORDER BY tcs.created_at DESC
 LIMIT 1
 `
 
 type GetTelegramChatSessionParams struct {
-	AgentID pgtype.UUID `json:"agent_id"`
-	ChatID  string      `json:"chat_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	ChatID         string      `json:"chat_id"`
+	TelegramUserID int64       `json:"telegram_user_id"`
 }
 
-// The chat's CURRENT conversation: the newest mapping whose session is still
-// active. Older rows are kept so a late reply from a superseded session can
-// still find its way back to the chat that asked.
+// The user's CURRENT conversation in this chat. Separate user threads prevent
+// group members from sharing model context or blocking each other's queue.
 func (q *Queries) GetTelegramChatSession(ctx context.Context, arg GetTelegramChatSessionParams) (TelegramChatSession, error) {
-	row := q.db.QueryRow(ctx, getTelegramChatSession, arg.AgentID, arg.ChatID)
+	row := q.db.QueryRow(ctx, getTelegramChatSession, arg.AgentID, arg.ChatID, arg.TelegramUserID)
 	var i TelegramChatSession
 	err := row.Scan(
 		&i.AgentID,
 		&i.ChatID,
 		&i.ChatSessionID,
 		&i.CreatedAt,
+		&i.TelegramUserID,
+		&i.LastEngagedAt,
 	)
 	return i, err
 }
 
 const getTelegramChatSessionBySession = `-- name: GetTelegramChatSessionBySession :one
-SELECT agent_id, chat_id, chat_session_id, created_at FROM telegram_chat_session WHERE chat_session_id = $1
+SELECT agent_id, chat_id, chat_session_id, created_at, telegram_user_id, last_engaged_at FROM telegram_chat_session WHERE chat_session_id = $1
 `
 
 // Outbound: which chat asked the question this session answers.
@@ -236,6 +302,8 @@ func (q *Queries) GetTelegramChatSessionBySession(ctx context.Context, chatSessi
 		&i.ChatID,
 		&i.ChatSessionID,
 		&i.CreatedAt,
+		&i.TelegramUserID,
+		&i.LastEngagedAt,
 	)
 	return i, err
 }
@@ -350,6 +418,26 @@ func (q *Queries) GetTelegramQuestion(ctx context.Context, id pgtype.UUID) (Tele
 	return i, err
 }
 
+const getTelegramTaskDeliveryByTask = `-- name: GetTelegramTaskDeliveryByTask :one
+SELECT task_id, agent_id, chat_id, telegram_user_id, reply_to_message_id, delivery_started_at, delivered_at, created_at FROM telegram_task_delivery WHERE task_id = $1
+`
+
+func (q *Queries) GetTelegramTaskDeliveryByTask(ctx context.Context, taskID pgtype.UUID) (TelegramTaskDelivery, error) {
+	row := q.db.QueryRow(ctx, getTelegramTaskDeliveryByTask, taskID)
+	var i TelegramTaskDelivery
+	err := row.Scan(
+		&i.TaskID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.TelegramUserID,
+		&i.ReplyToMessageID,
+		&i.DeliveryStartedAt,
+		&i.DeliveredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listActiveTelegramInstallations = `-- name: ListActiveTelegramInstallations :many
 SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids FROM telegram_installation WHERE status = 'active' ORDER BY installed_at
 `
@@ -432,6 +520,28 @@ func (q *Queries) ListTelegramInstallations(ctx context.Context, workspaceID pgt
 		return nil, err
 	}
 	return items, nil
+}
+
+const markTelegramTaskDeliveryDelivered = `-- name: MarkTelegramTaskDeliveryDelivered :exec
+UPDATE telegram_task_delivery
+SET delivered_at = now()
+WHERE task_id = $1
+`
+
+func (q *Queries) MarkTelegramTaskDeliveryDelivered(ctx context.Context, taskID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markTelegramTaskDeliveryDelivered, taskID)
+	return err
+}
+
+const releaseTelegramTaskDelivery = `-- name: ReleaseTelegramTaskDelivery :exec
+UPDATE telegram_task_delivery
+SET delivery_started_at = NULL
+WHERE task_id = $1 AND delivered_at IS NULL
+`
+
+func (q *Queries) ReleaseTelegramTaskDelivery(ctx context.Context, taskID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, releaseTelegramTaskDelivery, taskID)
+	return err
 }
 
 const setTelegramInstallationAccess = `-- name: SetTelegramInstallationAccess :one
@@ -595,27 +705,46 @@ func (q *Queries) SetTelegramQuestionMessage(ctx context.Context, arg SetTelegra
 	return err
 }
 
+const touchTelegramChatSession = `-- name: TouchTelegramChatSession :exec
+UPDATE telegram_chat_session
+SET last_engaged_at = now()
+WHERE chat_session_id = $1
+`
+
+func (q *Queries) TouchTelegramChatSession(ctx context.Context, chatSessionID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchTelegramChatSession, chatSessionID)
+	return err
+}
+
 const upsertTelegramChatSession = `-- name: UpsertTelegramChatSession :one
-INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
-VALUES ($1, $2, $3)
+INSERT INTO telegram_chat_session (agent_id, chat_id, telegram_user_id, chat_session_id)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (chat_session_id) DO NOTHING
-RETURNING agent_id, chat_id, chat_session_id, created_at
+RETURNING agent_id, chat_id, chat_session_id, created_at, telegram_user_id, last_engaged_at
 `
 
 type UpsertTelegramChatSessionParams struct {
-	AgentID       pgtype.UUID `json:"agent_id"`
-	ChatID        string      `json:"chat_id"`
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	ChatID         string      `json:"chat_id"`
+	TelegramUserID int64       `json:"telegram_user_id"`
+	ChatSessionID  pgtype.UUID `json:"chat_session_id"`
 }
 
 func (q *Queries) UpsertTelegramChatSession(ctx context.Context, arg UpsertTelegramChatSessionParams) (TelegramChatSession, error) {
-	row := q.db.QueryRow(ctx, upsertTelegramChatSession, arg.AgentID, arg.ChatID, arg.ChatSessionID)
+	row := q.db.QueryRow(ctx, upsertTelegramChatSession,
+		arg.AgentID,
+		arg.ChatID,
+		arg.TelegramUserID,
+		arg.ChatSessionID,
+	)
 	var i TelegramChatSession
 	err := row.Scan(
 		&i.AgentID,
 		&i.ChatID,
 		&i.ChatSessionID,
 		&i.CreatedAt,
+		&i.TelegramUserID,
+		&i.LastEngagedAt,
 	)
 	return i, err
 }

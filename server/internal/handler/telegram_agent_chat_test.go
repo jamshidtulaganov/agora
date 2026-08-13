@@ -37,3 +37,31 @@ func TestDecodeTelegramUpdate(t *testing.T) {
 		}
 	})
 }
+
+func TestTelegramMessageAddressesAgent(t *testing.T) {
+	tests := []struct {
+		name         string
+		text         string
+		repliesToBot bool
+		want         bool
+	}{
+		{name: "tag", text: "@AgoraAgent status?", want: true},
+		{name: "tag case insensitive", text: "hello @agoraagent", want: true},
+		{name: "reply", text: "continue", repliesToBot: true, want: true},
+		{name: "ordinary group chatter", text: "deploy is done", want: false},
+		{name: "similar username", text: "@AgoraAgentOther hello", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := telegramMessageAddressesAgent(test.text, test.repliesToBot, "AgoraAgent"); got != test.want {
+				t.Fatalf("got %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestStripTelegramBotMentionIsCaseInsensitive(t *testing.T) {
+	if got := stripTelegramBotMention("Hi @AGORAagent, please check", "AgoraAgent"); got != "Hi , please check" {
+		t.Fatalf("got %q", got)
+	}
+}

@@ -190,6 +190,32 @@ func (q *Queries) DeleteUserChatMessageByTask(ctx context.Context, taskID pgtype
 	return i, err
 }
 
+const getAssistantChatMessageByTask = `-- name: GetAssistantChatMessageByTask :one
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms FROM chat_message
+WHERE task_id = $1 AND role = 'assistant'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// External chat gateways must answer with this task's result, not merely the
+// newest assistant message in a shared durable session. Tasks can finish close
+// together, and "latest" can otherwise route one answer to two source messages.
+func (q *Queries) GetAssistantChatMessageByTask(ctx context.Context, taskID pgtype.UUID) (ChatMessage, error) {
+	row := q.db.QueryRow(ctx, getAssistantChatMessageByTask, taskID)
+	var i ChatMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.Role,
+		&i.Content,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.FailureReason,
+		&i.ElapsedMs,
+	)
+	return i, err
+}
+
 const getChatMessage = `-- name: GetChatMessage :one
 SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms FROM chat_message
 WHERE id = $1

@@ -83,38 +83,70 @@ WHERE agent_id = $1
 RETURNING *;
 
 -- name: UpsertTelegramChatSession :one
-INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
-VALUES ($1, $2, $3)
+INSERT INTO telegram_chat_session (agent_id, chat_id, telegram_user_id, chat_session_id)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (chat_session_id) DO NOTHING
 RETURNING *;
 
 -- name: GetTelegramChatSession :one
--- The chat's CURRENT conversation: the newest mapping whose session is still
--- active. Older rows are kept so a late reply from a superseded session can
--- still find its way back to the chat that asked.
+-- The user's CURRENT conversation in this chat. Separate user threads prevent
+-- group members from sharing model context or blocking each other's queue.
 SELECT tcs.* FROM telegram_chat_session tcs
 JOIN chat_session cs ON cs.id = tcs.chat_session_id
-WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND cs.status = 'active'
+WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND tcs.telegram_user_id = $3
+  AND cs.status = 'active'
 ORDER BY tcs.created_at DESC
 LIMIT 1;
+
+-- name: TouchTelegramChatSession :exec
+UPDATE telegram_chat_session
+SET last_engaged_at = now()
+WHERE chat_session_id = $1;
 
 -- name: GetTelegramChatSessionBySession :one
 -- Outbound: which chat asked the question this session answers.
 SELECT * FROM telegram_chat_session WHERE chat_session_id = $1;
 
 -- name: ArchiveTelegramChatSession :exec
--- /reset: retire the chat's current conversation. Archives the session rather
+-- /reset: retire this user's current conversation. Archives the session rather
 -- than dropping the mapping, so a task still running against it can still
 -- deliver its answer.
--- Archives EVERY active session for the chat, not just the newest. The lookup
+-- Archives EVERY active session for this user, not just the newest. The lookup
 -- above resolves the newest active one, so leaving an older active row behind
--- would make /reset resume a stale conversation instead of starting a fresh
--- one — the exact failure /reset exists to fix.
+-- would make /reset resume stale context.
 UPDATE chat_session SET status = 'archived', updated_at = now()
 WHERE status = 'active' AND id IN (
     SELECT tcs.chat_session_id FROM telegram_chat_session tcs
-    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2
+    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND tcs.telegram_user_id = $3
 );
+
+-- name: CreateTelegramTaskDelivery :one
+INSERT INTO telegram_task_delivery (
+    task_id, agent_id, chat_id, telegram_user_id, reply_to_message_id
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: GetTelegramTaskDeliveryByTask :one
+SELECT * FROM telegram_task_delivery WHERE task_id = $1;
+
+-- name: ClaimTelegramTaskDelivery :one
+-- Completion events may be replayed after an idempotent task report. Lease the
+-- outbound row so concurrent/replayed events cannot post the same answer twice.
+UPDATE telegram_task_delivery
+SET delivery_started_at = now()
+WHERE task_id = $1 AND delivered_at IS NULL
+  AND (delivery_started_at IS NULL OR delivery_started_at < now() - interval '5 minutes')
+RETURNING *;
+
+-- name: MarkTelegramTaskDeliveryDelivered :exec
+UPDATE telegram_task_delivery
+SET delivered_at = now()
+WHERE task_id = $1;
+
+-- name: ReleaseTelegramTaskDelivery :exec
+UPDATE telegram_task_delivery
+SET delivery_started_at = NULL
+WHERE task_id = $1 AND delivered_at IS NULL;
 
 -- name: CreateTelegramQuestion :one
 INSERT INTO telegram_question (workspace_id, agent_id, chat_id, prompt, options, expires_at)

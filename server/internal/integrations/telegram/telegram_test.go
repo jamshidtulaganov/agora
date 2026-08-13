@@ -81,6 +81,30 @@ func TestSendMessageHitsMockServer(t *testing.T) {
 	}
 }
 
+func TestSendMarkdownReplyTargetsTheSourceMessage(t *testing.T) {
+	var gotBody sendMessageRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":43}}`)
+	}))
+	defer srv.Close()
+
+	c := NewBotClient("TESTTOKEN")
+	c.BaseURL = srv.URL
+	c.HTTPClient = srv.Client()
+	if err := c.SendMarkdownReply(context.Background(), "-100123", "**Ready**", 77); err != nil {
+		t.Fatalf("SendMarkdownReply: %v", err)
+	}
+	if gotBody.ParseMode != "HTML" || gotBody.Text != "<b>Ready</b>" {
+		t.Fatalf("markdown reply formatting = mode %q text %q", gotBody.ParseMode, gotBody.Text)
+	}
+	if gotBody.ReplyParameters == nil || gotBody.ReplyParameters.MessageID != 77 ||
+		!gotBody.ReplyParameters.AllowSendingWithoutReply {
+		t.Fatalf("reply_parameters = %+v", gotBody.ReplyParameters)
+	}
+}
+
 func TestSendMessageTelegramError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

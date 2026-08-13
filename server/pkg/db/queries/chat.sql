@@ -93,6 +93,15 @@ SELECT * FROM chat_message
 WHERE chat_session_id = $1
 ORDER BY created_at ASC;
 
+-- name: GetAssistantChatMessageByTask :one
+-- External chat gateways must answer with this task's result, not merely the
+-- newest assistant message in a shared durable session. Tasks can finish close
+-- together, and "latest" can otherwise route one answer to two source messages.
+SELECT * FROM chat_message
+WHERE task_id = $1 AND role = 'assistant'
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ListChatMessagesPage :many
 SELECT * FROM chat_message
 WHERE chat_session_id = $1

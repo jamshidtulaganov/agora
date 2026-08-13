@@ -82,8 +82,7 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 		// keep its route back to the chat, otherwise /reset silently throws
 		// away an answer that was already being written.
 		if err := h.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
-			AgentID: row.AgentID,
-			ChatID:  chatID,
+			AgentID: row.AgentID, ChatID: chatID, TelegramUserID: fromID,
 		}); err != nil {
 			reply("Tozalanmadi, qayta urinib ko'ring.")
 			return true

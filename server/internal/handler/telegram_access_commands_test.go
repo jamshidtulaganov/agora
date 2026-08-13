@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -222,6 +223,7 @@ func TestChatSessionHistorySurvivesANewSession(t *testing.T) {
 	ctx := t.Context()
 	agentID := parseUUID(testAgentIDForTelegram(t))
 	const chatID = "-100999000111"
+	const telegramUserID int64 = 7001
 	t.Cleanup(func() {
 		testPool.Exec(ctx, `DELETE FROM telegram_chat_session WHERE chat_id = $1`, chatID)
 	})
@@ -237,7 +239,7 @@ func TestChatSessionHistorySurvivesANewSession(t *testing.T) {
 			t.Fatalf("create session: %v", err)
 		}
 		if _, err := testHandler.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
-			AgentID: agentID, ChatID: chatID, ChatSessionID: s.ID,
+			AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID, ChatSessionID: s.ID,
 		}); err != nil {
 			t.Fatalf("link session: %v", err)
 		}
@@ -247,7 +249,7 @@ func TestChatSessionHistorySurvivesANewSession(t *testing.T) {
 	first := newSession("first")
 	// Retire it the way /reset does, then open the next conversation.
 	if err := testHandler.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
-		AgentID: agentID, ChatID: chatID,
+		AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID,
 	}); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -265,7 +267,7 @@ func TestChatSessionHistorySurvivesANewSession(t *testing.T) {
 
 	// And "current" must be the new one, not the archived predecessor.
 	current, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
-		AgentID: agentID, ChatID: chatID,
+		AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID,
 	})
 	if err != nil {
 		t.Fatalf("no current session: %v", err)
@@ -281,6 +283,7 @@ func TestArchiveRetiresEveryActiveSession(t *testing.T) {
 	ctx := t.Context()
 	agentID := parseUUID(testAgentIDForTelegram(t))
 	const chatID = "-100999000222"
+	const telegramUserID int64 = 7002
 	t.Cleanup(func() {
 		testPool.Exec(ctx, `DELETE FROM telegram_chat_session WHERE chat_id = $1`, chatID)
 	})
@@ -293,20 +296,129 @@ func TestArchiveRetiresEveryActiveSession(t *testing.T) {
 			t.Fatalf("create %s: %v", title, err)
 		}
 		if _, err := testHandler.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
-			AgentID: agentID, ChatID: chatID, ChatSessionID: s.ID,
+			AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID, ChatSessionID: s.ID,
 		}); err != nil {
 			t.Fatalf("link %s: %v", title, err)
 		}
 	}
 	if err := testHandler.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
-		AgentID: agentID, ChatID: chatID,
+		AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID,
 	}); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if _, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
-		AgentID: agentID, ChatID: chatID,
+		AgentID: agentID, ChatID: chatID, TelegramUserID: telegramUserID,
 	}); err == nil {
 		t.Fatal("an active session survived the reset")
+	}
+}
+
+func TestTelegramSessionsAreIsolatedPerGroupUser(t *testing.T) {
+	ctx := t.Context()
+	agentID := parseUUID(testAgentIDForTelegram(t))
+	const chatID = "-100999000333"
+	const firstUser int64 = 8101
+	const secondUser int64 = 8102
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM telegram_chat_session WHERE chat_id = $1`, chatID)
+	})
+
+	create := func(userID int64) db.ChatSession {
+		session, err := testHandler.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
+			WorkspaceID: parseUUID(testWorkspaceID), AgentID: agentID,
+			CreatorID: parseUUID(testUserID), Title: "isolated Telegram user",
+		})
+		if err != nil {
+			t.Fatalf("create session for %d: %v", userID, err)
+		}
+		if _, err := testHandler.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
+			AgentID: agentID, ChatID: chatID, TelegramUserID: userID, ChatSessionID: session.ID,
+		}); err != nil {
+			t.Fatalf("link session for %d: %v", userID, err)
+		}
+		return session
+	}
+
+	first := create(firstUser)
+	second := create(secondUser)
+	firstLink, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID, TelegramUserID: firstUser,
+	})
+	if err != nil || uuidToString(firstLink.ChatSessionID) != uuidToString(first.ID) {
+		t.Fatalf("first user's session crossed: link=%+v err=%v", firstLink, err)
+	}
+	secondLink, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID, TelegramUserID: secondUser,
+	})
+	if err != nil || uuidToString(secondLink.ChatSessionID) != uuidToString(second.ID) {
+		t.Fatalf("second user's session crossed: link=%+v err=%v", secondLink, err)
+	}
+
+	if err := testHandler.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID, TelegramUserID: firstUser,
+	}); err != nil {
+		t.Fatalf("reset first user: %v", err)
+	}
+	if _, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID, TelegramUserID: secondUser,
+	}); err != nil {
+		t.Fatalf("resetting one user archived another user's context: %v", err)
+	}
+}
+
+func TestTelegramTaskDeliveryIsExactAndIdempotent(t *testing.T) {
+	ctx := t.Context()
+	agentID := parseUUID(testAgentIDForTelegram(t))
+	agent, err := testHandler.Queries.GetAgent(ctx, agentID)
+	if err != nil {
+		t.Fatalf("load fixture agent: %v", err)
+	}
+	session, err := testHandler.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
+		WorkspaceID: parseUUID(testWorkspaceID), AgentID: agentID,
+		CreatorID: parseUUID(testUserID), Title: "Telegram exact delivery",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM chat_session WHERE id = $1`, session.ID) })
+	task, err := testHandler.Queries.CreateChatTask(ctx, db.CreateChatTaskParams{
+		AgentID: agentID, RuntimeID: agent.RuntimeID, Priority: 2,
+		ChatSessionID: session.ID, InitiatorUserID: parseUUID(testUserID),
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, task.ID) })
+	if _, err := testHandler.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ChatSessionID: session.ID, Role: "assistant", Content: "exact answer", TaskID: task.ID,
+	}); err != nil {
+		t.Fatalf("create assistant reply: %v", err)
+	}
+	if _, err := testHandler.Queries.CreateTelegramTaskDelivery(ctx, db.CreateTelegramTaskDeliveryParams{
+		TaskID: task.ID, AgentID: agentID, ChatID: "-100999000444",
+		TelegramUserID: 8201, ReplyToMessageID: 91,
+	}); err != nil {
+		t.Fatalf("create delivery: %v", err)
+	}
+
+	message, err := testHandler.Queries.GetAssistantChatMessageByTask(ctx, task.ID)
+	if err != nil || message.Content != "exact answer" {
+		t.Fatalf("task reply = %+v, err=%v", message, err)
+	}
+	if _, err := testHandler.Queries.ClaimTelegramTaskDelivery(ctx, task.ID); err != nil {
+		t.Fatalf("first delivery claim: %v", err)
+	}
+	if _, err := testHandler.Queries.ClaimTelegramTaskDelivery(ctx, task.ID); err != pgx.ErrNoRows {
+		t.Fatalf("concurrent replay claim err=%v, want pgx.ErrNoRows", err)
+	}
+	if err := testHandler.Queries.MarkTelegramTaskDeliveryDelivered(ctx, task.ID); err != nil {
+		t.Fatalf("mark delivered: %v", err)
+	}
+	if err := testHandler.Queries.ReleaseTelegramTaskDelivery(ctx, task.ID); err != nil {
+		t.Fatalf("release delivered row: %v", err)
+	}
+	if _, err := testHandler.Queries.ClaimTelegramTaskDelivery(ctx, task.ID); err != pgx.ErrNoRows {
+		t.Fatalf("delivered replay claim err=%v, want pgx.ErrNoRows", err)
 	}
 }
 
