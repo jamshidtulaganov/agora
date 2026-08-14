@@ -238,7 +238,7 @@ func snapshotLocalRepoHeads(ctx context.Context, parent string) ([]Orchestration
 	return refs, nil
 }
 
-func snapshotLocalRepoHeadsForRoots(ctx context.Context, roots []string) ([]OrchestrationGitHead, error) {
+func snapshotLocalRepoHeadsForRoots(ctx context.Context, roots []string, preferredBranch string) ([]OrchestrationGitHead, error) {
 	repos, err := detectLocalReposForRoots(ctx, roots)
 	if err != nil {
 		return nil, err
@@ -248,14 +248,25 @@ func snapshotLocalRepoHeadsForRoots(ctx context.Context, roots []string) ([]Orch
 	}
 	refs := make([]OrchestrationGitHead, 0, len(repos))
 	for _, repo := range repos {
-		head, headErr := gitOutput(ctx, repo.SrcPath, "rev-parse", "HEAD")
+		ref := "HEAD"
+		branch := ""
+		if candidate := strings.TrimSpace(preferredBranch); candidate != "" {
+			// A project can attach several repositories and the issue branch may
+			// exist in only some of them. Prefer it per repository, falling back
+			// to that source checkout's HEAD for backwards compatibility.
+			if _, verifyErr := gitOutput(ctx, repo.SrcPath, "rev-parse", "--verify", candidate+"^{commit}"); verifyErr == nil {
+				ref = candidate
+				branch = candidate
+			}
+		}
+		head, headErr := gitOutput(ctx, repo.SrcPath, "rev-parse", ref)
 		if headErr != nil {
-			return nil, fmt.Errorf("resolve HEAD for repository %q: %w", repo.Name, headErr)
+			return nil, fmt.Errorf("resolve %s for repository %q: %w", ref, repo.Name, headErr)
 		}
 		if head == "" {
-			return nil, fmt.Errorf("resolve HEAD for repository %q: empty commit", repo.Name)
+			return nil, fmt.Errorf("resolve %s for repository %q: empty commit", ref, repo.Name)
 		}
-		refs = append(refs, OrchestrationGitHead{Repo: repo.Name, HeadSHA: head})
+		refs = append(refs, OrchestrationGitHead{Repo: repo.Name, Branch: branch, HeadSHA: head})
 	}
 	return refs, nil
 }

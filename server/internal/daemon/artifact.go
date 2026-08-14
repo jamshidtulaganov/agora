@@ -764,11 +764,13 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"needs_command": true, "artifact_id": grant.ArtifactID, "configuration_source": configurationSource})
 			return
 		}
-		if depLog, depErr := ensureDeps(repoDir); depErr != nil {
-			runtime.cleanup(context.Background(), d.logger)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "command": command, "configuration_source": configurationSource, "error": "dependency install failed", "log": tailLog(depLog)})
-			return
+		if !previewCommandManagesDependencies(command) {
+			if depLog, depErr := ensureDeps(repoDir); depErr != nil {
+				runtime.cleanup(context.Background(), d.logger)
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "command": command, "configuration_source": configurationSource, "error": "dependency install failed", "log": tailLog(depLog)})
+				return
+			}
 		}
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {

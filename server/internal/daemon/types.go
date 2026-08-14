@@ -48,8 +48,12 @@ type Task struct {
 	RuntimeID   string `json:"runtime_id"`
 	IssueID     string `json:"issue_id"`
 	WorkspaceID string `json:"workspace_id"`
-	BranchName  string `json:"branch_name,omitempty"` // server-selected issue branch; empty keeps the legacy agent/task branch
-	RunMode     string `json:"run_mode,omitempty"`    // per-task auto/debug/plan/build execution contract
+	BranchName  string `json:"branch_name,omitempty"` // worker branch; ordinary issue tasks use the stable issue branch
+	// IssueBranchName is the stable issue branch used to pin an orchestration
+	// run's immutable base. It stays separate from BranchName because parallel
+	// orchestration workers must retain their own step-specific branches.
+	IssueBranchName string `json:"issue_branch_name,omitempty"`
+	RunMode         string `json:"run_mode,omitempty"` // per-task auto/debug/plan/build execution contract
 	// WorkspaceContext mirrors workspace.context (the per-workspace system
 	// prompt set in Settings → General). Server populates this on every claim
 	// regardless of task kind so the daemon can inject `## Workspace Context`

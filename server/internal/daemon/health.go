@@ -290,13 +290,16 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			return
 		}
 
-		// Auto-install deps on a fresh worktree so the dev server can start.
-		if depLog, derr := ensureDeps(repoDir); derr != nil {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error": "dependency install failed",
-				"log":   tailLog(depLog),
-			})
-			return
+		// Auto-install host dependencies only when the preview command does not
+		// own them itself (Docker Compose installs them inside its images).
+		if !previewCommandManagesDependencies(command) {
+			if depLog, derr := ensureDeps(repoDir); derr != nil {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": "dependency install failed",
+					"log":   tailLog(depLog),
+				})
+				return
+			}
 		}
 
 		previewsMu.Lock()
@@ -1160,6 +1163,8 @@ func startPreview(repoDir, command string, hintPort int) (*previewProc, error) {
 	cmd.Stderr = buf
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("PORT=%d", hintPort),
+		fmt.Sprintf("HTTP_PORT=%d", hintPort),
+		fmt.Sprintf("COMPOSE_PROJECT_NAME=agora-preview-%d", hintPort),
 		"HOST=127.0.0.1",
 		"BROWSER=none",
 		"FORCE_COLOR=0",

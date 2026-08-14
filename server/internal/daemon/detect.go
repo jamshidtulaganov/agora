@@ -5,13 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // Dev-server / test-command detection for /editor/preview and /editor/test.
-// Tier order is deliberate and must not be reordered: Node first (the common
-// vibecoder web stack), then Makefile, then PHP. Hybrid repos (e.g. Laravel
-// with both package.json and composer.json) detect Node — the project setting
-// qa_smoke_cmd is the escape hatch, not a tier swap.
+// An explicit Docker Compose application definition owns the whole runtime and
+// therefore wins over host-language heuristics. The remaining tier order is
+// Node, Makefile, then PHP.
 
 // nodePackageManager picks the Node package manager from the repo's lockfile
 // (pnpm > yarn > npm), the same ordering detectSprintDepProvider uses.
@@ -26,9 +26,15 @@ func nodePackageManager(repoDir string) string {
 }
 
 // detectDevCommand returns a best-guess dev-server command, or "".
-// Tiers: package.json scripts → Makefile dev/start/run/serve target →
-// PHP built-in server (composer.json / index.php).
+// Tiers: Docker Compose → package.json scripts → Makefile
+// dev/start/run/serve target → PHP built-in server (composer.json / index.php).
 func detectDevCommand(repoDir string) string {
+	if detectComposeFile(repoDir) != "" {
+		// Compose interpolation happens in the shell started by startPreview.
+		// Existing project compose files commonly expose their web service as
+		// `${HTTP_PORT:-8080}:80`, while Agora's stable contract is PORT.
+		return "HTTP_PORT=${PORT} docker compose up --build --remove-orphans"
+	}
 	if cmd := detectNodeDevCommand(repoDir); cmd != "" {
 		return cmd
 	}
@@ -36,6 +42,34 @@ func detectDevCommand(repoDir string) string {
 		return "make " + target
 	}
 	return detectPHPDevCommand(repoDir)
+}
+
+// detectComposeFile returns the first Docker Compose default filename present
+// in the repository. Docker itself recognizes all four, so the filename is
+// used only as a presence signal and does not need to be passed with -f.
+func detectComposeFile(repoDir string) string {
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+		if fileExists(filepath.Join(repoDir, name)) {
+			return name
+		}
+	}
+	return ""
+}
+
+// previewCommandManagesDependencies reports whether the preview command owns
+// dependency installation inside a container. Running host npm/composer first
+// is both unnecessary and incorrect for these repositories.
+func previewCommandManagesDependencies(command string) bool {
+	fields := strings.Fields(strings.ToLower(command))
+	for i, field := range fields {
+		if field == "docker-compose" || strings.HasSuffix(field, "/docker-compose") {
+			return true
+		}
+		if (field == "docker" || strings.HasSuffix(field, "/docker")) && i+1 < len(fields) && fields[i+1] == "compose" {
+			return true
+		}
+	}
+	return false
 }
 
 // detectNodeDevCommand covers the Node ecosystem via package.json + lockfile.

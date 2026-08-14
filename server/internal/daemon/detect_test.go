@@ -30,6 +30,23 @@ func TestDetectDevCommand(t *testing.T) {
 		want  string
 	}{
 		{
+			name: "Docker Compose owns the runtime",
+			files: map[string]string{
+				"docker-compose.yml": "services:\n  web:\n    image: nginx\n",
+				"composer.json":      `{}`,
+				"web/index.php":      "<?php",
+			},
+			want: "HTTP_PORT=${PORT} docker compose up --build --remove-orphans",
+		},
+		{
+			name: "compose.yaml wins over Node",
+			files: map[string]string{
+				"compose.yaml": "services:\n  web:\n    image: nginx\n",
+				"package.json": `{"scripts":{"dev":"vite"}}`,
+			},
+			want: "HTTP_PORT=${PORT} docker compose up --build --remove-orphans",
+		},
+		{
 			name: "node with pnpm lockfile",
 			files: map[string]string{
 				"package.json":   `{"scripts":{"dev":"vite"}}`,
@@ -130,6 +147,26 @@ func TestDetectDevCommand(t *testing.T) {
 			dir := writeFiles(t, tt.files)
 			if got := detectDevCommand(dir); got != tt.want {
 				t.Errorf("detectDevCommand() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPreviewCommandManagesDependencies(t *testing.T) {
+	tests := []struct {
+		command string
+		want    bool
+	}{
+		{"HTTP_PORT=${PORT} docker compose up --build", true},
+		{"docker-compose -f compose.test.yml up", true},
+		{"/usr/local/bin/docker compose up", true},
+		{"composer install && php -S 127.0.0.1:${PORT}", false},
+		{"npm run dev", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			if got := previewCommandManagesDependencies(tt.command); got != tt.want {
+				t.Fatalf("previewCommandManagesDependencies(%q) = %v, want %v", tt.command, got, tt.want)
 			}
 		})
 	}

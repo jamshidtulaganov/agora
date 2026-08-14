@@ -272,7 +272,11 @@ type AgentTaskResponse struct {
 	RuntimeID   string `json:"runtime_id"`
 	IssueID     string `json:"issue_id"`
 	WorkspaceID string `json:"workspace_id"`
-	BranchName  string `json:"branch_name,omitempty"` // preferred human-readable git branch for ordinary issue tasks
+	BranchName  string `json:"branch_name,omitempty"` // worker branch; ordinary issue tasks use the stable issue branch
+	// IssueBranchName is always the issue's stable human-readable branch. The
+	// daemon uses it only as the preferred orchestration base ref, while keeping
+	// BranchName available for each orchestration worker's isolated branch.
+	IssueBranchName string `json:"issue_branch_name,omitempty"`
 	// WorkspaceContext is the workspace-level system prompt set in workspace
 	// settings (`workspace.context` DB column). Injected into the agent brief
 	// as `## Workspace Context` so every agent running in this workspace —

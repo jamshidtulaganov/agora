@@ -2542,6 +2542,8 @@ func TestCompleteTask_AssignmentTriggered_DoesNotSuppressTrivialDoneOutput(t *te
 
 type claimRuntimeGuardTask struct {
 	ID                                string         `json:"id"`
+	BranchName                        string         `json:"branch_name"`
+	IssueBranchName                   string         `json:"issue_branch_name"`
 	PriorSessionID                    string         `json:"prior_session_id"`
 	PriorWorkDir                      string         `json:"prior_work_dir"`
 	PriorSessionSameOrchestrationStep bool           `json:"prior_session_same_orchestration_step"`
@@ -3081,6 +3083,12 @@ func TestClaimTask_OrchestrationSessionLineage(t *testing.T) {
 	// issue/comment conversation that caused this agent to become involved.
 	queueStepTask(stepID)
 	first := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if first.IssueBranchName == "" {
+		t.Fatal("orchestration claim must carry the stable issue branch used to pin its run base")
+	}
+	if first.BranchName == first.IssueBranchName {
+		t.Fatalf("orchestration worker branch was replaced by issue branch %q", first.IssueBranchName)
+	}
 	if first.PriorSessionID != "tagged-comment-session" || first.PriorWorkDir != "/tmp/tagged-comment-workdir" {
 		t.Fatalf("first orchestration turn did not inherit tagged comment context: %+v", first)
 	}

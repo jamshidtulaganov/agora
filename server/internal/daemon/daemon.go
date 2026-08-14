@@ -3087,7 +3087,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				prepParams.ProvisionWorkDir = func(workDir string) error {
 					baseRefs := append([]OrchestrationGitHead(nil), task.OrchestrationBaseRefs...)
 					if task.OrchestrationStepID != "" && len(baseRefs) == 0 {
-						proposed, snapshotErr := snapshotLocalRepoHeadsForRoots(ctx, localAssignments.absPaths())
+						proposed, snapshotErr := snapshotLocalRepoHeadsForRoots(ctx, localAssignments.absPaths(), task.IssueBranchName)
 						if snapshotErr != nil {
 							return snapshotErr
 						}

@@ -1474,15 +1474,16 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if issue, err := h.Queries.GetIssue(r.Context(), task.IssueID); err == nil {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
+			prefix := ""
+			if ws, wsErr := h.Queries.GetWorkspace(r.Context(), issue.WorkspaceID); wsErr == nil {
+				prefix = ws.IssuePrefix
+			}
+			resp.IssueBranchName = issueGitBranchName(prefix, issue.Number, uuidToString(issue.ID), issue.Title, h.issueLabelNames(r.Context(), issue.ID))
 			// Persisted orchestration steps deliberately keep their step-specific
 			// branches because multiple workers may edit the same repo in parallel.
 			// Ordinary issue runs use a stable branch that humans can identify.
 			if !task.OrchestrationStepID.Valid {
-				prefix := ""
-				if ws, wsErr := h.Queries.GetWorkspace(r.Context(), issue.WorkspaceID); wsErr == nil {
-					prefix = ws.IssuePrefix
-				}
-				resp.BranchName = issueGitBranchName(prefix, issue.Number, uuidToString(issue.ID), issue.Title, h.issueLabelNames(r.Context(), issue.ID))
+				resp.BranchName = resp.IssueBranchName
 			}
 			// Retrieval query material for the daemon's repo context pack.
 			// Capped because a 40k-char description would bloat every claim

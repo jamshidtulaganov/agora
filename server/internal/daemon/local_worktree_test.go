@@ -245,6 +245,43 @@ func TestProvisionLocalWorktreesAt_UsesPinnedBaseInsteadOfCurrentSourceHead(t *t
 	}
 }
 
+func TestSnapshotLocalRepoHeadsForRoots_PrefersIssueBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	source := t.TempDir()
+	makeRepo(t, source)
+	mainHead := gitAt(t, source, "rev-parse", "HEAD")
+
+	gitAt(t, source, "checkout", "-q", "-b", "feature/sd-25")
+	if err := os.WriteFile(filepath.Join(source, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitAt(t, source, "add", "docker-compose.yml")
+	gitAt(t, source, "commit", "-q", "-m", "add issue runtime")
+	issueHead := gitAt(t, source, "rev-parse", "HEAD")
+	gitAt(t, source, "checkout", "-q", "main")
+	if got := gitAt(t, source, "rev-parse", "HEAD"); got != mainHead {
+		t.Fatalf("fixture HEAD = %s, want main %s", got, mainHead)
+	}
+
+	refs, err := snapshotLocalRepoHeadsForRoots(context.Background(), []string{source}, "feature/sd-25")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].HeadSHA != issueHead || refs[0].Branch != "feature/sd-25" {
+		t.Fatalf("preferred snapshot = %+v, want branch feature/sd-25 at %s", refs, issueHead)
+	}
+
+	fallback, err := snapshotLocalRepoHeadsForRoots(context.Background(), []string{source}, "feature/missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fallback) != 1 || fallback[0].HeadSHA != mainHead || fallback[0].Branch != "" {
+		t.Fatalf("fallback snapshot = %+v, want HEAD %s without branch", fallback, mainHead)
+	}
+}
+
 func TestProvisionLocalWorktreesAt_ReadOnlyUsesDetachedIntegrationHead(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
