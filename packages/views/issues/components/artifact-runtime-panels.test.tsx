@@ -6,7 +6,11 @@ import { I18nProvider } from "@agora/core/i18n/react";
 import enIssues from "../../locales/en/issues.json";
 import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
 
-const mocks = vi.hoisted(() => ({ getIssueArtifact: vi.fn(), getIssueQAPreviewURL: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getIssueArtifact: vi.fn(),
+  getIssueQAPreviewURL: vi.fn(),
+  isDesktopShell: vi.fn(() => false),
+}));
 
 vi.mock("@agora/core/api", () => ({
   api: {
@@ -14,6 +18,8 @@ vi.mock("@agora/core/api", () => ({
     getIssueQAPreviewURL: mocks.getIssueQAPreviewURL,
   },
 }));
+
+vi.mock("../../platform", () => ({ isDesktopShell: mocks.isDesktopShell }));
 
 const HEAD = "b".repeat(40);
 
@@ -54,6 +60,9 @@ describe("exact-head artifact runtime panels", () => {
     // Default: no standing dev server → fall through to the daemon preview
     // chain, so the existing daemon-based assertions below hold unchanged.
     mocks.getIssueQAPreviewURL.mockResolvedValue({ url: "", embeddable: false });
+    // Default to the web shell so CSP embeddability is honored; the desktop
+    // bypass is exercised explicitly in its own test.
+    mocks.isDesktopShell.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -211,5 +220,23 @@ describe("exact-head artifact runtime panels", () => {
     // A non-embeddable dev server must NOT be framed; the daemon Start button shows.
     expect(await screen.findByRole("button", { name: "Start preview" })).toBeInTheDocument();
     expect(screen.queryByText("agora-cs.sdteam.uz")).not.toBeInTheDocument();
+  });
+
+  it("frames a non-embeddable dev server anyway in the desktop shell", async () => {
+    // Desktop runs webSecurity:false, so a scoped frame-ancestors CSP is not
+    // enforced — embed even though the server-side probe says non-embeddable.
+    mocks.isDesktopShell.mockReturnValue(true);
+    mocks.getIssueQAPreviewURL.mockResolvedValue({
+      url: "https://agora-cs.sdteam.uz",
+      embeddable: false,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
+
+    const frame = (await screen.findByTitle("Integrated product preview")) as HTMLIFrameElement;
+    expect(frame.src).toBe("https://agora-cs.sdteam.uz/");
+    expect(screen.queryByRole("button", { name: "Start preview" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

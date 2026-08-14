@@ -30,6 +30,7 @@ import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import { isDesktopShell } from "../../platform";
 import { artifactDaemonPost, artifactPreviewURL } from "./artifact-daemon-client";
 
 function selectedArtifactRepo(data: IssueArtifactResponse | undefined, repoName: string) {
@@ -172,7 +173,13 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   // When a standing dev server takes over the panel, the daemon preview
   // status/start/stop must go quiet — otherwise it would keep polling (and
   // could cold-boot a Docker container) behind the embedded external frame.
-  const externalActive = Boolean(externalQuery.data?.url && externalQuery.data.embeddable);
+  // The desktop shell runs with webSecurity:false, so a cross-origin
+  // frame-ancestors CSP on the dev server is not enforced there — a target
+  // the server-side probe marks non-embeddable (because the CSP scopes framing
+  // to specific origins, not "*") still frames fine in the desktop app. On the
+  // web the CSP IS enforced, so honor the probe's verdict.
+  const externalURL = externalQuery.data?.url ?? "";
+  const externalActive = Boolean(externalURL) && (externalQuery.data?.embeddable === true || isDesktopShell());
   const selectedRepo = selectedArtifactRepo(data, repoName);
   // A live local artifact has no frozen repos — the daemon points preview at the
   // developer's own dev server, so a selected repo isn't required.
@@ -231,9 +238,10 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   });
 
   if (artifactQuery.isLoading || externalQuery.isLoading) return <RuntimeSkeleton />;
-  // Prefer the standing dev server when one resolves and can be framed.
-  if (externalQuery.data?.url && externalQuery.data.embeddable) {
-    return <StandingServerPreview url={externalQuery.data.url} />;
+  // Prefer the standing dev server when one resolves and can be framed
+  // (embeddable on web; always in the desktop shell — see externalActive).
+  if (externalActive) {
+    return <StandingServerPreview url={externalURL} />;
   }
   if (!artifact || !capability || !data?.daemon_url || (!selectedRepo && !isLive)) return <RuntimeUnavailable kind="preview" />;
 
