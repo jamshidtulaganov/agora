@@ -106,8 +106,9 @@ func TestUserDevServerResolution(t *testing.T) {
 		return issue
 	}
 
-	// Member assignee → their own box.
-	memberIssue := newIssue("member", memberID)
+	// Member assignee → their own box. A member assignee stores the USER id in
+	// assignee_id (not the member row id), matching production data.
+	memberIssue := newIssue("member", testUserID)
 	if got := testHandler.userDevServerURL(ctx, memberIssue); got != boxURL {
 		t.Errorf("member assignee: got %q want %q", got, boxURL)
 	}

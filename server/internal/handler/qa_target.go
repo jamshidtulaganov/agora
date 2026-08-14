@@ -44,11 +44,17 @@ func (h *Handler) developerUserForIssue(ctx context.Context, issue db.Issue) (pg
 		}
 	}
 	// A human assignee IS the developer — their issues route to their own
-	// machine (Labs: "QA env = developer env").
+	// machine (Labs: "QA env = developer env"). For a member assignee,
+	// assignee_id holds the USER id, not the member row id (see the issue
+	// visibility query: `assignee_type='member' AND assignee_id = <userID>`),
+	// so resolve membership by user_id — GetMember (keyed on member.id) would
+	// never match and every member-assigned issue would fail to route.
 	if issue.AssigneeType.String == "member" {
-		member, err := h.Queries.GetMember(ctx, issue.AssigneeID)
-		if err == nil && member.WorkspaceID.Bytes == issue.WorkspaceID.Bytes {
-			return member.UserID, true
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID:      issue.AssigneeID,
+			WorkspaceID: issue.WorkspaceID,
+		}); err == nil {
+			return issue.AssigneeID, true
 		}
 	}
 	return pgtype.UUID{}, false
