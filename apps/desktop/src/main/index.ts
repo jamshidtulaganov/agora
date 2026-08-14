@@ -18,6 +18,7 @@ import {
   installRendererRecoveryHandlers,
   type RendererRecoveryWindow,
 } from "./renderer-recovery";
+import { rewriteLocalPreviewCookies } from "./preview-cookie";
 
 // Bundled icon used for dock/taskbar branding. macOS/Windows production
 // builds let the OS pick up the icon from the .app bundle / .exe resources,
@@ -212,6 +213,21 @@ function createWindow(): void {
     (details, callback) => {
       delete details.requestHeaders["Origin"];
       callback({ requestHeaders: details.requestHeaders });
+    },
+  );
+
+  // Product previews run under the local daemon proxy inside a file://
+  // renderer iframe. Normalize only legacy localhost preview cookies so
+  // authenticated apps can retain their session in that third-party frame.
+  window.webContents.session.webRequest.onHeadersReceived(
+    { urls: ["http://127.0.0.1:*/*", "http://localhost:*/*"] },
+    (details, callback) => {
+      callback({
+        responseHeaders: rewriteLocalPreviewCookies(
+          details.url,
+          details.responseHeaders,
+        ),
+      });
     },
   );
 
