@@ -60,6 +60,7 @@ import {
 } from "./utils/preview";
 import { useDownloadAttachment } from "./use-download-attachment";
 import { useAttachmentHtmlText } from "./hooks/use-attachment-html-text";
+import { useAuthenticatedMediaSrcResult } from "./hooks/use-authenticated-media-src";
 import { HtmlPreviewBody } from "./html-preview-body";
 import { CodeBlockStatic } from "./code-block-static";
 
@@ -84,6 +85,10 @@ export type PreviewSource =
 // PreviewKinds that can render from a URL-only source. Text-based kinds
 // (markdown / html / text) need the /content proxy which is ID-keyed.
 const URL_ONLY_KINDS = new Set<PreviewKind>(["image", "pdf", "video", "audio"]);
+
+function isBinaryMediaKind(kind: PreviewKind | null): boolean {
+  return kind === "image" || kind === "pdf" || kind === "video" || kind === "audio";
+}
 
 // Normalized view used everywhere downstream of `useAttachmentPreview`.
 // `attachmentId === null` signals URL-only mode (download falls back to
@@ -219,13 +224,22 @@ export function AttachmentPreviewModal({
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onClose();
+      }
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
   }, [open, onClose]);
 
   const kind = getPreviewKind(state.contentType, state.filename);
+  const authenticatedMedia = useAuthenticatedMediaSrcResult(
+    state.mediaUrl,
+    state.attachmentId ?? undefined,
+    isBinaryMediaKind(kind),
+  );
 
   // Download dispatcher: re-sign through `getAttachment` when an id is
   // available; otherwise fall back to opening the (possibly stale) URL
@@ -287,7 +301,7 @@ export function AttachmentPreviewModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -354,7 +368,9 @@ export function AttachmentPreviewModal({
           <PreviewContent
             kind={kind}
             source={source}
-            state={state}
+            state={{ ...state, mediaUrl: authenticatedMedia.src }}
+            mediaLoading={authenticatedMedia.isLoading}
+            mediaError={authenticatedMedia.isError}
             onDownload={handleDownload}
           />
         </div>
@@ -375,11 +391,15 @@ function PreviewContent({
   kind,
   source,
   state,
+  mediaLoading,
+  mediaError,
   onDownload,
 }: {
   kind: PreviewKind | null;
   source: PreviewSource;
   state: PreviewState;
+  mediaLoading: boolean;
+  mediaError: boolean;
   onDownload: () => void;
 }) {
   const { t } = useT("editor");
@@ -388,6 +408,24 @@ function PreviewContent({
     return (
       <UnsupportedFallback
         message={t(($) => $.attachment.preview_unsupported)}
+        onDownload={onDownload}
+      />
+    );
+  }
+
+  if (isBinaryMediaKind(kind) && mediaLoading) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        {t(($) => $.attachment.preview_loading)}
+      </div>
+    );
+  }
+
+  if (isBinaryMediaKind(kind) && mediaError) {
+    return (
+      <UnsupportedFallback
+        message={t(($) => $.attachment.preview_failed)}
         onDownload={onDownload}
       />
     );

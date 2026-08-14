@@ -11,11 +11,18 @@ const configRef = vi.hoisted(() => ({
   telegramBotsEnabled: false,
 }));
 const queryCalls = vi.hoisted(() => [] as { queryKey?: unknown; enabled?: boolean }[]);
+const navigationRef = vi.hoisted(() => ({ search: "" }));
 
 vi.mock("@agora/core/config", () => ({
   useConfigStore: (selector: (state: typeof configRef) => unknown) => selector(configRef),
 }));
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("../../navigation", () => ({
+  useNavigation: () => ({
+    pathname: "/acme/settings",
+    searchParams: new URLSearchParams(navigationRef.search),
+  }),
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey?: unknown; enabled?: boolean }) => {
     queryCalls.push(options);
@@ -51,6 +58,7 @@ const { IntegrationsTab } = await import("./integrations-tab");
 describe("IntegrationsTab", () => {
   beforeEach(() => {
     queryCalls.length = 0;
+    navigationRef.search = "";
     configRef.telegramBotsEnabled = false;
   });
 
@@ -66,5 +74,19 @@ describe("IntegrationsTab", () => {
       queryKey: ["telegram", "workspace-1", "installations"],
       enabled: true,
     }));
+  });
+
+  it("opens the Figma connector when linked from a blocked design review", () => {
+    navigationRef.search = "integration=figma";
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /Figma/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 });

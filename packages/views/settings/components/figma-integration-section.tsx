@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Button } from "@agora/ui/components/ui/button";
 import { api, ApiError } from "@agora/core/api";
@@ -11,6 +11,10 @@ import { useAuthStore } from "@agora/core/auth";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { memberListOptions } from "@agora/core/workspace/queries";
 import { useT } from "../../i18n";
+import { openExternal } from "../../platform";
+
+const FIGMA_TOKEN_HELP_URL =
+  "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens";
 
 // Workspace Figma credential: one PAT that lets agents read Figma designs
 // referenced by issues (the backend fills the agent's MCP config at claim
@@ -127,8 +131,29 @@ export function FigmaIntegrationSection() {
         </p>
       )}
 
+      {!configured && !canManage && (
+        <p className="text-xs text-muted-foreground">
+          {t(($) => $.figma.member_read_only)}
+        </p>
+      )}
+
       {canManage && (
         <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-muted-foreground">
+              {t(($) => $.figma.token_help)}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5"
+              onClick={() => openExternal(FIGMA_TOKEN_HELP_URL)}
+            >
+              {t(($) => $.figma.token_help_link)}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </Button>
+          </div>
           <Input
             type="password"
             autoComplete="off"

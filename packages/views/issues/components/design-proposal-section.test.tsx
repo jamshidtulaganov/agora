@@ -21,6 +21,23 @@ vi.mock("@tanstack/react-query", async () => {
 });
 vi.mock("@agora/core/api", () => ({ api: { sliceAction: vi.fn(), createDesignReview: vi.fn() } }));
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@agora/core/paths", () => ({
+  useWorkspacePaths: () => ({ settings: () => "/acme/settings" }),
+}));
+vi.mock("../../navigation", () => ({
+  useNavigation: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    pathname: "/acme/issues/issue-1",
+    searchParams: new URLSearchParams(),
+    getShareableUrl: vi.fn(),
+  }),
+}));
+vi.mock("../../platform", () => ({ openExternal: vi.fn() }));
+vi.mock("../../editor", () => ({
+  useAttachmentPreview: () => ({ open: vi.fn(), tryOpen: vi.fn(), modal: null }),
+}));
 
 const BLOCKED_PROPOSAL = `\`\`\`design-proposal
 {"status":"blocked","reason":"credential_missing","reason_detail":"Figma credential missing","figma":[{"url":"https://www.figma.com/design/5KEkQk9YUgcq9ooDTlgQVW/Mytrion?node-id=3-2","file_key":"5KEkQk9YUgcq9ooDTlgQVW","node_id":"3:2"}],"screens":[],"components":[],"deviations":[],"sub_issues":[],"open_questions":[]}

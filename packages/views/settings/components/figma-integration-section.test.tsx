@@ -26,6 +26,7 @@ const mockGetStatus = vi.hoisted(() => vi.fn());
 const mockPut = vi.hoisted(() => vi.fn());
 const mockDelete = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+const openExternalMock = vi.hoisted(() => vi.fn());
 
 type MemberRole = "owner" | "admin" | "member";
 
@@ -77,6 +78,7 @@ vi.mock("@agora/core/auth", () => {
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
+vi.mock("../../platform", () => ({ openExternal: openExternalMock }));
 
 import { FigmaIntegrationSection } from "./figma-integration-section";
 import { toast } from "sonner";
@@ -109,6 +111,15 @@ describe("FigmaIntegrationSection", () => {
     expect(screen.getByText(enSettings.figma.not_configured)).toBeTruthy();
     expect(screen.getByLabelText(enSettings.figma.token_label)).toBeTruthy();
     expect(screen.getByText(enSettings.figma.save)).toBeTruthy();
+    expect(screen.getByText(enSettings.figma.token_help_link)).toBeTruthy();
+  });
+
+  it("opens Figma's token instructions through the platform bridge", async () => {
+    renderSection();
+    await userEvent.click(screen.getByText(enSettings.figma.token_help_link));
+    expect(openExternalMock).toHaveBeenCalledWith(
+      "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens",
+    );
   });
 
   it("hides the save form and remove button for plain members", () => {
@@ -123,6 +134,12 @@ describe("FigmaIntegrationSection", () => {
     expect(screen.getByText("SD design")).toBeTruthy();
     expect(screen.queryByLabelText(enSettings.figma.token_label)).toBeNull();
     expect(screen.queryByLabelText(enSettings.figma.remove)).toBeNull();
+  });
+
+  it("tells members who can connect a missing workspace credential", () => {
+    membersRef.current = [{ user_id: "user-1", role: "member" }];
+    renderSection();
+    expect(screen.getByText(enSettings.figma.member_read_only)).toBeTruthy();
   });
 
   it("shows configured status with badges", () => {

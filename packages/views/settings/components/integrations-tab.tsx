@@ -17,6 +17,7 @@ import { FigmaIntegrationSection } from "./figma-integration-section";
 import { ReleaseIntegrationsSection } from "./release-integrations-section";
 import { IntegrationCard } from "./integration-card";
 import { useT } from "../../i18n";
+import { useNavigation } from "../../navigation";
 
 // Integrations is a collapsible connector gallery: one IntegrationCard per
 // third-party platform, each showing its connection status and expanding to
@@ -35,6 +36,7 @@ import { useT } from "../../i18n";
 export function IntegrationsTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
+  const navigation = useNavigation();
   const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const zohoEnabled = useConfigStore((s) => s.zohoEnabled);
   const larkEnabled = useConfigStore((s) => s.larkEnabled);
@@ -94,6 +96,7 @@ export function IntegrationsTab() {
           name={t(($) => $.integrations.figma.name)}
           description={t(($) => $.integrations.figma.description)}
           status={status(figmaStatus?.configured === true)}
+          defaultOpen={navigation.searchParams.get("integration") === "figma"}
         >
           <FigmaIntegrationSection />
         </IntegrationCard>

@@ -1,18 +1,45 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@agora/core/i18n/react";
 import type { DesignProposal } from "@agora/core/design";
 import enIssues from "../../locales/en/issues.json";
 import { DesignReviewDialog, type DesignProposalVersion } from "./design-review-dialog";
 
+const { getBaseUrlMock, navPushMock, openExternalMock, previewOpenMock } = vi.hoisted(() => ({
+  getBaseUrlMock: vi.fn(() => ""),
+  navPushMock: vi.fn(),
+  openExternalMock: vi.fn(),
+  previewOpenMock: vi.fn(),
+}));
+
 vi.mock("@agora/core/api", () => ({
-  api: { createDesignReview: vi.fn() },
+  api: { createDesignReview: vi.fn(), getBaseUrl: getBaseUrlMock },
 }));
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@agora/core/paths", () => ({
+  useWorkspacePaths: () => ({ settings: () => "/acme/settings" }),
+}));
 vi.mock("@agora/core/workspace/avatar-url", () => ({
   resolvePublicFileUrl: (url: string) =>
     url.startsWith("/") ? `https://agora.example${url}` : url,
+}));
+vi.mock("../../navigation", () => ({
+  useNavigation: () => ({
+    push: navPushMock,
+    replace: vi.fn(),
+    back: vi.fn(),
+    pathname: "/acme/issues/issue-1",
+    searchParams: new URLSearchParams(),
+    getShareableUrl: vi.fn(),
+  }),
+}));
+vi.mock("../../platform", () => ({ openExternal: openExternalMock }));
+vi.mock("../../editor", () => ({
+  useAttachmentPreview: () => ({ open: previewOpenMock, tryOpen: vi.fn(), modal: null }),
+}));
+vi.mock("../../editor/hooks/use-authenticated-media-src", () => ({
+  useAuthenticatedMediaSrc: (src: string) => src,
 }));
 
 const EMPTY_PROPOSAL: DesignProposal = {
@@ -70,6 +97,11 @@ function renderDialog(versions: DesignProposalVersion[]) {
 }
 
 describe("DesignReviewDialog", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getBaseUrlMock.mockReturnValue("");
+  });
+
   it("renders an empty revision as a compact, non-approvable review state", async () => {
     renderDialog([version()]);
 
@@ -116,6 +148,47 @@ describe("DesignReviewDialog", () => {
       "src",
       "https://agora.example/api/attachments/attachment-1/download",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Open Composer preview" }));
+    expect(previewOpenMock).toHaveBeenCalledWith({ kind: "full", attachment: ATTACHMENT });
+  });
+
+  it("presents multiple proposal screens as a keyboard-accessible carousel", async () => {
+    const attachments = ["composer.png", "drawer.png", "wizard.png"].map((filename, i) => ({
+      ...ATTACHMENT,
+      id: `attachment-${i + 1}`,
+      filename,
+      download_url: `/api/attachments/attachment-${i + 1}/download`,
+      markdown_url: `https://agora.example/api/attachments/attachment-${i + 1}/download`,
+    }));
+    const proposal: DesignProposal = {
+      ...EMPTY_PROPOSAL,
+      screens: [
+        { name: "Composer", figma_node_id: "1:1", summary: "Live preview", render: "composer.png" },
+        { name: "Drawer", figma_node_id: "1:2", summary: "Side panel", render: "drawer.png" },
+        { name: "Wizard", figma_node_id: "1:3", summary: "Three steps", render: "wizard.png" },
+      ],
+    };
+    const proposalVersion = version(proposal);
+    proposalVersion.attachments = attachments;
+    renderDialog([proposalVersion]);
+
+    const carousel = await screen.findByRole("region", { name: "Design screens" });
+    expect(within(carousel).getByText("1 of 3")).toBeInTheDocument();
+
+    fireEvent.click(within(carousel).getByRole("button", { name: "Next screen" }));
+    expect(within(carousel).getByText("2 of 3")).toBeInTheDocument();
+    expect(within(carousel).getByRole("button", { name: "Open Drawer preview" })).toBeInTheDocument();
+
+    fireEvent.keyDown(carousel, { key: "ArrowLeft" });
+    expect(within(carousel).getByText("1 of 3")).toBeInTheDocument();
+
+    fireEvent.click(within(carousel).getByRole("button", { name: "Show Wizard" }));
+    expect(within(carousel).getByText("3 of 3")).toBeInTheDocument();
+    fireEvent.click(within(carousel).getByRole("button", { name: "Open Wizard preview" }));
+    expect(previewOpenMock).toHaveBeenCalledWith({
+      kind: "full",
+      attachment: attachments[2],
+    });
   });
 
   it("embeds the linked Figma node while keeping the source file available", async () => {
@@ -138,9 +211,45 @@ describe("DesignReviewDialog", () => {
       "src",
       "https://embed.figma.com/design/5KEkQk9YUgcq9ooDTlgQVW/Mytrion?node-id=3-2&embed-host=agora&theme=system",
     );
-    expect(screen.getByRole("link", { name: "Open in Figma" })).toHaveAttribute(
-      "href",
-      proposal.figma[0]!.url,
+    fireEvent.click(screen.getByRole("button", { name: "Open in Figma" }));
+    expect(openExternalMock).toHaveBeenCalledWith(proposal.figma[0]!.url);
+  });
+
+  it("uses exported-node guidance instead of a logged-out Figma iframe in Desktop", async () => {
+    getBaseUrlMock.mockReturnValue("https://api.agora.example");
+    const proposal: DesignProposal = {
+      ...EMPTY_PROPOSAL,
+      figma: [
+        {
+          url: "https://www.figma.com/design/5KEkQk9YUgcq9ooDTlgQVW/Mytrion?node-id=3-2",
+          file_key: "5KEkQk9YUgcq9ooDTlgQVW",
+          node_id: "3:2",
+        },
+      ],
+      screens: [
+        { name: "Composer", figma_node_id: "1:7", summary: "Live preview", render: "" },
+      ],
+    };
+    renderDialog([version(proposal)]);
+
+    expect(await screen.findByText(/Figma Desktop and Agora keep separate browser sessions/)).toBeInTheDocument();
+    expect(screen.queryByTitle("Figma design preview")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open in Figma" }));
+    expect(openExternalMock).toHaveBeenCalledWith(proposal.figma[0]!.url);
+  });
+
+  it("routes a credential blocker to the workspace Figma connection", async () => {
+    const blocked = version({
+      ...EMPTY_PROPOSAL,
+      status: "blocked",
+      reason: "credential_missing",
+    });
+    blocked.parsed.state = "blocked";
+    renderDialog([blocked]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Figma" }));
+    expect(navPushMock).toHaveBeenCalledWith(
+      "/acme/settings?tab=integrations&integration=figma",
     );
   });
 });

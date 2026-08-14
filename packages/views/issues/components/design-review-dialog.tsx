@@ -1,13 +1,23 @@
 /* eslint-disable i18next/no-literal-string -- design review dialog; i18n follow-up */
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Blocks, ExternalLink, Images, ListTree, Loader2, Palette } from "lucide-react";
+import {
+  Blocks,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Images,
+  ListTree,
+  Loader2,
+  Palette,
+} from "lucide-react";
 import { api } from "@agora/core/api";
 import { issueKeys } from "@agora/core/issues/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import type { DesignProposal, ParsedDesignProposal, DesignVerdict } from "@agora/core/design";
 import type { Attachment } from "@agora/core/types";
@@ -22,6 +32,10 @@ import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { useT } from "../../i18n";
+import { useNavigation } from "../../navigation";
+import { openExternal } from "../../platform";
+import { useAttachmentPreview } from "../../editor";
+import { useAuthenticatedMediaSrc } from "../../editor/hooks/use-authenticated-media-src";
 
 // One reviewable revision: a parsed proposal block + the attachments on the
 // comment that carried it (so screens[].render can resolve to an image).
@@ -90,6 +104,9 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   const { t } = useT("issues");
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
+  const workspacePaths = useWorkspacePaths();
+  const navigation = useNavigation();
+  const attachmentPreview = useAttachmentPreview();
 
   // Default to the newest revision.
   const [versionIdx, setVersionIdx] = useState(versions.length - 1);
@@ -112,11 +129,6 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   const attachmentFor = (render: string): Attachment | undefined => {
     if (!render || !version) return undefined;
     return version.attachments.find((a) => a.filename === render);
-  };
-
-  const attachmentUrl = (attachment: Attachment): string => {
-    const raw = attachment.download_url || attachment.markdown_url || attachment.url;
-    return resolvePublicFileUrl(raw) ?? raw;
   };
 
   const refresh = () => {
@@ -181,6 +193,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
     () => proposal?.figma.map((ref) => figmaEmbedFrom(ref)).find(Boolean) ?? null,
     [proposal],
   );
+  const isTokenModeClient = Boolean((api.getBaseUrl?.() ?? "").replace(/\/+$/, ""));
   const reviewItemCount = proposal
     ? proposal.screens.length
       + proposal.components.length
@@ -194,6 +207,10 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
       && hasReviewContent
       && version?.parsed.state !== "blocked",
   );
+  const configureFigma = () => {
+    onClose();
+    navigation.push(`${workspacePaths.settings()}?tab=integrations&integration=figma`);
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -251,9 +268,23 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
           ) : (
             <>
               {version?.parsed.state === "blocked" && (
-                <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {t(($) => $.design_proposal.status_blocked)}
-                  {proposal.reason ? ` — ${proposal.reason}` : ""}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <div>
+                    <p>
+                      {t(($) => $.design_proposal.status_blocked)}
+                      {proposal.reason ? ` — ${proposal.reason}` : ""}
+                    </p>
+                    {proposal.reason === "credential_missing" && (
+                      <p className="mt-0.5 text-destructive/80">
+                        {t(($) => $.design_proposal.credential_missing_detail)}
+                      </p>
+                    )}
+                  </div>
+                  {proposal.reason === "credential_missing" && (
+                    <Button type="button" size="sm" variant="outline" onClick={configureFigma}>
+                      {t(($) => $.design_proposal.configure_figma)}
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -277,27 +308,41 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
                         {t(($) => $.design_proposal.figma_preview)}
                       </h3>
                       <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                        {t(($) => $.design_proposal.figma_preview_description)}
+                        {isTokenModeClient
+                          ? t(($) => $.design_proposal.figma_desktop_description)
+                          : t(($) => $.design_proposal.figma_preview_description)}
                       </p>
                     </div>
-                    <a
-                      href={figmaEmbed.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => openExternal(figmaEmbed.sourceUrl)}
                       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground shadow-xs outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
                       <ExternalLink className="size-3.5" aria-hidden="true" />
                       {t(($) => $.figma_links.open_in_figma)}
-                    </a>
+                    </button>
                   </div>
-                  <iframe
-                    src={figmaEmbed.embedUrl}
-                    title={t(($) => $.design_proposal.figma_embed_title)}
-                    allowFullScreen
-                    loading="eager"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    className="h-[min(52dvh,520px)] min-h-80 w-full bg-muted/10"
-                  />
+                  {isTokenModeClient ? (
+                    <div className="flex min-h-36 items-center justify-center px-6 py-8 text-center">
+                      <div className="max-w-lg">
+                        <span className="mx-auto flex size-10 items-center justify-center rounded-xl border border-border bg-muted/40 text-violet-500">
+                          <Palette className="size-4" aria-hidden="true" />
+                        </span>
+                        <p className="mt-3 text-xs leading-5 text-muted-foreground text-pretty">
+                          {t(($) => $.design_proposal.figma_desktop_notice)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <iframe
+                      src={figmaEmbed.embedUrl}
+                      title={t(($) => $.design_proposal.figma_embed_title)}
+                      allowFullScreen
+                      loading="eager"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      className="h-[min(52dvh,520px)] min-h-80 w-full bg-muted/10"
+                    />
+                  )}
                 </section>
               )}
 
@@ -330,35 +375,15 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {t(($) => $.design_proposal.screens)} ({proposal.screens.length})
                   </h3>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {proposal.screens.map((screen, i) => {
-                      const att = attachmentFor(screen.render);
-                      const imageUrl = att ? attachmentUrl(att) : "";
-                      return (
-                        <figure key={i} className="space-y-1">
-                          {att ? (
-                            <a href={imageUrl} target="_blank" rel="noreferrer">
-                              <img
-                                src={imageUrl}
-                                alt={screen.name}
-                                width={640}
-                                height={360}
-                                className="aspect-video w-full rounded-md border border-border object-cover"
-                              />
-                            </a>
-                          ) : (
-                            <div className="flex aspect-video w-full items-center justify-center rounded-md border border-dashed border-border text-[10px] text-muted-foreground">
-                              {screen.figma_node_id || t(($) => $.design_proposal.no_render)}
-                            </div>
-                          )}
-                          <figcaption className="truncate text-xs font-medium">{screen.name}</figcaption>
-                          {screen.summary && (
-                            <p className="line-clamp-2 text-[11px] text-muted-foreground">{screen.summary}</p>
-                          )}
-                        </figure>
-                      );
-                    })}
-                  </div>
+                  <DesignScreensCarousel
+                    key={versionIdx}
+                    items={proposal.screens.map((screen) => ({
+                      screen,
+                      attachment: attachmentFor(screen.render),
+                    }))}
+                    noRenderLabel={t(($) => $.design_proposal.no_render)}
+                    onOpen={(attachment) => attachmentPreview.open({ kind: "full", attachment })}
+                  />
                 </section>
               )}
 
@@ -470,6 +495,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
             </>
           )}
         </div>
+        {attachmentPreview.modal}
 
         {/* Triage bar */}
         <div className="shrink-0 space-y-3 border-t border-border bg-muted/20 px-5 py-4 sm:px-6">
@@ -539,6 +565,180 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface DesignScreenItem {
+  screen: DesignProposal["screens"][number];
+  attachment: Attachment | undefined;
+}
+
+function DesignScreensCarousel({
+  items,
+  noRenderLabel,
+  onOpen,
+}: {
+  items: DesignScreenItem[];
+  noRenderLabel: string;
+  onOpen: (attachment: Attachment) => void;
+}) {
+  const { t } = useT("issues");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const active = items[activeIndex] ?? items[0];
+  if (!active) return null;
+
+  const go = (delta: number) => {
+    setActiveIndex((current) => (current + delta + items.length) % items.length);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      go(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      go(1);
+    }
+  };
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl border border-border bg-muted/10 shadow-xs"
+      role="region"
+      aria-label={t(($) => $.design_proposal.carousel_label)}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+    >
+      <div className="relative bg-black/95">
+        <DesignScreenImage
+          item={active}
+          noRenderLabel={noRenderLabel}
+          className="aspect-video max-h-[min(58dvh,620px)] w-full object-contain"
+          onOpen={onOpen}
+          openLabel={t(($) => $.design_proposal.open_screen_preview, {
+            name: active.screen.name,
+          })}
+        />
+
+        {items.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => go(-1)}
+              aria-label={t(($) => $.design_proposal.previous_screen)}
+              className="absolute left-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/60"
+            >
+              <ChevronLeft className="size-5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(1)}
+              aria-label={t(($) => $.design_proposal.next_screen)}
+              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/60"
+            >
+              <ChevronRight className="size-5" aria-hidden="true" />
+            </button>
+          </>
+        )}
+
+        <span
+          className="absolute bottom-3 right-3 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white backdrop-blur-sm"
+          aria-live="polite"
+        >
+          {t(($) => $.design_proposal.screen_position, {
+            current: activeIndex + 1,
+            total: items.length,
+          })}
+        </span>
+      </div>
+
+      <div className="border-t border-border bg-background px-4 py-3">
+        <p className="text-sm font-semibold text-foreground">{active.screen.name}</p>
+        {active.screen.summary && (
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            {active.screen.summary}
+          </p>
+        )}
+      </div>
+
+      {items.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto border-t border-border bg-muted/20 px-3 py-3">
+          {items.map((item, index) => (
+            <button
+              key={`${item.screen.name}-${index}`}
+              type="button"
+              onClick={() => setActiveIndex(index)}
+              aria-label={t(($) => $.design_proposal.show_screen, {
+                name: item.screen.name,
+              })}
+              aria-current={index === activeIndex ? "true" : undefined}
+              className={`group w-24 shrink-0 rounded-lg p-1 text-left outline-none transition-colors sm:w-28 ${
+                index === activeIndex
+                  ? "bg-primary/10 ring-2 ring-primary"
+                  : "hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+              }`}
+            >
+              <DesignScreenImage
+                item={item}
+                noRenderLabel={noRenderLabel}
+                className="aspect-video w-full rounded-md object-cover"
+              />
+              <span className="mt-1 block truncate px-0.5 text-[10px] font-medium text-muted-foreground group-aria-[current=true]:text-foreground">
+                {item.screen.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesignScreenImage({
+  item,
+  noRenderLabel,
+  className,
+  openLabel,
+  onOpen,
+}: {
+  item: DesignScreenItem;
+  noRenderLabel: string;
+  className: string;
+  openLabel?: string;
+  onOpen?: (attachment: Attachment) => void;
+}) {
+  const { screen, attachment } = item;
+  const rawUrl = attachment
+    ? attachment.download_url || attachment.markdown_url || attachment.url
+    : "";
+  const mediaUrl = resolvePublicFileUrl(rawUrl) ?? rawUrl;
+  const displayUrl = useAuthenticatedMediaSrc(mediaUrl, attachment?.id, Boolean(attachment));
+
+  const media = attachment ? (
+    <img
+      src={displayUrl}
+      alt={screen.name}
+      width={1280}
+      height={800}
+      className={className}
+    />
+  ) : (
+    <div
+      className={`flex items-center justify-center border border-dashed border-border bg-muted/20 px-3 text-center text-[10px] text-muted-foreground ${className}`}
+    >
+      {screen.figma_node_id || noRenderLabel}
+    </div>
+  );
+
+  if (!attachment || !onOpen) return media;
+  return (
+    <button
+      type="button"
+      className="block w-full outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-white/70"
+      onClick={() => onOpen(attachment)}
+      aria-label={openLabel}
+    >
+      {media}
+    </button>
   );
 }
 

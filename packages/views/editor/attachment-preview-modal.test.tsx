@@ -240,6 +240,34 @@ describe("AttachmentPreviewModal — dispatch", () => {
     expect(iframe?.getAttribute("src")).toBe(att.download_url);
   });
 
+  it("fetches an authenticated PDF blob before mounting the iframe in desktop token mode", async () => {
+    const blobUrl = "blob:https://test.local/manual-pdf";
+    getBaseUrlMock.mockReturnValue("https://api.example.test");
+    getAttachmentDownloadBlobMock.mockResolvedValueOnce(
+      new Blob(["%PDF-1.4"], { type: "application/pdf" }),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(blobUrl);
+    const att = makeAttachment({
+      filename: "manual.pdf",
+      content_type: "application/pdf",
+      download_url: "/api/attachments/att-1/download",
+    });
+
+    render(
+      <AttachmentPreviewModal
+        source={{ kind: "full", attachment: att }}
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Loading preview…")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector("iframe")?.getAttribute("src")).toBe(blobUrl);
+    });
+    expect(getAttachmentDownloadBlobMock).toHaveBeenCalledWith("att-1");
+  });
+
   it("renders a <video> for video/* content types", () => {
     const att = makeAttachment({ filename: "clip.mp4", content_type: "video/mp4" });
     render(<AttachmentPreviewModal source={{ kind: "full", attachment: att }} open onClose={() => {}} />);
@@ -321,9 +349,11 @@ describe("AttachmentPreviewModal — server-relative download_url resolution (MU
   // server-relative path on non-CloudFront deployments. The web app keeps
   // working same-origin because `apiBaseUrl=""`, but the desktop renderer
   // is loaded from `app://` / file: / dev-server origin and needs the
-  // absolute URL — otherwise `<img src>`, `<iframe src>`, `<video src>`
-  // hit the shell origin and fail.
-  it("prefixes the configured API base for image previews when download_url is server-relative", () => {
+  // authenticated blob URL — otherwise native media loads cannot attach the
+  // desktop bearer token and fail with 401.
+  it("uses an authenticated blob for image previews when download_url is server-relative", async () => {
+    const blobUrl = "blob:https://test.local/desktop-image";
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(blobUrl);
     getBaseUrlMock.mockReturnValue("https://api.example.test");
     const att = makeAttachment({
       filename: "shot.png",
@@ -337,13 +367,15 @@ describe("AttachmentPreviewModal — server-relative download_url resolution (MU
         onClose={() => {}}
       />,
     );
-    const img = document.querySelector("img");
-    expect(img?.getAttribute("src")).toBe(
-      "https://api.example.test/api/attachments/att-1/download",
-    );
+    await waitFor(() => {
+      expect(document.querySelector("img")?.getAttribute("src")).toBe(blobUrl);
+    });
+    expect(getAttachmentDownloadBlobMock).toHaveBeenCalledWith("att-1");
   });
 
-  it("prefixes the configured API base for PDF previews when download_url is server-relative", () => {
+  it("uses an authenticated blob for PDF previews when download_url is server-relative", async () => {
+    const blobUrl = "blob:https://test.local/desktop-pdf";
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(blobUrl);
     getBaseUrlMock.mockReturnValue("https://api.example.test");
     const att = makeAttachment({
       filename: "manual.pdf",
@@ -357,10 +389,10 @@ describe("AttachmentPreviewModal — server-relative download_url resolution (MU
         onClose={() => {}}
       />,
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe?.getAttribute("src")).toBe(
-      "https://api.example.test/api/attachments/att-1/download",
-    );
+    await waitFor(() => {
+      expect(document.querySelector("iframe")?.getAttribute("src")).toBe(blobUrl);
+    });
+    expect(getAttachmentDownloadBlobMock).toHaveBeenCalledWith("att-1");
   });
 
   it("keeps a same-origin relative URL untouched when the configured base is empty (web)", () => {
@@ -384,21 +416,20 @@ describe("AttachmentPreviewModal — server-relative download_url resolution (MU
 
   it("trims a trailing slash on the configured base when joining a relative URL", () => {
     getBaseUrlMock.mockReturnValue("https://api.example.test/");
-    const att = makeAttachment({
-      filename: "shot.png",
-      content_type: "image/png",
-      download_url: "/api/attachments/att-1/download",
-    });
     render(
       <AttachmentPreviewModal
-        source={{ kind: "full", attachment: att }}
+        source={{
+          kind: "url",
+          url: "/api/attachments/non-uuid/download",
+          filename: "shot.png",
+        }}
         open
         onClose={() => {}}
       />,
     );
     const img = document.querySelector("img");
     expect(img?.getAttribute("src")).toBe(
-      "https://api.example.test/api/attachments/att-1/download",
+      "https://api.example.test/api/attachments/non-uuid/download",
     );
   });
 

@@ -72,6 +72,26 @@ export function useAuthenticatedMediaSrc(
   attachmentId?: string,
   enabled = true,
 ): string {
+  return useAuthenticatedMediaSrcResult(src, attachmentId, enabled).src;
+}
+
+export interface AuthenticatedMediaSrcResult {
+  src: string;
+  isLoading: boolean;
+  isError: boolean;
+}
+
+/**
+ * Status-aware variant for modal renderers. Native media elements can stay
+ * blank while the authenticated blob is loading, but an iframe with src=""
+ * would recursively load the Agora shell. The modal uses these flags to show
+ * an explicit loading/error state instead.
+ */
+export function useAuthenticatedMediaSrcResult(
+  src: string,
+  attachmentId?: string,
+  enabled = true,
+): AuthenticatedMediaSrcResult {
   const id = resolveAttachmentId(src, attachmentId);
   const needsAuthFetch =
     enabled &&
@@ -94,6 +114,12 @@ export function useAuthenticatedMediaSrc(
     retry: false,
   });
 
-  if (!needsAuthFetch) return src;
-  return query.data ?? "";
+  if (!needsAuthFetch) {
+    return { src, isLoading: false, isError: false };
+  }
+  return {
+    src: query.data ?? "",
+    isLoading: query.isPending,
+    isError: query.isError,
+  };
 }
