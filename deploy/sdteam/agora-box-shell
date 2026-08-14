@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# agora-box-shell — fixed-verb SSH gate for Agora agents on sd-dev.
+#
+# Installed as the FORCED COMMAND of the dedicated agora deploy key:
+#   restrict,command="/home/jamshidfr/bin/agora-box-shell" ssh-ed25519 AAAA... agora-sd-deploy
+#
+# Agents can ONLY run:
+#   deploy   <site> <branch>   git fetch + checkout -f -B in an allowlisted site dir
+#   rollback <site>            return the site to its pre-deploy branch (default master)
+#   status   <site>            current branch + HEAD
+#   read     <cmd ...>         allowlisted read-only commands (ls/cat/tail/grep/git log...)
+#
+# Everything else is denied. Site dirs come from ~/.agora-box-sites (one name
+# per line under /var/www). Every invocation is appended to ~/agora-box-shell.log.
+set -euo pipefail
+
+WEB_ROOT=/var/www
+ALLOW_FILE="$HOME/.agora-box-sites"
+LOG="$HOME/agora-box-shell.log"
+
+log() { printf '%s\t%s\n' "$(date -Is)" "$1" >> "$LOG"; }
+deny() {
+  echo "denied: $1" >&2
+  log "DENY ${SSH_ORIGINAL_COMMAND:-<none>} :: $1"
+  exit 4
+}
+
+cmd="${SSH_ORIGINAL_COMMAND:-}"
+log "CMD ${cmd:-<none>}"
+[ -n "$cmd" ] || deny "no command (interactive shell disabled)"
+case "$cmd" in (*[';|&<>$`']*) deny "shell metacharacters";; esac
+read -r -a argv <<< "$cmd"
+
+site_dir() {
+  local site="$1"
+  [[ "$site" =~ ^[A-Za-z0-9.-]+$ ]] || deny "bad site name"
+  grep -qxF "$site" "$ALLOW_FILE" 2>/dev/null || deny "site not in allowlist ($ALLOW_FILE)"
+  [ -d "$WEB_ROOT/$site/.git" ] || deny "not a git checkout: $site"
+  echo "$WEB_ROOT/$site"
+}
+
+gitc() { local d="$1"; shift; timeout 120 git -C "$d" "$@"; }
+
+case "${argv[0]:-}" in
+  deploy)
+    site="${argv[1]:-}"; branch="${argv[2]:-}"
+    dir="$(site_dir "$site")"
+    [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || deny "bad branch name"
+    # Remember the pre-deploy branch once so rollback returns to it.
+    if [ ! -f "$dir/.agora-prev-branch" ]; then
+      gitc "$dir" branch --show-current > "$dir/.agora-prev-branch" || true
+    fi
+    gitc "$dir" fetch origin "$branch"
+    # checkout -f -B keeps gitignored per-site glue (configs, runtime, assets).
+    gitc "$dir" checkout -f -B "$branch" FETCH_HEAD
+    head="$(gitc "$dir" rev-parse --short HEAD)"
+    log "DEPLOY $site -> $branch @ $head"
+    echo "deployed $site -> $branch @ $head"
+    ;;
+  rollback)
+    site="${argv[1]:-}"
+    dir="$(site_dir "$site")"
+    prev="$(cat "$dir/.agora-prev-branch" 2>/dev/null || true)"
+    prev="${prev:-master}"
+    gitc "$dir" fetch origin "$prev" || true
+    gitc "$dir" checkout -f "$prev"
+    gitc "$dir" pull --ff-only origin "$prev" || true
+    rm -f "$dir/.agora-prev-branch"
+    head="$(gitc "$dir" rev-parse --short HEAD)"
+    log "ROLLBACK $site -> $prev @ $head"
+    echo "rolled back $site -> $prev @ $head"
+    ;;
+  status)
+    site="${argv[1]:-}"
+    dir="$(site_dir "$site")"
+    echo "site=$site branch=$(gitc "$dir" branch --show-current) head=$(gitc "$dir" rev-parse --short HEAD)"
+    gitc "$dir" log -1 --format='last=%h %s (%ci)'
+    ;;
+  read)
+    [ "${#argv[@]}" -ge 2 ] || deny "read needs a command"
+    rcmd=("${argv[@]:1}")
+    case "${rcmd[0]}" in
+      ls|cat|head|stat|wc|grep|df|du|ps|find) ;;
+      tail)
+        for a in "${rcmd[@]:1}"; do
+          case "$a" in (-f*) deny "tail -f";; esac
+        done
+        ;;
+      git)
+        case "${rcmd[1]:-}" in
+          log|show|diff|status|branch|rev-parse|ls-files) ;;
+          *) deny "git ${rcmd[1]:-} (read-only git verbs only)";;
+        esac
+        ;;
+      *) deny "read verb ${rcmd[0]} not allowlisted" ;;
+    esac
+    log "READ ${rcmd[*]}"
+    exec timeout 60 nice -n 10 "${rcmd[@]}"
+    ;;
+  *) deny "unknown verb ${argv[0]:-<empty>} (allowed: deploy|rollback|status|read)" ;;
+esac
