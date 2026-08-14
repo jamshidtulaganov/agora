@@ -284,14 +284,12 @@ default (absent key = today's behavior); no-ops on a human/unassigned issue.
   and owns the merge. No stall (no ready orchestrator → silent no-op); qa:fail
   routing UNCHANGED.
 
-**Where the app-under-test comes from (non-sprint QA).** The gate resolves a
-smoke target in priority order: the developer's declared `dev_apps` URL
-(concrete, already running; gated by `labs.qa_dev_runtimes`, default off) →
-the developer's standing dev server for the project (`user_dev_server`, their
-own deployed box — set per member per project in the project's Dev servers
-section; declaring it IS the opt-in) → a project `local_directory` on an
-ONLINE daemon (the folder lives on the dev's own machine; attaching it IS the
-opt-in) → project `qa_smoke_cmd`/`qa_smoke_url` → generic auto-detect. When a
+**Where the app-under-test comes from (non-sprint QA).** Smoke-target priority:
+the developer's `dev_apps` URL (already running; labs `qa_dev_runtimes` gate) →
+their standing dev server for the project (`user_dev_server`, set per member in
+the project's Dev servers section; declaring it is the opt-in) → a project
+`local_directory` on an ONLINE daemon (attaching is the opt-in) → project
+`qa_smoke_cmd`/`qa_smoke_url` → generic auto-detect. When a
 `local_directory` wins, the QA task is PINNED to that daemon and the
 instruction tells the agent the app lives at that path on THIS machine —
 start it via the daemon's `/editor/preview` and smoke the returned
