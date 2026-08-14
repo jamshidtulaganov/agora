@@ -1186,6 +1186,16 @@ type User struct {
 	Timezone pgtype.Text `json:"timezone"`
 }
 
+type UserDevServer struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	BaseUrl     string             `json:"base_url"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UserEditorToken struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 	Provider    string             `json:"provider"`

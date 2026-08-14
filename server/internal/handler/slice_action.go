@@ -2409,13 +2409,22 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// (previously sprint went straight to the project qa_smoke_url and QA
 	// cold-booted its own copy), EXCEPT PR-review mode — there QA must test the
 	// PR branch on the staging deploy, not whatever branch the dev box serves.
-	// Order: dev_apps URL (running) > local_directory (non-sprint) > project
-	// qa_smoke_url (left "" here, appended below).
+	// Order: dev_apps URL (running) > the developer's standing dev server
+	// (user_dev_server) > local_directory (non-sprint) > project qa_smoke_url
+	// (left "" here, appended below).
 	localDirQAPath := ""
+	devBoxURL := ""
 	if smokeURL == "" && !(scope == "task" && sprintPRModeEnabled()) {
 		smokeURL = h.devLocalAppURL(ctx, issue)
 	}
-	if scope != "task" && smokeURL == "" {
+	// The assignee developer's standing dev server for this project — the box
+	// they deploy their branches to. Same PR-review-mode exclusion as dev_apps:
+	// there QA must test the PR branch on the staging deploy, not whatever the
+	// dev box happens to serve.
+	if smokeURL == "" && !(scope == "task" && sprintPRModeEnabled()) {
+		devBoxURL = h.userDevServerURL(ctx, issue)
+	}
+	if scope != "task" && smokeURL == "" && devBoxURL == "" {
 		if _, lp, ok := h.localDirectoryQATarget(ctx, issue); ok {
 			localDirQAPath = lp
 		}
@@ -2427,6 +2436,9 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if smokeURL != "" {
 		instruction += " SMOKE TARGET: the change is ALREADY RUNNING at " + smokeURL +
 			" (the dev's live app for this exact branch) — smoke THAT url to skip a cold app boot; it OVERRIDES any project smoke url below. If it is unreachable (dev app torn down, or serving a different branch), bring the app up yourself from the branch and smoke that instead."
+	} else if devBoxURL != "" {
+		instruction += " SMOKE TARGET: the assignee developer's standing dev server for this project is " + devBoxURL +
+			" — smoke THAT url; it OVERRIDES any project smoke url below. It is a standing box, not a per-change deploy: FIRST verify it actually serves this task's change (the branch/behavior is present); if it serves a different branch or is unreachable, record that in your verdict evidence and use the project smoke url below instead (or bring the app up from the branch yourself)."
 	} else if localDirQAPath != "" {
 		instruction += qaLocalDirectoryClause(localDirQAPath)
 	}

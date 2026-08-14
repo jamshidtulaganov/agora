@@ -18,10 +18,12 @@ import (
 
 // QA-target resolution + the Live-pane embeddability probe. The QA target for an
 // issue resolves through a ladder: the developer's own running app (dev_apps) →
-// a local_directory folder on an online daemon (the app lives on the developer's
-// own machine) → the project's configured qa_smoke_url (the team's BYO staging).
-// When nothing resolves the QA run degrades to a graceful "no target" hint
-// (slice_action.go) instead of fabricating a localhost.
+// the developer's standing dev server for the project (user_dev_server, e.g.
+// https://<handle>.sdteam.uz) → a local_directory folder on an online daemon
+// (the app lives on the developer's own machine) → the project's configured
+// qa_smoke_url (the team's BYO staging). When nothing resolves the QA run
+// degrades to a graceful "no target" hint (slice_action.go) instead of
+// fabricating a localhost.
 
 // developerUserForIssue resolves the human developer (a user id) behind an
 // issue's work, for per-developer QA routing. The work is done by an AGENT,
@@ -76,6 +78,30 @@ func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
 		return ""
 	}
 	return util.DevAppURL(runtime.Metadata, uuidToString(issue.ProjectID))
+}
+
+// userDevServerURL resolves the issue-developer's standing dev server for the
+// issue's project (user_dev_server): the deployed box the developer already
+// works against over VS Code Remote (e.g. https://<handle>.sdteam.uz).
+// Declaring the URL IS the opt-in — mirrors the local_directory argument — so
+// this is NOT gated on labs. Workspace-checked fail-closed (project_id is a
+// plain FK with no same-workspace DB constraint). "" on any miss.
+func (h *Handler) userDevServerURL(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	devUser, ok := h.developerUserForIssue(ctx, issue)
+	if !ok {
+		return ""
+	}
+	row, err := h.Queries.GetUserDevServer(ctx, db.GetUserDevServerParams{
+		ProjectID: issue.ProjectID,
+		UserID:    devUser,
+	})
+	if err != nil || row.WorkspaceID.Bytes != issue.WorkspaceID.Bytes {
+		return ""
+	}
+	return strings.TrimSpace(row.BaseUrl)
 }
 
 // localDirectoryQATarget resolves the daemon + path of a local_directory
@@ -134,13 +160,21 @@ func qaLocalDirectoryClause(localPath string) string {
 
 // resolveQAPreviewURL resolves the URL the QA review page's Live testing bay
 // embeds for an issue: the developer's own running app (dev_apps), else the
-// project's configured qa_smoke_url (the team's BYO staging). "" when neither
+// developer's standing dev server for the project (user_dev_server), else the
+// project's configured qa_smoke_url (the team's BYO staging). "" when nothing
 // resolves — e.g. a local_directory project (the Live pane drives the local
 // daemon preview instead) or an Agora-self-repo issue with only a per-task
 // worktree (the exact artifact Product view covers that).
 func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
 	// A concrete declared dev_apps URL (the dev's own running app) wins.
 	if url := h.devLocalAppURL(ctx, issue); url != "" {
+		return url
+	}
+	// The developer's standing dev server for this project (their own deployed
+	// box). Beats local_directory: when both are declared, the box is the
+	// target reachable from the hosted web app — the local folder is only
+	// reachable from the developer's own machine.
+	if url := h.userDevServerURL(ctx, issue); url != "" {
 		return url
 	}
 	// "Local config enabled": the project runs in a local_directory on an

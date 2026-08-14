@@ -1115,6 +1115,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/config", h.GetProjectConfig)
 					r.With(handler.RequireHumanActor).Put("/config/{key}", h.SetProjectConfig)
 					r.With(handler.RequireHumanActor).Delete("/config/{key}", h.ResetProjectConfig)
+					// Per-developer standing dev servers ("preview per project →
+					// per user"). Read = any member (the UI lists teammates'
+					// boxes); write = SELF-only, human-only (an agent must not
+					// repoint a developer's QA target mid-run).
+					r.Get("/dev-servers", h.ListProjectDevServers)
+					r.With(handler.RequireHumanActor).Put("/dev-servers/me", h.SetMyProjectDevServer)
+					r.With(handler.RequireHumanActor).Delete("/dev-servers/me", h.DeleteMyProjectDevServer)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).
