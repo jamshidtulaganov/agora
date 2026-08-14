@@ -126,6 +126,16 @@
     "local_preview_url_add": "Укажите URL dev-сервера для превью",
     "local_preview_url_set": "Превью: {{url}}"
   },
+  "dev_servers": {
+    "section_header": "Dev-серверы",
+    "description": "Ваш собственный dev-сервер для этого проекта (например, https://you.sdteam.uz). Задачи, назначенные вам или вашим агентам, будут открываться и проверяться QA на вашем сервере.",
+    "mine_label": "URL вашего dev-сервера",
+    "placeholder": "https://you.example.com",
+    "remove_tooltip": "Удалить ваш dev-сервер",
+    "toast_saved": "Dev-сервер сохранён",
+    "toast_removed": "Dev-сервер удалён",
+    "toast_failed": "Не удалось сохранить dev-сервер"
+  },
   "execution_defaults": {
     "title": "Рабочий процесс",
     "description": "Выберите, какие этапы проекта выполняет агент, а какие ожидают человека. Исполнитель задачи по-прежнему определяет Human, Solo или Squad для реализации.",

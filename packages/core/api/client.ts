@@ -350,6 +350,9 @@ import {
   ProjectConfigListSchema,
   EMPTY_PROJECT_CONFIG,
   type ProjectConfigEntry,
+  ProjectDevServersSchema,
+  EMPTY_PROJECT_DEV_SERVERS,
+  type UserDevServerEntry,
   QAVerdictsResponseSchema,
   EMPTY_QA_VERDICTS,
   type QAVerdictsResponse,
@@ -2364,6 +2367,29 @@ export class ApiClient {
 
   async resetProjectConfig(id: string, key: string): Promise<void> {
     await this.fetch(`/api/projects/${id}/config/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Per-developer standing dev servers ("preview per project → per user") —
+  // each member's own deployed box for this project. Read = any member;
+  // writes are SELF-only (the /me endpoints).
+  async listProjectDevServers(id: string): Promise<UserDevServerEntry[]> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/dev-servers`);
+    return parseWithFallback(raw, ProjectDevServersSchema, EMPTY_PROJECT_DEV_SERVERS, {
+      endpoint: "GET /api/projects/{id}/dev-servers",
+    }).dev_servers;
+  }
+
+  async setMyProjectDevServer(id: string, baseUrl: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/dev-servers/me`, {
+      method: "PUT",
+      body: JSON.stringify({ base_url: baseUrl }),
+    });
+  }
+
+  async deleteMyProjectDevServer(id: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/dev-servers/me`, {
       method: "DELETE",
     });
   }

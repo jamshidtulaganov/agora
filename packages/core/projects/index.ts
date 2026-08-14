@@ -9,3 +9,9 @@ export {
   useUpdateProjectResource,
   useDeleteProjectResource,
 } from "./resource-queries";
+export {
+  projectDevServerKeys,
+  projectDevServersOptions,
+  useSetMyProjectDevServer,
+  useDeleteMyProjectDevServer,
+} from "./dev-server-queries";

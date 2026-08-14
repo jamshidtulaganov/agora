@@ -126,6 +126,16 @@
     "local_preview_url_add": "设置用于预览的开发服务器地址",
     "local_preview_url_set": "预览：{{url}}"
   },
+  "dev_servers": {
+    "section_header": "开发服务器",
+    "description": "你在此项目的专属开发服务器（例如 https://you.sdteam.uz）。分配给你或你的智能体的任务将在你的服务器上进行预览和 QA 冒烟测试。",
+    "mine_label": "你的开发服务器 URL",
+    "placeholder": "https://you.example.com",
+    "remove_tooltip": "移除你的开发服务器",
+    "toast_saved": "开发服务器已保存",
+    "toast_removed": "开发服务器已移除",
+    "toast_failed": "保存开发服务器失败"
+  },
   "execution_defaults": {
     "title": "工作流",
     "description": "选择哪些项目阶段由智能体执行，哪些阶段等待人工处理。实施方式仍由任务负责人决定人工、Solo 或小队模式。",

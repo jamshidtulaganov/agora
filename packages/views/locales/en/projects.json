@@ -131,6 +131,16 @@
     "local_preview_url_add": "Set your dev server URL for preview",
     "local_preview_url_set": "Preview: {{url}}"
   },
+  "dev_servers": {
+    "section_header": "Dev servers",
+    "description": "Your own deployed dev server for this project (e.g. https://you.sdteam.uz). Issues assigned to you — or to your agents — are previewed and QA-smoked on your box.",
+    "mine_label": "Your dev server URL",
+    "placeholder": "https://you.example.com",
+    "remove_tooltip": "Remove your dev server",
+    "toast_saved": "Dev server saved",
+    "toast_removed": "Dev server removed",
+    "toast_failed": "Failed to save dev server"
+  },
   "execution_defaults": {
     "title": "Workflow",
     "description": "Choose which project stages run by an agent and which wait for a person. The issue assignee still selects Human, Solo, or Squad for implementation.",

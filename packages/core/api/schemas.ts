@@ -1908,6 +1908,25 @@ export type ProjectConfigEntry = z.infer<typeof ProjectConfigEntrySchema>;
 
 export const EMPTY_PROJECT_CONFIG: { configs: ProjectConfigEntry[] } = { configs: [] };
 
+// Per-developer standing dev servers (GET /api/projects/{id}/dev-servers) —
+// "preview per project → per user". Every field defaulted so a drifted or
+// partial payload renders an empty row instead of white-screening the section.
+export const UserDevServerEntrySchema = z.object({
+  user_id: z.string().default(""),
+  base_url: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ProjectDevServersSchema = z.object({
+  dev_servers: z.array(UserDevServerEntrySchema).default([]),
+});
+
+export type UserDevServerEntry = z.infer<typeof UserDevServerEntrySchema>;
+
+export const EMPTY_PROJECT_DEV_SERVERS: { dev_servers: UserDevServerEntry[] } = {
+  dev_servers: [],
+};
+
 // Per-agent Telegram bots. Every field is defaulted: this response is consumed
 // by an installed desktop build that will outlive the server it was built
 // against, and a settings panel that white-screens on a drifted field is worse

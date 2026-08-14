@@ -45,6 +45,7 @@ import { useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectDevServersSection } from "./project-dev-servers-section";
 import { ProjectSquadPicker } from "./project-squad-picker";
 import { ProjectAgentSetupSection } from "./project-agent-setup-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
@@ -878,6 +879,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
+
+      {/* Per-developer standing dev servers (preview per project → per user) */}
+      <ProjectDevServersSection projectId={projectId} />
 
       {/* Optional agent workflow defaults live behind one entry point. */}
       <ProjectAgentSetupSection projectId={projectId} />

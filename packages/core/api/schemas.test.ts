@@ -55,10 +55,12 @@ import {
   EMPTY_FS_LIST,
   EMPTY_ISSUE_BROWSER,
   EMPTY_WORKSPACE_LABS,
+  EMPTY_PROJECT_DEV_SERVERS,
   DaemonBrowseTargetSchema,
   FsListResponseSchema,
   IssueBrowserResponseSchema,
   WorkspaceLabsSchema,
+  ProjectDevServersSchema,
 } from "./schemas";
 import { parseWithFallback } from "./schema";
 import type { ListTestCasesResponse } from "../types/test-case";
@@ -1560,5 +1562,50 @@ describe("AutopilotTelegramDestinationSchema", () => {
       { endpoint: "GET /api/autopilots/{id}/telegram-destination" },
     );
     expect(parsed).toEqual(EMPTY_AUTOPILOT_TELEGRAM_DESTINATION);
+  });
+});
+
+describe("ProjectDevServersSchema", () => {
+  it("parses a dev-server list and tolerates unknown extra fields", () => {
+    const parsed = parseWithFallback(
+      {
+        dev_servers: [
+          {
+            user_id: "u-1",
+            base_url: "https://jamshid.sdteam.uz",
+            updated_at: "2026-08-14T10:00:00Z",
+            future_field: true,
+          },
+        ],
+      },
+      ProjectDevServersSchema,
+      EMPTY_PROJECT_DEV_SERVERS,
+      { endpoint: "GET /api/projects/{id}/dev-servers" },
+    );
+    expect(parsed.dev_servers).toHaveLength(1);
+    expect(parsed.dev_servers[0]).toMatchObject({
+      user_id: "u-1",
+      base_url: "https://jamshid.sdteam.uz",
+    });
+  });
+
+  it("defaults a missing dev_servers array instead of failing", () => {
+    const parsed = parseWithFallback(
+      {},
+      ProjectDevServersSchema,
+      EMPTY_PROJECT_DEV_SERVERS,
+      { endpoint: "GET /api/projects/{id}/dev-servers" },
+    );
+    expect(parsed).toEqual(EMPTY_PROJECT_DEV_SERVERS);
+  });
+
+  it("fails closed on a malformed response (null array)", () => {
+    const parsed = parseWithFallback(
+      { dev_servers: null },
+      ProjectDevServersSchema,
+      EMPTY_PROJECT_DEV_SERVERS,
+      { endpoint: "GET /api/projects/{id}/dev-servers" },
+    );
+    expect(parsed).toEqual(EMPTY_PROJECT_DEV_SERVERS);
   });
 });

@@ -126,6 +126,16 @@
     "local_preview_url_add": "Preview uchun dev-server URL kiriting",
     "local_preview_url_set": "Preview: {{url}}"
   },
+  "dev_servers": {
+    "section_header": "Dev serverlar",
+    "description": "Ushbu loyiha uchun o‘zingizning dev serveringiz (masalan, https://you.sdteam.uz). Sizga yoki agentlaringizga biriktirilgan vazifalar preview va QA tekshiruvida sizning serveringizda ochiladi.",
+    "mine_label": "Dev serveringiz URL manzili",
+    "placeholder": "https://you.example.com",
+    "remove_tooltip": "Dev serveringizni olib tashlash",
+    "toast_saved": "Dev server saqlandi",
+    "toast_removed": "Dev server olib tashlandi",
+    "toast_failed": "Dev serverni saqlab bo‘lmadi"
+  },
   "execution_defaults": {
     "title": "Ish jarayoni",
     "description": "Loyihaning qaysi bosqichini agent bajarishini va qaysi bosqich insonni kutishini tanlang. Implementatsiya uchun issue ijrochisi Human, Solo yoki Squad rejimini belgilaydi.",
