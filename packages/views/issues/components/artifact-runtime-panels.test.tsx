@@ -102,7 +102,9 @@ describe("exact-head artifact runtime panels", () => {
     const frame = await screen.findByTitle("Integrated product preview");
     expect(frame).toHaveAttribute("src", "http://127.0.0.1:9090/editor/local/3100/");
     expect(frame).toHaveAttribute("sandbox");
-    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame.getAttribute("sandbox")).toContain("allow-same-origin");
+    expect(frame.parentElement).toHaveClass("h-full", "max-h-[48rem]", "max-w-[85.375rem]");
+    expect(screen.getByRole("region", { name: "Preview" })).toHaveClass("h-[calc(100dvh-9.5rem)]");
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:9090/artifact/preview",
@@ -113,6 +115,30 @@ describe("exact-head artifact runtime panels", () => {
     expect(body).toEqual({ capability: "preview-token", repo: "agora" });
     expect(body).not.toHaveProperty("command");
     expect(body).not.toHaveProperty("workdir");
+  });
+
+  it("keeps same-origin cloud proxy previews in the strict sandbox", async () => {
+    const response = artifactResponse();
+    response.daemon_url = "/api/daemon/runtime-1";
+    mocks.getIssueArtifact.mockResolvedValue(response);
+    const fetchMock = vi.fn(async (url: string) => {
+      const body = url.endsWith("/artifact/preview/status")
+        ? { artifact_id: "artifact-1", running: false }
+        : {
+            artifact_id: "artifact-1",
+            running: true,
+            ready: true,
+            proxy_path: "/editor/local/3100/",
+          };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start preview" }));
+
+    const frame = await screen.findByTitle("Integrated product preview");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
   it("shows command output until the preview port is ready", async () => {

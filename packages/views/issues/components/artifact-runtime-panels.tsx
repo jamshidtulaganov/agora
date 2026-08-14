@@ -63,6 +63,35 @@ function previewKey(artifactId: string, repo: string, capability: string) {
   return ["artifact-preview", artifactId, repo, capability] as const;
 }
 
+function previewSandbox(url: string): string {
+  const permissions = [
+    "allow-downloads",
+    "allow-forms",
+    "allow-modals",
+    "allow-popups",
+    "allow-presentation",
+    "allow-scripts",
+  ];
+
+  // Desktop previews run on a separate localhost origin. Preserving that
+  // origin is required for real applications that bootstrap from cookies,
+  // localStorage, or same-origin asset requests. Never grant it to the web
+  // app's same-origin daemon proxy: scripts + same-origin would let an
+  // untrusted preview escape the sandbox and reach the parent application.
+  if (typeof window !== "undefined") {
+    try {
+      const previewURL = new URL(url, window.location.href);
+      if (/^https?:$/.test(previewURL.protocol) && previewURL.origin !== window.location.origin) {
+        permissions.push("allow-same-origin");
+      }
+    } catch {
+      // Keep the strict sandbox when the daemon returns an invalid URL.
+    }
+  }
+
+  return permissions.join(" ");
+}
+
 export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
   const queryClient = useQueryClient();
@@ -145,7 +174,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
       : t(($) => $.dev_workspace.preview_auto_detect);
 
   return (
-    <section className="flex min-h-[34rem] flex-col overflow-hidden rounded-lg border bg-background" aria-label={t(($) => $.dev_workspace.preview)}>
+    <section className="flex h-[calc(100dvh-9.5rem)] min-h-[34rem] flex-col overflow-hidden rounded-lg border bg-background" aria-label={t(($) => $.dev_workspace.preview)}>
       <header className="flex min-h-12 flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -200,16 +229,21 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
           </Button>
         )}
       </header>
-      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/10">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3 sm:p-4">
         {preview?.running && preview.ready !== false && url ? (
-          <iframe
-            key={iframeKey}
-            src={url}
-            title={t(($) => $.dev_workspace.preview_frame_title)}
-            className="h-full min-h-[30rem] w-full border-0 bg-background"
-            sandbox="allow-downloads allow-forms allow-modals allow-popups allow-presentation allow-scripts"
-            referrerPolicy="no-referrer"
-          />
+          <div className="flex h-full max-h-[48rem] w-full max-w-[85.375rem] flex-col overflow-hidden rounded-xl border-[6px] border-foreground/15 bg-background shadow-xl">
+            <div className="flex h-5 shrink-0 items-center justify-center border-b border-foreground/10 bg-muted/70" aria-hidden>
+              <span className="size-1.5 rounded-full bg-foreground/25" />
+            </div>
+            <iframe
+              key={iframeKey}
+              src={url}
+              title={t(($) => $.dev_workspace.preview_frame_title)}
+              className="min-h-0 w-full flex-1 border-0 bg-background"
+              sandbox={previewSandbox(url)}
+              referrerPolicy="no-referrer"
+            />
+          </div>
         ) : start.isPending || (preview?.running && !preview.ready) ? (
           <div className="w-full max-w-2xl px-6 text-center" aria-live="polite">
             <Loader2 className="mx-auto size-5 animate-spin text-brand motion-reduce:animate-none" aria-hidden />
