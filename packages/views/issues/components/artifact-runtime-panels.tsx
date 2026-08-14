@@ -14,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { issueArtifactOptions } from "@agora/core/issues/queries";
+import { api } from "@agora/core/api";
 import {
   parseArtifactChecksResponse,
   parseArtifactPreviewResponse,
@@ -57,6 +58,61 @@ function RuntimeSkeleton() {
   return <Skeleton className="min-h-80 w-full rounded-lg motion-reduce:animate-none" />;
 }
 
+function previewHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+// StandingServerPreview embeds a deployed, standing QA target directly — the
+// developer's own dev server (user_dev_server) or the project's qa_smoke_url,
+// resolved server-side and confirmed embeddable. It has a live database and is
+// always running, so there is no build / start / stop chrome: this is the
+// answer for projects whose Docker auto-detect would otherwise boot a
+// disposable, empty-database container that no login works against.
+function StandingServerPreview({ url }: { url: string }) {
+  const { t } = useT("issues");
+  const [iframeKey, setIframeKey] = useState(0);
+  return (
+    <section className="flex h-[calc(100dvh-9.5rem)] min-h-[34rem] flex-col overflow-hidden rounded-lg border bg-background" aria-label={t(($) => $.dev_workspace.preview)}>
+      <header className="flex min-h-12 flex-wrap items-center gap-2 border-b px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">{t(($) => $.dev_workspace.preview_title)}</h3>
+            <Badge variant="secondary" className="h-5 text-[10px] font-normal">
+              {t(($) => $.dev_workspace.preview_dev_server_label)}
+            </Badge>
+          </div>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={url}>{previewHost(url)}</p>
+        </div>
+        <Button size="icon-sm" variant="ghost" onClick={() => setIframeKey((value) => value + 1)} aria-label={t(($) => $.dev_workspace.reload_preview)}>
+          <RefreshCw aria-hidden />
+        </Button>
+        <Button size="icon-sm" variant="ghost" render={<a href={url} target="_blank" rel="noreferrer noopener" />} aria-label={t(($) => $.dev_workspace.open_preview)}>
+          <ExternalLink aria-hidden />
+        </Button>
+      </header>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3 sm:p-4">
+        <div className="flex h-full max-h-[48rem] w-full max-w-none flex-col overflow-hidden rounded-xl border-[6px] border-foreground/15 bg-background shadow-xl">
+          <div className="flex h-5 shrink-0 items-center justify-center border-b border-foreground/10 bg-muted/70" aria-hidden>
+            <span className="size-1.5 rounded-full bg-foreground/25" />
+          </div>
+          <iframe
+            key={iframeKey}
+            src={url}
+            title={t(($) => $.dev_workspace.preview_frame_title)}
+            className="min-h-0 w-full flex-1 border-0 bg-background"
+            sandbox={previewSandbox(url)}
+            referrerPolicy="no-referrer"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function previewKey(artifactId: string, repo: string, capability: string) {
   // The capability token is part of the key: a rotated token must produce a
   // fresh fetch instead of serving a status cached under the stale grant.
@@ -98,9 +154,25 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   const [iframeKey, setIframeKey] = useState(0);
   const [repoName, setRepoName] = useState("");
   const artifactQuery = useQuery(issueArtifactOptions(issueId));
+  // A standing external QA target (the developer's dev server, resolved via
+  // dev_apps → user_dev_server → qa_smoke_url) wins over the daemon/Docker
+  // artifact preview whenever it is embeddable: it carries a live database and
+  // is reachable from the hosted web app, where the daemon-proxied Docker
+  // preview is not. Always-200 endpoint; url:"" (or not embeddable) falls
+  // through to the daemon chain below, so projects without a dev server are
+  // unaffected.
+  const externalQuery = useQuery({
+    queryKey: ["issue-qa-preview-url", issueId],
+    queryFn: () => api.getIssueQAPreviewURL(issueId),
+    staleTime: 30_000,
+  });
   const data = artifactQuery.data;
   const artifact = data?.artifact;
   const capability = data?.capabilities.preview;
+  // When a standing dev server takes over the panel, the daemon preview
+  // status/start/stop must go quiet — otherwise it would keep polling (and
+  // could cold-boot a Docker container) behind the embedded external frame.
+  const externalActive = Boolean(externalQuery.data?.url && externalQuery.data.embeddable);
   const selectedRepo = selectedArtifactRepo(data, repoName);
   // A live local artifact has no frozen repos — the daemon points preview at the
   // developer's own dev server, so a selected repo isn't required.
@@ -120,7 +192,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
       }
       return parsed;
     },
-    enabled: Boolean(artifact?.id && capability && data?.daemon_url),
+    enabled: Boolean(artifact?.id && capability && data?.daemon_url) && !externalActive,
     refetchInterval: (query) => query.state.data?.running === true
       ? query.state.data.ready === true ? 3_000 : 1_000
       : false,
@@ -158,7 +230,11 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
     },
   });
 
-  if (artifactQuery.isLoading) return <RuntimeSkeleton />;
+  if (artifactQuery.isLoading || externalQuery.isLoading) return <RuntimeSkeleton />;
+  // Prefer the standing dev server when one resolves and can be framed.
+  if (externalQuery.data?.url && externalQuery.data.embeddable) {
+    return <StandingServerPreview url={externalQuery.data.url} />;
+  }
   if (!artifact || !capability || !data?.daemon_url || (!selectedRepo && !isLive)) return <RuntimeUnavailable kind="preview" />;
 
   const preview = statusQuery.data;
@@ -231,7 +307,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
       </header>
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3 sm:p-4">
         {preview?.running && preview.ready !== false && url ? (
-          <div className="flex h-full max-h-[48rem] w-full max-w-[85.375rem] flex-col overflow-hidden rounded-xl border-[6px] border-foreground/15 bg-background shadow-xl">
+          <div className="flex h-full max-h-[48rem] w-full max-w-none flex-col overflow-hidden rounded-xl border-[6px] border-foreground/15 bg-background shadow-xl">
             <div className="flex h-5 shrink-0 items-center justify-center border-b border-foreground/10 bg-muted/70" aria-hidden>
               <span className="size-1.5 rounded-full bg-foreground/25" />
             </div>

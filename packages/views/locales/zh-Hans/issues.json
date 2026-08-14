@@ -1477,6 +1477,7 @@
     "exact_head_pending": "需要集成结果",
     "exact_head_pending_description": "预览和检查仅对干净的规范 integration HEAD 开放，不会使用单独的执行分支。",
     "preview_title": "产品预览",
+    "preview_dev_server_label": "在线开发服务器",
     "detached_runtime": "在一次性 detached 环境中运行精确的集成 HEAD。",
     "reload_preview": "重新加载预览",
     "open_preview": "在新标签页中打开预览",

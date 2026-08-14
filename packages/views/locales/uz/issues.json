@@ -1492,6 +1492,7 @@
     "exact_head_pending": "Integratsiyalangan natija kerak",
     "exact_head_pending_description": "Preview va checks alohida worker branch’da emas, faqat clean canonical integration HEAD’da ochiladi.",
     "preview_title": "Mahsulot preview’i",
+    "preview_dev_server_label": "Jonli dev server",
     "detached_runtime": "Aniq integration HEAD’ni vaqtinchalik detached muhitda ishga tushiradi.",
     "reload_preview": "Preview’ni yangilash",
     "open_preview": "Preview’ni yangi tabda ochish",

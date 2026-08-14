@@ -1492,6 +1492,7 @@
     "exact_head_pending": "Integrated result required",
     "exact_head_pending_description": "Preview and checks unlock only for the clean canonical integration HEAD, not an individual worker branch.",
     "preview_title": "Product preview",
+    "preview_dev_server_label": "Live dev server",
     "detached_runtime": "Runs the exact integrated HEAD in a disposable, detached environment.",
     "reload_preview": "Reload preview",
     "open_preview": "Open preview in a new tab",

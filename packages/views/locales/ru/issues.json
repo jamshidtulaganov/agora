@@ -1492,6 +1492,7 @@
     "exact_head_pending": "Нужен интегрированный результат",
     "exact_head_pending_description": "Предпросмотр и проверки доступны только для чистого канонического integration HEAD, а не отдельной ветки исполнителя.",
     "preview_title": "Предпросмотр продукта",
+    "preview_dev_server_label": "Живой dev-сервер",
     "detached_runtime": "Запускает точный интегрированный HEAD во временной detached-среде.",
     "reload_preview": "Перезагрузить предпросмотр",
     "open_preview": "Открыть предпросмотр в новой вкладке",

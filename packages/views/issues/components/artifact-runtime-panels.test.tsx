@@ -6,9 +6,14 @@ import { I18nProvider } from "@agora/core/i18n/react";
 import enIssues from "../../locales/en/issues.json";
 import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
 
-const mocks = vi.hoisted(() => ({ getIssueArtifact: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getIssueArtifact: vi.fn(), getIssueQAPreviewURL: vi.fn() }));
 
-vi.mock("@agora/core/api", () => ({ api: { getIssueArtifact: mocks.getIssueArtifact } }));
+vi.mock("@agora/core/api", () => ({
+  api: {
+    getIssueArtifact: mocks.getIssueArtifact,
+    getIssueQAPreviewURL: mocks.getIssueQAPreviewURL,
+  },
+}));
 
 const HEAD = "b".repeat(40);
 
@@ -46,6 +51,9 @@ function renderPanel(panel: ReactNode) {
 describe("exact-head artifact runtime panels", () => {
   beforeEach(() => {
     mocks.getIssueArtifact.mockResolvedValue(artifactResponse());
+    // Default: no standing dev server → fall through to the daemon preview
+    // chain, so the existing daemon-based assertions below hold unchanged.
+    mocks.getIssueQAPreviewURL.mockResolvedValue({ url: "", embeddable: false });
   });
 
   afterEach(() => {
@@ -103,7 +111,7 @@ describe("exact-head artifact runtime panels", () => {
     expect(frame).toHaveAttribute("src", "http://127.0.0.1:9090/editor/local/3100/");
     expect(frame).toHaveAttribute("sandbox");
     expect(frame.getAttribute("sandbox")).toContain("allow-same-origin");
-    expect(frame.parentElement).toHaveClass("h-full", "max-h-[48rem]", "max-w-[85.375rem]");
+    expect(frame.parentElement).toHaveClass("h-full", "max-h-[48rem]", "w-full", "max-w-none");
     expect(screen.getByRole("region", { name: "Preview" })).toHaveClass("h-[calc(100dvh-9.5rem)]");
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
@@ -165,5 +173,43 @@ describe("exact-head artifact runtime panels", () => {
     expect(screen.getAllByText("pnpm --filter mytrion dev")).toHaveLength(2);
     expect(screen.getByText("VITE starting development server…")).toBeInTheDocument();
     expect(screen.queryByTitle("Integrated product preview")).not.toBeInTheDocument();
+  });
+
+  it("embeds a standing dev server directly instead of the daemon Docker preview", async () => {
+    mocks.getIssueQAPreviewURL.mockResolvedValue({
+      url: "https://agora-cs.sdteam.uz",
+      embeddable: true,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
+
+    // The dev server's host is shown and its URL is framed…
+    expect(await screen.findByText("agora-cs.sdteam.uz")).toBeInTheDocument();
+    const frame = screen.getByTitle("Integrated product preview") as HTMLIFrameElement;
+    expect(frame.src).toBe("https://agora-cs.sdteam.uz/");
+    // …and there is no Start/Stop chrome, because a standing server needs no build.
+    expect(screen.queryByRole("button", { name: "Start preview" })).not.toBeInTheDocument();
+    // The daemon preview endpoints are never hit in this mode.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the daemon preview when the dev server is not embeddable", async () => {
+    mocks.getIssueQAPreviewURL.mockResolvedValue({
+      url: "https://agora-cs.sdteam.uz",
+      embeddable: false,
+    });
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ artifact_id: "artifact-1", running: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel(<ArtifactPreviewPanel issueId="issue-1" />);
+
+    // A non-embeddable dev server must NOT be framed; the daemon Start button shows.
+    expect(await screen.findByRole("button", { name: "Start preview" })).toBeInTheDocument();
+    expect(screen.queryByText("agora-cs.sdteam.uz")).not.toBeInTheDocument();
   });
 });
