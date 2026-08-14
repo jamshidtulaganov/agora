@@ -15,10 +15,14 @@ import (
 // `*` (any origin), and a naive strings.Contains would wrongly read it as
 // wide open. Only an exact `*` token means "any origin may frame this."
 func TestResponseBlocksFraming(t *testing.T) {
+	// The Agora web app requesting the probe. A scoped frame-ancestors that
+	// names this origin (or a wildcard covering it) must NOT block.
+	const agoraOrigin = "https://agora-web-7mav.onrender.com"
 	tests := []struct {
-		name        string
-		headers     map[string]string
-		wantBlocked bool
+		name         string
+		headers      map[string]string
+		parentOrigin string
+		wantBlocked  bool
 	}{
 		{
 			name:        "no headers at all -> not blocked",
@@ -41,7 +45,7 @@ func TestResponseBlocksFraming(t *testing.T) {
 			wantBlocked: false,
 		},
 		{
-			name: "scoped subdomain wildcard inside a source value -> BLOCKED",
+			name: "scoped subdomain wildcard, no parent origin -> BLOCKED",
 			headers: map[string]string{
 				"Content-Security-Policy": "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
 			},
@@ -64,6 +68,38 @@ func TestResponseBlocksFraming(t *testing.T) {
 			},
 			wantBlocked: true,
 		},
+		{
+			name: "scoped CSP naming the parent origin explicitly -> NOT blocked",
+			headers: map[string]string{
+				"Content-Security-Policy": "frame-ancestors 'self' https://*.telegram.org " + agoraOrigin,
+			},
+			parentOrigin: agoraOrigin,
+			wantBlocked:  false,
+		},
+		{
+			name: "scoped CSP with a host wildcard covering the parent -> NOT blocked",
+			headers: map[string]string{
+				"Content-Security-Policy": "frame-ancestors 'self' https://*.onrender.com",
+			},
+			parentOrigin: agoraOrigin,
+			wantBlocked:  false,
+		},
+		{
+			name: "scoped CSP that does NOT name the parent -> still blocked",
+			headers: map[string]string{
+				"Content-Security-Policy": "frame-ancestors 'self' https://*.telegram.org",
+			},
+			parentOrigin: agoraOrigin,
+			wantBlocked:  true,
+		},
+		{
+			name: "wrong scheme for the parent origin -> blocked",
+			headers: map[string]string{
+				"Content-Security-Policy": "frame-ancestors http://agora-web-7mav.onrender.com",
+			},
+			parentOrigin: agoraOrigin,
+			wantBlocked:  true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,8 +107,8 @@ func TestResponseBlocksFraming(t *testing.T) {
 			for k, v := range tt.headers {
 				h.Set(k, v)
 			}
-			if got := responseBlocksFraming(h); got != tt.wantBlocked {
-				t.Errorf("responseBlocksFraming(%v) = %v, want %v", tt.headers, got, tt.wantBlocked)
+			if got := responseBlocksFraming(h, tt.parentOrigin); got != tt.wantBlocked {
+				t.Errorf("responseBlocksFraming(%v, %q) = %v, want %v", tt.headers, tt.parentOrigin, got, tt.wantBlocked)
 			}
 		})
 	}
@@ -95,7 +131,7 @@ func TestUrlAllowsFraming_WalksRedirectChain(t *testing.T) {
 		}))
 		defer redirector.Close()
 
-		if urlAllowsFraming(context.Background(), redirector.URL) {
+		if urlAllowsFraming(context.Background(), redirector.URL, "") {
 			t.Error("expected false — the redirect hop itself carries a blocking CSP")
 		}
 	})
@@ -111,13 +147,13 @@ func TestUrlAllowsFraming_WalksRedirectChain(t *testing.T) {
 		}))
 		defer redirector.Close()
 
-		if !urlAllowsFraming(context.Background(), redirector.URL) {
+		if !urlAllowsFraming(context.Background(), redirector.URL, "") {
 			t.Error("expected true — neither hop sets a blocking header")
 		}
 	})
 
 	t.Run("unreachable target -> false (fail closed)", func(t *testing.T) {
-		if urlAllowsFraming(context.Background(), "http://127.0.0.1:1") {
+		if urlAllowsFraming(context.Background(), "http://127.0.0.1:1", "") {
 			t.Error("expected false on a connection failure")
 		}
 	})

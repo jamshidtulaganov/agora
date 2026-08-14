@@ -232,9 +232,16 @@ func (h *Handler) GetIssueQAPreviewURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url := h.resolveQAPreviewURL(r.Context(), issue)
+	// The requesting Agora web app is the would-be parent frame. A dev server
+	// whose CSP scopes frame-ancestors to specific origins (rather than "*")
+	// is still embeddable when THIS origin is one of them — so pass it to the
+	// probe. Desktop sends no Origin (file://) and bypasses the embeddability
+	// gate client-side (webSecurity:false), so an empty value keeps the old
+	// "*"-only behavior.
+	parentOrigin := strings.TrimSpace(r.Header.Get("Origin"))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":        url,
-		"embeddable": url != "" && cachedURLAllowsFraming(r.Context(), url),
+		"embeddable": url != "" && cachedURLAllowsFraming(r.Context(), url, parentOrigin),
 	})
 }
 
@@ -255,21 +262,24 @@ var (
 	frameCheckCache = map[string]frameCheckResult{}
 )
 
-// cachedURLAllowsFraming wraps urlAllowsFraming with a per-URL TTL cache —
-// every QA review page load for the same project resolves the same target
-// URL, so without caching each one would pay the full outbound HEAD round trip.
-func cachedURLAllowsFraming(ctx context.Context, target string) bool {
+// cachedURLAllowsFraming wraps urlAllowsFraming with a per-(URL, parentOrigin)
+// TTL cache — every QA review page load for the same project resolves the same
+// target URL, so without caching each one would pay the full outbound HEAD
+// round trip. The parent origin is part of the key: the same target can be
+// embeddable for one requesting origin and not another (scoped frame-ancestors).
+func cachedURLAllowsFraming(ctx context.Context, target, parentOrigin string) bool {
+	cacheKey := target + "\x00" + parentOrigin
 	frameCheckMu.Lock()
-	if cached, ok := frameCheckCache[target]; ok && time.Now().Before(cached.expires) {
+	if cached, ok := frameCheckCache[cacheKey]; ok && time.Now().Before(cached.expires) {
 		frameCheckMu.Unlock()
 		return cached.embeddable
 	}
 	frameCheckMu.Unlock()
 
-	result := urlAllowsFraming(ctx, target)
+	result := urlAllowsFraming(ctx, target, parentOrigin)
 
 	frameCheckMu.Lock()
-	frameCheckCache[target] = frameCheckResult{embeddable: result, expires: time.Now().Add(frameCheckTTL)}
+	frameCheckCache[cacheKey] = frameCheckResult{embeddable: result, expires: time.Now().Add(frameCheckTTL)}
 	frameCheckMu.Unlock()
 	return result
 }
@@ -284,8 +294,10 @@ func cachedURLAllowsFraming(ctx context.Context, target string) bool {
 // subdomain wildcard inside one source value, not the CSP special token `*`
 // (any origin). A naive strings.Contains(directive, "*") matches that
 // substring and wrongly concludes the policy is wide open — exactly backwards.
-// Only an exact `*` TOKEN in the source list means "any origin may frame this."
-func responseBlocksFraming(h http.Header) bool {
+// A source list is permissive when it carries the `*` TOKEN, OR when it names
+// parentOrigin (the requesting Agora app) explicitly — a dev server that scopes
+// framing to specific origins is still embeddable for an origin it lists.
+func responseBlocksFraming(h http.Header, parentOrigin string) bool {
 	if xfo := strings.ToLower(strings.TrimSpace(h.Get("X-Frame-Options"))); xfo == "deny" || xfo == "sameorigin" {
 		return true
 	}
@@ -295,18 +307,71 @@ func responseBlocksFraming(h http.Header) bool {
 		if len(fields) == 0 || strings.ToLower(fields[0]) != "frame-ancestors" {
 			continue
 		}
-		openToAll := false
-		for _, source := range fields[1:] {
-			if source == "*" {
-				openToAll = true
-				break
-			}
-		}
-		if !openToAll {
+		if !frameAncestorsAllow(fields[1:], parentOrigin) {
 			return true
 		}
 	}
 	return false
+}
+
+// frameAncestorsAllow reports whether a frame-ancestors source list permits
+// parentOrigin to embed the response: the `*` token allows any origin, and any
+// source that matches parentOrigin (exact origin or a host wildcard like
+// `https://*.example.com`) allows it. An empty parentOrigin only matches `*`.
+func frameAncestorsAllow(sources []string, parentOrigin string) bool {
+	for _, source := range sources {
+		if source == "*" {
+			return true
+		}
+		if parentOrigin != "" && cspSourceMatchesOrigin(source, parentOrigin) {
+			return true
+		}
+	}
+	return false
+}
+
+// cspSourceMatchesOrigin reports whether a single CSP host-source matches a
+// concrete origin (scheme://host[:port]). Keyword sources ('self', 'none') are
+// never a cross-origin match here. A scheme in the source, when present, must
+// equal the origin's; a `*.` label matches the host or any subdomain of it.
+func cspSourceMatchesOrigin(source, origin string) bool {
+	ou, err := url.Parse(origin)
+	if err != nil || ou.Hostname() == "" {
+		return false
+	}
+	if strings.HasPrefix(source, "'") {
+		return false // 'self' / 'none' / other keyword — not a cross-origin host
+	}
+	if strings.EqualFold(source, origin) || strings.EqualFold(source, ou.Scheme+"://"+ou.Host) {
+		return true
+	}
+	wildcard := false
+	bare := source
+	if i := strings.Index(bare, "://*."); i >= 0 {
+		bare = bare[:i+3] + bare[i+5:] // drop the "*." label, keep the scheme
+		wildcard = true
+	} else if strings.HasPrefix(bare, "*.") {
+		bare = strings.TrimPrefix(bare, "*.")
+		wildcard = true
+	}
+	su, err := url.Parse(bare)
+	srcScheme, srcHost := "", ""
+	if err == nil && su.Hostname() != "" {
+		srcScheme, srcHost = su.Scheme, su.Hostname()
+	} else {
+		srcHost = strings.TrimPrefix(bare, "//") // bare host, no scheme
+	}
+	if srcScheme != "" && !strings.EqualFold(srcScheme, ou.Scheme) {
+		return false
+	}
+	oh, sh := strings.ToLower(ou.Hostname()), strings.ToLower(srcHost)
+	if sh == "" {
+		return false
+	}
+	if wildcard {
+		return oh == sh || strings.HasSuffix(oh, "."+sh)
+	}
+	return oh == sh
 }
 
 // urlAllowsFraming reports whether url's response headers permit embedding it
@@ -327,7 +392,7 @@ func responseBlocksFraming(h http.Header) bool {
 // iframe. False positives (looks embeddable, isn't) are far worse for a
 // first impression than false negatives (embeddable, we just offer a link
 // instead).
-func urlAllowsFraming(ctx context.Context, target string) bool {
+func urlAllowsFraming(ctx context.Context, target, parentOrigin string) bool {
 	reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
@@ -345,7 +410,7 @@ func urlAllowsFraming(ctx context.Context, target string) bool {
 		if err != nil {
 			return false
 		}
-		blocked := responseBlocksFraming(resp.Header)
+		blocked := responseBlocksFraming(resp.Header, parentOrigin)
 		location := resp.Header.Get("Location")
 		_, _ = io.CopyN(io.Discard, resp.Body, 4096) // drain a little so keep-alive can reuse the conn
 		resp.Body.Close()
