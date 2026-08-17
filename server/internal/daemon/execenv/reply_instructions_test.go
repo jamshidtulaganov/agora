@@ -217,6 +217,32 @@ func TestInjectRuntimeConfigShowsCodeChanges(t *testing.T) {
 	}
 }
 
+func TestInjectRuntimeConfigForbidsReviewRequestFooters(t *testing.T) {
+	saved := runtimeGOOS
+	t.Cleanup(func() { runtimeGOOS = saved })
+	runtimeGOOS = "linux"
+
+	dir := t.TempDir()
+	if _, err := InjectRuntimeConfig(dir, "claude", TaskContextForEnv{}); err != nil {
+		t.Fatalf("InjectRuntimeConfig failed: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	s := string(content)
+	for _, want := range []string{
+		"## Pull/Merge Request Formatting",
+		"Do NOT add an Agora issue backlink/footer",
+		"Generated with Claude Code",
+		"automated `Co-Authored-By` attribution",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("CLAUDE.md missing %q", want)
+		}
+	}
+}
+
 // TestInjectRuntimeConfigWindowsCommentTriggerHasNoStdin asserts the
 // end-to-end CLAUDE.md / AGENTS.md surface for a comment-triggered task on
 // a Windows daemon — across Codex and non-Codex providers — has no

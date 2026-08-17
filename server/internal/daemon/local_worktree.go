@@ -767,7 +767,9 @@ func provisionOrReuseWorktreesFromReposAt(ctx context.Context, repos []localRepo
 	}
 
 	// Fresh: clear any partial state + stale worktree metadata, then provision.
-	_ = os.RemoveAll(workDir)
+	if err := os.RemoveAll(workDir); err != nil {
+		return nil, false, fmt.Errorf("remove stale worktree directory %q: %w", workDir, err)
+	}
 	for _, repo := range repos {
 		_ = gitRun(ctx, repo.SrcPath, "worktree", "prune")
 	}

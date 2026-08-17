@@ -379,42 +379,45 @@ func sliceActionOpensPR(kind string) bool {
 	}
 }
 
-// issueRepoIsGitLab reports whether the issue's project is backed by a GitLab
-// repo. GitLab repos are bound as github_repo resources (that type is just the
-// daemon's checkout trigger) carrying a gitlab URL — e.g. sd-bridge on
-// gitlab.sdteam.uz. GitLab has no `gh`/pull-request flow, so PR-producing slice
-// actions must steer the agent to the merge-request push-option flow instead.
-func (h *Handler) issueRepoIsGitLab(ctx context.Context, issue db.Issue) bool {
+// issueGitLabRepoConfig reports whether the issue's project is backed by a
+// GitLab repo and returns that resource's configured default branch. GitLab
+// repos are bound as github_repo resources (that type is just the daemon's
+// checkout trigger) carrying a GitLab URL. The branch hint matters because
+// self-hosted repositories do not share one universal MR target.
+func (h *Handler) issueGitLabRepoConfig(ctx context.Context, issue db.Issue) (bool, string) {
 	if !issue.ProjectID.Valid {
-		return false
+		return false, ""
 	}
 	for _, row := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {
 		if row.ResourceType != "github_repo" {
 			continue
 		}
 		var ref struct {
-			URL string `json:"url"`
+			URL               string `json:"url"`
+			DefaultBranchHint string `json:"default_branch_hint"`
 		}
 		if json.Unmarshal(row.ResourceRef, &ref) == nil && strings.Contains(strings.ToLower(ref.URL), "gitlab") {
-			return true
+			return true, strings.TrimSpace(ref.DefaultBranchHint)
 		}
 	}
-	return false
+	return false, ""
 }
 
 // sliceActionBranchInstruction returns the host-specific branch + review-request
 // guidance appended to a PR-producing slice action. GitHub repos get the `gh`
 // pull-request flow against `billing` (PROD). GitLab repos get the merge-request
-// push-option flow against `main`: a plain `git push -o merge_request.create`
+// push-option flow against their configured default branch: a plain
+// `git push -o merge_request.create`
 // opens the MR over the SAME SSH remote the clone already uses — no `glab` login,
-// no token — because neither `gh` nor a `billing` base exists there. Either way
-// the agent never merges; the human reviewer decides.
+// no token — because `gh` does not support GitLab. Either way the agent never
+// merges; the human reviewer decides.
 func (h *Handler) sliceActionBranchInstruction(ctx context.Context, issue db.Issue) string {
 	branch := ""
 	if tid := bitrixTaskIDFromMetadata(issue.Metadata); tid != "" {
 		branch = "btx-" + tid
 	}
-	return branchInstructionFor(h.issueRepoIsGitLab(ctx, issue), branch)
+	isGitLab, defaultBranch := h.issueGitLabRepoConfig(ctx, issue)
+	return branchInstructionFor(isGitLab, branch, defaultBranch)
 }
 
 // sliceActionQASmokeContext appends the project's configured QA smoke target to
@@ -784,7 +787,7 @@ func docsRepoInstruction(docsRepo string) string {
 	out := " The documentation repository for this project is " + repo +
 		" — write the docs there and open the review request against it."
 	if strings.Contains(strings.ToLower(repo), "gitlab") {
-		out += branchInstructionFor(true, "")
+		out += branchInstructionFor(true, "", "")
 	}
 	return out
 }
@@ -2740,12 +2743,16 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
-// branch from. Defaults to `main`; set AGORA_GITLAB_MR_TARGET (e.g. "dev") to
+// branch from. The repository resource hint is the normal source of truth.
+// Defaults to `main`; set AGORA_GITLAB_MR_TARGET (e.g. "dev") to
 // route agent MRs at a staging branch so their work does NOT auto-deploy to
 // prod every iteration (main → prod via deploy:main). The human then merges
 // the staging branch into main once, for a single prod deploy.
-func gitlabBaseBranch() string {
+func gitlabBaseBranch(defaultBranchHint string) string {
 	if b := strings.TrimSpace(os.Getenv("AGORA_GITLAB_MR_TARGET")); b != "" {
+		return b
+	}
+	if b := strings.TrimSpace(defaultBranchHint); b != "" {
 		return b
 	}
 	return "main"
@@ -2753,15 +2760,16 @@ func gitlabBaseBranch() string {
 
 // branchInstructionFor is the pure text policy behind sliceActionBranchInstruction
 // (split out so it is unit-testable without a DB). GitLab → merge-request push
-// options against `main`; GitHub with a known branch → `gh` PR against `billing`;
+// options against the resource's default branch; GitHub with a known branch →
+// `gh` PR against `billing`;
 // GitHub without one → no extra guidance (the agent names its own branch).
-func branchInstructionFor(isGitLab bool, branch string) string {
+func branchInstructionFor(isGitLab bool, branch, defaultBranchHint string) string {
 	if isGitLab {
 		name := branch
 		if name == "" {
 			name = "a short descriptive"
 		}
-		base := gitlabBaseBranch()
+		base := gitlabBaseBranch(defaultBranchHint)
 		return " This is a GitLab repository — there is no `gh` or GitHub pull-request flow here. Create branch `" + name +
 			"` from `" + base + "`, commit your change, and push it WITH GitLab merge-request push options so a Merge Request opens automatically: " +
 			"`git push -o merge_request.create -o merge_request.target=" + base + " -o merge_request.remove_source_branch origin <branch>`. " +
