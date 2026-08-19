@@ -2,10 +2,14 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
@@ -17,9 +21,9 @@ import (
 // engine (see emitAutomationEvent's first guard).
 //
 // Scope discipline: every action here manipulates TASK state (status, assignee,
-// labels, comments), dispatches an existing agent slice action, or sends a Telegram
-// notice. There is no "call an arbitrary URL" action — that would turn a task
-// automation into an unaudited egress path.
+// labels, comments), dispatches an existing agent slice action, or sends a
+// notification. Webhook actions resolve an encrypted connector owned by the same
+// workspace; raw URLs and credentials never enter the automation document.
 
 // runAutomationActions executes a rule's actions in order and returns one outcome
 // per action, how many applied, and the first error.
@@ -96,9 +100,107 @@ func (h *Handler) runAutomationAction(
 		return h.automationDispatchSlice(ctx, rule, issue, action)
 	case automationActionSendTelegram:
 		return h.automationSendTelegram(ctx, rule, ev, issue, action)
+	case automationActionSendWebhook:
+		return h.automationSendWebhook(ctx, rule, ev, issue, action)
 	default:
 		return "", fmt.Errorf("unknown action type %q", action.Type)
 	}
+}
+
+const (
+	automationWebhookAttempts = 3
+	automationWebhookEvent    = "automation.action"
+)
+
+// automationSendWebhook delivers a stable, structured task event through an
+// encrypted workspace webhook connector. The action stores only integration_id:
+// the URL and signing secret stay sealed in release_integration and are never
+// copied into an automation run, log, API response, or agent-visible prompt.
+func (h *Handler) automationSendWebhook(
+	ctx context.Context, rule db.Automation, ev AutomationEvent, issue db.Issue, action automationAction,
+) (string, error) {
+	integrationID, err := parseUUIDErr(strings.TrimSpace(action.Config["integration_id"]))
+	if err != nil {
+		return "", errors.New("invalid webhook integration id")
+	}
+	integration, err := h.Queries.GetReleaseIntegration(ctx, db.GetReleaseIntegrationParams{
+		ID: integrationID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return "", errors.New("webhook connector not found in this workspace")
+	}
+	if integration.Kind != "webhook" {
+		return "", errors.New("the selected connector is not a webhook")
+	}
+	if !integration.Enabled {
+		return "", errors.New("the selected webhook connector is disabled")
+	}
+	box, err := releaseIntegrationBox()
+	if err != nil {
+		return "", errors.New("webhook connectors are not configured on this server")
+	}
+	plain, err := box.Open(integration.SecretEncrypted)
+	if err != nil {
+		return "", errors.New("the webhook connector secret could not be opened")
+	}
+	var secret webhookSecret
+	if err := json.Unmarshal(plain, &secret); err != nil || strings.TrimSpace(secret.URL) == "" {
+		return "", errors.New("the webhook connector is incomplete")
+	}
+
+	message := automationExpandTemplate(
+		strings.TrimSpace(action.Config["message"]), issue, h.issueKey(ctx, issue), rule.Name,
+	)
+	issuePayload := map[string]any{
+		"id": uuidToString(issue.ID), "key": h.issueKey(ctx, issue),
+		"title": issue.Title, "status": issue.Status, "priority": issue.Priority,
+	}
+	if issue.ProjectID.Valid {
+		issuePayload["project_id"] = uuidToString(issue.ProjectID)
+	}
+	payload := map[string]any{
+		"delivery_id":  automationWebhookDeliveryID(),
+		"event":        automationWebhookEvent,
+		"trigger":      ev.Trigger,
+		"workspace_id": uuidToString(issue.WorkspaceID),
+		"automation": map[string]any{
+			"id": uuidToString(rule.ID), "name": rule.Name,
+		},
+		"issue": issuePayload,
+	}
+	if message != "" {
+		payload["message"] = message
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= automationWebhookAttempts; attempt++ {
+		if err := releaseHookClient.Deliver(ctx, secret.URL, secret.Signing, automationWebhookEvent, payload); err == nil {
+			return fmt.Sprintf("delivered to webhook connector %s in %d attempt(s)", uuidToString(integration.ID), attempt), nil
+		} else {
+			lastErr = err
+		}
+		if attempt == automationWebhookAttempts {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt) * 250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", fmt.Errorf("webhook delivery cancelled: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return "", fmt.Errorf("webhook delivery failed after %d attempts: %w", automationWebhookAttempts, lastErr)
+}
+
+// automationWebhookDeliveryID is generated once per action execution and reused
+// for all retry attempts, allowing n8n/Zapier receivers to de-duplicate safely.
+func automationWebhookDeliveryID() string {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err == nil {
+		return hex.EncodeToString(raw)
+	}
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // automationSetStatus moves the issue. Already-in-that-status is a no-op success,

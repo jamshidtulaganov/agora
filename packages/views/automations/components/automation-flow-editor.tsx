@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { api } from "@agora/core/api";
 import { labelListOptions } from "@agora/core/labels";
 import { projectListOptions } from "@agora/core/projects/queries";
 import { agentListOptions, memberListOptions } from "@agora/core/workspace/queries";
@@ -37,9 +38,10 @@ interface AutomationFlowEditorProps {
    *  while the draft is UNEDITED — an edited flow no longer matches the run's
    *  step order, and a misaligned badge is worse than none. */
   lastRun?: AutomationRun | null;
+  fillHeight?: boolean;
 }
 
-export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastRun }: AutomationFlowEditorProps) {
+export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastRun, fillHeight }: AutomationFlowEditorProps) {
   const { t } = useT("automations");
   const triggerLabels = t(($) => $.trigger, { returnObjects: true }) as Record<string, string>;
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
@@ -64,6 +66,20 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
   const { data: labels } = useQuery(labelListOptions(wsId));
   const { data: agents } = useQuery(agentListOptions(wsId));
   const { data: members } = useQuery(memberListOptions(wsId));
+  const { data: integrations } = useQuery({
+    queryKey: ["release-integrations", wsId],
+    queryFn: () => api.listReleaseIntegrations(wsId),
+    enabled: !!wsId,
+  });
+  const webhookIntegrations = useMemo(
+    () => (integrations ?? [])
+      .filter((integration) => integration.kind === "webhook" && integration.enabled && integration.has_secret)
+      .map((integration) => ({
+        value: integration.id,
+        label: String(integration.config.name || integration.id),
+      })),
+    [integrations],
+  );
   const valueOptions = useMemo((): Partial<Record<string, FieldValueOption[]>> => {
     const agentOptions = (agents ?? []).map((agent) => ({ value: agent.id, label: agent.name }));
     return {
@@ -184,9 +200,26 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
 
   const selectedStep =
     selectedId !== "trigger" && selectedId !== "" ? value.actions[Number(selectedId)] : undefined;
+  const selectedRunResult = useMemo(() => {
+    if (!lastRun || selectedId === "") return undefined;
+    if (selectedId === "trigger") {
+      return {
+        ok: lastRun.status === "applied",
+        label: lastRun.status === "applied" ? t(($) => $.runs.applied) : lastRun.status === "failed" ? t(($) => $.runs.failed) : t(($) => $.runs.skipped),
+        detail: lastRun.detail.reason || lastRun.error,
+      };
+    }
+    const outcome = lastRun.detail.actions?.[Number(selectedId)];
+    if (!outcome) return undefined;
+    return {
+      ok: outcome.ok,
+      label: outcome.ok ? t(($) => $.runs.applied) : t(($) => $.runs.failed),
+      detail: outcome.detail,
+    };
+  }, [lastRun, selectedId, t]);
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className={fillHeight ? "grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]" : "grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]"}>
       <AutomationFlowCanvas
         nodes={nodes}
         selectedId={selectedId}
@@ -196,6 +229,7 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
         onReorder={disabled ? undefined : reorderStep}
         onRemove={disabled ? undefined : removeStep}
         disabled={disabled}
+        fillHeight={fillHeight}
       />
       <AutomationNodePanel
         nodeId={selectedId}
@@ -204,7 +238,10 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
         step={selectedStep}
         catalog={catalog}
         valueOptions={valueOptions}
+        webhookIntegrations={webhookIntegrations}
         disabled={disabled}
+        fillHeight={fillHeight}
+        runResult={selectedRunResult}
         onTriggerChange={(trigger) => {
           // A trigger change keeps the conditions the new trigger can still
           // evaluate (the common facts — status, project, priority… — exist on

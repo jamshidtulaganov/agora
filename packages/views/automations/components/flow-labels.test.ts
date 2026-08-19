@@ -83,6 +83,7 @@ describe("stepConfigFields", () => {
   it("returns the fields each step edits", () => {
     expect(stepConfigFields("set_status")).toEqual(["status"]);
     expect(stepConfigFields("send_telegram")).toEqual(["destination", "text", "chat_id"]);
+    expect(stepConfigFields("send_webhook")).toEqual(["integration_id", "message"]);
   });
 
   // An unknown step must round-trip untouched: showing no fields is how its config

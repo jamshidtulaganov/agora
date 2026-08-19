@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Code2, Loader2, MinusCircle, Trash2, Workflow, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, Code2, Loader2, MinusCircle, Search, SlidersHorizontal, Trash2, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   automationCatalogOptions,
@@ -96,6 +96,13 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   // detail query is invalidated by every automation:run WS event, and reseeding
   // on each refetch would clobber a dirty draft mid-edit.
   const [seededId, setSeededId] = useState("");
+  // Run-view selection drives the outcome dots on the canvas, like Zapier's run
+  // inspector. It does not mutate the flow and falls back to the newest run.
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const selectedRun = useMemo(
+    () => runs?.find((run) => run.id === selectedRunId) ?? runs?.[0] ?? null,
+    [runs, selectedRunId],
+  );
 
   // Seed the draft once the server row (or the catalog, for a new flow) arrives.
   useEffect(() => {
@@ -323,8 +330,8 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
         </div>
       </PageHeader>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b px-5 py-2.5">
           <Input
             className="h-8 max-w-2xl flex-1 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none focus-visible:border-input"
             placeholder={t(($) => $.editor.description_placeholder)}
@@ -354,7 +361,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
           </Tabs>
         </div>
         {view === "code" ? (
-          <div className="space-y-2">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-5">
             <Textarea
               aria-label={t(($) => $.code.code_tab)}
               className="min-h-[min(48vh,420px)] font-mono text-xs"
@@ -370,18 +377,25 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
               <p className="text-xs text-muted-foreground">{t(($) => $.code.hint)}</p>
             </div>
           </div>
-        ) : (
-          catalog && (
+        ) : catalog ? (
+          <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 xl:grid-cols-[288px_minmax(0,1fr)] xl:overflow-hidden">
+            {!isNew && (
+              <AutomationRunList
+                runs={runs ?? []}
+                selectedRunId={selectedRun?.id ?? ""}
+                onSelectRun={setSelectedRunId}
+              />
+            )}
             <AutomationFlowEditor
               value={flow}
               catalog={catalog}
               onChange={updateFlow}
               disabled={saving}
-              lastRun={dirty ? undefined : runs?.[0]}
+              lastRun={dirty ? undefined : selectedRun}
+              fillHeight
             />
-          )
-        )}
-        {!isNew && <AutomationRunList runs={runs ?? []} />}
+          </div>
+        ) : null}
       </div>
 
       <AlertDialog open={confirming !== null} onOpenChange={(open) => { if (!open) setConfirming(null); }}>
@@ -421,58 +435,112 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
 
 // AutomationRunList renders the audit trail, skipped rows included — a rule that
 // evaluated and declined is the normal case, and its reason is the debugging tool.
-function AutomationRunList({ runs }: { runs: AutomationRun[] }) {
+function AutomationRunList({
+  runs,
+  selectedRunId,
+  onSelectRun,
+}: {
+  runs: AutomationRun[];
+  selectedRunId: string;
+  onSelectRun: (id: string) => void;
+}) {
   const { t } = useT("automations");
   const timeAgo = useTimeAgo();
   const runPaths = useWorkspacePaths();
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
 
-  const rows = useMemo(() => runs.slice(0, 20), [runs]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const rows = useMemo(() => runs
+    .filter((run) => status === "all" || run.status === status)
+    .filter((run) => {
+      const needle = query.trim().toLowerCase();
+      if (needle === "") return true;
+      return [run.status, run.trigger_type, run.error, run.detail.reason, run.id]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    })
+    .slice(0, 50), [runs, query, status]);
 
   return (
-    <section className="space-y-2 border-t pt-4">
-      <h2 className="text-sm font-semibold">{t(($) => $.runs.title)}</h2>
-      {rows.length === 0 && <p className="text-xs text-muted-foreground">{t(($) => $.runs.empty)}</p>}
-      <ul className="space-y-1.5">
+    <section className="flex min-h-[520px] flex-col overflow-hidden rounded-lg border bg-card xl:h-full">
+      <header className="space-y-3 border-b p-3">
+        <div>
+          <h2 className="text-sm font-semibold">{t(($) => $.runs.title)}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t(($) => $.runs.inspector_hint)}</p>
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            aria-label={t(($) => $.runs.search)}
+            className="h-8 pl-8 text-xs"
+            placeholder={t(($) => $.runs.search)}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="relative">
+            <SlidersHorizontal className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <NativeSelect
+              aria-label={t(($) => $.runs.status_filter)}
+              className="h-8 pl-7 text-xs"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              <NativeSelectOption value="all">{t(($) => $.runs.all_statuses)}</NativeSelectOption>
+              <NativeSelectOption value="applied">{t(($) => $.runs.applied)}</NativeSelectOption>
+              <NativeSelectOption value="skipped">{t(($) => $.runs.skipped)}</NativeSelectOption>
+              <NativeSelectOption value="failed">{t(($) => $.runs.failed)}</NativeSelectOption>
+            </NativeSelect>
+          </label>
+          <div className="flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs text-muted-foreground">
+            <CalendarDays className="size-3" aria-hidden />
+            <span className="truncate">{t(($) => $.runs.last_30_days)}</span>
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">{t(($) => $.runs.results_count, { count: rows.length })}</p>
+      </header>
+      {rows.length === 0 && <p className="p-3 text-xs text-muted-foreground">{t(($) => $.runs.empty)}</p>}
+      <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
         {rows.map((run) => (
-          <li key={run.id} className="rounded-md border bg-card px-3 py-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <RunStatusBadge status={run.status} />
-              <span className="text-muted-foreground">{timeAgo(run.created_at)}</span>
-              {run.status === "applied" && (
-                <span className="text-muted-foreground">
-                  {t(($) => $.runs.actions_applied, { count: run.actions_applied })}
-                </span>
-              )}
-            </div>
-            {run.detail.reason && <p className="mt-1 text-muted-foreground">{run.detail.reason}</p>}
-            {run.issue_id && (
+          <li key={run.id}>
+            <button
+              type="button"
+              aria-pressed={run.id === selectedRunId}
+              className={`w-full rounded-md border px-2.5 py-2 text-left text-xs transition ${run.id === selectedRunId ? "border-brand bg-brand/5 ring-1 ring-brand/20" : "bg-background hover:border-foreground/20 hover:bg-muted/40"}`}
+              onClick={() => onSelectRun(run.id)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <RunStatusBadge status={run.status} />
+                <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(run.created_at)}</span>
+              </div>
+              <p className="mt-1.5 truncate font-medium">{run.trigger_type}</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {run.detail.reason || run.error || t(($) => $.runs.actions_applied, { count: run.actions_applied })}
+              </p>
+            </button>
+            {run.id === selectedRunId && run.issue_id && (
               <AppLink
                 href={runPaths.issueDetail(run.issue_id)}
-                className="mt-1 inline-block text-muted-foreground underline-offset-2 hover:underline"
+                className="mx-2 mt-1 inline-block text-[11px] text-muted-foreground underline-offset-2 hover:underline"
               >
                 {t(($) => $.runs.open_issue)}
               </AppLink>
             )}
-            {run.error !== "" && <p className="mt-1 text-destructive">{run.error}</p>}
-            {(run.detail.actions?.length ?? 0) > 0 && (
-              <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                {run.detail.actions?.map((action, index) => (
-                  <li key={index} className="flex items-center gap-1.5">
-                    {action.ok ? (
-                      <CheckCircle2 className="size-3 text-emerald-500" aria-hidden />
-                    ) : (
-                      <XCircle className="size-3 text-destructive" aria-hidden />
-                    )}
-                    <span>{stepLabels[action.type] ?? action.type}</span>
-                    {action.detail && <span className="truncate">— {action.detail}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
           </li>
         ))}
       </ul>
+      {selectedRunId && (
+        <footer className="border-t p-2 text-[11px] text-muted-foreground">
+          {(runs.find((run) => run.id === selectedRunId)?.detail.actions ?? []).map((action, index) => (
+            <div key={index} className="flex items-center gap-1.5 py-0.5">
+              {action.ok ? <CheckCircle2 className="size-3 text-emerald-500" aria-hidden /> : <XCircle className="size-3 text-destructive" aria-hidden />}
+              <span className="truncate">{stepLabels[action.type] ?? action.type}{action.detail ? ` — ${action.detail}` : ""}</span>
+            </div>
+          ))}
+        </footer>
+      )}
     </section>
   );
 }

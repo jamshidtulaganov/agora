@@ -99,7 +99,8 @@
     "add_label": "Add a label",
     "remove_label": "Remove a label",
     "post_comment": "Post a comment",
-    "send_telegram": "Send a Telegram message"
+    "send_telegram": "Send a Telegram message",
+    "send_webhook": "Send to n8n or Zapier"
   },
   "config": {
     "kind": "Action",
@@ -113,7 +114,10 @@
     "text": "Text",
     "agent_id": "Agent id",
     "chat_id": "Group chat id (optional)",
-    "chat_id_placeholder": "Defaults to the agent's own group"
+    "chat_id_placeholder": "Defaults to the agent's own group",
+    "webhook_connector": "Webhook connector",
+    "webhook_connector_hint": "Add an enabled webhook in Settings → Integrations first.",
+    "webhook_message": "Optional message"
   },
   "target": {
     "orchestrator": "the task's owner agent",
@@ -155,6 +159,13 @@
   },
   "runs": {
     "title": "Recent runs",
+    "inspector_hint": "Select a run to inspect each step on the canvas.",
+    "search": "Search runs",
+    "status_filter": "Run status",
+    "all_statuses": "All statuses",
+    "last_30_days": "Last 30 days",
+    "results_count_one": "{{count}} run",
+    "results_count_other": "{{count}} runs",
     "empty": "No runs yet. The history appears here the first time this flow is evaluated.",
     "applied": "Applied",
     "skipped": "Skipped",

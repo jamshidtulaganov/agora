@@ -60,6 +60,8 @@ interface AutomationFlowCanvasProps {
   /** Remove the step at this index. */
   onRemove?: (index: number) => void;
   disabled?: boolean;
+  /** Fill the automation workspace instead of using the compact embedded size. */
+  fillHeight?: boolean;
 }
 
 interface Viewport {
@@ -95,6 +97,7 @@ export function AutomationFlowCanvas({
   onReorder,
   onRemove,
   disabled,
+  fillHeight,
 }: AutomationFlowCanvasProps) {
   const { t } = useT("automations");
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -285,8 +288,9 @@ export function AutomationFlowCanvas({
       className={cn(
         "relative overflow-hidden border bg-background",
         fullscreen ? "fixed inset-0 z-50" : "rounded-lg",
+        fillHeight && !fullscreen && "h-full min-h-[520px]",
       )}
-      style={fullscreen ? undefined : { height: "min(58vh, 520px)" }}
+      style={fullscreen || fillHeight ? undefined : { height: "min(58vh, 520px)" }}
     >
       <div
         ref={frameRef}

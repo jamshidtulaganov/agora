@@ -99,7 +99,8 @@
     "add_label": "Yorliq qo‘shish",
     "remove_label": "Yorliqni olib tashlash",
     "post_comment": "Izoh qoldirish",
-    "send_telegram": "Telegramga xabar yuborish"
+    "send_telegram": "Telegramga xabar yuborish",
+    "send_webhook": "n8n yoki Zapierga yuborish"
   },
   "config": {
     "kind": "Amal",
@@ -113,7 +114,10 @@
     "text": "Matn",
     "agent_id": "Agent id",
     "chat_id": "Guruh chat id (majburiy emas)",
-    "chat_id_placeholder": "Standart holatda agentning o‘z guruhi"
+    "chat_id_placeholder": "Standart holatda agentning o‘z guruhi",
+    "webhook_connector": "Webhook ulanishi",
+    "webhook_connector_hint": "Avval Sozlamalar → Integratsiyalar bo‘limida faol webhook qo‘shing.",
+    "webhook_message": "Ixtiyoriy xabar"
   },
   "target": {
     "orchestrator": "vazifa egasi bo‘lgan agentga",
@@ -155,6 +159,13 @@
   },
   "runs": {
     "title": "Oxirgi ishga tushishlar",
+    "inspector_hint": "Har bir qadamni ko‘rish uchun ishga tushishni tanlang.",
+    "search": "Ishga tushishlarni qidirish",
+    "status_filter": "Ishga tushish holati",
+    "all_statuses": "Barcha holatlar",
+    "last_30_days": "Oxirgi 30 kun",
+    "results_count_one": "{{count}} ta ishga tushish",
+    "results_count_other": "{{count}} ta ishga tushish",
     "empty": "Hozircha yo‘q. Oqim birinchi tekshirilganda tarix paydo bo‘ladi.",
     "applied": "Qo‘llandi",
     "skipped": "O‘tkazib yuborildi",

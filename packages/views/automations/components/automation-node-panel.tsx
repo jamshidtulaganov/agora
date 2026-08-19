@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, X, XCircle } from "lucide-react";
 import type {
   AutomationCatalog,
   AutomationCondition,
@@ -39,7 +39,11 @@ interface AutomationNodePanelProps {
    *  (statuses, projects, labels, agents…), resolved by the editor from the
    *  workspace's own data so a project condition offers PROJECTS, not free text. */
   valueOptions?: Partial<Record<string, FieldValueOption[]>>;
+  /** Enabled encrypted webhook connectors configured by a workspace admin. */
+  webhookIntegrations?: FieldValueOption[];
   disabled?: boolean;
+  fillHeight?: boolean;
+  runResult?: { ok: boolean; label: string; detail?: string };
   onTriggerChange: (trigger: string) => void;
   onTriggerConditionsChange: (conditions: AutomationCondition[]) => void;
   onStepChange: (step: AutomationStep) => void;
@@ -54,7 +58,10 @@ export function AutomationNodePanel({
   step,
   catalog,
   valueOptions,
+  webhookIntegrations,
   disabled,
+  fillHeight,
+  runResult,
   onTriggerChange,
   onTriggerConditionsChange,
   onStepChange,
@@ -78,7 +85,7 @@ export function AutomationNodePanel({
   }
 
   return (
-    <aside className="flex max-h-[min(58vh,520px)] flex-col overflow-hidden rounded-lg border bg-card">
+    <aside className={fillHeight ? "flex h-full min-h-[520px] flex-col overflow-hidden rounded-lg border bg-card" : "flex max-h-[min(58vh,520px)] flex-col overflow-hidden rounded-lg border bg-card"}>
       <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h3 className="truncate text-sm font-medium">
           {isTrigger
@@ -102,6 +109,16 @@ export function AutomationNodePanel({
           </Button>
         </div>
       </header>
+
+      {runResult && (
+        <div className={runResult.ok ? "border-b bg-success/10 px-3 py-2 text-xs text-success" : "border-b bg-destructive/10 px-3 py-2 text-xs text-destructive"}>
+          <div className="flex items-center gap-1.5 font-medium">
+            {runResult.ok ? <CheckCircle2 className="size-3.5" aria-hidden /> : <XCircle className="size-3.5" aria-hidden />}
+            {runResult.label}
+          </div>
+          {runResult.detail && <p className="mt-0.5 line-clamp-3 text-[11px] opacity-80">{runResult.detail}</p>}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {isTrigger ? (
@@ -177,6 +194,7 @@ export function AutomationNodePanel({
                 step={step}
                 catalog={catalog}
                 agents={valueOptions?.agents}
+                webhookIntegrations={webhookIntegrations}
                 disabled={disabled}
                 onChange={(config) => onStepChange({ ...step, config })}
               />
@@ -369,6 +387,7 @@ function StepConfigFields({
   step,
   catalog,
   agents,
+  webhookIntegrations,
   disabled,
   onChange,
 }: {
@@ -377,6 +396,7 @@ function StepConfigFields({
   /** Workspace agents (id + name), so agent_id is picked by name, never pasted
    *  as a uuid — the same courtesy the condition value pickers already extend. */
   agents?: FieldValueOption[];
+  webhookIntegrations?: FieldValueOption[];
   disabled?: boolean;
   onChange: (config: Record<string, string>) => void;
 }) {
@@ -470,6 +490,31 @@ function StepConfigFields({
         </LabeledRow>
       )}
 
+      {fields.includes("integration_id") && (
+        <LabeledRow label={t(($) => $.config.webhook_connector)}>
+          <NativeSelect
+            value={config.integration_id ?? ""}
+            disabled={disabled}
+            onChange={(event) => set("integration_id", event.target.value)}
+          >
+            <NativeSelectOption value="">—</NativeSelectOption>
+            {(webhookIntegrations ?? []).map((integration) => (
+              <NativeSelectOption key={integration.value} value={integration.value}>
+                {integration.label}
+              </NativeSelectOption>
+            ))}
+            {config.integration_id && !(webhookIntegrations ?? []).some((item) => item.value === config.integration_id) && (
+              <NativeSelectOption value={config.integration_id}>{config.integration_id}</NativeSelectOption>
+            )}
+          </NativeSelect>
+          {(webhookIntegrations ?? []).length === 0 && (
+            <span className="block text-[11px] leading-snug text-muted-foreground">
+              {t(($) => $.config.webhook_connector_hint)}
+            </span>
+          )}
+        </LabeledRow>
+      )}
+
       {(fields.includes("body") || fields.includes("text")) && (
         <div className="space-y-1">
           <Textarea
@@ -478,6 +523,19 @@ function StepConfigFields({
             disabled={disabled}
             placeholder={fields.includes("body") ? t(($) => $.config.body) : t(($) => $.config.text)}
             onChange={(event) => set(fields.includes("body") ? "body" : "text", event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">{t(($) => $.flow.template_hint)}</p>
+        </div>
+      )}
+
+      {fields.includes("message") && (
+        <div className="space-y-1">
+          <Textarea
+            rows={3}
+            value={config.message ?? ""}
+            disabled={disabled}
+            placeholder={t(($) => $.config.webhook_message)}
+            onChange={(event) => set("message", event.target.value)}
           />
           <p className="text-xs text-muted-foreground">{t(($) => $.flow.template_hint)}</p>
         </div>

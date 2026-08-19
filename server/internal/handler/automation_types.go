@@ -12,8 +12,9 @@ import (
 // semantics a team sees in the editor are unit-testable without a database.
 //
 // Scope is task management on purpose: statuses, assignees, labels, comments,
-// agent slice actions and Telegram notices. It is not a general integration bus,
-// so there is no "call any URL" action to audit, rate-limit or leak through.
+// agent slice actions and notifications. Outbound webhooks may only reference an
+// admin-managed, encrypted workspace connector; a flow can never carry a raw URL
+// or credential in its JSON.
 
 // Trigger types. Text, not an enum, because the engine matches against this
 // registry: a row carrying an unknown trigger is inert (never matches) instead of
@@ -41,6 +42,7 @@ const (
 	automationActionRemoveLabel   = "remove_label"
 	automationActionPostComment   = "post_comment"
 	automationActionSendTelegram  = "send_telegram"
+	automationActionSendWebhook   = "send_webhook"
 )
 
 // Condition operators.
@@ -89,6 +91,7 @@ var automationActions = []string{
 	automationActionRemoveLabel,
 	automationActionPostComment,
 	automationActionSendTelegram,
+	automationActionSendWebhook,
 }
 
 // automationCondition is one clause. All clauses on a rule must hold (AND); an
@@ -317,6 +320,13 @@ func validateAutomationAction(action automationAction) error {
 		// otherwise resolved from the agent's own bound group.
 		if strings.TrimSpace(action.Config["chat_id"]) != "" && strings.TrimSpace(action.Config["destination"]) != "group" {
 			return fmt.Errorf("chat_id only applies to destination group")
+		}
+	case automationActionSendWebhook:
+		if strings.TrimSpace(action.Config["integration_id"]) == "" {
+			return fmt.Errorf("send_webhook needs integration_id")
+		}
+		if _, err := parseUUIDErr(strings.TrimSpace(action.Config["integration_id"])); err != nil {
+			return fmt.Errorf("send_webhook needs a valid integration_id")
 		}
 	default:
 		return fmt.Errorf("unknown action type %q", action.Type)

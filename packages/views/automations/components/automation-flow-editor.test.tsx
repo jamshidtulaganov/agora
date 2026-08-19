@@ -9,6 +9,17 @@ import { renderWithI18n } from "../../test/i18n";
 // queries; tests pin the domain lists instead of the network (standard views
 // pattern: mock @agora/core, never the framework).
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@agora/core/api", () => ({
+  api: {
+    listReleaseIntegrations: async () => [{
+      id: "00000000-0000-0000-0000-000000000001",
+      kind: "webhook",
+      config: { name: "n8n production" },
+      events: [], enabled: true, probe_status: "ok", has_secret: true,
+      created_at: "", updated_at: "",
+    }],
+  },
+}));
 vi.mock("@agora/core/projects/queries", () => ({
   projectListOptions: () => ({
     queryKey: ["projects", "ws-1", "list"],
@@ -41,7 +52,7 @@ const CATALOG: AutomationCatalog = {
     { type: "tracker.stage_changed", fields: ["stage", "prev_stage", "status"] },
     { type: "issue.label_attached", fields: ["label", "status"] },
   ],
-  steps: ["filter", "set_status", "send_telegram", "dispatch_slice_action"],
+  steps: ["filter", "set_status", "send_telegram", "send_webhook", "dispatch_slice_action"],
   operators: ["eq", "in", "exists", "has_label"],
   slice_action_kinds: ["run_review", "run_qa"],
   statuses: ["todo", "in_review", "done"],
@@ -162,6 +173,18 @@ describe("AutomationFlowEditor", () => {
     const stepSelect = screen.getByLabelText("Step");
     expect(within(stepSelect).getByText("send carrier pigeon")).toBeInTheDocument();
     expect(screen.queryByText("Send to")).not.toBeInTheDocument();
+  });
+
+  it("offers encrypted workspace connectors to a webhook step", async () => {
+    const user = userEvent.setup();
+    setup({
+      trigger_type: "tracker.stage_changed",
+      conditions: [],
+      actions: [{ type: "send_webhook", config: {} }],
+    });
+    await user.click(screen.getByRole("button", { name: /Send to n8n or Zapier/ }));
+    expect(await screen.findByText("n8n production")).toBeInTheDocument();
+    expect(screen.getByText("Webhook connector")).toBeInTheDocument();
   });
 
   it("hides the value box for an operator that takes no value", () => {

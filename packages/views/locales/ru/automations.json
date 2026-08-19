@@ -99,7 +99,8 @@
     "add_label": "Добавить метку",
     "remove_label": "Убрать метку",
     "post_comment": "Оставить комментарий",
-    "send_telegram": "Отправить сообщение в Telegram"
+    "send_telegram": "Отправить сообщение в Telegram",
+    "send_webhook": "Отправить в n8n или Zapier"
   },
   "config": {
     "kind": "Действие",
@@ -113,7 +114,10 @@
     "text": "Текст",
     "agent_id": "ID агента",
     "chat_id": "ID чата группы (необязательно)",
-    "chat_id_placeholder": "По умолчанию — своя группа агента"
+    "chat_id_placeholder": "По умолчанию — своя группа агента",
+    "webhook_connector": "Webhook-коннектор",
+    "webhook_connector_hint": "Сначала добавьте активный webhook в Настройки → Интеграции.",
+    "webhook_message": "Необязательное сообщение"
   },
   "target": {
     "orchestrator": "агента-владельца задачи",
@@ -155,6 +159,13 @@
   },
   "runs": {
     "title": "Последние запуски",
+    "inspector_hint": "Выберите запуск, чтобы проверить каждый шаг на схеме.",
+    "search": "Поиск запусков",
+    "status_filter": "Статус запуска",
+    "all_statuses": "Все статусы",
+    "last_30_days": "Последние 30 дней",
+    "results_count_one": "{{count}} запуск",
+    "results_count_other": "{{count}} запусков",
     "empty": "Запусков пока нет. История появится при первой проверке потока.",
     "applied": "Применено",
     "skipped": "Пропущено",

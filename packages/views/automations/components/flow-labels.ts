@@ -83,6 +83,8 @@ export function stepConfigFields(type: string): string[] {
       return ["body"];
     case "send_telegram":
       return ["destination", "text", "chat_id"];
+    case "send_webhook":
+      return ["integration_id", "message"];
     default:
       return [];
   }
@@ -127,7 +129,7 @@ export function summarizeStep(
     const value = config[key];
     if (value && value.trim() !== "") return labelFor(map, value.trim());
   }
-  for (const key of ["name", "body", "text"]) {
+  for (const key of ["name", "body", "text", "message"]) {
     const value = config[key];
     if (value && value.trim() !== "") {
       const trimmed = value.trim();
