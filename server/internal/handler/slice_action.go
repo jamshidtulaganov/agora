@@ -2380,7 +2380,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		// ready agent, so many in_review issues run QA concurrently instead of queuing
 		// behind one agent. The per-box sync lock keeps concurrent runs on the shared
 		// sprint branch safe.
-		agents = filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), trivial)
+		agents = filterQAAgentsForScope(h.qaAgentsForIssue(ctx, issue), trivial)
 		if len(agents) == 0 {
 			return
 		}
@@ -2586,7 +2586,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	}); err != nil || n > 0 {
 		return
 	}
-	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
+	agents := filterQAAgentsForScope(h.qaAgentsForIssue(ctx, issue), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -2695,7 +2695,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	if haveIssue == 0 && haveBase == 0 {
 		return // nothing to execute yet
 	}
-	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
+	agents := filterQAAgentsForScope(h.qaAgentsForIssue(ctx, issue), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -3306,7 +3306,7 @@ func (h *Handler) maybeCompileTestCases(ctx context.Context, issue db.Issue) {
 	if len(h.uncompiledAutomatedCases(ctx, issue)) == 0 {
 		return
 	}
-	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
+	agents := filterQAAgentsForScope(h.qaAgentsForIssue(ctx, issue), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}

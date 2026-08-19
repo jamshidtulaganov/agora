@@ -187,7 +187,7 @@ func (h *Handler) maybeCommitSpecsOnQAPass(ctx context.Context, issue db.Issue, 
 			"issue_id", uuidToString(issue.ID), "green_specs", len(green), "branch", branch)
 		return
 	}
-	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
+	agents := filterQAAgentsForScope(h.qaAgentsForIssue(ctx, issue), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}

@@ -239,6 +239,13 @@ func (h *Handler) resolveReviewerAgent(ctx context.Context, issue db.Issue) (db.
 	if len(candidates) > 0 {
 		return h.pickLeastBusyQAAgent(ctx, candidates), true
 	}
+	// The PROJECT's bound squad comes before the workspace-wide fallback: a
+	// member-assigned issue has no dev squad of its own, and the workspace QA
+	// leader may belong to an entirely unrelated project (observed live — an SD
+	// Bridge engineer reviewing a Bitrix-project issue).
+	if reviewer, ok := h.projectReviewerAgent(ctx, issue); ok {
+		return reviewer, true
+	}
 	if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok && uuidToString(leader.ID) != authorID {
 		return leader, true
 	}
