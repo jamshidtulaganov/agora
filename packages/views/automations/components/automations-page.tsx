@@ -102,11 +102,21 @@ export function AutomationsPage() {
         ) : (
           <>
             {automations?.map((automation) => (
-              <button
+              // The row is a div, not a <button>: the enable Switch inside renders
+              // its own button, and nesting interactive elements is invalid HTML
+              // that collapses the pair into one control for screen readers.
+              <div
                 key={automation.id}
-                type="button"
-                className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-accent/30"
+                role="button"
+                tabIndex={0}
+                className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left transition-colors hover:bg-accent/30"
                 onClick={() => navigation.push(paths.automationDetail(automation.id))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    navigation.push(paths.automationDetail(automation.id));
+                  }
+                }}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -123,8 +133,11 @@ export function AutomationsPage() {
                   </p>
                 </div>
                 <RunStamp count={automation.run_count} lastRunAt={automation.last_run_at} />
-                {/* The switch is inside the row-button, so it must not navigate. */}
-                <span onClick={(event) => event.stopPropagation()}>
+                {/* The switch lives inside the clickable row, so it must not navigate. */}
+                <span
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <Switch
                     aria-label={automation.enabled ? t(($) => $.editor.enabled) : t(($) => $.editor.disabled)}
                     checked={automation.enabled}
@@ -133,7 +146,7 @@ export function AutomationsPage() {
                     }
                   />
                 </span>
-              </button>
+              </div>
             ))}
           </>
         )}

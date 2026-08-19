@@ -106,7 +106,9 @@ describe("fieldValueDomain", () => {
     expect(fieldValueDomain("project_id")).toBe("projects");
     expect(fieldValueDomain("label")).toBe("labels");
     expect(fieldValueDomain("labels")).toBe("labels");
-    expect(fieldValueDomain("assignee_id")).toBe("agents");
+    // Assignees are polymorphic (member or agent), so assignee_id gets the
+    // combined domain rather than agents alone.
+    expect(fieldValueDomain("assignee_id")).toBe("assignees");
     expect(fieldValueDomain("priority")).toBe("priorities");
   });
 

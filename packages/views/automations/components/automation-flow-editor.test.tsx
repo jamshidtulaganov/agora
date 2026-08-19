@@ -26,6 +26,10 @@ vi.mock("@agora/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "agents"],
     queryFn: async () => [{ id: "a-1", name: "SD Reviewer" }],
   }),
+  memberListOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "members"],
+    queryFn: async () => [{ id: "m-1", name: "Jamshid" }],
+  }),
 }));
 
 import { AutomationFlowEditor, type AutomationFlowValue } from "./automation-flow-editor";
@@ -103,17 +107,22 @@ describe("AutomationFlowEditor", () => {
     expect(CATALOG.steps).toContain(next.actions[0]?.type);
   });
 
-  it("clears conditions when the trigger changes, because they name other facts", async () => {
+  it("drops trigger-specific conditions on a trigger change, keeps the common ones", async () => {
     const user = userEvent.setup();
+    // "stage" exists only on tracker.stage_changed → dropped; "status" exists on
+    // both → survives, so a misclick on the trigger select does not erase the list.
     const { onChange } = setup({
       trigger_type: "tracker.stage_changed",
-      conditions: [{ field: "stage", op: "eq", value: "Code Review" }],
+      conditions: [
+        { field: "stage", op: "eq", value: "Code Review" },
+        { field: "status", op: "eq", value: "in_review" },
+      ],
       actions: [],
     });
     await user.selectOptions(screen.getByLabelText("Trigger"), "issue.label_attached");
     const next = onChange.mock.calls[0]?.[0] as AutomationFlowValue;
     expect(next.trigger_type).toBe("issue.label_attached");
-    expect(next.conditions).toEqual([]);
+    expect(next.conditions).toEqual([{ field: "status", op: "eq", value: "in_review" }]);
   });
 
   it("opens a filter node's parameters with the stop-the-flow hint", async () => {

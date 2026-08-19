@@ -38,7 +38,12 @@
     "disabled": "已关闭",
     "back": "全部自动化",
     "invalid": "保存前请修正高亮的步骤。",
-    "unsaved": "未保存的更改"
+    "unsaved": "未保存的更改",
+    "add_step_hint": "添加一个步骤后才能保存",
+    "discard_title": "放弃未保存的更改？",
+    "discard_description": "此流程有未保存的修改，现在离开将会丢失。",
+    "discard": "放弃",
+    "keep_editing": "继续编辑"
   },
   "flow": {
     "when": "当",

@@ -10,6 +10,7 @@ import {
   automationRunsOptions,
   useCreateAutomation,
   useDeleteAutomation,
+  useSetAutomationEnabled,
   useUpdateAutomation,
   type Automation,
   type AutomationRun,
@@ -17,6 +18,16 @@ import {
 import { projectListOptions } from "@agora/core/projects/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useWorkspacePaths } from "@agora/core/paths";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@agora/ui/components/ui/alert-dialog";
 import { Button } from "@agora/ui/components/ui/button";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
@@ -56,6 +67,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   const createAutomation = useCreateAutomation(wsId);
   const updateAutomation = useUpdateAutomation(wsId);
   const deleteAutomation = useDeleteAutomation(wsId);
+  const setEnabledMutation = useSetAutomationEnabled(wsId);
 
   // Draft state. Local because a flow is edited as a whole and saved once — a
   // per-keystroke mutation would fire the engine's validation on half-built nodes.
@@ -64,13 +76,26 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   const [projectId, setProjectId] = useState<string>("");
   const [enabled, setEnabled] = useState(false);
   const [flow, setFlow] = useState<AutomationFlowValue>({ trigger_type: "", conditions: [], actions: [] });
+  // trigger_config rides along even though the canvas has no node for it: the
+  // update endpoint full-replaces the row, so NOT sending it back would silently
+  // reset a custom cooldown/rate cap to the defaults on every save. The Code
+  // view is where it can be read and edited.
+  const [triggerConfig, setTriggerConfig] = useState<Record<string, unknown>>({});
   const [dirty, setDirty] = useState(false);
+  // Pending confirmation: deleting takes the run history with it; leaving with
+  // unsaved edits takes the draft. Both are asked via AlertDialog — a native
+  // window.confirm would block the embedded-browser QA loop.
+  const [confirming, setConfirming] = useState<"delete" | "discard" | null>(null);
   // Canvas is the default; Code shows the SAME flow as editable JSON, for the
   // people who assemble rules faster in text (and for pasting a flow between
   // workspaces). One draft, two projections — Apply parses back into it.
   const [view, setView] = useState<"canvas" | "code">("canvas");
   const [codeDraft, setCodeDraft] = useState("");
   const [codeError, setCodeError] = useState("");
+  // The id whose row seeded the draft. Seeding happens ONCE per automation: the
+  // detail query is invalidated by every automation:run WS event, and reseeding
+  // on each refetch would clobber a dirty draft mid-edit.
+  const [seededId, setSeededId] = useState("");
 
   // Seed the draft once the server row (or the catalog, for a new flow) arrives.
   useEffect(() => {
@@ -82,7 +107,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
       );
       return;
     }
-    if (!existing || existing.id === "") return;
+    if (!existing || existing.id === "" || existing.id === seededId) return;
     setName(existing.name);
     setDescription(existing.description);
     setProjectId(existing.project_id ?? "");
@@ -92,16 +117,23 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
       conditions: existing.conditions,
       actions: existing.actions,
     });
+    setTriggerConfig(existing.trigger_config);
     setDirty(false);
-  }, [isNew, existing, catalog]);
+    setSeededId(existing.id);
+  }, [isNew, existing, catalog, seededId]);
 
   const updateFlow = (next: AutomationFlowValue) => {
     setFlow(next);
     setDirty(true);
   };
 
+  // The Code projection includes trigger_config: the canvas has no node for the
+  // loop-guard overrides (min_interval_seconds, max_per_hour), so this is the
+  // one place they can be read and edited.
+  const codeProjection = () => JSON.stringify({ ...flow, trigger_config: triggerConfig }, null, 2);
+
   const openCodeView = () => {
-    setCodeDraft(JSON.stringify(flow, null, 2));
+    setCodeDraft(codeProjection());
     setCodeError("");
     setView("code");
   };
@@ -109,27 +141,44 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   // Apply parses the JSON back into the draft. Validation here is SHAPE only —
   // the server's validator (unknown trigger/step/operator, bad status) remains
   // the authority at save time and its message names the offending step.
-  const applyCode = () => {
+  const applyCode = (): boolean => {
     try {
-      const parsed = JSON.parse(codeDraft) as Partial<AutomationFlowValue>;
+      const parsed = JSON.parse(codeDraft) as Partial<AutomationFlowValue> & {
+        trigger_config?: Record<string, unknown>;
+      };
       if (typeof parsed.trigger_type !== "string" || parsed.trigger_type === "") {
         setCodeError(t(($) => $.code.needs_trigger));
-        return;
+        return false;
       }
       if (!Array.isArray(parsed.actions)) {
         setCodeError(t(($) => $.code.needs_actions));
-        return;
+        return false;
       }
       updateFlow({
         trigger_type: parsed.trigger_type,
         conditions: Array.isArray(parsed.conditions) ? parsed.conditions : [],
         actions: parsed.actions,
       });
+      if (parsed.trigger_config && typeof parsed.trigger_config === "object" && !Array.isArray(parsed.trigger_config)) {
+        setTriggerConfig(parsed.trigger_config);
+      }
       setCodeError("");
       setView("canvas");
+      return true;
     } catch {
       setCodeError(t(($) => $.code.invalid_json));
+      return false;
     }
+  };
+
+  // Switching back to the canvas applies pending JSON edits instead of silently
+  // discarding them; invalid JSON keeps the Code view open with its error.
+  const leaveCodeView = () => {
+    if (codeDraft === codeProjection()) {
+      setView("canvas");
+      return;
+    }
+    applyCode();
   };
 
   const save = () => {
@@ -139,6 +188,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
       enabled,
       project_id: projectId === "" ? null : projectId,
       trigger_type: flow.trigger_type,
+      trigger_config: triggerConfig,
       conditions: flow.conditions,
       actions: flow.actions,
     };
@@ -193,7 +243,12 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
         <button
           type="button"
           className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => navigation.push(paths.automations())}
+          onClick={() => {
+            // A dirty draft is worth one question — Delete already asks, and
+            // losing a half-built flow is the more common accident.
+            if (dirty) setConfirming("discard");
+            else navigation.push(paths.automations());
+          }}
         >
           <ArrowLeft className="size-3" aria-hidden />
           {t(($) => $.editor.back)}
@@ -224,13 +279,31 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
           ))}
         </NativeSelect>
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {dirty && <span className="hidden text-xs text-muted-foreground lg:block">{t(($) => $.editor.unsaved)}</span>}
+          {flow.actions.length === 0 ? (
+            // Say WHY Save is disabled — a silently dead button on a fresh page
+            // reads as broken.
+            <span className="hidden text-xs text-muted-foreground lg:block">{t(($) => $.editor.add_step_hint)}</span>
+          ) : (
+            dirty && <span className="hidden text-xs text-muted-foreground lg:block">{t(($) => $.editor.unsaved)}</span>
+          )}
+          {/* On an existing flow this switch behaves exactly like the one on the
+              list: it saves immediately. Making it part of the draft gave the
+              same control two behaviors, and a flipped-off rule kept running
+              when the user left without pressing Save. On a NEW flow there is
+              no row yet, so it stays draft state for the create. */}
           <Switch
             aria-label={enabled ? t(($) => $.editor.enabled) : t(($) => $.editor.disabled)}
             checked={enabled}
             onCheckedChange={(checked) => {
               setEnabled(checked === true);
-              setDirty(true);
+              if (isNew) {
+                setDirty(true);
+                return;
+              }
+              setEnabledMutation.mutate(
+                { id: automationId, enabled: checked === true },
+                { onError: () => setEnabled((current) => !current) },
+              );
             }}
           />
           <Button size="sm" onClick={save} disabled={saving || flow.actions.length === 0}>
@@ -242,14 +315,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
               variant="ghost"
               className="text-destructive"
               aria-label={t(($) => $.editor.delete)}
-              onClick={() => {
-                // A delete takes the run history with it, so it is confirmed first.
-                if (!window.confirm(t(($) => $.editor.delete_confirm))) return;
-                deleteAutomation.mutate(automationId, {
-                  onSuccess: () => navigation.push(paths.automations()),
-                  onError: () => toast.error(t(($) => $.editor.save_failed)),
-                });
-              }}
+              onClick={() => setConfirming("delete")}
             >
               <Trash2 aria-hidden />
             </Button>
@@ -272,7 +338,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
             value={view}
             onValueChange={(next) => {
               if (next === "code") openCodeView();
-              else setView("canvas");
+              else leaveCodeView();
             }}
           >
             <TabsList variant="line">
@@ -317,6 +383,38 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
         )}
         {!isNew && <AutomationRunList runs={runs ?? []} />}
       </div>
+
+      <AlertDialog open={confirming !== null} onOpenChange={(open) => { if (!open) setConfirming(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirming === "delete" ? t(($) => $.editor.delete) : t(($) => $.editor.discard_title)}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirming === "delete" ? t(($) => $.editor.delete_confirm) : t(($) => $.editor.discard_description)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t(($) => $.editor.keep_editing)}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (confirming === "delete") {
+                  deleteAutomation.mutate(automationId, {
+                    onSuccess: () => navigation.push(paths.automations()),
+                    onError: () => toast.error(t(($) => $.editor.save_failed)),
+                  });
+                } else {
+                  navigation.push(paths.automations());
+                }
+                setConfirming(null);
+              }}
+            >
+              {confirming === "delete" ? t(($) => $.editor.delete) : t(($) => $.editor.discard)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { labelListOptions } from "@agora/core/labels";
 import { projectListOptions } from "@agora/core/projects/queries";
-import { agentListOptions } from "@agora/core/workspace/queries";
+import { agentListOptions, memberListOptions } from "@agora/core/workspace/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type {
   AutomationCatalog,
@@ -63,7 +63,9 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
   const { data: projects } = useQuery(projectListOptions(wsId));
   const { data: labels } = useQuery(labelListOptions(wsId));
   const { data: agents } = useQuery(agentListOptions(wsId));
+  const { data: members } = useQuery(memberListOptions(wsId));
   const valueOptions = useMemo((): Partial<Record<string, FieldValueOption[]>> => {
+    const agentOptions = (agents ?? []).map((agent) => ({ value: agent.id, label: agent.name }));
     return {
       statuses: catalog.statuses.map((status) => ({ value: status, label: labelFor(statusLabels, status) })),
       priorities: ["urgent", "high", "medium", "low", "none"].map((priority) => ({
@@ -74,9 +76,15 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
       actor_types: ["member", "agent", "system", "automation"].map((kind) => ({ value: kind, label: kind })),
       projects: (projects ?? []).map((project) => ({ value: project.id, label: project.title })),
       labels: (labels ?? []).map((label) => ({ value: label.name, label: label.name })),
-      agents: (agents ?? []).map((agent) => ({ value: agent.id, label: agent.name })),
+      agents: agentOptions,
+      // Assignees are polymorphic: an assignee_id condition must be able to name
+      // a member as well as an agent.
+      assignees: [
+        ...agentOptions,
+        ...(members ?? []).map((member) => ({ value: member.id, label: member.name })),
+      ],
     };
-  }, [catalog.statuses, statusLabels, projects, labels, agents]);
+  }, [catalog.statuses, statusLabels, projects, labels, agents, members]);
 
   // Keep the selection valid as steps come and go — a stale index would render an
   // empty panel for a node that no longer exists.
@@ -151,8 +159,11 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
   const insertStep = (afterNodeIndex: number) => {
     // afterNodeIndex counts canvas nodes (0 = the trigger), so the step index is
     // the same number: inserting "after the trigger" is step 0.
+    // The default is the LIGHTEST step (set_status), not a positional pick from
+    // the catalog — steps[1] used to be dispatch_slice_action, so one "+" click
+    // defaulted to firing an agent with an empty config that could not save.
     const next = [...value.actions];
-    next.splice(afterNodeIndex, 0, { type: catalog.steps[1] ?? "set_status", config: {} });
+    next.splice(afterNodeIndex, 0, { type: "set_status", config: {} });
     setSteps(next);
     setSelectedId(String(afterNodeIndex));
   };
@@ -194,11 +205,18 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
         catalog={catalog}
         valueOptions={valueOptions}
         disabled={disabled}
-        onTriggerChange={(trigger) =>
-          // Conditions are cleared on a trigger change: they were written against
-          // the old trigger's facts and would silently never match.
-          onChange({ ...value, trigger_type: trigger, conditions: [] })
-        }
+        onTriggerChange={(trigger) => {
+          // A trigger change keeps the conditions the new trigger can still
+          // evaluate (the common facts — status, project, priority… — exist on
+          // every trigger, and label membership reads the issue, not the event)
+          // and drops only the trigger-specific ones, which would silently never
+          // match. A misclick on the trigger select no longer erases the list.
+          const nextFields = catalog.triggers.find((entry) => entry.type === trigger)?.fields ?? [];
+          const kept = value.conditions.filter(
+            (condition) => nextFields.includes(condition.field) || condition.field === "labels",
+          );
+          onChange({ ...value, trigger_type: trigger, conditions: kept });
+        }}
         onTriggerConditionsChange={(conditions) => onChange({ ...value, conditions })}
         onStepChange={(step) => {
           const index = Number(selectedId);

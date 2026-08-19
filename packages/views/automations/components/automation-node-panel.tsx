@@ -15,6 +15,7 @@ import {
   conditionValueList,
   conditionValueToText,
   fieldValueDomain,
+  isLabelMembershipOp,
   labelFor,
   listToConditionValue,
   operatorTakesValue,
@@ -175,6 +176,7 @@ export function AutomationNodePanel({
               <StepConfigFields
                 step={step}
                 catalog={catalog}
+                agents={valueOptions?.agents}
                 disabled={disabled}
                 onChange={(config) => onStepChange({ ...step, config })}
               />
@@ -230,6 +232,39 @@ function ConditionRows({
     onChange(next);
   };
 
+  // The "labels" field and the membership operators come as a PAIR: the engine
+  // has no `labels` fact ("labels eq x" saves fine and never matches), and
+  // has_label/not_has_label ignore the field (they read the issue's label set).
+  // The panel keeps the two in lockstep so no dead combination can be built.
+  const changeField = (index: number, field: string) => {
+    const current = conditions[index];
+    if (!current) return;
+    if (field === "labels" && !isLabelMembershipOp(current.op)) {
+      update(index, { field, op: "has_label" });
+      return;
+    }
+    if (field !== "labels" && isLabelMembershipOp(current.op)) {
+      update(index, { field, op: operators.find((op) => !isLabelMembershipOp(op)) ?? "eq" });
+      return;
+    }
+    update(index, { field });
+  };
+
+  const changeOp = (index: number, op: string) => {
+    const current = conditions[index];
+    if (!current) return;
+    if (isLabelMembershipOp(op) && current.field !== "labels") {
+      update(index, { op, field: "labels" });
+      return;
+    }
+    update(index, { op });
+  };
+
+  const operatorsForField = (field: string) =>
+    field === "labels"
+      ? operators.filter(isLabelMembershipOp)
+      : operators.filter((op) => !isLabelMembershipOp(op));
+
   // The comma hint only matters for list-shaped operators, and only under the
   // value it applies to — a standing footer read as noise on every condition.
   const listOp = (op: string) => ["in", "not_in", "contains"].includes(op.trim());
@@ -266,7 +301,7 @@ function ConditionRows({
                 aria-label={t(($) => $.flow.field)}
                 value={condition.field}
                 disabled={disabled}
-                onChange={(event) => update(index, { field: event.target.value })}
+                onChange={(event) => changeField(index, event.target.value)}
               >
                 {fields.map((field) => (
                   <NativeSelectOption key={field} value={field}>
@@ -288,14 +323,14 @@ function ConditionRows({
                 aria-label={t(($) => $.flow.operator)}
                 value={condition.op}
                 disabled={disabled}
-                onChange={(event) => update(index, { op: event.target.value })}
+                onChange={(event) => changeOp(index, event.target.value)}
               >
-                {operators.map((op) => (
+                {operatorsForField(condition.field).map((op) => (
                   <NativeSelectOption key={op} value={op}>
                     {labelFor(opLabels, op)}
                   </NativeSelectOption>
                 ))}
-                {condition.op !== "" && !operators.includes(condition.op) && (
+                {condition.op !== "" && !operatorsForField(condition.field).includes(condition.op) && (
                   <NativeSelectOption value={condition.op}>{labelFor(opLabels, condition.op)}</NativeSelectOption>
                 )}
               </NativeSelect>
@@ -333,11 +368,15 @@ function ConditionRows({
 function StepConfigFields({
   step,
   catalog,
+  agents,
   disabled,
   onChange,
 }: {
   step: AutomationStep;
   catalog: AutomationCatalog;
+  /** Workspace agents (id + name), so agent_id is picked by name, never pasted
+   *  as a uuid — the same courtesy the condition value pickers already extend. */
+  agents?: FieldValueOption[];
   disabled?: boolean;
   onChange: (config: Record<string, string>) => void;
 }) {
@@ -461,7 +500,27 @@ function StepConfigFields({
       {/* agent_id only matters once a specific agent was chosen. */}
       {fields.includes("agent_id") && (config.target === "agent" || config.agent === "agent") && (
         <LabeledRow label={t(($) => $.config.agent_id)}>
-          <Input className="h-9" value={config.agent_id ?? ""} disabled={disabled} onChange={(event) => set("agent_id", event.target.value)} />
+          {agents && agents.length > 0 ? (
+            <NativeSelect
+              value={config.agent_id ?? ""}
+              disabled={disabled}
+              onChange={(event) => set("agent_id", event.target.value)}
+            >
+              <NativeSelectOption value="">—</NativeSelectOption>
+              {agents.map((agent) => (
+                <NativeSelectOption key={agent.value} value={agent.value}>
+                  {agent.label}
+                </NativeSelectOption>
+              ))}
+              {/* A stored id the roster no longer lists (a deleted agent) stays
+                  visible as its raw value so the rule round-trips. */}
+              {config.agent_id && !agents.some((agent) => agent.value === config.agent_id) && (
+                <NativeSelectOption value={config.agent_id}>{config.agent_id}</NativeSelectOption>
+              )}
+            </NativeSelect>
+          ) : (
+            <Input className="h-9" value={config.agent_id ?? ""} disabled={disabled} onChange={(event) => set("agent_id", event.target.value)} />
+          )}
         </LabeledRow>
       )}
     </div>

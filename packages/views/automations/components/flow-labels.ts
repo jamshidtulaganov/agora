@@ -38,6 +38,16 @@ export function operatorTakesValue(op: string): boolean {
   return op.trim() !== "exists";
 }
 
+/** The two operators that test label MEMBERSHIP. The engine ignores the field
+ *  for these (it reads the issue's label set), so the editor pairs them with the
+ *  virtual "labels" field — any other field+op combination the panel could offer
+ *  here would save an always-false rule. */
+export const LABEL_MEMBERSHIP_OPS = ["has_label", "not_has_label"] as const;
+
+export function isLabelMembershipOp(op: string): boolean {
+  return (LABEL_MEMBERSHIP_OPS as readonly string[]).includes(op.trim());
+}
+
 /** A one-line summary for the list card: "when a label is attached → set the
  *  status, send a Telegram message". Built from the same labels the canvas shows so
  *  the list and the editor can never disagree. */
@@ -141,6 +151,7 @@ export type FieldDomain =
   | "projects"
   | "labels"
   | "agents"
+  | "assignees"
   | "priorities"
   | "assignee_types"
   | "actor_types";
@@ -157,7 +168,8 @@ export function fieldValueDomain(field: string): FieldDomain | undefined {
     case "labels":
       return "labels";
     case "assignee_id":
-      return "agents";
+      // Assignees are polymorphic (member or agent), so the domain offers both.
+      return "assignees";
     case "priority":
       return "priorities";
     case "assignee_type":

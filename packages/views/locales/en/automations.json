@@ -38,7 +38,12 @@
     "disabled": "Disabled",
     "back": "All automations",
     "invalid": "Fix the highlighted step before saving.",
-    "unsaved": "Unsaved changes"
+    "unsaved": "Unsaved changes",
+    "add_step_hint": "Add a step to save this flow",
+    "discard_title": "Discard unsaved changes?",
+    "discard_description": "This flow has edits that are not saved. Leaving now loses them.",
+    "discard": "Discard",
+    "keep_editing": "Keep editing"
   },
   "flow": {
     "when": "When",

@@ -38,7 +38,12 @@
     "disabled": "O‘chirilgan",
     "back": "Barcha avtomatizatsiyalar",
     "invalid": "Saqlashdan oldin belgilangan qadamni tuzating.",
-    "unsaved": "Saqlanmagan o‘zgarishlar"
+    "unsaved": "Saqlanmagan o‘zgarishlar",
+    "add_step_hint": "Saqlash uchun qadam qo‘shing",
+    "discard_title": "Saqlanmagan o‘zgarishlar bekor qilinsinmi?",
+    "discard_description": "Bu oqimda saqlanmagan tahrirlar bor. Hozir chiqsangiz, ular yo‘qoladi.",
+    "discard": "Bekor qilish",
+    "keep_editing": "Tahrirni davom ettirish"
   },
   "flow": {
     "when": "Qachon",
