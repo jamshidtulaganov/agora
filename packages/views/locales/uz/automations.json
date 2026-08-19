@@ -68,7 +68,9 @@
     "conditions_count_one": "{{count}} shart",
     "conditions_count_other": "{{count}} shart",
     "conditions_count_few": "{{count}} shart",
-    "conditions_count_many": "{{count}} shart"
+    "conditions_count_many": "{{count}} shart",
+    "fullscreen": "To‘liq ekran",
+    "exit_fullscreen": "To‘liq ekrandan chiqish"
   },
   "trigger": {
     "issue.created": "vazifa yaratilganda",

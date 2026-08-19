@@ -68,7 +68,9 @@
     "conditions_count_one": "{{count}} condition",
     "conditions_count_other": "{{count}} conditions",
     "conditions_count_few": "{{count}} conditions",
-    "conditions_count_many": "{{count}} conditions"
+    "conditions_count_many": "{{count}} conditions",
+    "fullscreen": "Fullscreen",
+    "exit_fullscreen": "Exit fullscreen"
   },
   "trigger": {
     "issue.created": "an issue is created",

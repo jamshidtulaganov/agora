@@ -68,7 +68,9 @@
     "conditions_count_one": "{{count}} условие",
     "conditions_count_few": "{{count}} условия",
     "conditions_count_many": "{{count}} условий",
-    "conditions_count_other": "{{count}} условия"
+    "conditions_count_other": "{{count}} условия",
+    "fullscreen": "На весь экран",
+    "exit_fullscreen": "Выйти из полноэкранного режима"
   },
   "trigger": {
     "issue.created": "создана задача",
