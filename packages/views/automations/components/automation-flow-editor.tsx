@@ -31,6 +31,10 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled }: Aut
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
   const fieldLabels = t(($) => $.field, { returnObjects: true }) as Record<string, string>;
   const opLabels = t(($) => $.op, { returnObjects: true }) as Record<string, string>;
+  const kindLabels = t(($) => $.kind, { returnObjects: true }) as Record<string, string>;
+  const statusLabels = t(($) => $.status, { returnObjects: true }) as Record<string, string>;
+  const targetLabels = t(($) => $.target, { returnObjects: true }) as Record<string, string>;
+  const destinationLabels = t(($) => $.destination, { returnObjects: true }) as Record<string, string>;
 
   // The trigger is selected by default: it is the one node every flow has, and
   // opening onto an empty panel would make the editor look broken.
@@ -62,10 +66,17 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled }: Aut
       kind: step.type === "filter" ? "filter" : "action",
       kicker: step.type === "filter" ? t(($) => $.flow.only_if) : t(($) => $.flow.then),
       title: labelFor(stepLabels, step.type),
-      subtitle: summarizeStep(step, { fields: fieldLabels, ops: opLabels }),
+      subtitle: summarizeStep(step, {
+        fields: fieldLabels,
+        ops: opLabels,
+        kinds: kindLabels,
+        statuses: statusLabels,
+        targets: targetLabels,
+        destinations: destinationLabels,
+      }),
     }));
     return [triggerNode, ...stepNodes];
-  }, [t, triggerLabels, stepLabels, fieldLabels, opLabels, value]);
+  }, [t, triggerLabels, stepLabels, fieldLabels, opLabels, kindLabels, statusLabels, targetLabels, destinationLabels, value]);
 
   const setSteps = (actions: AutomationStep[]) => onChange({ ...value, actions });
 

@@ -19,7 +19,10 @@
     "never_ran": "Hech ishga tushmagan",
     "last_run": "Oxirgi ishga tushishi {{when}}",
     "all_projects": "Barcha loyihalar",
-    "load_failed": "Avtomatizatsiyalarni yuklab bo‘lmadi"
+    "load_failed": "Avtomatizatsiyalarni yuklab bo‘lmadi",
+    "tab_flows": "Oqimlar",
+    "tab_recipes": "Retseptlar",
+    "browse_recipes": "Retseptlarni ko‘rish"
   },
   "editor": {
     "name_placeholder": "Avtomatizatsiya nomi",
@@ -152,5 +155,30 @@
     "actions_applied_other": "{{count}} qadam bajarildi",
     "open_issue": "Vazifani ochish",
     "load_failed": "Ishga tushishlarni yuklab bo‘lmadi"
+  },
+  "kind": {
+    "run_review": "Kod-revyu o‘tkazish",
+    "run_qa": "QA tekshiruvini ishga tushirish",
+    "gen_test_cases": "Test keyslar yozish",
+    "run_test_cases": "Test keyslarni yurgizish",
+    "compile_tests": "Test skriptlarini yig‘ish",
+    "commit_tests": "O‘tgan testlarni branchga commit qilish",
+    "open_pr": "Merge request ochish",
+    "run_ci": "CI tekshiruvlarini ishga tushirish",
+    "write_tests": "Unit-testlar yozish",
+    "write_docs": "Hujjat yozish",
+    "auto_docs": "Hujjat saytini yangilash",
+    "review_part": "Kod bo‘yicha fikr berish (maslahat)",
+    "draft_code": "Kod chizmasini yozish",
+    "design_audit": "Dizayn bilan solishtirish"
+  },
+  "status": {
+    "backlog": "Backlog",
+    "todo": "Bajarish uchun",
+    "in_progress": "Jarayonda",
+    "in_review": "Tekshiruvda",
+    "done": "Tayyor",
+    "cancelled": "Bekor qilingan",
+    "blocked": "Bloklangan"
   }
 }

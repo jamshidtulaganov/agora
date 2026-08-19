@@ -19,7 +19,10 @@
     "never_ran": "从未运行",
     "last_run": "上次运行 {{when}}",
     "all_projects": "所有项目",
-    "load_failed": "无法加载自动化"
+    "load_failed": "无法加载自动化",
+    "tab_flows": "流程",
+    "tab_recipes": "配方",
+    "browse_recipes": "浏览配方"
   },
   "editor": {
     "name_placeholder": "为这个自动化命名",
@@ -152,5 +155,30 @@
     "actions_applied_other": "执行了 {{count}} 个步骤",
     "open_issue": "打开任务",
     "load_failed": "无法加载运行记录"
+  },
+  "kind": {
+    "run_review": "进行代码评审",
+    "run_qa": "运行 QA 检查",
+    "gen_test_cases": "编写测试用例",
+    "run_test_cases": "执行测试用例",
+    "compile_tests": "编译测试脚本",
+    "commit_tests": "将通过的测试提交到分支",
+    "open_pr": "创建合并请求",
+    "run_ci": "运行 CI 检查",
+    "write_tests": "编写单元测试",
+    "write_docs": "编写文档",
+    "auto_docs": "更新文档站点",
+    "review_part": "给出评审意见（建议性）",
+    "draft_code": "起草代码",
+    "design_audit": "对照设计稿检查"
+  },
+  "status": {
+    "backlog": "待办池",
+    "todo": "待办",
+    "in_progress": "进行中",
+    "in_review": "评审中",
+    "done": "已完成",
+    "cancelled": "已取消",
+    "blocked": "已阻塞"
   }
 }

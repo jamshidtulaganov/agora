@@ -307,6 +307,8 @@ function StepConfigFields({
   const { t } = useT("automations");
   const targetLabels = t(($) => $.target, { returnObjects: true }) as Record<string, string>;
   const destinationLabels = t(($) => $.destination, { returnObjects: true }) as Record<string, string>;
+  const kindLabels = t(($) => $.kind, { returnObjects: true }) as Record<string, string>;
+  const statusLabels = t(($) => $.status, { returnObjects: true }) as Record<string, string>;
   const config = step.config ?? {};
   const fields = stepConfigFields(step.type);
   const set = (key: string, value: string) => onChange({ ...config, [key]: value });
@@ -321,11 +323,11 @@ function StepConfigFields({
             <NativeSelectOption value="">—</NativeSelectOption>
             {catalog.slice_action_kinds.map((kind) => (
               <NativeSelectOption key={kind} value={kind}>
-                {kind}
+                {labelFor(kindLabels, kind)}
               </NativeSelectOption>
             ))}
             {config.kind && !catalog.slice_action_kinds.includes(config.kind) && (
-              <NativeSelectOption value={config.kind}>{config.kind}</NativeSelectOption>
+              <NativeSelectOption value={config.kind}>{labelFor(kindLabels, config.kind)}</NativeSelectOption>
             )}
           </NativeSelect>
         </LabeledRow>
@@ -349,7 +351,7 @@ function StepConfigFields({
             <NativeSelectOption value="">—</NativeSelectOption>
             {catalog.statuses.map((status) => (
               <NativeSelectOption key={status} value={status}>
-                {status}
+                {labelFor(statusLabels, status)}
               </NativeSelectOption>
             ))}
           </NativeSelect>

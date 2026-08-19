@@ -84,7 +84,14 @@ export function stepConfigFields(type: string): string[] {
  *  so an unconfigured node reads as unconfigured. */
 export function summarizeStep(
   step: AutomationStep,
-  labels: { fields?: Record<string, string>; ops?: Record<string, string> },
+  labels: {
+    fields?: Record<string, string>;
+    ops?: Record<string, string>;
+    kinds?: Record<string, string>;
+    statuses?: Record<string, string>;
+    targets?: Record<string, string>;
+    destinations?: Record<string, string>;
+  },
 ): string {
   if (step.type === "filter") {
     const first = step.conditions?.[0];
@@ -97,8 +104,20 @@ export function summarizeStep(
     return extra > 0 ? `${head} +${extra}` : head;
   }
   const config = step.config ?? {};
-  // Ordered by how much each key identifies the step at a glance.
-  for (const key of ["kind", "status", "target", "name", "destination", "body", "text"]) {
+  // Ordered by how much each key identifies the step at a glance. Machine values
+  // (a slice-action kind, a status, a routing target) render through their
+  // translations so the canvas never shows a wire name like "run_review".
+  const translated: Array<[string, Record<string, string> | undefined]> = [
+    ["kind", labels.kinds],
+    ["status", labels.statuses],
+    ["target", labels.targets],
+    ["destination", labels.destinations],
+  ];
+  for (const [key, map] of translated) {
+    const value = config[key];
+    if (value && value.trim() !== "") return labelFor(map, value.trim());
+  }
+  for (const key of ["name", "body", "text"]) {
     const value = config[key];
     if (value && value.trim() !== "") {
       const trimmed = value.trim();

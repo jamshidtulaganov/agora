@@ -14,8 +14,10 @@ import { Button } from "@agora/ui/components/ui/button";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { Switch } from "@agora/ui/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
 import { toast } from "sonner";
 import { PageHeader } from "../../layout/page-header";
+import { useState } from "react";
 import { useT, useTimeAgo } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { labelFor, summarizeFlow } from "./flow-labels";
@@ -38,6 +40,11 @@ export function AutomationsPage() {
   const triggerLabels = t(($) => $.trigger, { returnObjects: true }) as Record<string, string>;
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
 
+  // Flows and recipes are separate TABS: one is the live configuration, the other
+  // is a catalogue — mixing them on one page made the list read as twice as long
+  // as it is. The recipes tab still carries the gallery for an empty workspace.
+  const [tab, setTab] = useState<"flows" | "recipes">("flows");
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader className="justify-between px-5">
@@ -47,6 +54,16 @@ export function AutomationsPage() {
           {!isLoading && (automations?.length ?? 0) > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums">{automations?.length}</span>
           )}
+          <Tabs value={tab} onValueChange={(value) => setTab(value as "flows" | "recipes")} className="ml-4">
+            <TabsList variant="line">
+              <TabsTrigger value="flows" className="text-xs">
+                {t(($) => $.page.tab_flows)}
+              </TabsTrigger>
+              <TabsTrigger value="recipes" className="text-xs">
+                {t(($) => $.page.tab_recipes)}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         <Button size="sm" variant="outline" onClick={() => navigation.push(paths.automationDetail("new"))}>
           <Plus className="h-3.5 w-3.5 mr-1" />
@@ -55,7 +72,12 @@ export function AutomationsPage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {tab === "recipes" ? (
+          <div className="p-5">
+            <p className="mb-3 text-xs text-muted-foreground">{t(($) => $.page.recipes_subtitle)}</p>
+            <RecipeGrid />
+          </div>
+        ) : isLoading ? (
           <div className="space-y-1 p-5">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full" />
@@ -73,7 +95,9 @@ export function AutomationsPage() {
             <p className="mb-6 mt-1 max-w-md text-center text-xs text-muted-foreground">
               {t(($) => $.page.empty_description)}
             </p>
-            <RecipeGrid />
+            <Button size="sm" variant="outline" onClick={() => setTab("recipes")}>
+              {t(($) => $.page.browse_recipes)}
+            </Button>
           </div>
         ) : (
           <>
@@ -111,13 +135,6 @@ export function AutomationsPage() {
                 </span>
               </button>
             ))}
-            <div className="border-t px-5 py-6">
-              <h2 className="text-sm font-medium">{t(($) => $.page.recipes_title)}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t(($) => $.page.recipes_subtitle)}</p>
-              <div className="mt-3">
-                <RecipeGrid />
-              </div>
-            </div>
           </>
         )}
       </div>

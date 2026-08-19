@@ -19,7 +19,10 @@
     "never_ran": "Never ran",
     "last_run": "Last run {{when}}",
     "all_projects": "All projects",
-    "load_failed": "Automations could not be loaded"
+    "load_failed": "Automations could not be loaded",
+    "tab_flows": "Flows",
+    "tab_recipes": "Recipes",
+    "browse_recipes": "Browse recipes"
   },
   "editor": {
     "name_placeholder": "Name this automation",
@@ -152,5 +155,30 @@
     "actions_applied_other": "{{count}} steps ran",
     "open_issue": "Open task",
     "load_failed": "Runs could not be loaded"
+  },
+  "kind": {
+    "run_review": "Review the code",
+    "run_qa": "Run the QA gate",
+    "gen_test_cases": "Write test cases",
+    "run_test_cases": "Run the test cases",
+    "compile_tests": "Compile test scripts",
+    "commit_tests": "Commit passing tests to the branch",
+    "open_pr": "Open the merge request",
+    "run_ci": "Run the CI checks",
+    "write_tests": "Write unit tests",
+    "write_docs": "Write documentation",
+    "auto_docs": "Update the docs site",
+    "review_part": "Give review feedback (advisory)",
+    "draft_code": "Draft the code",
+    "design_audit": "Audit against the design"
+  },
+  "status": {
+    "backlog": "Backlog",
+    "todo": "To Do",
+    "in_progress": "In Progress",
+    "in_review": "In Review",
+    "done": "Done",
+    "cancelled": "Cancelled",
+    "blocked": "Blocked"
   }
 }
