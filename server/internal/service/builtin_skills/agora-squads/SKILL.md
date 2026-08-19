@@ -230,28 +230,28 @@ general squad behavior. Two mechanisms:
   DEFAULT-ON (`AGORA_QA_FAIL_AUTOROUTE_ENABLED` defaults true); only a
   human/member-assigned or unassigned issue has no agent orchestrator and
   keeps manual triage.
-- **`qa:pass` label → auto code review (`run_review`).** When
-  `AGORA_AUTO_REVIEW_ENABLED` is on and the issue has a known pull request,
-  a `run_review` task is dispatched to an INDEPENDENT reviewer — never the
-  author agent (the issue's assignee). Reviewer resolution: a per-issue
-  **review cast** (`cast_review_agent_id`) when it isn't the author → the dev
-  squad leader (the orchestrator) when it isn't the author → the least-busy
-  other dev-squad agent → the QA squad leader → skip. The author-exclusion
-  invariant holds even for the cast: a cast reviewer equal to the author is
-  ignored (an agent never reviews its own diff). The reviewer reads the PR diff (`gh pr diff`)
-  and posts a fenced ```review-result``` JSON block
-  (`{"verdict":"pass"|"fail","summary","commit_sha","files_reviewed",
-  "findings":[{"file","line","severity":"blocker"|"major"|"minor","title",
-  "detail"}]}`); the server captures it into the `review:pass`/`review:fail`
-  label (replace-on-write, like the QA pair). Verdict is `fail` iff any
-  finding is a `blocker`. The reviewer NEVER edits code and NEVER merges —
-  a human clicks Approve & merge (POST `/api/issues/{id}/review-decision`,
-  human-only), which is what actually orders the squad lead to
-  `gh pr merge`. For full-tier issues with a PR, `review` is a required
+- **Auto code review (`run_review`) — on `qa:pass` OR on the tracker moving the
+  task INTO its code-review column** (Bitrix "Code Review", entry only). Needs
+  `AGORA_AUTO_REVIEW_ENABLED` + a known pull/merge request; the reviewer is
+  always INDEPENDENT — never the author agent (the issue's assignee). Resolution:
+  per-issue **review cast** (`cast_review_agent_id`) → dev squad leader (the
+  orchestrator) → least-busy other dev-squad agent → QA squad leader → skip,
+  each step skipped when it IS the author (an agent never reviews its own diff —
+  the cast is no exception). The reviewer reads the PR diff (`gh pr diff`) and
+  posts a fenced ```review-result``` JSON block (`{"verdict":"pass"|"fail",
+  "summary","commit_sha","files_reviewed","findings":[{"file","line",
+  "severity":"blocker"|"major"|"minor","title","detail"}]}`); the server captures
+  it into the `review:pass`/`review:fail` label (replace-on-write, like the QA
+  pair). Verdict is `fail` iff any finding is a `blocker`. The reviewer NEVER
+  edits code and NEVER merges — a human clicks Approve & merge (POST
+  `/api/issues/{id}/review-decision`, human-only), which is what orders the squad
+  lead to `gh pr merge`. For full-tier issues with a PR, `review` is a required
   merge-readiness gate alongside `ci` and `qa`.
+- **`review:pass` exits** — E2E + regression (`AGORA_AUTO_QA_ENABLED`: authors the cases, runs them + the project BASE SUITE) and `open_pr` (`AGORA_REVIEW_PASS_OPEN_PR_ENABLED`: the AUTHOR side opens the merge request, so a rejected change never becomes one). **`review:fail` exit** — back to `todo` + routed to the orchestrator with the blocking findings (`AGORA_REVIEW_FAIL_AUTOROUTE_ENABLED`, 5-attempt cap).
+- **`qa:pass` → `commit_tests`** (`AGORA_COMMIT_SPECS_ENABLED`, off): commits only specs whose LATEST run passed onto the change's branch, `[skip ci]` in the subject so the push can't retrigger the pipeline. Telegram: per-user DMs ride the existing inbox path; the group notice is `AGORA_TELEGRAM_REVIEW_NOTIFY_ENABLED`. See squad-source-map.md.
 
-Each is env-gated (`AGORA_AUTO_QA_ENABLED`, `AGORA_QA_FAIL_AUTOROUTE_ENABLED`
-— now default TRUE —, `AGORA_AUTO_REVIEW_ENABLED`) and degrades silently when
+Each is env-gated (`AGORA_AUTO_QA_ENABLED`, `AGORA_QA_FAIL_AUTOROUTE_ENABLED` — now default TRUE —, `AGORA_AUTO_REVIEW_ENABLED`, `AGORA_COMMIT_SPECS_ENABLED`)
+and degrades silently when
 a squad is missing on one side: a squad dev with no QA squad falls through to
 the generic roster pick. Note the qa:fail autoroute NO LONGER needs a squad —
 its resolver is total, so a solo dev agent's failed QA now routes back to that

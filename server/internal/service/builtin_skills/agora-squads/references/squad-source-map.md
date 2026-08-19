@@ -333,14 +333,29 @@ Contracts:
   the gate to a member instead of executing it (slice_action.go, in
   `maybeRunQAOnInReview` just before the comment is built).
 
-## Auto Code Review on qa:pass (Review stage v2)
+## Auto Code Review — qa:pass OR the tracker's Code Review column (Review stage v2)
 
 Source:
 
 ```text
 server/internal/handler/review_action.go   # autoReviewEnabled, maybeRunReviewOnQAPass,
+                                            # maybeRunReviewOnCodeReviewStage, dispatchRunReview,
+                                            # maybeRunTestsOnReviewPass,
                                             # resolveReviewerAgent, reviewGateApplies,
                                             # issueHasKnownPR, reviewDispatchMarker
+server/internal/handler/bitrix_review_trigger.go  # bitrixCodeReviewEntered, onBitrixStageChanged
+                                            # (called from bitrix_sync.go's found-branch)
+server/internal/integrations/bitrix/mapping.go    # StageIsCodeReview / StageIsReturned (narrow
+                                            # predicates; MapStage collapses review/testing/merge
+                                            # into one in_review bucket)
+server/internal/handler/commit_specs_action.go    # commitSpecsEnabled, greenScriptedCasesForIssue,
+                                            # issueReviewBranch, maybeCommitSpecsOnQAPass
+server/internal/handler/review_outcome.go        # onReviewVerdictLabel (single entry point),
+                                            # maybeOpenPROnReviewPass, maybeRouteToDevOnReviewFail,
+                                            # clearReviewFailAutorouteBudget, reviewVerdictSummary
+server/internal/handler/telegram_review_notify.go # SendReviewVerdictGroupNotify, reviewVerdictNextStep
+server/internal/handler/slice_action_templates/open_pr.md  # open-the-request instruction + open-pr-result schema
+server/internal/handler/slice_action_templates/commit_tests.md  # spec-commit instruction + committed-specs schema
 server/internal/handler/slice_action_templates/run_review.md   # reviewer instruction + review-result schema
 server/internal/service/review_evidence.go  # ParseReviewResultBlock, CaptureReviewEvidence (label-first;
                                              # rejects self-review: reviewer==author agent),
@@ -360,6 +375,95 @@ Contracts:
   CaptureQAEvidence hook, qa_override.go), gated by
   `AGORA_AUTO_REVIEW_ENABLED` (config registry, Category "Review",
   default off).
+- `maybeRunReviewOnCodeReviewStage` is the REVIEW-FIRST trigger (same flag): the
+  external tracker moved the task into its code-review column. Both triggers
+  share `dispatchRunReview`, which owns the per-issue lock + every dispatch
+  guard, so the two orders cannot drift apart.
+- `onBitrixStageChanged` (bitrix_review_trigger.go) is the sync-path hook.
+  syncBitrixTaskWithState writes status with a RAW, bus-free
+  `Queries.UpdateIssueStatus` (deliberately — the outbound mirror listens on the
+  bus and would echo the change back to Bitrix), so NONE of issue.go's
+  status-change automations run for a Bitrix-driven move; this hook is how they
+  do. It fires on ENTRY only (`bitrixCodeReviewEntered` diffs the incoming
+  column against the `bitrix_stage` metadata written by the previous sync), which
+  is what keeps the fixed-interval poller from re-reviewing a parked task, and it
+  calls `clearStaleQAGateLabels` first so a task that failed review, was fixed,
+  and came BACK to Code Review starts a genuinely fresh cycle instead of being
+  blocked by its own stale `review:fail`.
+  Ingress-agnostic: the same hook runs for the ONTASKUPDATE webhook
+  (`POST /bitrix/webhook` → `syncBitrixTask`, immediate) and for the poller.
+- `bitrix.StageIsCodeReview` is NARROWER than MapStage's in_review bucket:
+  MapStage maps Code Review, Ready for testing, Testing, Need Merge and Ready
+  for release ALL to in_review, so the mapped STATUS cannot identify the review
+  column. Merge columns are excluded (post-review) and return columns are
+  excluded and checked first. `MapStage` maps a return column ("Returned",
+  "Возвращена") to **todo**, not in_progress — the work is re-queued and
+  un-owned until someone restarts it.
+- `maybeRunTestsOnReviewPass` is the review → E2E chain, fired from all THREE
+  review-verdict ingress paths (label.go AttachLabel, comment.go
+  CaptureReviewEvidence, handler.go `OnReviewVerdictLabeled` for the
+  task-completion path). Gated by `AGORA_AUTO_QA_ENABLED`; refuses on a standing
+  `review:fail`. It calls `maybeGenTests` (authoring, async — the agent's
+  ```test-cases``` comment self-chains compile → run) AND
+  `maybeRunTestsOnInReview` (executes the issue's existing cases + the project
+  BASE SUITE = the regression pass) so the regression does not wait on authoring.
+- `maybeCommitSpecsOnQAPass` (`AGORA_COMMIT_SPECS_ENABLED`, project-scoped,
+  default off) dispatches `commit_tests` from the same three qa:pass sites.
+  Entry bar per spec: a compiled `script` AND a LATEST run of `pass`
+  (`greenScriptedCasesForIssue` — never-run and last-run-red are both excluded,
+  since either would plant a red test that blocks every future pipeline).
+  `issueReviewBranch` resolves the target branch from an OPEN linked PR/MR row's
+  branch, else the `btx-<taskId>` convention (a GitLab MR linked from a comment
+  URL carries no branch). Capped at `specCommitCap` (8) specs per dispatch with
+  the remainder NAMED in the instruction, one dispatch per issue
+  (`<!--spec-commit:auto-->` marker), and the template mandates `[skip ci]` in
+  the commit subject — without it the push retriggers the branch pipeline, which
+  re-runs the review/E2E chain, which commits again.
+- **Review-first, no MR until the review passes.** `dispatchRunReview` accepts an
+  open PR/MR **or** a resolvable branch (`issueReviewBranch`): with no request yet
+  the reviewer is handed `sliceActionReviewBranchContext` (fetch the branch, diff
+  it against the merge-base, take `git rev-parse origin/<branch>` as the reviewed
+  sha) and is still forbidden to push or open anything. Consequence: a rejected
+  change never becomes a merge request, so the MR list is a list of reviewed work.
+- `onReviewVerdictLabel` (review_outcome.go) is the SINGLE entry point every
+  review-verdict ingress path calls (label.go AttachLabel, comment.go
+  CaptureReviewEvidence, handler.go `OnReviewVerdictLabeled`) — the three cannot
+  drift in what they fire. Routing runs BEFORE the notice so the message describes
+  what was actually done; the issue is re-read in between.
+- `maybeOpenPROnReviewPass` (`AGORA_REVIEW_PASS_OPEN_PR_ENABLED`, project-scoped,
+  default off) dispatches `open_pr` to the AUTHOR side (`orchestratorForIssue`),
+  never the reviewer — a reviewer that pushes is not independent. Skips when a
+  PR/MR already exists, when no branch resolves, on a standing `review:fail`, and
+  on a repeat (`<!--open-pr:auto-->` marker) because two openers racing the same
+  branch would create duplicate requests. The template forbids touching code or
+  rewriting the reviewed commits, requires the MR URL on its own line (migration
+  124's comment-URL trigger links it), and forbids merging.
+- `maybeRouteToDevOnReviewFail` (`AGORA_REVIEW_FAIL_AUTOROUTE_ENABLED`,
+  project-scoped, default off) mirrors the qa:fail autoroute: reassign to the
+  orchestrator, status → `todo` (re-queued and un-owned — the same meaning a
+  tracker's "Returned" column carries), stamp `review_fail_autoroute_count`
+  (cap `reviewFailAutorouteMaxAttempts` = 5, cleared on review:pass by
+  `clearReviewFailAutorouteBudget`), and post a retry brief carrying the
+  reviewer's blocker count + summary so the retry is not blind.
+- Bitrix outbound: `bitrixStageIDForIssueStatus` now prefers a RETURN column when
+  an issue moves to `todo` FROM a column meaning in_review — that is what a
+  reviewer sending work back looks like on the kanban, where the earliest-column
+  rule would drop it into Новые/To Do and read as "never started". Degrades to the
+  earliest todo column on boards with no return column.
+- Telegram, two halves: the per-USER half needs nothing new — `NotifyReviewVerdict`
+  writes typed inbox items (review_failed / review_passed / merge_ready) and the
+  EventInboxNew subscriber (`SendIssueInboxDM`, telegram_push_listeners.go) DMs
+  every member recipient with no type filter. The shared-ROOM half is
+  `SendReviewVerdictGroupNotify` (`AGORA_TELEGRAM_REVIEW_NOTIFY_ENABLED` +
+  `AGORA_TELEGRAM_REPORT_CHAT_ID`), whose body names the verdict, summary, blocker
+  count, owner and the next step `reviewVerdictNextStep` derived from the SAME
+  flags the routing reads — so the room is never promised a step that is off.
+- `qa_target_url` in issue metadata is the per-issue QA target override, read
+  FIRST by `resolveQAPreviewURL` (qa_target.go) ahead of dev_apps /
+  user_dev_server / the project's `qa_smoke_url`. CI stamps it when it deploys a
+  THROWAWAY environment for the issue's branch (a GitLab review app), so the E2E
+  pass runs against the app built from THIS diff rather than shared staging.
+  Only http(s) values are honoured.
 - Guards, in order: flag off → **manual pipeline mode** (`pipelineManual` →
   wake the orchestrator to dispatch review itself, no auto-select) → not
   qa:pass → an existing `review:pass`/`review:fail` label → no known PR
