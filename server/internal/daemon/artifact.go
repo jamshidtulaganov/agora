@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -169,7 +170,7 @@ func artifactSelectedRepo(grant ArtifactCapabilityGrant, requested string) (Arti
 func artifactRepoPath(ctx context.Context, grant ArtifactCapabilityGrant, ref ArtifactRepoRef) (string, error) {
 	root := filepath.Clean(strings.TrimSpace(grant.SourceRoot))
 	if root == "." || root == "" {
-		return "", fmt.Errorf("artifact source is unavailable")
+		return "", errArtifactRuntimeGone("artifact source is unavailable")
 	}
 	if len(grant.Repos) == 1 && isGitWorkTree(ctx, root) {
 		return root, nil
@@ -178,10 +179,62 @@ func artifactRepoPath(ctx context.Context, grant ArtifactCapabilityGrant, ref Ar
 		return "", fmt.Errorf("invalid repository name")
 	}
 	repo := filepath.Join(root, ref.Repo)
-	if !isGitWorkTree(ctx, repo) {
-		return "", fmt.Errorf("artifact repository is unavailable")
+	if isGitWorkTree(ctx, repo) {
+		return repo, nil
 	}
-	return repo, nil
+	// The named subdirectory is not a checkout. Before giving up, accept the
+	// source root itself when IT is one: a multi-repo grant whose run actually
+	// checked out a single repo directly into the work dir would otherwise
+	// dead-end even though the diff is sitting right there.
+	if isGitWorkTree(ctx, root) {
+		return root, nil
+	}
+	// Nothing on disk to read. This is the normal end state of a finished run —
+	// the per-task worktree is torn down, the daemon was restarted, or the
+	// local_directory moved — NOT a malfunction, so it is reported as a
+	// distinguishable "gone" so the UI can say "the working copy was cleaned
+	// up" instead of rendering a red load failure with a Refresh that cannot
+	// help.
+	return "", errArtifactRuntimeGone("artifact repository is unavailable")
+}
+
+// artifactRuntimeGoneReason is the machine-readable reason the artifact surfaces
+// return when the working copy no longer exists on disk. It matches the value the
+// BACKEND already returns when a run has no recorded work dir
+// (handler/artifact.go: "artifact_runtime_gone"), so the UI has ONE state to
+// handle for "the diff cannot be read from disk anymore" regardless of which
+// layer noticed it first.
+const artifactRuntimeGoneReason = "artifact_runtime_gone"
+
+// artifactGoneError marks an error as "the working copy is gone" rather than a
+// malfunction. The HTTP layer turns it into a structured 410 body.
+type artifactGoneError struct{ msg string }
+
+func (e artifactGoneError) Error() string { return e.msg }
+
+func errArtifactRuntimeGone(msg string) error { return artifactGoneError{msg: msg} }
+
+// artifactIsGone reports whether err (or anything it wraps) is a gone marker.
+func artifactIsGone(err error) bool {
+	var gone artifactGoneError
+	return errors.As(err, &gone)
+}
+
+// writeArtifactError renders an artifact failure. A "gone" error becomes a
+// structured 410 body carrying artifact_runtime_gone so the client can render the
+// actionable cleaned-up state; anything else keeps the plain-text shape callers
+// already expect.
+func writeArtifactError(w http.ResponseWriter, err error, fallbackStatus int) {
+	if artifactIsGone(err) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"reason": artifactRuntimeGoneReason,
+			"error":  err.Error(),
+		})
+		return
+	}
+	http.Error(w, err.Error(), fallbackStatus)
 }
 
 // artifactGitOutputAllowFail runs git and returns stdout even on a non-zero
@@ -366,12 +419,12 @@ func artifactLiveFile(ctx context.Context, grant ArtifactCapabilityGrant, reques
 		}
 	}
 	if repo.SrcPath == "" {
-		return artifactFileResponse{}, fmt.Errorf("artifact repository is unavailable")
+		return artifactFileResponse{}, errArtifactRuntimeGone("artifact repository is unavailable")
 	}
 	// Resolve within the repo and confirm containment (no traversal escape).
 	base, err := filepath.EvalSymlinks(repo.SrcPath)
 	if err != nil {
-		return artifactFileResponse{}, fmt.Errorf("artifact repository is unavailable")
+		return artifactFileResponse{}, errArtifactRuntimeGone("artifact repository is unavailable")
 	}
 	full := filepath.Join(base, filepath.FromSlash(path))
 	rel, err := filepath.Rel(base, full)
@@ -678,7 +731,7 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		}
 		changes, err := artifactChanges(r.Context(), grant)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusGone)
+			writeArtifactError(w, err, http.StatusGone)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -695,7 +748,7 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		}
 		file, err := artifactFile(r.Context(), grant, req.Repo, req.Path)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			writeArtifactError(w, err, http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

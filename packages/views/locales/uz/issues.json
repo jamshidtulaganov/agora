@@ -1548,6 +1548,8 @@
     "full_file": "To‘liq fayl",
     "refresh": "Artifact’ni yangilash",
     "load_failed": "Artifact’ni yuklab bo‘lmadi",
+    "runtime_gone_title": "Ishchi nusxa tozalangan",
+    "runtime_gone_description": "Bu o‘zgarish agent mashinasidagi vaqtinchalik nusxadan o‘qilgan edi, u endi mavjud emas. Vazifa tarixi va uning pull request’i saqlanib qoldi — fayllarni yana ko‘rish uchun ishni qayta ishga tushiring.",
     "empty_title": "Hali kod artifact’i yo‘q",
     "empty_description": "Agent ishini tugatib, commit qilgach, dasturlash natijasi shu yerda ko‘rinadi.",
     "integration_pending_title": "Integratsiya hali davom etmoqda",

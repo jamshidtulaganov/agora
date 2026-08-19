@@ -1548,6 +1548,8 @@
     "full_file": "Full file",
     "refresh": "Refresh artifact",
     "load_failed": "Artifact could not be loaded",
+    "runtime_gone_title": "The working copy was cleaned up",
+    "runtime_gone_description": "This change was read from a temporary checkout on the agent's machine, and that checkout no longer exists. The task history and its pull request stay intact — re-run the work to inspect the files again.",
     "empty_title": "No code artifact yet",
     "empty_description": "A committed development result will appear here when an agent completes its work.",
     "integration_pending_title": "Integration is still in progress",

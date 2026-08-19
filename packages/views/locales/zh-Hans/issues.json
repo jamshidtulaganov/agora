@@ -1533,6 +1533,8 @@
     "full_file": "完整文件",
     "refresh": "刷新产物",
     "load_failed": "无法加载产物",
+    "runtime_gone_title": "工作副本已清理",
+    "runtime_gone_description": "此变更此前读取自代理机器上的临时检出目录，该目录已不存在。任务历史与其 pull request 仍然保留——重新运行该工作即可再次查看文件。",
     "empty_title": "暂无代码产物",
     "empty_description": "智能体完成工作并提交后，开发结果会显示在这里。",
     "integration_pending_title": "集成仍在进行中",

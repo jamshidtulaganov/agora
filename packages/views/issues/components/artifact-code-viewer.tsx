@@ -33,7 +33,7 @@ import { CodeBlock } from "@agora/ui/markdown/CodeBlock";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { parseArtifactFileDiff, type ArtifactDiffLine } from "./artifact-diff";
-import { artifactDaemonPost } from "./artifact-daemon-client";
+import { artifactDaemonPost, isArtifactRuntimeGone } from "./artifact-daemon-client";
 
 const MAX_VISIBLE_FILES = 500;
 const MAX_VISIBLE_LINES = 5_000;
@@ -151,27 +151,36 @@ function ArtifactEmpty({
   const { t } = useT("issues");
   const components = data?.components ?? [];
   const pending = data?.reason === "integration artifact is not ready";
+  // The working copy was cleaned up: an expected end state, not a failure. It
+  // gets its own copy and NO retry button — refetching cannot bring a deleted
+  // worktree back, and offering the action is what made this state look broken.
+  const runtimeGone = isArtifactRuntimeGone(error);
+  const failed = Boolean(error) && !runtimeGone;
 
   return (
     <div className="flex min-h-80 items-center justify-center rounded-lg border border-dashed bg-muted/10 px-6 py-12 text-center">
       <div className="max-w-md">
         <span className="mx-auto flex size-9 items-center justify-center rounded-lg border bg-background text-muted-foreground">
-          {error ? <AlertCircle className="size-4" aria-hidden /> : <GitCommitHorizontal className="size-4" aria-hidden />}
+          {failed ? <AlertCircle className="size-4" aria-hidden /> : <GitCommitHorizontal className="size-4" aria-hidden />}
         </span>
         <h3 className="mt-3 text-sm font-semibold">
-          {error
+          {failed
             ? t(($) => $.artifact.load_failed)
-            : pending
-              ? t(($) => $.artifact.integration_pending_title)
-              : t(($) => $.artifact.empty_title)}
+            : runtimeGone
+              ? t(($) => $.artifact.runtime_gone_title)
+              : pending
+                ? t(($) => $.artifact.integration_pending_title)
+                : t(($) => $.artifact.empty_title)}
         </h3>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {error?.message ||
-            (pending
-              ? t(($) => $.artifact.integration_pending_description)
-              : t(($) => $.artifact.empty_description))}
+          {runtimeGone
+            ? t(($) => $.artifact.runtime_gone_description)
+            : error?.message ||
+              (pending
+                ? t(($) => $.artifact.integration_pending_description)
+                : t(($) => $.artifact.empty_description))}
         </p>
-        {error && (
+        {failed && (
           <Button className="mt-3" size="sm" variant="outline" onClick={onRetry}>
             <RefreshCw aria-hidden />
             {t(($) => $.artifact.refresh)}
