@@ -146,6 +146,39 @@ type Attachment struct {
 	ChatMessageID pgtype.UUID        `json:"chat_message_id"`
 }
 
+type Automation struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Enabled       bool               `json:"enabled"`
+	TriggerType   string             `json:"trigger_type"`
+	TriggerConfig []byte             `json:"trigger_config"`
+	Conditions    []byte             `json:"conditions"`
+	Actions       []byte             `json:"actions"`
+	RecipeKey     string             `json:"recipe_key"`
+	RunCount      int32              `json:"run_count"`
+	LastRunAt     pgtype.Timestamptz `json:"last_run_at"`
+	CreatedByType string             `json:"created_by_type"`
+	CreatedByID   pgtype.UUID        `json:"created_by_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AutomationRun struct {
+	ID             pgtype.UUID        `json:"id"`
+	AutomationID   pgtype.UUID        `json:"automation_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	TriggerType    string             `json:"trigger_type"`
+	Status         string             `json:"status"`
+	ActionsApplied int32              `json:"actions_applied"`
+	Detail         []byte             `json:"detail"`
+	Error          string             `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type Autopilot struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
