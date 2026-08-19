@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -258,6 +260,14 @@ func (h *Handler) InstallAutomationRecipe(w http.ResponseWriter, r *http.Request
 			CreatedByID:   actorID,
 		})
 		if err != nil {
+			// Two installs racing past the read check above land here: the
+			// partial unique index (workspace, recipe_key, name) rejects the
+			// loser, and losing that race IS the already-installed case.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				writeError(w, http.StatusConflict, "this recipe is already installed — edit or delete its flows instead of installing it again")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to install recipe")
 			return
 		}

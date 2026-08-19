@@ -117,6 +117,20 @@ func (h *Handler) automationSetStatus(ctx context.Context, issue db.Issue, actio
 	}); err != nil {
 		return "", fmt.Errorf("set status: %w", err)
 	}
+	// Cancelled is terminal: stop the agents working the issue, exactly as the
+	// HTTP status path does — a rule that cancels a task while its agent keeps
+	// coding would burn the run and re-open the issue on completion. The OTHER
+	// HTTP side-effects (auto-QA on in_review, gen-tests on in_progress) are
+	// deliberately NOT mirrored here: a rule that wants a QA/review run states
+	// it with a dispatch_slice_action step, keeping rule behavior explicit and
+	// the engine's loop surface small.
+	if status == "cancelled" {
+		h.cancelActiveOrchestrationForIssue(ctx, issue.ID, automationActorType, pgtype.UUID{})
+		if err := h.TaskService.CancelTasksForIssue(ctx, issue.ID); err != nil {
+			slog.Warn("automation: cancel tasks for cancelled issue failed",
+				"error", err, "issue_id", uuidToString(issue.ID))
+		}
+	}
 	// Publish so boards and the desktop app move live. Attributed to the automation
 	// actor, which the engine ignores on the way back in.
 	h.publish(protocol.EventIssueUpdated, uuidToString(issue.WorkspaceID), automationActorType, uuidToString(issue.ID),

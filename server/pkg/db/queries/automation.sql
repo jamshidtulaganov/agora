@@ -78,18 +78,21 @@ ORDER BY created_at DESC
 LIMIT $2;
 
 -- name: CountRecentAutomationRunsForIssue :one
--- Loop guard input: how many times this automation already APPLIED to this issue
--- inside the window. Skipped evaluations are excluded — they cost nothing and must
--- not consume the budget.
+-- Loop guard input: how many times this automation ATTEMPTED actions on this
+-- issue inside the window. 'failed' counts too — a rule whose actions always
+-- fail (Telegram unbound, agent deleted) would otherwise have no budget at all
+-- and retry on every event. Only 'skipped' evaluations are excluded: they ran
+-- nothing and must not consume the budget.
 SELECT count(*) FROM automation_run
 WHERE automation_id = $1
   AND issue_id = $2
-  AND status = 'applied'
+  AND status IN ('applied', 'failed')
   AND created_at > now() - sqlc.arg(window_seconds)::int * interval '1 second';
 
 -- name: LatestAppliedAutomationRunForIssue :one
--- Cooldown input: when this automation last APPLIED to this issue.
+-- Cooldown input: when this automation last attempted actions on this issue
+-- ('failed' included, same reasoning as the count above).
 SELECT * FROM automation_run
-WHERE automation_id = $1 AND issue_id = $2 AND status = 'applied'
+WHERE automation_id = $1 AND issue_id = $2 AND status IN ('applied', 'failed')
 ORDER BY created_at DESC
 LIMIT 1;

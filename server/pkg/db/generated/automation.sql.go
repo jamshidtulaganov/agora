@@ -26,7 +26,7 @@ const countRecentAutomationRunsForIssue = `-- name: CountRecentAutomationRunsFor
 SELECT count(*) FROM automation_run
 WHERE automation_id = $1
   AND issue_id = $2
-  AND status = 'applied'
+  AND status IN ('applied', 'failed')
   AND created_at > now() - $3::int * interval '1 second'
 `
 
@@ -36,9 +36,11 @@ type CountRecentAutomationRunsForIssueParams struct {
 	WindowSeconds int32       `json:"window_seconds"`
 }
 
-// Loop guard input: how many times this automation already APPLIED to this issue
-// inside the window. Skipped evaluations are excluded — they cost nothing and must
-// not consume the budget.
+// Loop guard input: how many times this automation ATTEMPTED actions on this
+// issue inside the window. 'failed' counts too — a rule whose actions always
+// fail (Telegram unbound, agent deleted) would otherwise have no budget at all
+// and retry on every event. Only 'skipped' evaluations are excluded: they ran
+// nothing and must not consume the budget.
 func (q *Queries) CountRecentAutomationRunsForIssue(ctx context.Context, arg CountRecentAutomationRunsForIssueParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countRecentAutomationRunsForIssue, arg.AutomationID, arg.IssueID, arg.WindowSeconds)
 	var count int64
@@ -207,7 +209,7 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 
 const latestAppliedAutomationRunForIssue = `-- name: LatestAppliedAutomationRunForIssue :one
 SELECT id, automation_id, workspace_id, issue_id, trigger_type, status, actions_applied, detail, error, created_at FROM automation_run
-WHERE automation_id = $1 AND issue_id = $2 AND status = 'applied'
+WHERE automation_id = $1 AND issue_id = $2 AND status IN ('applied', 'failed')
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -217,7 +219,8 @@ type LatestAppliedAutomationRunForIssueParams struct {
 	IssueID      pgtype.UUID `json:"issue_id"`
 }
 
-// Cooldown input: when this automation last APPLIED to this issue.
+// Cooldown input: when this automation last attempted actions on this issue
+// ('failed' included, same reasoning as the count above).
 func (q *Queries) LatestAppliedAutomationRunForIssue(ctx context.Context, arg LatestAppliedAutomationRunForIssueParams) (AutomationRun, error) {
 	row := q.db.QueryRow(ctx, latestAppliedAutomationRunForIssue, arg.AutomationID, arg.IssueID)
 	var i AutomationRun
