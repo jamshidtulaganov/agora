@@ -184,9 +184,12 @@ export function AutomationNodePanel({
   );
 }
 
-// ConditionRows edits one list of clauses. All clauses must hold (AND); OR is
-// expressed by writing a second automation, which keeps both this panel and the
-// audit trail readable.
+// ConditionRows edits one list of clauses, laid out the way n8n's IF node does
+// it: each condition is a card of three STACKED, full-width, labelled controls
+// (field / condition / value) — never side-by-side selects that truncate "is none
+// of" into "is none o…" — with an AND chip between cards, because every clause
+// must hold. OR is expressed by writing a second automation, which keeps both
+// this panel and the audit trail readable.
 function ConditionRows({
   conditions,
   fields,
@@ -214,63 +217,96 @@ function ConditionRows({
     onChange(next);
   };
 
+  // The comma hint only matters for list-shaped operators, and only under the
+  // value it applies to — a standing footer read as noise on every condition.
+  const listOp = (op: string) => ["in", "not_in", "contains"].includes(op.trim());
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-0">
       {conditions.length === 0 && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
       {conditions.map((condition, index) => (
-        <div key={index} className="space-y-1.5 rounded-md border p-2">
-          <div className="flex items-center gap-2">
-            <NativeSelect
-              aria-label={t(($) => $.flow.field)}
-              value={condition.field}
-              disabled={disabled}
-              onChange={(event) => update(index, { field: event.target.value })}
-            >
-              {fields.map((field) => (
-                <NativeSelectOption key={field} value={field}>
-                  {labelFor(fieldLabels, field)}
-                </NativeSelectOption>
-              ))}
-              <NativeSelectOption value="labels">{labelFor(fieldLabels, "labels")}</NativeSelectOption>
-              {condition.field !== "" && !fields.includes(condition.field) && condition.field !== "labels" && (
-                <NativeSelectOption value={condition.field}>{labelFor(fieldLabels, condition.field)}</NativeSelectOption>
-              )}
-            </NativeSelect>
+        <div key={index}>
+          {index > 0 && (
+            <div className="flex justify-center py-1" aria-hidden>
+              <span className="rounded-full border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t(($) => $.flow.and)}
+              </span>
+            </div>
+          )}
+          <div className="relative space-y-2 rounded-md border bg-background p-2.5 pr-8">
             <Button
               size="icon-sm"
               variant="ghost"
               aria-label={t(($) => $.flow.remove)}
               disabled={disabled}
+              className="absolute right-1 top-1 size-6 text-muted-foreground"
               onClick={() => onChange(conditions.filter((_, i) => i !== index))}
             >
-              <Trash2 aria-hidden />
+              <X className="size-3" aria-hidden />
             </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <NativeSelect
-              aria-label={t(($) => $.flow.operator)}
-              value={condition.op}
-              disabled={disabled}
-              onChange={(event) => update(index, { op: event.target.value })}
-            >
-              {operators.map((op) => (
-                <NativeSelectOption key={op} value={op}>
-                  {labelFor(opLabels, op)}
-                </NativeSelectOption>
-              ))}
-              {condition.op !== "" && !operators.includes(condition.op) && (
-                <NativeSelectOption value={condition.op}>{labelFor(opLabels, condition.op)}</NativeSelectOption>
-              )}
-            </NativeSelect>
-            {operatorTakesValue(condition.op) && (
-              <Input
-                aria-label={t(($) => $.flow.value)}
-                className="h-9"
-                placeholder={t(($) => $.flow.value_placeholder)}
-                value={conditionValueToText(condition.value)}
+
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t(($) => $.flow.field)}
+              </span>
+              <NativeSelect
+                aria-label={t(($) => $.flow.field)}
+                value={condition.field}
                 disabled={disabled}
-                onChange={(event) => update(index, { value: textToConditionValue(event.target.value) })}
-              />
+                onChange={(event) => update(index, { field: event.target.value })}
+              >
+                {fields.map((field) => (
+                  <NativeSelectOption key={field} value={field}>
+                    {labelFor(fieldLabels, field)}
+                  </NativeSelectOption>
+                ))}
+                <NativeSelectOption value="labels">{labelFor(fieldLabels, "labels")}</NativeSelectOption>
+                {condition.field !== "" && !fields.includes(condition.field) && condition.field !== "labels" && (
+                  <NativeSelectOption value={condition.field}>{labelFor(fieldLabels, condition.field)}</NativeSelectOption>
+                )}
+              </NativeSelect>
+            </label>
+
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t(($) => $.flow.operator)}
+              </span>
+              <NativeSelect
+                aria-label={t(($) => $.flow.operator)}
+                value={condition.op}
+                disabled={disabled}
+                onChange={(event) => update(index, { op: event.target.value })}
+              >
+                {operators.map((op) => (
+                  <NativeSelectOption key={op} value={op}>
+                    {labelFor(opLabels, op)}
+                  </NativeSelectOption>
+                ))}
+                {condition.op !== "" && !operators.includes(condition.op) && (
+                  <NativeSelectOption value={condition.op}>{labelFor(opLabels, condition.op)}</NativeSelectOption>
+                )}
+              </NativeSelect>
+            </label>
+
+            {operatorTakesValue(condition.op) && (
+              <label className="block space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t(($) => $.flow.value)}
+                </span>
+                <Input
+                  aria-label={t(($) => $.flow.value)}
+                  className="h-9"
+                  placeholder={t(($) => $.flow.value_placeholder)}
+                  value={conditionValueToText(condition.value)}
+                  disabled={disabled}
+                  onChange={(event) => update(index, { value: textToConditionValue(event.target.value) })}
+                />
+                {listOp(condition.op) && (
+                  <span className="block text-[11px] leading-snug text-muted-foreground">
+                    {t(($) => $.flow.value_list_hint)}
+                  </span>
+                )}
+              </label>
             )}
           </div>
         </div>
@@ -278,14 +314,13 @@ function ConditionRows({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 w-full text-xs"
+        className="mt-2 h-7 w-full text-xs"
         disabled={disabled}
         onClick={() => onChange([...conditions, { field: fields[0] ?? "status", op: operators[0] ?? "eq", value: "" }])}
       >
         <Plus className="size-3" aria-hidden />
         {t(($) => $.flow.add_condition)}
       </Button>
-      {conditions.length > 0 && <p className="text-xs text-muted-foreground">{t(($) => $.flow.value_list_hint)}</p>}
     </div>
   );
 }

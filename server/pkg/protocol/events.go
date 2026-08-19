@@ -143,6 +143,11 @@ const (
 	EventAutopilotRunStart = "autopilot:run_start"
 	EventAutopilotRunDone  = "autopilot:run_done"
 
+	// Automation events (user-defined task rules). One event per EVALUATION that
+	// reached a rule — applied, skipped or failed — so the flow editor's run
+	// history and the list's counters stay live without polling.
+	EventAutomationRun = "automation:run"
+
 	// Squad events
 	EventSquadCreated = "squad:created"
 	EventSquadUpdated = "squad:updated"

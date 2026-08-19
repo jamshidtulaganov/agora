@@ -40,6 +40,12 @@ export interface FlowCanvasNode {
   kicker: string;
   title: string;
   subtitle: string;
+  /** The node's result in the LATEST run, when one exists and the draft is
+   *  unedited: ok / failed / stopped (a filter ended the flow) / not_run
+   *  (a step after the stop). Absent = no run to show. */
+  outcome?: "ok" | "failed" | "stopped" | "not_run";
+  /** Hover text for the outcome dot (the run status in the user's language). */
+  outcomeLabel?: string;
 }
 
 interface AutomationFlowCanvasProps {
@@ -393,6 +399,18 @@ export function AutomationFlowCanvas({
                   style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
                 >
                   <span className={cn("absolute inset-y-0 left-0 w-1", accent.bar)} aria-hidden />
+                  {node.outcome && (
+                    <span
+                      title={node.outcomeLabel}
+                      className={cn(
+                        "absolute right-2 top-2 size-2 rounded-full",
+                        node.outcome === "ok" && "bg-success",
+                        node.outcome === "failed" && "bg-destructive",
+                        node.outcome === "stopped" && "bg-warning",
+                        node.outcome === "not_run" && "bg-muted-foreground/30",
+                      )}
+                    />
+                  )}
                   <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-md", accent.chip)}>
                     {node.kind === "trigger" ? (
                       <Zap className="size-4" aria-hidden />

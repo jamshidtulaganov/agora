@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // The automation engine: one entry point (emitAutomationEvent) called from the
@@ -289,4 +290,14 @@ func (h *Handler) recordAutomationRun(
 		slog.Warn("automation: run row write failed",
 			"error", err, "automation_id", uuidToString(rule.ID), "status", status)
 	}
+	// Live update: the run history and the list's counters refresh over WS the
+	// moment an evaluation lands. Attributed to the automation actor — the engine
+	// drops its own events on the way back in, so this cannot loop.
+	h.publish(protocol.EventAutomationRun, uuidToString(rule.WorkspaceID), automationActorType, uuidToString(rule.ID),
+		map[string]any{
+			"automation_id": uuidToString(rule.ID),
+			"issue_id":      uuidToString(ev.Issue.ID),
+			"status":        status,
+			"trigger_type":  ev.Trigger,
+		})
 }

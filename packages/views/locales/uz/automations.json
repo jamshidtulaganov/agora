@@ -73,7 +73,8 @@
     "conditions_count_few": "{{count}} shart",
     "conditions_count_many": "{{count}} shart",
     "fullscreen": "To‘liq ekran",
-    "exit_fullscreen": "To‘liq ekrandan chiqish"
+    "exit_fullscreen": "To‘liq ekrandan chiqish",
+    "and": "va"
   },
   "trigger": {
     "issue.created": "vazifa yaratilganda",

@@ -24,7 +24,7 @@ import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native
 import { Switch } from "@agora/ui/components/ui/switch";
 import { PageHeader } from "../../layout/page-header";
 import { useT, useTimeAgo } from "../../i18n";
-import { useNavigation } from "../../navigation";
+import { AppLink, useNavigation } from "../../navigation";
 import { AutomationFlowEditor, type AutomationFlowValue } from "./automation-flow-editor";
 
 // One flow: its header (name, scope, on/off), its canvas, and its recent runs. The
@@ -228,7 +228,13 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
           }}
         />
         {catalog && (
-          <AutomationFlowEditor value={flow} catalog={catalog} onChange={updateFlow} disabled={saving} />
+          <AutomationFlowEditor
+            value={flow}
+            catalog={catalog}
+            onChange={updateFlow}
+            disabled={saving}
+            lastRun={dirty ? undefined : runs?.[0]}
+          />
         )}
         {!isNew && <AutomationRunList runs={runs ?? []} />}
       </div>
@@ -241,6 +247,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
 function AutomationRunList({ runs }: { runs: AutomationRun[] }) {
   const { t } = useT("automations");
   const timeAgo = useTimeAgo();
+  const runPaths = useWorkspacePaths();
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
 
   const rows = useMemo(() => runs.slice(0, 20), [runs]);
@@ -262,6 +269,14 @@ function AutomationRunList({ runs }: { runs: AutomationRun[] }) {
               )}
             </div>
             {run.detail.reason && <p className="mt-1 text-muted-foreground">{run.detail.reason}</p>}
+            {run.issue_id && (
+              <AppLink
+                href={runPaths.issueDetail(run.issue_id)}
+                className="mt-1 inline-block text-muted-foreground underline-offset-2 hover:underline"
+              >
+                {t(($) => $.runs.open_issue)}
+              </AppLink>
+            )}
             {run.error !== "" && <p className="mt-1 text-destructive">{run.error}</p>}
             {(run.detail.actions?.length ?? 0) > 0 && (
               <ul className="mt-1 space-y-0.5 text-muted-foreground">

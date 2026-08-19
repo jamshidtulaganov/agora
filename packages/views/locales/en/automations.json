@@ -73,7 +73,8 @@
     "conditions_count_few": "{{count}} conditions",
     "conditions_count_many": "{{count}} conditions",
     "fullscreen": "Fullscreen",
-    "exit_fullscreen": "Exit fullscreen"
+    "exit_fullscreen": "Exit fullscreen",
+    "and": "and"
   },
   "trigger": {
     "issue.created": "an issue is created",

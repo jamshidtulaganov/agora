@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { AutomationCatalog, AutomationCondition, AutomationStep } from "@agora/core/automations";
+import type {
+  AutomationCatalog,
+  AutomationCondition,
+  AutomationRun,
+  AutomationStep,
+} from "@agora/core/automations";
 import { useT } from "../../i18n";
 import { AutomationFlowCanvas, type FlowCanvasNode } from "./automation-flow-canvas";
 import { AutomationNodePanel } from "./automation-node-panel";
@@ -23,9 +28,13 @@ interface AutomationFlowEditorProps {
   catalog: AutomationCatalog;
   onChange: (next: AutomationFlowValue) => void;
   disabled?: boolean;
+  /** The latest run, shown as per-node outcome dots. The caller passes it only
+   *  while the draft is UNEDITED — an edited flow no longer matches the run's
+   *  step order, and a misaligned badge is worse than none. */
+  lastRun?: AutomationRun | null;
 }
 
-export function AutomationFlowEditor({ value, catalog, onChange, disabled }: AutomationFlowEditorProps) {
+export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastRun }: AutomationFlowEditorProps) {
   const { t } = useT("automations");
   const triggerLabels = t(($) => $.trigger, { returnObjects: true }) as Record<string, string>;
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
@@ -51,6 +60,32 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled }: Aut
   }, [selectedId, value.actions.length]);
 
   const nodes: FlowCanvasNode[] = useMemo(() => {
+    // Outcome dots from the latest run: the run's action list is ordered per
+    // EXECUTED step, so index i is step i; steps past its end never ran (a
+    // filter stopped the flow). The trigger dot is the run's own status.
+    const runActions = lastRun?.detail.actions ?? [];
+    const outcomeFor = (index: number): { outcome?: FlowCanvasNode["outcome"]; outcomeLabel?: string } => {
+      if (!lastRun) return {};
+      const entry = runActions[index];
+      if (!entry) {
+        return lastRun.status === "applied"
+          ? { outcome: "not_run", outcomeLabel: t(($) => $.runs.skipped) }
+          : {};
+      }
+      if (entry.type === "filter" && entry.detail !== "passed") {
+        return { outcome: "stopped", outcomeLabel: t(($) => $.runs.skipped) };
+      }
+      return entry.ok
+        ? { outcome: "ok", outcomeLabel: t(($) => $.runs.applied) }
+        : { outcome: "failed", outcomeLabel: t(($) => $.runs.failed) };
+    };
+    const triggerOutcome = (): { outcome?: FlowCanvasNode["outcome"]; outcomeLabel?: string } => {
+      if (!lastRun) return {};
+      if (lastRun.status === "applied") return { outcome: "ok", outcomeLabel: t(($) => $.runs.applied) };
+      if (lastRun.status === "failed") return { outcome: "failed", outcomeLabel: t(($) => $.runs.failed) };
+      return { outcome: "stopped", outcomeLabel: t(($) => $.runs.skipped) };
+    };
+
     const triggerNode: FlowCanvasNode = {
       id: "trigger",
       kind: "trigger",
@@ -60,6 +95,7 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled }: Aut
         value.conditions.length === 0
           ? t(($) => $.flow.no_conditions_short)
           : t(($) => $.flow.conditions_count, { count: value.conditions.length }),
+      ...triggerOutcome(),
     };
     const stepNodes = value.actions.map((step, index): FlowCanvasNode => ({
       id: String(index),
@@ -74,9 +110,12 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled }: Aut
         targets: targetLabels,
         destinations: destinationLabels,
       }),
+      // A run that never got past the conditions ran no steps: leave step nodes
+      // clean instead of painting every one "not run".
+      ...(lastRun && lastRun.status !== "skipped" ? outcomeFor(index) : {}),
     }));
     return [triggerNode, ...stepNodes];
-  }, [t, triggerLabels, stepLabels, fieldLabels, opLabels, kindLabels, statusLabels, targetLabels, destinationLabels, value]);
+  }, [t, triggerLabels, stepLabels, fieldLabels, opLabels, kindLabels, statusLabels, targetLabels, destinationLabels, value, lastRun]);
 
   const setSteps = (actions: AutomationStep[]) => onChange({ ...value, actions });
 
