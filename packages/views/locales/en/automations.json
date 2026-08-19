@@ -86,7 +86,9 @@
     "body": "Message",
     "destination": "Send to",
     "text": "Text",
-    "agent_id": "Agent id"
+    "agent_id": "Agent id",
+    "chat_id": "Group chat id (optional)",
+    "chat_id_placeholder": "Defaults to the agent's own group"
   },
   "target": {
     "orchestrator": "the task's owner agent",

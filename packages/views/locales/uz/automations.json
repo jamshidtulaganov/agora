@@ -86,7 +86,9 @@
     "body": "Xabar",
     "destination": "Qayerga",
     "text": "Matn",
-    "agent_id": "Agent id"
+    "agent_id": "Agent id",
+    "chat_id": "Guruh chat id (majburiy emas)",
+    "chat_id_placeholder": "Standart holatda agentning o‘z guruhi"
   },
   "target": {
     "orchestrator": "vazifa egasi bo‘lgan agentga",

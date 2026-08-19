@@ -72,7 +72,7 @@ export function stepConfigFields(type: string): string[] {
     case "post_comment":
       return ["body"];
     case "send_telegram":
-      return ["destination", "text"];
+      return ["destination", "text", "chat_id"];
     default:
       return [];
   }

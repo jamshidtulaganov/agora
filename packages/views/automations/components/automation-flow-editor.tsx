@@ -519,6 +519,21 @@ function StepConfigFields({
         </div>
       )}
 
+      {/* The room is resolved from the agent's own bound group, so an explicit chat
+          id is an override — offered only for a group send, and only as a way to
+          post somewhere other than that group. */}
+      {fields.includes("chat_id") && config.destination === "group" && (
+        <LabeledRow label={t(($) => $.config.chat_id)}>
+          <Input
+            className="h-9"
+            placeholder={t(($) => $.config.chat_id_placeholder)}
+            value={config.chat_id ?? ""}
+            disabled={disabled}
+            onChange={(event) => set("chat_id", event.target.value)}
+          />
+        </LabeledRow>
+      )}
+
       {/* agent_id only matters when a specific agent was chosen, so it stays hidden
           until then instead of asking for a uuid nobody has. */}
       {fields.includes("agent_id") && (config.target === "agent" || config.agent === "agent") && (

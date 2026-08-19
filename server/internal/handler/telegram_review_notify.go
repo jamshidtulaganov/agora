@@ -7,14 +7,20 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"github.com/jamshidtulaganov/agora/server/internal/service"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
-// Review-verdict group notice — posts the code-review outcome to the project's
-// Telegram room (AGORA_TELEGRAM_REPORT_CHAT_ID), the same destination autopilot
-// reports and issue-created notices use.
+// Review-verdict group notice — posts the code-review outcome to the room this
+// issue's work already speaks in.
+//
+// The destination is RESOLVED, not configured: a workspace binds groups through
+// Settings → Integrations → Telegram (each agent gets its own bot, and the bound
+// chat lives on telegram_installation), so chat ids are dynamic per
+// workspace/agent. resolveIssueTelegramDestination prefers the speaker agent's own
+// bot in its own group and falls back to the platform bot with the project-scoped
+// AGORA_TELEGRAM_REPORT_CHAT_ID, which is now an override rather than a
+// requirement.
 //
 // This is the SHARED-ROOM half of the notification. The per-USER half needs
 // nothing here: NotifyReviewVerdict writes typed inbox items (review_failed /
@@ -33,14 +39,7 @@ import (
 // ("merge request opening", "returned to To Do") so the room reads one message
 // instead of inferring the workflow state from a verdict word.
 func (h *Handler) SendReviewVerdictGroupNotify(ctx context.Context, issue db.Issue, verdict, nextStep string) {
-	if h.telegramBot == nil {
-		return
-	}
 	if !h.reviewTelegramNotifyEnabled(ctx, issue) {
-		return
-	}
-	chatID := strings.TrimSpace(config.StringFrom(h.projectConfigOverrides(ctx, issue), "AGORA_TELEGRAM_REPORT_CHAT_ID"))
-	if chatID == "" {
 		return
 	}
 
@@ -66,13 +65,17 @@ func (h *Handler) SendReviewVerdictGroupNotify(ctx context.Context, issue db.Iss
 			h.issueKey(bgctx, issue), issue.Title, verdict, summary, nextStep, blockers,
 			h.resolveIssueAssigneeDisplayName(bgctx, issueToResponse(issue, h.getIssuePrefix(bgctx, issue.WorkspaceID))),
 		)
-		if err := h.telegramBot.SendMessageWithButton(bgctx, chatID, text, "Open issue", link); err != nil {
-			slog.Warn("telegram review notify: send failed",
-				"chat_id", chatID, "issue_id", uuidToString(issue.ID), "error", err)
+		dest, sent := h.sendIssueTelegramGroupNotice(bgctx, issue, "", text, "Open issue", link)
+		if !sent {
+			// No room bound and no override configured is the normal state of a
+			// workspace that has not connected a bot — not an error worth shouting
+			// about, but worth one line when a verdict went unannounced.
+			slog.Info("telegram review notify: no destination resolved",
+				"issue_id", uuidToString(issue.ID), "verdict", verdict)
 			return
 		}
 		slog.Info("telegram review notify posted",
-			"chat_id", chatID, "issue_id", uuidToString(issue.ID), "verdict", verdict)
+			"chat_id", dest.chatID, "via", dest.via, "issue_id", uuidToString(issue.ID), "verdict", verdict)
 	}()
 }
 

@@ -86,7 +86,9 @@
     "body": "消息",
     "destination": "发送到",
     "text": "文本",
-    "agent_id": "智能体 id"
+    "agent_id": "智能体 id",
+    "chat_id": "群聊 id（可选）",
+    "chat_id_placeholder": "默认使用该智能体自己的群"
   },
   "target": {
     "orchestrator": "任务的负责智能体",

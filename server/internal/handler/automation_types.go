@@ -313,6 +313,11 @@ func validateAutomationAction(action automationAction) error {
 		default:
 			return fmt.Errorf("send_telegram needs destination group|owner")
 		}
+		// chat_id is optional and only meaningful for a group: the destination is
+		// otherwise resolved from the agent's own bound group.
+		if strings.TrimSpace(action.Config["chat_id"]) != "" && strings.TrimSpace(action.Config["destination"]) != "group" {
+			return fmt.Errorf("chat_id only applies to destination group")
+		}
 	default:
 		return fmt.Errorf("unknown action type %q", action.Type)
 	}

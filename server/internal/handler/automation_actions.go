@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jamshidtulaganov/agora/server/internal/config"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
@@ -407,14 +406,18 @@ func (h *Handler) automationSendTelegram(
 
 	switch strings.ToLower(strings.TrimSpace(action.Config["destination"])) {
 	case "group":
-		chatID := strings.TrimSpace(config.StringFrom(h.projectConfigOverrides(ctx, issue), "AGORA_TELEGRAM_REPORT_CHAT_ID"))
-		if chatID == "" {
-			return "", errors.New("no AGORA_TELEGRAM_REPORT_CHAT_ID configured for this project")
+		// The room is RESOLVED, not configured: a workspace binds groups in
+		// Settings → Integrations → Telegram, so the chat id lives on the agent's
+		// installation. A step may still name one explicitly (chat_id) to post
+		// somewhere other than the agent's own room.
+		dest, sent := h.sendIssueTelegramGroupNotice(ctx, issue, action.Config["chat_id"], text, "", "")
+		if !sent {
+			if dest.chatID == "" {
+				return "", errors.New("no Telegram group is bound for this issue — connect a bot and add a group, or set chat_id on this step")
+			}
+			return "", fmt.Errorf("telegram send to %s failed", dest.chatID)
 		}
-		if err := h.telegramBot.SendMessage(ctx, chatID, text); err != nil {
-			return "", fmt.Errorf("telegram send: %w", err)
-		}
-		return "notified group " + chatID, nil
+		return "notified " + dest.chatID + " via the " + dest.via + " bot", nil
 	case "owner":
 		userID := h.automationIssueOwnerUserID(ctx, issue)
 		if userID == "" {
