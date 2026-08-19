@@ -210,6 +210,20 @@ func (h *Handler) InstallAutomationRecipe(w http.ResponseWriter, r *http.Request
 	// A body is optional: installing with defaults is one click.
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
+	// Idempotent by refusal: a second install of the same recipe would DOUBLE
+	// every flow (and a doubled notify posts twice per event). The gallery shows
+	// "Installed" from the same recipe_key, so a 409 here is a UI race or a
+	// double-click, not a real intent — the user edits or deletes the existing
+	// flows instead. (Live-observed: three installs stacked eleven flows.)
+	if rows, err := h.Queries.ListAutomationsForWorkspace(r.Context(), parseUUID(workspaceID)); err == nil {
+		for _, row := range rows {
+			if strings.TrimSpace(row.RecipeKey) == recipe.Key {
+				writeError(w, http.StatusConflict, "this recipe is already installed — edit or delete its flows instead of installing it again")
+				return
+			}
+		}
+	}
+
 	projectID, ok := h.automationProjectID(w, r, workspaceID, req.ProjectID)
 	if !ok {
 		return

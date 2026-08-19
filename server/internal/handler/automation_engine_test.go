@@ -3,7 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
@@ -344,5 +348,58 @@ func TestAutomationDisabledRuleNeverRuns(t *testing.T) {
 	reloaded, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 	if testHandler.issueHasLabelNameHandler(ctx, reloaded, "should-not-appear") {
 		t.Error("a disabled rule applied its action")
+	}
+}
+
+// TestInstallAutomationRecipeRefusesDuplicate: a second install of the same
+// recipe must 409, not stack duplicate flows — a doubled notify rule posts twice
+// per event, and this exact stacking was observed live (three installs, eleven
+// flows). Deleting the installed flows re-opens the door.
+func TestInstallAutomationRecipeRefusesDuplicate(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	install := func() *httptest.ResponseRecorder {
+		req := newRequest("POST", "/api/automations/recipes/"+automationRecipeStaleNudge+"/install?workspace_id="+testWorkspaceID,
+			map[string]any{"enabled": false})
+		chiCtx := chi.NewRouteContext()
+		chiCtx.URLParams.Add("key", automationRecipeStaleNudge)
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, chiCtx))
+		w := httptest.NewRecorder()
+		testHandler.InstallAutomationRecipe(w, req)
+		return w
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(),
+			`DELETE FROM automation WHERE workspace_id = $1::uuid AND recipe_key = $2`,
+			testWorkspaceID, automationRecipeStaleNudge)
+	})
+
+	if w := install(); w.Code != http.StatusCreated {
+		t.Fatalf("first install: %d %s", w.Code, w.Body.String())
+	}
+	if w := install(); w.Code != http.StatusConflict {
+		t.Fatalf("second install must 409, got %d %s", w.Code, w.Body.String())
+	}
+	var n int
+	if err := testPool.QueryRow(ctx,
+		`SELECT count(*) FROM automation WHERE workspace_id = $1::uuid AND recipe_key = $2`,
+		testWorkspaceID, automationRecipeStaleNudge).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("installed flows = %d, want 1 (the refused install must write nothing)", n)
+	}
+
+	// Deleting the installed flow re-opens the door.
+	if _, err := testPool.Exec(ctx,
+		`DELETE FROM automation WHERE workspace_id = $1::uuid AND recipe_key = $2`,
+		testWorkspaceID, automationRecipeStaleNudge); err != nil {
+		t.Fatal(err)
+	}
+	if w := install(); w.Code != http.StatusCreated {
+		t.Errorf("re-install after delete: %d %s", w.Code, w.Body.String())
 	}
 }

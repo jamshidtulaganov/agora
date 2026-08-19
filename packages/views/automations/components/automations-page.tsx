@@ -163,27 +163,34 @@ export function AutomationsPage() {
                 <span className="text-xs text-muted-foreground">
                   {t(($) => $.page.flows_count, { count: recipe.flows.length })}
                 </span>
-                <Button
-                  size="sm"
-                  variant={recipe.installed ? "ghost" : "outline"}
-                  className="h-7 text-xs"
-                  disabled={installRecipe.isPending}
-                  onClick={() =>
-                    installRecipe.mutate(
-                      { key: recipe.key },
-                      {
-                        onSuccess: () => toast.success(t(($) => $.page.install_done)),
-                        onError: () => toast.error(t(($) => $.page.install_failed)),
-                      },
-                    )
-                  }
-                >
-                  {installRecipe.isPending ? (
-                    <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />
-                  ) : (
-                    t(($) => $.page.install)
-                  )}
-                </Button>
+                {recipe.installed ? (
+                  // Already installed: there is nothing valid a second install
+                  // could do (the server refuses it too) — say so instead of
+                  // offering a button that stacks duplicate flows.
+                  <span className="text-xs text-muted-foreground">{t(($) => $.page.installed)}</span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={installRecipe.isPending}
+                    onClick={() =>
+                      installRecipe.mutate(
+                        { key: recipe.key },
+                        {
+                          onSuccess: () => toast.success(t(($) => $.page.install_done)),
+                          onError: () => toast.error(t(($) => $.page.install_failed)),
+                        },
+                      )
+                    }
+                  >
+                    {installRecipe.isPending ? (
+                      <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />
+                    ) : (
+                      t(($) => $.page.install)
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
