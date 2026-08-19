@@ -1059,6 +1059,16 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		"issue_status":        issue.Status,
 	})
 
+	// comment.created automations. This HTTP path is the only comment ingress
+	// rules should see: the engine's own post_comment/dispatch comments insert
+	// via Queries.CreateComment directly, so a rule's output cannot re-enter
+	// here (and the actor guard would drop it if it ever did).
+	h.emitAutomationEvent(r.Context(), AutomationEvent{
+		Trigger: automationTriggerCommentCreated, Issue: issue,
+		CommentID: comment.ID, CommentBody: comment.Content, CommentAuthor: authorType,
+		ActorType: authorType, ActorID: authorID,
+	})
+
 	// A reply in a resolved thread re-opens it. Done after CreateComment commits
 	// so the reply is visible regardless of the unresolve outcome. Shared with
 	// the agent task path (TaskService.createAgentComment) — both reply paths

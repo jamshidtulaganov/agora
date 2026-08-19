@@ -258,6 +258,16 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		return h.dispatchNextOrchestrationStep(ctx, run.ID, issue)
 	}
 	taskSvc.OnOrchestrationAnswerCommentsReady = h.reconcileOrchestrationAnswerComments
+	// issue.created automations fire from the service seam so EVERY create path
+	// (HTTP, Lark, Bitrix/Zoho sync, slice actions) emits — not just the HTTP
+	// handler. emitAutomationEvent detaches internally and drops automation-actor
+	// events, so this cannot slow a create or feed the engine its own writes.
+	h.IssueService.OnCreated = func(issue db.Issue, creatorType, actorID string) {
+		h.emitAutomationEvent(context.Background(), AutomationEvent{
+			Trigger: automationTriggerIssueCreated, Issue: issue,
+			ActorType: creatorType, ActorID: actorID,
+		})
+	}
 	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
 	// so self-hosted deployments without Bitrix pay nothing.
 	h.registerBitrixOutbound()

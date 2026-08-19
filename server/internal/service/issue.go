@@ -36,6 +36,12 @@ type IssueService struct {
 	// Metrics as "PostHog only", so leaving it unset is safe.
 	Metrics     *obsmetrics.BusinessMetrics
 	TaskService *TaskService
+	// OnCreated, if non-nil, runs after a successful create (post-commit,
+	// post-broadcast) for EVERY create path — HTTP, Lark, Bitrix/Zoho sync,
+	// slice actions. The handler layer injects the automation-engine emit here
+	// (same seam as TaskService.OnReviewVerdictLabeled): the service cannot
+	// call the engine directly without an import cycle.
+	OnCreated func(issue db.Issue, creatorType, actorID string)
 }
 
 func NewIssueService(q *db.Queries, tx TxStarter, bus *events.Bus, ac analytics.Client, ts *TaskService) *IssueService {
@@ -356,6 +362,9 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	s.publishIssueCreated(issue, attachments, p.CreatorType, actorID, opts)
 	s.captureCreatedAnalytics(issue, p.CreatorType, actorID, opts)
 	s.maybeEnqueueOnAssign(ctx, issue, p.CreatorType, actorID)
+	if s.OnCreated != nil {
+		s.OnCreated(issue, p.CreatorType, actorID)
+	}
 
 	return IssueCreateResult{Issue: issue, Attachments: attachments}, nil
 }
