@@ -303,28 +303,98 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		h.wakeOrchestratorManual(ctx, issue, "QA passed on this task — dispatch code review (run_review) to your reviewer pick", userID)
 		return
 	}
-	// Serialize per issue: two ingress paths can land the same qa:pass
-	// concurrently (capture + CLI label attach), and both would pass the
-	// marker check before either writes its dispatch comment.
+	h.dispatchRunReview(ctx, issue, "member", userID, "qa:pass")
+}
+
+// maybeRunReviewOnCodeReviewStage is the REVIEW-FIRST trigger: the issue's
+// external tracker (Bitrix) moved the task into its Code Review column, so the
+// code review runs BEFORE the QA/E2E gate instead of after it (the qa:pass
+// trigger above). Both orders coexist: a team driving status from Bitrix gets
+// review → E2E (maybeRunTestsOnReviewPass), a team driving it from Agora keeps
+// QA → review.
+//
+// Guards live here (the caller has already established that the stage was newly
+// entered); everything from the per-issue lock down is shared with the qa:pass
+// path via dispatchRunReview.
+func (h *Handler) maybeRunReviewOnCodeReviewStage(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	h.maybeRunReviewOnReviewEntry(ctx, issue, actorType, actorID, "code_review_stage")
+}
+
+// maybeRunReviewOnInReview is the same review-first trigger for work driven from
+// AGORA rather than from the tracker: the issue entered in_review, which is the
+// board's own code-review column. Fires alongside the in_review QA hook — each is
+// independently gated, and the review dispatch's in-flight marker keeps a later
+// qa:pass from summoning a second reviewer for the same cycle.
+func (h *Handler) maybeRunReviewOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	h.maybeRunReviewOnReviewEntry(ctx, issue, actorType, actorID, "in_review_entry")
+}
+
+// maybeRunReviewOnReviewEntry holds the guards shared by every review-FIRST
+// trigger (a tracker column move, an Agora status move). trigger is logged so the
+// dispatch's origin stays visible.
+func (h *Handler) maybeRunReviewOnReviewEntry(ctx context.Context, issue db.Issue, actorType, actorID, trigger string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
+	if !h.autoReviewEnabled(ctx, issue) {
+		return
+	}
+	// Manual pipeline mode: the orchestrator picks the reviewer itself.
+	if pipelineManual(issue) {
+		h.wakeOrchestratorManual(ctx, issue,
+			"the tracker moved this task into Code Review — dispatch code review (run_review) to your reviewer pick", actorID)
+		return
+	}
+	h.dispatchRunReview(ctx, issue, actorType, actorID, trigger)
+}
+
+// dispatchRunReview posts the run_review @mention comment that summons an
+// independent reviewer, and is the ONLY place that does — both triggers (qa:pass
+// and the tracker's Code Review column) funnel through it so their guards can
+// never drift apart. Guards, in order:
+//   - a per-issue lock (two ingress paths can race the same trigger, and both
+//     would clear the marker check before either writes its dispatch comment);
+//   - a review verdict already stands → the cycle is judged (a fresh cycle
+//     clears the labels first, clearStaleQAGateLabels);
+//   - no known PR/MR → there is no diff to review. GitLab MRs count: the
+//     comment-URL trigger (migration 124) links them as github_pull_request
+//     rows with provider='gitlab';
+//   - a dispatch from THIS cycle is still awaiting its verdict;
+//   - no reviewer resolves that differs from the author agent.
+//
+// Reports whether a dispatch was actually posted (callers log; tests assert).
+func (h *Handler) dispatchRunReview(ctx context.Context, issue db.Issue, actorType, actorID, trigger string) bool {
 	defer lockIssueQA(uuidToString(issue.ID))()
 
 	if h.issueHasLabel(ctx, issue, service.ReviewLabelPass) || h.issueHasLabel(ctx, issue, service.ReviewLabelFail) {
-		return
+		return false
 	}
+	// The reviewable artifact: an open PR/MR, or — in the review-first order,
+	// where the MR is opened only AFTER a clean review — the change's branch.
+	// Without either there is no diff to read, so there is nothing to review.
+	branchOnly := ""
 	if !h.issueHasKnownPR(ctx, issue) {
-		return
+		branchOnly = h.issueReviewBranch(ctx, issue)
+		if branchOnly == "" {
+			slog.Info("auto run_review: no PR/MR and no resolvable branch — nothing to review",
+				"issue_id", uuidToString(issue.ID), "trigger", trigger)
+			return false
+		}
 	}
 	if h.reviewDispatchInFlight(ctx, issue) {
-		return
+		return false
 	}
 	reviewer, ok := h.resolveReviewerAgent(ctx, issue)
 	if !ok {
 		slog.Info("auto run_review: no reviewer distinct from the author resolves — skipping",
-			"issue_id", uuidToString(issue.ID))
-		return
+			"issue_id", uuidToString(issue.ID), "trigger", trigger)
+		return false
 	}
 
 	instruction := buildSliceInstruction(sliceActionRunReview, "") + h.sliceActionReviewPRContext(ctx, issue)
+	if branchOnly != "" {
+		instruction += h.sliceActionReviewBranchContext(ctx, issue, branchOnly)
+	}
 	if brief := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); brief != "" {
 		instruction += "\n" + brief
 	}
@@ -332,10 +402,11 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 	// The ORCHESTRATOR is shown dispatching the review — not the human who
 	// merely nudged the status (falls back to the actor when there is no agent
 	// orchestrator).
-	authorType, authorID := h.dispatchAuthor(ctx, issue, "member", userID)
+	authorType, authorID := h.dispatchAuthor(ctx, issue, actorType, actorID)
 	if !authorID.Valid {
-		slog.Warn("auto run_review: no valid dispatch author, skipping", "actor_id", userID, "issue_id", uuidToString(issue.ID))
-		return
+		slog.Warn("auto run_review: no valid dispatch author, skipping",
+			"actor_id", actorID, "issue_id", uuidToString(issue.ID), "trigger", trigger)
+		return false
 	}
 	content := agentProtocolMarker(sliceActionRunReview) + reviewDispatchMarker + "\n" +
 		fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(reviewer.Name), uuidToString(reviewer.ID)) + instruction
@@ -349,10 +420,76 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		ParentID:    pgtype.UUID{Valid: false},
 	})
 	if err != nil {
-		slog.Warn("auto run_review: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
-		return
+		slog.Warn("auto run_review: create comment failed", "error", err,
+			"issue_id", uuidToString(issue.ID), "trigger", trigger)
+		return false
 	}
 	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(authorID), nil)
-	slog.Info("auto run_review fired on qa:pass",
-		"issue_id", uuidToString(issue.ID), "reviewer_agent_id", uuidToString(reviewer.ID))
+	slog.Info("auto run_review fired",
+		"issue_id", uuidToString(issue.ID), "reviewer_agent_id", uuidToString(reviewer.ID), "trigger", trigger)
+	return true
+}
+
+// maybeRunTestsOnReviewPass is the review → E2E chain: the reviewer's verdict
+// landed as review:pass, so the QA squad now authors the E2E specs for the
+// CHANGED behavior and executes them together with the project's standing BASE
+// SUITE — the "did this change break anything that already worked?" regression
+// pass. This is the stage that runs ONLY AFTER the review stage is done.
+//
+// Two dispatches, deliberately:
+//   - maybeGenTests authors the cases (with inline Playwright scripts) for the
+//     new behavior. It is ASYNC — the cases land later, on the agent's
+//     ```test-cases``` comment, which self-chains compile → run (comment.go).
+//   - maybeRunTestsOnInReview executes what ALREADY exists right now: the
+//     issue's earlier cases plus the project base suite. Without it the
+//     regression pass would wait on authoring that may have nothing to add.
+//
+// Both are individually idempotent, self-gated on AGORA_AUTO_QA_ENABLED, and
+// no-op when there is nothing to author/run. Fired from all three review-verdict
+// ingress paths (CLI label attach, HTTP comment capture, task-completion
+// capture) so the chain cannot depend on how the verdict arrived.
+func (h *Handler) maybeRunTestsOnReviewPass(ctx context.Context, issue db.Issue, gateLabel, actorID string) {
+	if strings.ToLower(strings.TrimSpace(gateLabel)) != service.ReviewLabelPass {
+		return
+	}
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
+	if !h.autoQAEnabled(ctx, issue) {
+		return
+	}
+	// A landed review:fail means the diff is going back to the developer — the
+	// pass label may still be absent/stale. Never start an E2E pass on a diff
+	// the reviewer rejected.
+	if h.issueHasLabel(ctx, issue, service.ReviewLabelFail) {
+		return
+	}
+	actorType := "member"
+	if issue.CreatorType == "agent" {
+		actorType = "agent"
+	}
+	if strings.TrimSpace(actorID) == "" {
+		actorID = uuidToString(issue.CreatorID)
+	}
+	h.maybeGenTests(ctx, issue, actorType, actorID, false)
+	h.maybeRunTestsOnInReview(ctx, issue, actorType, actorID)
+}
+
+// sliceActionReviewBranchContext is the review-first dispatch's diff pointer:
+// there is no merge request yet (it is opened only after a clean review), so the
+// reviewer is told exactly which branch carries the change and how to read its
+// diff against the integration base. Without this the run_review recipe's
+// "locate the PR" steps find nothing and the reviewer improvises.
+func (h *Handler) sliceActionReviewBranchContext(ctx context.Context, issue db.Issue, branch string) string {
+	isGitLab, hint := h.issueGitLabRepoConfig(ctx, issue)
+	base := "the repository default branch"
+	if isGitLab {
+		base = "`" + gitlabBaseBranch(hint) + "`"
+	}
+	return " NO PULL/MERGE REQUEST EXISTS YET — the change lives on branch `" + branch +
+		"`, and the merge request is opened only AFTER your review passes. Do NOT hunt for a PR: " +
+		"`git fetch origin " + branch + "` and read the diff with " +
+		"`git diff $(git merge-base " + base + " origin/" + branch + ")..origin/" + branch + "` " +
+		"(take `git rev-parse origin/" + branch + "` as the reviewed commit_sha). " +
+		"You still do NOT push, commit, or open the merge request yourself — a clean verdict is what opens it."
 }

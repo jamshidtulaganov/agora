@@ -2948,6 +2948,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		safeGo("freshReviewCycle:in_review", func() {
 			h.clearStaleQAGateLabels(context.Background(), issue)
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
+			// Review-first: in_review IS the code-review column on the Agora board,
+			// so entering it summons the independent reviewer the same way a
+			// tracker's Code Review column does. Self-gated on
+			// AGORA_AUTO_REVIEW_ENABLED and needs a branch or PR to read.
+			h.maybeRunReviewOnInReview(context.Background(), issue, actorType, actorID)
 		})
 	}
 

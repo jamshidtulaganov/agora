@@ -164,14 +164,40 @@ func qaLocalDirectoryClause(localPath string) string {
 	return " QA ENVIRONMENT = LOCAL (this daemon's folder, NOT a deployed box): this project runs on THIS machine — you are on the developer's own daemon. The code under test is in your CURRENT WORKING DIRECTORY: run `pwd` to get its absolute path (call it $QADIR — in worktree-isolation mode this is the issue's own worktree with its changes; in in-place mode it is the project folder " + localPath + "). Bring the app up on localhost via the daemon: POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview/status with body {\"workdir\":\"$QADIR\"}; if it is not running, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview with the same body (it auto-detects the dev command, installs deps, and returns {\"url\":\"http://127.0.0.1:<port>/\"} — add \"command\" from the project QA smoke command below if one is set) and smoke that http://127.0.0.1:<port>/ URL. That URL is ALSO your `qa-target:<url>` key for the shared review browser. TREE SAFETY: if $QADIR is the developer's real in-place working tree, NEVER run `git checkout`/`switch`/`reset`/`stash` there or edit files outside your task; if a baseline checkout turns out to be needed at all (only when a branch command went red — see the BASELINE step), create a throwaway scratch worktree instead: `git -C $QADIR worktree add <tmpdir> <merge-base>`, run the failing commands there, then `git -C $QADIR worktree remove <tmpdir>` and `git -C $QADIR worktree prune`."
 }
 
+// qaTargetURLMetaKey is the per-issue QA target override. CI stamps it when it
+// deploys a THROWAWAY environment for this issue's branch (a GitLab review app
+// for `btx-<taskId>`, an ephemeral compose stack, a preview deployment), so the
+// E2E/regression pass runs against the app built from THIS diff instead of the
+// project's shared staging.
+const qaTargetURLMetaKey = "qa_target_url"
+
+// issueQATargetOverride reads the per-issue QA target override off metadata.
+// Only http(s) URLs are honoured: the value ends up in an agent instruction and
+// as the shared review browser's `qa-target:<url>` key, so a non-URL would send
+// the run somewhere undefined rather than failing loudly.
+func issueQATargetOverride(raw []byte) string {
+	url := strings.TrimSpace(metaString(raw, qaTargetURLMetaKey))
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		return url
+	}
+	return ""
+}
+
 // resolveQAPreviewURL resolves the URL the QA review page's Live testing bay
-// embeds for an issue: the developer's own running app (dev_apps), else the
-// developer's standing dev server for the project (user_dev_server), else the
-// project's configured qa_smoke_url (the team's BYO staging). "" when nothing
-// resolves — e.g. a local_directory project (the Live pane drives the local
-// daemon preview instead) or an Agora-self-repo issue with only a per-task
-// worktree (the exact artifact Product view covers that).
+// embeds for an issue: the per-issue qa_target_url override (a CI-deployed
+// throwaway environment for this branch), else the developer's own running app
+// (dev_apps), else the developer's standing dev server for the project
+// (user_dev_server), else the project's configured qa_smoke_url (the team's BYO
+// staging). "" when nothing resolves — e.g. a local_directory project (the Live
+// pane drives the local daemon preview instead) or an Agora-self-repo issue with
+// only a per-task worktree (the exact artifact Product view covers that).
 func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
+	// The per-issue override wins over every standing target: it names an
+	// environment built from THIS issue's diff, which is the whole point of a
+	// regression run — a shared staging box may not carry the change at all.
+	if url := issueQATargetOverride(issue.Metadata); url != "" {
+		return url
+	}
 	// A concrete declared dev_apps URL (the dev's own running app) wins.
 	if url := h.devLocalAppURL(ctx, issue); url != "" {
 		return url

@@ -52,6 +52,8 @@ const BACKEND_KIND: Record<string, AgentProtocolKind> = {
   gen_test_cases: "gen_tests",
   run_test_cases: "gen_tests",
   compile_tests: "gen_tests",
+  commit_tests: "gen_tests",
+  open_pr: "delegate",
   design_proposal: "design",
   gen_design_manifest: "design",
   gen_design_context: "design",

@@ -240,6 +240,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// completion advances the merge instead of stalling.
 	taskSvc.OnReviewVerdictLabeled = func(ctx context.Context, issue db.Issue, verdict, actorID string) {
 		go h.maybeMergeOnQAPass(context.Background(), issue, "review:"+verdict, actorID)
+		// review:pass ALSO opens the E2E/regression stage (review → E2E chain).
+		go h.onReviewVerdictLabel(context.Background(), issue, "review:"+verdict, actorID)
 	}
 	taskSvc.OnOrchestrationTaskTerminal = func(ctx context.Context, task db.AgentTaskQueue) error {
 		return h.handleOrchestrationTaskTerminal(ctx, task)

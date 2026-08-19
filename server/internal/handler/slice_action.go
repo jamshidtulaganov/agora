@@ -51,6 +51,8 @@ const (
 	sliceActionGenTests          = "gen_test_cases"
 	sliceActionRunTests          = "run_test_cases"
 	sliceActionCompileTests      = "compile_tests"
+	sliceActionCommitTests       = "commit_tests"
+	sliceActionOpenPR            = "open_pr"
 	sliceActionDesignProposal    = "design_proposal"
 	sliceActionGenDesignContext  = "gen_design_context"
 	sliceActionGenDesignManifest = "gen_design_manifest" // installed-client alias
@@ -63,7 +65,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignContext, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionCommitTests, sliceActionOpenPR, sliceActionDesignProposal, sliceActionGenDesignContext, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
 		return true
 	default:
 		return false
@@ -77,7 +79,7 @@ func isKnownSliceActionKind(kind string) bool {
 // assignee (see resolveSliceActionAgent).
 func isQASliceAction(kind string) bool {
 	switch kind {
-	case sliceActionRunQA, sliceActionGenTests, sliceActionRunTests:
+	case sliceActionRunQA, sliceActionGenTests, sliceActionRunTests, sliceActionCommitTests:
 		return true
 	default:
 		return false
@@ -189,6 +191,15 @@ func buildSliceInstruction(kind, scope string) string {
 		base = sliceActionTemplate("gen_test_cases")
 	case sliceActionRunTests:
 		base = sliceActionTemplate("run_test_cases")
+	case sliceActionCommitTests:
+		// Promotes the issue's PASSING compiled specs from platform rows into the
+		// repository, on the change's own branch, so the project's committed
+		// regression suite grows with every reviewed change.
+		base = sliceActionTemplate("commit_tests")
+	case sliceActionOpenPR:
+		// Review-first order: the merge request is opened only AFTER a clean
+		// review, by the author side — the reviewer never pushes.
+		base = sliceActionTemplate("open_pr")
 	case sliceActionCompileTests:
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +

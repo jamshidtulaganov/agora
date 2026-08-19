@@ -204,6 +204,7 @@ func (h *Handler) OverrideQAVerdict(w http.ResponseWriter, r *http.Request) {
 		go h.maybeAutoDocsOnLabel(context.Background(), issue, label, userID)
 		go h.maybeMergeOnQAPass(context.Background(), issue, label, userID)
 		go h.maybeRunReviewOnQAPass(context.Background(), issue, label, userID)
+		go h.maybeCommitSpecsOnQAPass(context.Background(), issue, label, userID)
 		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label, userID)
 		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label, userID)
 		go h.clearQAFailAutorouteBudget(context.Background(), issue, label)
