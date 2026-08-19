@@ -1215,15 +1215,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// /{id} so "catalog" and "recipes" are never parsed as an id.
 			r.Route("/api/automations", func(r chi.Router) {
 				r.Get("/", h.ListAutomations)
-				r.Post("/", h.CreateAutomation)
+				// Writes are human-only (same reasoning as project config): an
+				// agent must not author or flip a rule that dispatches agents,
+				// moves statuses or reassigns issues — that would let a run
+				// rewrite its own pipeline mid-flight. Reads stay open so agents
+				// can inspect the rules that route them.
+				r.With(handler.RequireHumanActor).Post("/", h.CreateAutomation)
 				r.Get("/catalog", h.GetAutomationCatalog)
 				r.Get("/recipes", h.ListAutomationRecipes)
-				r.Post("/recipes/{key}/install", h.InstallAutomationRecipe)
+				r.With(handler.RequireHumanActor).Post("/recipes/{key}/install", h.InstallAutomationRecipe)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAutomation)
-					r.Patch("/", h.UpdateAutomation)
-					r.Delete("/", h.DeleteAutomation)
-					r.Post("/enabled", h.SetAutomationEnabled)
+					r.With(handler.RequireHumanActor).Patch("/", h.UpdateAutomation)
+					r.With(handler.RequireHumanActor).Delete("/", h.DeleteAutomation)
+					r.With(handler.RequireHumanActor).Post("/enabled", h.SetAutomationEnabled)
 					r.Get("/runs", h.ListAutomationRuns)
 				})
 			})
