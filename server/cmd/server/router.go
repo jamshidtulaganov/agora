@@ -1210,6 +1210,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Post("/api/issues/{id}/squad-evaluated", h.RecordSquadLeaderEvaluation)
 
 			// Autopilots
+			// Automations: user-defined task-management flows (WHEN trigger IF
+			// conditions THEN steps). The catalog + recipes routes sit BEFORE
+			// /{id} so "catalog" and "recipes" are never parsed as an id.
+			r.Route("/api/automations", func(r chi.Router) {
+				r.Get("/", h.ListAutomations)
+				r.Post("/", h.CreateAutomation)
+				r.Get("/catalog", h.GetAutomationCatalog)
+				r.Get("/recipes", h.ListAutomationRecipes)
+				r.Post("/recipes/{key}/install", h.InstallAutomationRecipe)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetAutomation)
+					r.Patch("/", h.UpdateAutomation)
+					r.Delete("/", h.DeleteAutomation)
+					r.Post("/enabled", h.SetAutomationEnabled)
+					r.Get("/runs", h.ListAutomationRuns)
+				})
+			})
+
 			r.Route("/api/autopilots", func(r chi.Router) {
 				r.Get("/", h.ListAutopilots)
 				r.Post("/", h.CreateAutopilot)

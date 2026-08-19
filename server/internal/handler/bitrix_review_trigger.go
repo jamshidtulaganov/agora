@@ -61,6 +61,16 @@ func bitrixCodeReviewEntered(prevStage, newStage string) bool {
 // triggering. Everything downstream is best-effort and self-gated, so a miss
 // costs a review, never a sync.
 func (h *Handler) onBitrixStageChanged(ctx context.Context, issue db.Issue, prevStage, newStage string) {
+	// User-defined automations see EVERY column move (a rule may care about
+	// "Ready for release" or a board this code knows nothing about), so this is
+	// emitted before the code-review-specific gate below.
+	if strings.TrimSpace(newStage) != "" && !strings.EqualFold(strings.TrimSpace(prevStage), strings.TrimSpace(newStage)) {
+		h.emitAutomationEvent(ctx, AutomationEvent{
+			Trigger: automationTriggerStageChanged, Issue: issue,
+			Stage: newStage, PrevStage: prevStage,
+			ActorType: "system", ActorID: "",
+		})
+	}
 	if !bitrixCodeReviewEntered(prevStage, newStage) {
 		return
 	}

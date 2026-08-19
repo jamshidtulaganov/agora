@@ -33,6 +33,31 @@ Execution modes:
 
 `issue-title-template` only supports `{{date}}`. Do not invent `{{trigger_id}}`, `{{branch}}`, or other variables.
 
+### Autopilots vs automations — pick the right one
+
+They are different features and answer different questions.
+
+- An **autopilot** starts work on a SCHEDULE or an inbound WEBHOOK. It has no
+  originating task; it creates one (or runs an agent directly). Use it for "every
+  weekday morning", "when CI posts a deploy hook".
+- An **automation** reacts to something that happened to an EXISTING task inside
+  Agora: a status change, a label, an assignment, a comment, a tracker column move.
+  It is stored as `WHEN trigger IF conditions THEN steps` (table `automation`), it is
+  editable in the Automations UI, and every evaluation — applied OR skipped, with the
+  reason — lands in `automation_run`. Steps can set a status, assign, add/remove a
+  label, post a comment, dispatch a slice action (`run_review`, `run_qa`, …), or send
+  a Telegram notice. There is deliberately no "call any URL" step.
+
+So: "when the tracker moves a task to Code Review, review it and tell the room" is an
+automation, not an autopilot. If a human asks you to build that, point them at the
+Automations page (a recipe already installs it) rather than writing a new autopilot.
+
+Automations guard themselves against feeding each other: every write they perform is
+attributed to the actor type `automation` (which the engine ignores on the way back
+in), and each rule applies to the same task at most once per cooldown and a bounded
+number of times per hour. A rule that "did nothing" almost always has a `skipped` row
+explaining which condition failed — read that before changing the rule.
+
 ## CLI
 
 ```bash

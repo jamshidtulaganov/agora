@@ -313,4 +313,13 @@ func (h *Handler) onReviewVerdictLabel(ctx context.Context, issue db.Issue, gate
 		fresh = reloaded
 	}
 	h.SendReviewVerdictGroupNotify(ctx, fresh, verdict, h.reviewVerdictNextStep(ctx, fresh, verdict))
+
+	// A verdict label set by an AGENT lands through the capture path, not the label
+	// endpoint, so automations have to be emitted here too — otherwise a rule on
+	// "review:fail attached" would fire for a human's CLI attach and stay silent for
+	// the reviewer's own verdict, which is the case people actually write it for.
+	h.emitAutomationEvent(ctx, AutomationEvent{
+		Trigger: automationTriggerLabelAttached, Issue: fresh, Label: label,
+		ActorType: "agent", ActorID: actorID,
+	})
 }

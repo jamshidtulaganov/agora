@@ -424,6 +424,10 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		go h.maybeRunReviewOnQAPass(context.Background(), issue, label.Name, userID)
 		go h.maybeCommitSpecsOnQAPass(context.Background(), issue, label.Name, userID)
 		go h.onReviewVerdictLabel(context.Background(), issue, label.Name, userID)
+		h.emitAutomationEvent(r.Context(), AutomationEvent{
+			Trigger: automationTriggerLabelAttached, Issue: issue, Label: label.Name,
+			ActorType: "member", ActorID: userID,
+		})
 		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
 		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
 		go h.clearQAFailAutorouteBudget(context.Background(), issue, label.Name)

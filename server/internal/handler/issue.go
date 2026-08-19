@@ -2992,6 +2992,23 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		h.notifyParentOfChildDone(r.Context(), prevIssue, issue, actorType, actorID)
 	}
 
+	// User-defined automations. Emitted from here — where the before/after is
+	// known — rather than off the event bus, whose issue:updated payload cannot
+	// say which field moved. Detached inside; a rule never delays this response.
+	if statusChanged {
+		h.emitAutomationEvent(r.Context(), AutomationEvent{
+			Trigger: automationTriggerStatusChanged, Issue: issue,
+			FromStatus: prevIssue.Status, ToStatus: issue.Status,
+			ActorType: actorType, ActorID: actorID,
+		})
+	}
+	if assigneeChanged {
+		h.emitAutomationEvent(r.Context(), AutomationEvent{
+			Trigger: automationTriggerAssigned, Issue: issue,
+			ActorType: actorType, ActorID: actorID,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
