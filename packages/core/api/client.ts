@@ -221,6 +221,23 @@ import { createRequestId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
+  parseAutomationCatalogResponse,
+  parseAutomationRecipesResponse,
+  parseAutomationResponse,
+  parseAutomationRunsResponse,
+  parseAutomationsResponse,
+  parseInstallRecipeResponse,
+} from "../automations/schema";
+import type {
+  Automation,
+  AutomationCatalog,
+  AutomationWriteRequest,
+  InstallAutomationRecipeResponse,
+  ListAutomationRecipesResponse,
+  ListAutomationRunsResponse,
+  ListAutomationsResponse,
+} from "../automations/types";
+import {
   DesignContextRevisionSchema,
   DesignContextStateSchema,
   EMPTY_DESIGN_CONTEXT_REVISION,
@@ -3124,6 +3141,70 @@ export class ApiClient {
     return parseWithFallback(raw, SquadMemberStatusListResponseSchema, EMPTY_SQUAD_MEMBER_STATUS_LIST, {
       endpoint: "GET /api/squads/:id/members/status",
     }) as SquadMemberStatusListResponse;
+  }
+
+  // Automations (task-management flow rules). Every response runs through a
+  // lenient schema: the trigger/step names are server-driven, so an older client
+  // must keep rendering a flow that mentions a node type it does not know.
+  async listAutomations(): Promise<ListAutomationsResponse> {
+    return parseAutomationsResponse(await this.fetch<unknown>("/api/automations"));
+  }
+
+  async getAutomation(id: string): Promise<Automation> {
+    return parseAutomationResponse(await this.fetch<unknown>(`/api/automations/${id}`));
+  }
+
+  async createAutomation(data: AutomationWriteRequest): Promise<Automation> {
+    return parseAutomationResponse(
+      await this.fetch<unknown>("/api/automations", { method: "POST", body: JSON.stringify(data) }),
+    );
+  }
+
+  async updateAutomation(id: string, data: AutomationWriteRequest): Promise<Automation> {
+    return parseAutomationResponse(
+      await this.fetch<unknown>(`/api/automations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    );
+  }
+
+  async setAutomationEnabled(id: string, enabled: boolean): Promise<Automation> {
+    return parseAutomationResponse(
+      await this.fetch<unknown>(`/api/automations/${id}/enabled`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
+    );
+  }
+
+  async deleteAutomation(id: string): Promise<void> {
+    await this.fetch<void>(`/api/automations/${id}`, { method: "DELETE" });
+  }
+
+  async listAutomationRuns(id: string, limit?: number): Promise<ListAutomationRunsResponse> {
+    const search = new URLSearchParams();
+    if (limit) search.set("limit", String(limit));
+    return parseAutomationRunsResponse(
+      await this.fetch<unknown>(`/api/automations/${id}/runs?${search}`),
+    );
+  }
+
+  async getAutomationCatalog(): Promise<AutomationCatalog> {
+    return parseAutomationCatalogResponse(await this.fetch<unknown>("/api/automations/catalog"));
+  }
+
+  async listAutomationRecipes(): Promise<ListAutomationRecipesResponse> {
+    return parseAutomationRecipesResponse(await this.fetch<unknown>("/api/automations/recipes"));
+  }
+
+  async installAutomationRecipe(
+    key: string,
+    body?: { project_id?: string | null; enabled?: boolean },
+  ): Promise<InstallAutomationRecipeResponse> {
+    return parseInstallRecipeResponse(
+      await this.fetch<unknown>(`/api/automations/recipes/${key}/install`, {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      }),
+    );
   }
 
   // Autopilots
