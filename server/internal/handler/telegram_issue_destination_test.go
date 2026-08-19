@@ -15,18 +15,35 @@ func TestChooseAutomationDestinationOrder(t *testing.T) {
 	agentBot := telegram.NewBotClient("agent-token")
 	platformBot := telegram.NewBotClient("platform-token")
 
+	wsBot := telegram.NewBotClient("workspace-token")
+
 	cases := []struct {
 		name        string
 		explicit    string
 		agentBot    *telegram.BotClient
 		agentChat   string
 		agentReach  bool
+		wsBot       *telegram.BotClient
+		wsChat      string
 		platform    *telegram.BotClient
 		projectChat string
 		wantChat    string
 		wantVia     string
 		wantOK      bool
 	}{
+		{
+			// The COMMON case on a tracker-synced board: the issue is assigned to a
+			// MEMBER, so no agent carries a bot — the workspace's own bound room
+			// must receive the notice (this was live-broken on SD-32).
+			name:  "member-assigned issue falls back to the workspace bot's room",
+			wsBot: wsBot, wsChat: "-1002849950172", platform: platformBot,
+			wantChat: "-1002849950172", wantVia: "workspace", wantOK: true,
+		},
+		{
+			name:     "the agent's own group beats the workspace fallback",
+			agentBot: agentBot, agentChat: "-1002", wsBot: wsBot, wsChat: "-1009",
+			wantChat: "-1002", wantVia: "agent", wantOK: true,
+		},
 		{
 			name:     "explicit room, agent bot is in it → posts as the agent",
 			explicit: "-1001", agentBot: agentBot, agentChat: "-1002", agentReach: true,
@@ -62,7 +79,7 @@ func TestChooseAutomationDestinationOrder(t *testing.T) {
 
 	for _, c := range cases {
 		got, ok := chooseIssueTelegramDestination(
-			c.explicit, c.agentBot, c.agentChat, c.agentReach, c.platform, c.projectChat,
+			c.explicit, c.agentBot, c.agentChat, c.agentReach, c.wsBot, c.wsChat, c.platform, c.projectChat,
 		)
 		if ok != c.wantOK {
 			t.Errorf("%s: ok = %v, want %v", c.name, ok, c.wantOK)

@@ -44,6 +44,35 @@ type issueTelegramDestination struct {
 	via string
 }
 
+// workspaceTelegramClient finds ANY active installation in the workspace whose
+// bot has a bound group — the workspace's team room. This is the fallback for the
+// COMMON case the per-agent lookup cannot cover: a member-assigned issue (most
+// tracker-synced tasks) has no agent to carry a bot, but the notice is a TEAM
+// message and the team's room exists regardless of who owns the task. Newest
+// installation first (ListTelegramInstallations orders by installed_at DESC), so
+// the pick is deterministic.
+func (h *Handler) workspaceTelegramClient(ctx context.Context, workspaceID pgtype.UUID) (*telegram.BotClient, string) {
+	rows, err := h.Queries.ListTelegramInstallations(ctx, workspaceID)
+	if err != nil {
+		return nil, ""
+	}
+	box, err := telegramSealBox()
+	if err != nil {
+		return nil, ""
+	}
+	for _, row := range rows {
+		if row.Status != "active" || !row.ChatID.Valid || strings.TrimSpace(row.ChatID.String) == "" {
+			continue
+		}
+		token, err := box.Open(row.BotTokenEncrypted)
+		if err != nil {
+			continue
+		}
+		return telegram.NewBotClient(string(token)), strings.TrimSpace(row.ChatID.String)
+	}
+	return nil, ""
+}
+
 // issueTelegramSpeakerAgent is the agent whose identity an issue notice should
 // carry: the agent assignee itself, else the issue's orchestrator (which for a
 // squad assignee is its leader — a squad id is not an agent id, so looking up an
@@ -87,7 +116,11 @@ func (h *Handler) resolveIssueTelegramDestination(
 	if explicitChatID == "" {
 		reaches = reachesProject
 	}
-	return chooseIssueTelegramDestination(explicitChatID, agentBot, agentChat, reaches, h.telegramBot, projectChat)
+	wsBot, wsChat := (*telegram.BotClient)(nil), ""
+	if agentBot == nil || agentChat == "" {
+		wsBot, wsChat = h.workspaceTelegramClient(ctx, issue.WorkspaceID)
+	}
+	return chooseIssueTelegramDestination(explicitChatID, agentBot, agentChat, reaches, wsBot, wsChat, h.telegramBot, projectChat)
 }
 
 // chooseIssueTelegramDestination is the pure decision behind the resolver, split
@@ -98,6 +131,8 @@ func chooseIssueTelegramDestination(
 	agentBot *telegram.BotClient,
 	agentChat string,
 	agentReachesNamedChat bool,
+	extraWorkspaceBot *telegram.BotClient,
+	extraWorkspaceChat string,
 	platformBot *telegram.BotClient,
 	projectChat string,
 ) (issueTelegramDestination, bool) {
@@ -117,7 +152,13 @@ func chooseIssueTelegramDestination(
 		return issueTelegramDestination{bot: agentBot, chatID: agentChat, via: "agent"}, true
 	}
 
-	// 3. The configured project/instance room.
+	// 3. Any workspace bot with a bound group — the team room. Covers the
+	//    member-assigned issue, which has no agent to speak through.
+	if wsBot, wsChat := extraWorkspaceBot, extraWorkspaceChat; wsBot != nil && wsChat != "" {
+		return issueTelegramDestination{bot: wsBot, chatID: wsChat, via: "workspace"}, true
+	}
+
+	// 4. The configured project/instance room.
 	if projectChat != "" {
 		if agentBot != nil && agentReachesNamedChat {
 			return issueTelegramDestination{bot: agentBot, chatID: projectChat, via: "agent"}, true

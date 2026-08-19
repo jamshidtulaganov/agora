@@ -164,17 +164,20 @@ func (h *Handler) applyAutomation(ctx context.Context, rule db.Automation, ev Au
 		h.recordAutomationRun(ctx, rule, ev, "skipped", 0, nil, reason)
 		return
 	}
+
+	// Serialize per issue BEFORE the loop guard, and write the audit row before
+	// releasing. The guard reads the trail, so it only holds if check → act →
+	// record is one critical section: checked outside the lock, twenty concurrent
+	// events for one issue all read "no prior run", pass together, and each
+	// applies in turn — the stress test caught exactly that (600 applications
+	// where the cooldown promised 30).
+	unlock := lockIssueQA(uuidToString(ev.Issue.ID))
 	if blocked, reason := h.automationLoopGuard(ctx, rule, ev); blocked {
 		h.recordAutomationRun(ctx, rule, ev, "skipped", 0, nil, reason)
+		unlock()
 		return
 	}
-
-	// Serialize per issue: two events (a status change and a label attach) can land
-	// together, and two rules writing the same issue's status/labels concurrently
-	// would interleave.
-	unlock := lockIssueQA(uuidToString(ev.Issue.ID))
 	outcomes, applied, firstErr := h.runAutomationActions(ctx, rule, ev, actions)
-	unlock()
 
 	status := "applied"
 	errText := ""
@@ -185,6 +188,7 @@ func (h *Handler) applyAutomation(ctx context.Context, rule db.Automation, ev Au
 		}
 	}
 	h.recordAutomationRun(ctx, rule, ev, status, applied, outcomes, errText)
+	unlock()
 	if err := h.Queries.RecordAutomationFired(ctx, rule.ID); err != nil {
 		slog.Warn("automation: counter bump failed", "error", err, "automation_id", uuidToString(rule.ID))
 	}

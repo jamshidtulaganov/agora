@@ -38,6 +38,14 @@ func (h *Handler) ensureLabel(ctx context.Context, wsID pgtype.UUID, name, color
 	}
 	created, err := h.Queries.CreateLabel(ctx, db.CreateLabelParams{WorkspaceID: wsID, Name: name, Color: color})
 	if err != nil {
+		// Get-then-create races under concurrency: two callers ensuring the same
+		// label both miss the GET, one INSERT wins, the other hits the unique
+		// constraint. The loser's label EXISTS now, so re-read instead of failing —
+		// the automation engine provoked this with 30 concurrent first-evaluations,
+		// but every caller (QA watchdog, review decision, bug filing) had the race.
+		if l, getErr := h.Queries.GetLabelByName(ctx, db.GetLabelByNameParams{WorkspaceID: wsID, Name: name}); getErr == nil {
+			return l.ID, nil
+		}
 		return pgtype.UUID{}, err
 	}
 	return created.ID, nil
