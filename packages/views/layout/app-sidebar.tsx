@@ -38,6 +38,7 @@ import {
   Users,
   Plug,
   Boxes,
+  Workflow,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
@@ -116,6 +117,7 @@ type NavKey =
   | "issues"
   | "projects"
   | "autopilots"
+  | "automations"
   | "agents"
   | "squads"
   | "usage"
@@ -135,6 +137,7 @@ type NavLabelKey =
   | "issues"
   | "projects"
   | "autopilots"
+  | "automations"
   | "agents"
   | "squads"
   | "usage"
@@ -159,6 +162,7 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "issues", labelKey: "issues", icon: ListTodo },
   { key: "projects", labelKey: "projects", icon: FolderKanban },
   { key: "autopilots", labelKey: "autopilots", icon: Zap },
+  { key: "automations", labelKey: "automations", icon: Workflow },
   { key: "agents", labelKey: "agents", icon: Bot },
   { key: "squads", labelKey: "squads", icon: Users },
   { key: "usage", labelKey: "usage", icon: BarChart3 },

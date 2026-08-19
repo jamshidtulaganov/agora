@@ -16,7 +16,8 @@
     "plugins": "Плагины",
     "mcp": "MCP серверы",
     "bitrix": "Bitrix",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "automations": "Автоматизации"
   },
   "help": {
     "trigger": "Помощь",

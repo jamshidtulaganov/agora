@@ -16,7 +16,8 @@
     "plugins": "插件",
     "mcp": "MCP 服务器",
     "bitrix": "Bitrix",
-    "settings": "设置"
+    "settings": "设置",
+    "automations": "自动化"
   },
   "help": {
     "trigger": "帮助",

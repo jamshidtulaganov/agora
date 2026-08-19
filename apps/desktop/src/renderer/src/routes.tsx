@@ -9,6 +9,7 @@ import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
 import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
+import { AutomationDetailPage } from "./pages/automation-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
 import { AgentDetailPage } from "./pages/agent-detail-page";
 import { MemberDetailPage } from "./pages/member-detail-page";
@@ -18,6 +19,7 @@ import { IssuesPage } from "@agora/views/issues/components";
 import { ProjectsPage } from "@agora/views/projects/components";
 import { DashboardPage } from "@agora/views/dashboard";
 import { AutopilotsPage } from "@agora/views/autopilots/components";
+import { AutomationsPage } from "@agora/views/automations/components";
 import { MyIssuesPage } from "@agora/views/my-issues";
 import { QAPage } from "@agora/views/qa";
 import { PolicyPage } from "@agora/views/policy";
@@ -152,6 +154,16 @@ export const appRoutes: RouteObject[] = [
             path: "autopilots/:id",
             element: <AutopilotDetailPage />,
             handle: { title: "Autopilot" },
+          },
+          {
+            path: "automations",
+            element: <AutomationsPage />,
+            handle: { title: "Automations" },
+          },
+          {
+            path: "automations/:id",
+            element: <AutomationDetailPage />,
+            handle: { title: "Automation" },
           },
           {
             path: "my-issues",

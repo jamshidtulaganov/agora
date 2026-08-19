@@ -15,6 +15,7 @@ import enInbox from "./en/inbox.json";
 import enWorkspace from "./en/workspace.json";
 import enProjects from "./en/projects.json";
 import enAutopilots from "./en/autopilots.json";
+import enAutomations from "./en/automations.json";
 import enSkills from "./en/skills.json";
 import enChat from "./en/chat.json";
 import enModals from "./en/modals.json";
@@ -40,6 +41,7 @@ import zhHansInbox from "./zh-Hans/inbox.json";
 import zhHansWorkspace from "./zh-Hans/workspace.json";
 import zhHansProjects from "./zh-Hans/projects.json";
 import zhHansAutopilots from "./zh-Hans/autopilots.json";
+import zhHansAutomations from "./zh-Hans/automations.json";
 import zhHansSkills from "./zh-Hans/skills.json";
 import zhHansChat from "./zh-Hans/chat.json";
 import zhHansModals from "./zh-Hans/modals.json";
@@ -65,6 +67,7 @@ import uzInbox from "./uz/inbox.json";
 import uzWorkspace from "./uz/workspace.json";
 import uzProjects from "./uz/projects.json";
 import uzAutopilots from "./uz/autopilots.json";
+import uzAutomations from "./uz/automations.json";
 import uzSkills from "./uz/skills.json";
 import uzChat from "./uz/chat.json";
 import uzModals from "./uz/modals.json";
@@ -90,6 +93,7 @@ import ruInbox from "./ru/inbox.json";
 import ruWorkspace from "./ru/workspace.json";
 import ruProjects from "./ru/projects.json";
 import ruAutopilots from "./ru/autopilots.json";
+import ruAutomations from "./ru/automations.json";
 import ruSkills from "./ru/skills.json";
 import ruChat from "./ru/chat.json";
 import ruModals from "./ru/modals.json";
@@ -121,6 +125,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     workspace: enWorkspace,
     projects: enProjects,
     autopilots: enAutopilots,
+    automations: enAutomations,
     skills: enSkills,
     chat: enChat,
     modals: enModals,
@@ -148,6 +153,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     workspace: zhHansWorkspace,
     projects: zhHansProjects,
     autopilots: zhHansAutopilots,
+    automations: zhHansAutomations,
     skills: zhHansSkills,
     chat: zhHansChat,
     modals: zhHansModals,
@@ -175,6 +181,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     workspace: uzWorkspace,
     projects: uzProjects,
     autopilots: uzAutopilots,
+    automations: uzAutomations,
     skills: uzSkills,
     chat: uzChat,
     modals: uzModals,
@@ -202,6 +209,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     workspace: ruWorkspace,
     projects: ruProjects,
     autopilots: ruAutopilots,
+    automations: ruAutomations,
     skills: ruSkills,
     chat: ruChat,
     modals: ruModals,

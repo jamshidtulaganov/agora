@@ -16,7 +16,8 @@
     "plugins": "Plaginlar",
     "mcp": "MCP serverlar",
     "bitrix": "Bitrix",
-    "settings": "Sozlamalar"
+    "settings": "Sozlamalar",
+    "automations": "Avtomatizatsiyalar"
   },
   "help": {
     "trigger": "Yordam",
