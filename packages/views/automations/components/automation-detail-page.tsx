@@ -223,7 +223,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
             variant="ghost"
             className="text-destructive"
             onClick={() => {
-              // eslint-disable-next-line no-alert -- a delete takes the run history with it
+              // A delete takes the run history with it, so it is confirmed first.
               if (!window.confirm(t(($) => $.editor.delete_confirm))) return;
               deleteAutomation.mutate(automationId, {
                 onSuccess: () => navigation.push(paths.automations()),
