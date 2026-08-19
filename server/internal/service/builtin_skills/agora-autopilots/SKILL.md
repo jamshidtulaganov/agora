@@ -58,6 +58,12 @@ in), and each rule applies to the same task at most once per cooldown and a boun
 number of times per hour. A rule that "did nothing" almost always has a `skipped` row
 explaining which condition failed — read that before changing the rule.
 
+For a Telegram step with an explicit group id, delivery prefers the issue's speaker
+agent bot when it is authorized for that group, then any active workspace bot whose
+allowed-groups list contains the id, and only then the platform bot. A `404 Not Found`
+from Telegram on the platform path means that platform bot token is invalid; it does
+not mean the automation condition failed.
+
 ## CLI
 
 ```bash

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -73,6 +74,39 @@ func (h *Handler) workspaceTelegramClient(ctx context.Context, workspaceID pgtyp
 	return nil, ""
 }
 
+// workspaceTelegramClientForChat finds an active workspace bot whose access
+// configuration explicitly includes chatID. This covers automations that pin a
+// group while the issue's speaker agent either has no bot or uses a different
+// one. Without this fallback, an authorized workspace bot is ignored and the
+// resolver falls through to the platform bot, which may not belong to the room.
+func (h *Handler) workspaceTelegramClientForChat(
+	ctx context.Context, workspaceID pgtype.UUID, chatID string,
+) *telegram.BotClient {
+	parsedChatID, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64)
+	if err != nil {
+		return nil
+	}
+	rows, err := h.Queries.ListTelegramInstallations(ctx, workspaceID)
+	if err != nil {
+		return nil
+	}
+	box, err := telegramSealBox()
+	if err != nil {
+		return nil
+	}
+	for _, row := range rows {
+		if row.Status != "active" || !telegramChatAllowed(row, parsedChatID) {
+			continue
+		}
+		token, err := box.Open(row.BotTokenEncrypted)
+		if err != nil {
+			continue
+		}
+		return telegram.NewBotClient(string(token))
+	}
+	return nil
+}
+
 // issueTelegramSpeakerAgent is the agent whose identity an issue notice should
 // carry: the agent assignee itself, else the issue's orchestrator (which for a
 // squad assignee is its leader — a squad id is not an agent id, so looking up an
@@ -117,7 +151,12 @@ func (h *Handler) resolveIssueTelegramDestination(
 		reaches = reachesProject
 	}
 	wsBot, wsChat := (*telegram.BotClient)(nil), ""
-	if agentBot == nil || agentChat == "" {
+	if explicitChatID != "" && !reachesExplicit {
+		if bot := h.workspaceTelegramClientForChat(ctx, issue.WorkspaceID, explicitChatID); bot != nil {
+			wsBot, wsChat = bot, explicitChatID
+		}
+	}
+	if wsBot == nil && (agentBot == nil || agentChat == "") {
 		wsBot, wsChat = h.workspaceTelegramClient(ctx, issue.WorkspaceID)
 	}
 	return chooseIssueTelegramDestination(explicitChatID, agentBot, agentChat, reaches, wsBot, wsChat, h.telegramBot, projectChat)
@@ -140,6 +179,9 @@ func chooseIssueTelegramDestination(
 	if explicitChatID != "" {
 		if agentBot != nil && agentReachesNamedChat {
 			return issueTelegramDestination{bot: agentBot, chatID: explicitChatID, via: "agent"}, true
+		}
+		if extraWorkspaceBot != nil {
+			return issueTelegramDestination{bot: extraWorkspaceBot, chatID: explicitChatID, via: "workspace"}, true
 		}
 		if platformBot != nil {
 			return issueTelegramDestination{bot: platformBot, chatID: explicitChatID, via: "platform"}, true

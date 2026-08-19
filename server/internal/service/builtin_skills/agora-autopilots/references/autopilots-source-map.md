@@ -7,3 +7,4 @@
 - `resolveAutopilotLeader` resolves squad-assigned autopilots to the squad leader.
 - `AgentReadiness` blocks archived/runtime-unready agents before enqueue.
 - `server/cmd/server/router.go` exposes authenticated `/api/autopilots` routes and unauthenticated webhook ingress `/api/webhooks/autopilots/{token}`.
+- `server/internal/handler/telegram_issue_destination.go` resolves automation Telegram group notices: issue speaker bot, authorized workspace bot, then platform bot.

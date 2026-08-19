@@ -55,6 +55,12 @@ func TestChooseAutomationDestinationOrder(t *testing.T) {
 			platform: platformBot, wantChat: "-1001", wantVia: "platform", wantOK: true,
 		},
 		{
+			name:     "explicit room uses an authorized workspace bot before the platform bot",
+			explicit: "-1001", agentBot: agentBot, agentChat: "-1002", agentReach: false,
+			wsBot: wsBot, wsChat: "-1001", platform: platformBot,
+			wantChat: "-1001", wantVia: "workspace", wantOK: true,
+		},
+		{
 			name:     "no explicit room → the agent's own bound group",
 			agentBot: agentBot, agentChat: "-1002", platform: platformBot, projectChat: "-1009",
 			wantChat: "-1002", wantVia: "agent", wantOK: true,
