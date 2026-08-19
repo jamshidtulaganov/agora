@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Loader2, MinusCircle, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, MinusCircle, Trash2, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   automationCatalogOptions,
@@ -22,9 +22,9 @@ import { Badge } from "@agora/ui/components/ui/badge";
 import { Input } from "@agora/ui/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native-select";
 import { Switch } from "@agora/ui/components/ui/switch";
-import { Textarea } from "@agora/ui/components/ui/textarea";
+import { PageHeader } from "../../layout/page-header";
 import { useT, useTimeAgo } from "../../i18n";
-import { AppLink, useNavigation } from "../../navigation";
+import { useNavigation } from "../../navigation";
 import { AutomationFlowEditor, type AutomationFlowValue } from "./automation-flow-editor";
 
 // One flow: its header (name, scope, on/off), its canvas, and its recent runs. The
@@ -134,50 +134,92 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
 
   if (!isNew && isLoading) {
     return (
-      <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground" aria-busy="true">
-        <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+      <div className="flex h-full flex-col">
+        <PageHeader className="px-5">
+          <Workflow className="h-4 w-4 text-muted-foreground" />
+        </PageHeader>
+        <div className="flex flex-1 items-center justify-center" aria-busy="true">
+          <Loader2 className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
-      <AppLink
-        href={paths.automations()}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-      >
-        <ArrowLeft className="size-3" aria-hidden />
-        {t(($) => $.editor.back)}
-      </AppLink>
-
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            className="h-10 flex-1 text-base font-medium"
-            placeholder={t(($) => $.editor.name_placeholder)}
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
+    <div className="flex h-full flex-col">
+      {/* Header carries everything that used to make the page scroll: name, scope,
+          the enable switch, save and delete. The canvas below is a fixed frame. */}
+      <PageHeader className="gap-3 px-5">
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => navigation.push(paths.automations())}
+        >
+          <ArrowLeft className="size-3" aria-hidden />
+          {t(($) => $.editor.back)}
+        </button>
+        <Input
+          className="h-8 w-full max-w-xs border-transparent bg-transparent px-2 text-sm font-medium shadow-none focus-visible:border-input"
+          placeholder={t(($) => $.editor.name_placeholder)}
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+            setDirty(true);
+          }}
+        />
+        <NativeSelect
+          aria-label={t(($) => $.editor.scope_label)}
+          className="h-8 w-auto max-w-44 text-xs"
+          value={projectId}
+          onChange={(event) => {
+            setProjectId(event.target.value);
+            setDirty(true);
+          }}
+        >
+          <NativeSelectOption value="">{t(($) => $.page.all_projects)}</NativeSelectOption>
+          {projects?.map((project) => (
+            <NativeSelectOption key={project.id} value={project.id}>
+              {project.title}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {dirty && <span className="hidden text-xs text-muted-foreground lg:block">{t(($) => $.editor.unsaved)}</span>}
+          <Switch
+            aria-label={enabled ? t(($) => $.editor.enabled) : t(($) => $.editor.disabled)}
+            checked={enabled}
+            onCheckedChange={(checked) => {
+              setEnabled(checked === true);
               setDirty(true);
             }}
           />
-          <div className="flex items-center gap-2">
-            <Switch
-              aria-label={enabled ? t(($) => $.editor.enabled) : t(($) => $.editor.disabled)}
-              checked={enabled}
-              onCheckedChange={(checked) => {
-                setEnabled(checked === true);
-                setDirty(true);
+          <Button size="sm" onClick={save} disabled={saving || flow.actions.length === 0}>
+            {saving ? t(($) => $.editor.saving) : t(($) => $.editor.save)}
+          </Button>
+          {!isNew && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="text-destructive"
+              aria-label={t(($) => $.editor.delete)}
+              onClick={() => {
+                // A delete takes the run history with it, so it is confirmed first.
+                if (!window.confirm(t(($) => $.editor.delete_confirm))) return;
+                deleteAutomation.mutate(automationId, {
+                  onSuccess: () => navigation.push(paths.automations()),
+                  onError: () => toast.error(t(($) => $.editor.save_failed)),
+                });
               }}
-            />
-            <span className="text-xs text-muted-foreground">
-              {enabled ? t(($) => $.editor.enabled) : t(($) => $.editor.disabled)}
-            </span>
-          </div>
+            >
+              <Trash2 aria-hidden />
+            </Button>
+          )}
         </div>
+      </PageHeader>
 
-        <Textarea
-          rows={2}
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+        <Input
+          className="h-8 max-w-2xl border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none focus-visible:border-input"
           placeholder={t(($) => $.editor.description_placeholder)}
           value={description}
           onChange={(event) => {
@@ -185,59 +227,11 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
             setDirty(true);
           }}
         />
-
-        <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{t(($) => $.editor.scope_label)}</span>
-          <NativeSelect
-            className="w-auto min-w-48"
-            value={projectId}
-            onChange={(event) => {
-              setProjectId(event.target.value);
-              setDirty(true);
-            }}
-          >
-            <NativeSelectOption value="">{t(($) => $.page.all_projects)}</NativeSelectOption>
-            {projects?.map((project) => (
-              <NativeSelectOption key={project.id} value={project.id}>
-                {project.title}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
-      </header>
-
-      {catalog && (
-        <AutomationFlowEditor value={flow} catalog={catalog} onChange={updateFlow} disabled={saving} />
-      )}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={save} disabled={saving || flow.actions.length === 0}>
-            {saving ? t(($) => $.editor.saving) : t(($) => $.editor.save)}
-          </Button>
-          {dirty && <span className="text-xs text-muted-foreground">{t(($) => $.editor.unsaved)}</span>}
-        </div>
-        {!isNew && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive"
-            onClick={() => {
-              // A delete takes the run history with it, so it is confirmed first.
-              if (!window.confirm(t(($) => $.editor.delete_confirm))) return;
-              deleteAutomation.mutate(automationId, {
-                onSuccess: () => navigation.push(paths.automations()),
-                onError: () => toast.error(t(($) => $.editor.save_failed)),
-              });
-            }}
-          >
-            <Trash2 aria-hidden />
-            {t(($) => $.editor.delete)}
-          </Button>
+        {catalog && (
+          <AutomationFlowEditor value={flow} catalog={catalog} onChange={updateFlow} disabled={saving} />
         )}
+        {!isNew && <AutomationRunList runs={runs ?? []} />}
       </div>
-
-      {!isNew && <AutomationRunList runs={runs ?? []} />}
     </div>
   );
 }

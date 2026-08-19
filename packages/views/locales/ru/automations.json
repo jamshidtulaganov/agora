@@ -56,7 +56,19 @@
     "no_conditions": "Срабатывает на каждом событии этого типа.",
     "filter_hint": "Если условие не выполнено, поток останавливается здесь.",
     "guard_note": "Поток применяется к одной задаче не чаще раза в {{seconds}} с и не более {{max}} раз в час.",
-    "template_hint": "В тексте можно использовать {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} и {{'{{automation}}'}}."
+    "template_hint": "В тексте можно использовать {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} и {{'{{automation}}'}}.",
+    "canvas_label": "Холст автоматизации",
+    "canvas_hint": "Перетаскивание — панорама · ⌘ + колесо — масштаб · тяните узел, чтобы переставить · 1 — вписать",
+    "zoom_in": "Приблизить",
+    "zoom_out": "Отдалить",
+    "fit": "Вписать в экран",
+    "select_node": "Выберите узел на холсте, чтобы отредактировать его.",
+    "close_panel": "Закрыть панель",
+    "no_conditions_short": "каждое событие",
+    "conditions_count_one": "{{count}} условие",
+    "conditions_count_few": "{{count}} условия",
+    "conditions_count_many": "{{count}} условий",
+    "conditions_count_other": "{{count}} условия"
   },
   "trigger": {
     "issue.created": "создана задача",

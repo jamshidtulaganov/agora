@@ -77,3 +77,33 @@ export function stepConfigFields(type: string): string[] {
       return [];
   }
 }
+
+/** The one-line subtitle a canvas node shows under its title: the parameter that
+ *  actually distinguishes this step from another of the same type ("todo", "the
+ *  task's owner", "review:fail is …"). Falls back to "" rather than inventing text,
+ *  so an unconfigured node reads as unconfigured. */
+export function summarizeStep(
+  step: AutomationStep,
+  labels: { fields?: Record<string, string>; ops?: Record<string, string> },
+): string {
+  if (step.type === "filter") {
+    const first = step.conditions?.[0];
+    if (!first) return "";
+    const field = labelFor(labels.fields, first.field);
+    const op = labelFor(labels.ops, first.op);
+    const value = conditionValueToText(first.value);
+    const extra = (step.conditions?.length ?? 0) - 1;
+    const head = [field, op, value].filter((part) => part !== "").join(" ");
+    return extra > 0 ? `${head} +${extra}` : head;
+  }
+  const config = step.config ?? {};
+  // Ordered by how much each key identifies the step at a glance.
+  for (const key of ["kind", "status", "target", "name", "destination", "body", "text"]) {
+    const value = config[key];
+    if (value && value.trim() !== "") {
+      const trimmed = value.trim();
+      return trimmed.length > 42 ? `${trimmed.slice(0, 41)}…` : trimmed;
+    }
+  }
+  return "";
+}

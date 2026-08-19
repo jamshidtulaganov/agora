@@ -88,32 +88,40 @@ describe("AutomationFlowEditor", () => {
     expect(next.conditions).toEqual([]);
   });
 
-  it("shows a filter node's stop-the-flow hint", () => {
+  it("opens a filter node's parameters with the stop-the-flow hint", async () => {
+    // The panel edits the SELECTED node, so the hint appears after the node is
+    // opened on the canvas — the trigger's panel is what shows by default.
+    const user = userEvent.setup();
     setup({
       trigger_type: "tracker.stage_changed",
       conditions: [],
       actions: [{ type: "filter", conditions: [{ field: "status", op: "eq", value: "in_review" }] }],
     });
+    await user.click(screen.getByRole("button", { name: /Only continue if/ }));
     expect(screen.getAllByText("The flow stops here when this does not hold.").length).toBeGreaterThan(0);
   });
 
-  it("renders the config fields of a known step and none for an unknown one", () => {
+  it("renders the config fields of a known step and none for an unknown one", async () => {
+    const user = userEvent.setup();
     const { unmount } = setup({
       trigger_type: "tracker.stage_changed",
       conditions: [],
       actions: [{ type: "send_telegram", config: { destination: "group", text: "hi" } }],
     });
+    await user.click(screen.getByRole("button", { name: /Send a Telegram message/ }));
     expect(screen.getByText("Send to")).toBeInTheDocument();
     expect(screen.getByDisplayValue("hi")).toBeInTheDocument();
     unmount();
 
-    // An unknown step type must still render (selectable, labelled) with no config
-    // fields, so an older client round-trips a newer flow instead of rewriting it.
+    // An unknown step type must still render (selectable on its canvas node,
+    // labelled in the panel) with no config fields, so an older client
+    // round-trips a newer flow instead of rewriting it.
     setup({
       trigger_type: "tracker.stage_changed",
       conditions: [],
       actions: [{ type: "send_carrier_pigeon", config: { flock: "3" } }],
     });
+    await user.click(screen.getByRole("button", { name: /send carrier pigeon/ }));
     const stepSelect = screen.getByLabelText("Step");
     expect(within(stepSelect).getByText("send carrier pigeon")).toBeInTheDocument();
     expect(screen.queryByText("Send to")).not.toBeInTheDocument();

@@ -56,7 +56,19 @@
     "no_conditions": "Bu turdagi har bir hodisada ishga tushadi.",
     "filter_hint": "Shart bajarilmasa, oqim shu yerda to‘xtaydi.",
     "guard_note": "Bitta vazifaga oqim {{seconds}} soniyada bir martadan va soatda {{max}} martadan ko‘p qo‘llanmaydi.",
-    "template_hint": "Matnda {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} va {{'{{automation}}'}} ishlatish mumkin."
+    "template_hint": "Matnda {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} va {{'{{automation}}'}} ishlatish mumkin.",
+    "canvas_label": "Avtomatizatsiya oqimi maydoni",
+    "canvas_hint": "Surish — panorama · ⌘ + g‘ildirak — masshtab · tugunni sudrab tartibni o‘zgartiring · 1 — sig‘dirish",
+    "zoom_in": "Yaqinlashtirish",
+    "zoom_out": "Uzoqlashtirish",
+    "fit": "Ekranga sig‘dirish",
+    "select_node": "Tahrirlash uchun maydonda tugunni tanlang.",
+    "close_panel": "Panelni yopish",
+    "no_conditions_short": "har bir hodisa",
+    "conditions_count_one": "{{count}} shart",
+    "conditions_count_other": "{{count}} shart",
+    "conditions_count_few": "{{count}} shart",
+    "conditions_count_many": "{{count}} shart"
   },
   "trigger": {
     "issue.created": "vazifa yaratilganda",

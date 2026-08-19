@@ -56,7 +56,19 @@
     "no_conditions": "该类型的每个事件都会触发。",
     "filter_hint": "条件不成立时，流程在此停止。",
     "guard_note": "同一任务上，流程每 {{seconds}} 秒最多应用一次，每小时最多 {{max}} 次。",
-    "template_hint": "文本中可使用 {{'{{issue}}'}}、{{'{{title}}'}}、{{'{{status}}'}} 和 {{'{{automation}}'}}。"
+    "template_hint": "文本中可使用 {{'{{issue}}'}}、{{'{{title}}'}}、{{'{{status}}'}} 和 {{'{{automation}}'}}。",
+    "canvas_label": "自动化流程画布",
+    "canvas_hint": "拖拽平移 · ⌘+滚轮缩放 · 拖动节点调整顺序 · 按 1 适配",
+    "zoom_in": "放大",
+    "zoom_out": "缩小",
+    "fit": "适配画布",
+    "select_node": "在画布上选择一个节点进行编辑。",
+    "close_panel": "关闭面板",
+    "no_conditions_short": "每个事件",
+    "conditions_count_one": "{{count}} 个条件",
+    "conditions_count_other": "{{count}} 个条件",
+    "conditions_count_few": "{{count}} 个条件",
+    "conditions_count_many": "{{count}} 个条件"
   },
   "trigger": {
     "issue.created": "创建任务时",

@@ -56,7 +56,19 @@
     "no_conditions": "Runs on every event of this type.",
     "filter_hint": "The flow stops here when this does not hold.",
     "guard_note": "A flow applies to the same task at most once every {{seconds}}s, and at most {{max}} times an hour.",
-    "template_hint": "You can use {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} and {{'{{automation}}'}} in text."
+    "template_hint": "You can use {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} and {{'{{automation}}'}} in text.",
+    "canvas_label": "Automation flow canvas",
+    "canvas_hint": "Drag to pan · ⌘ scroll to zoom · drag a node to reorder · 1 fits",
+    "zoom_in": "Zoom in",
+    "zoom_out": "Zoom out",
+    "fit": "Zoom to fit",
+    "select_node": "Select a node on the canvas to edit it.",
+    "close_panel": "Close panel",
+    "no_conditions_short": "every event",
+    "conditions_count_one": "{{count}} condition",
+    "conditions_count_other": "{{count}} conditions",
+    "conditions_count_few": "{{count}} conditions",
+    "conditions_count_many": "{{count}} conditions"
   },
   "trigger": {
     "issue.created": "an issue is created",
