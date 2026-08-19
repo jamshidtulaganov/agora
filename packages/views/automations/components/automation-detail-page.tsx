@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Loader2, MinusCircle, Trash2, Workflow, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Code2, Loader2, MinusCircle, Trash2, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   automationCatalogOptions,
@@ -18,6 +18,8 @@ import { projectListOptions } from "@agora/core/projects/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { Button } from "@agora/ui/components/ui/button";
+import { Textarea } from "@agora/ui/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Input } from "@agora/ui/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native-select";
@@ -63,6 +65,12 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   const [enabled, setEnabled] = useState(false);
   const [flow, setFlow] = useState<AutomationFlowValue>({ trigger_type: "", conditions: [], actions: [] });
   const [dirty, setDirty] = useState(false);
+  // Canvas is the default; Code shows the SAME flow as editable JSON, for the
+  // people who assemble rules faster in text (and for pasting a flow between
+  // workspaces). One draft, two projections — Apply parses back into it.
+  const [view, setView] = useState<"canvas" | "code">("canvas");
+  const [codeDraft, setCodeDraft] = useState("");
+  const [codeError, setCodeError] = useState("");
 
   // Seed the draft once the server row (or the catalog, for a new flow) arrives.
   useEffect(() => {
@@ -90,6 +98,38 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   const updateFlow = (next: AutomationFlowValue) => {
     setFlow(next);
     setDirty(true);
+  };
+
+  const openCodeView = () => {
+    setCodeDraft(JSON.stringify(flow, null, 2));
+    setCodeError("");
+    setView("code");
+  };
+
+  // Apply parses the JSON back into the draft. Validation here is SHAPE only —
+  // the server's validator (unknown trigger/step/operator, bad status) remains
+  // the authority at save time and its message names the offending step.
+  const applyCode = () => {
+    try {
+      const parsed = JSON.parse(codeDraft) as Partial<AutomationFlowValue>;
+      if (typeof parsed.trigger_type !== "string" || parsed.trigger_type === "") {
+        setCodeError(t(($) => $.code.needs_trigger));
+        return;
+      }
+      if (!Array.isArray(parsed.actions)) {
+        setCodeError(t(($) => $.code.needs_actions));
+        return;
+      }
+      updateFlow({
+        trigger_type: parsed.trigger_type,
+        conditions: Array.isArray(parsed.conditions) ? parsed.conditions : [],
+        actions: parsed.actions,
+      });
+      setCodeError("");
+      setView("canvas");
+    } catch {
+      setCodeError(t(($) => $.code.invalid_json));
+    }
   };
 
   const save = () => {
@@ -218,23 +258,62 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
       </PageHeader>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-        <Input
-          className="h-8 max-w-2xl border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none focus-visible:border-input"
-          placeholder={t(($) => $.editor.description_placeholder)}
-          value={description}
-          onChange={(event) => {
-            setDescription(event.target.value);
-            setDirty(true);
-          }}
-        />
-        {catalog && (
-          <AutomationFlowEditor
-            value={flow}
-            catalog={catalog}
-            onChange={updateFlow}
-            disabled={saving}
-            lastRun={dirty ? undefined : runs?.[0]}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="h-8 max-w-2xl flex-1 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none focus-visible:border-input"
+            placeholder={t(($) => $.editor.description_placeholder)}
+            value={description}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setDirty(true);
+            }}
           />
+          <Tabs
+            value={view}
+            onValueChange={(next) => {
+              if (next === "code") openCodeView();
+              else setView("canvas");
+            }}
+          >
+            <TabsList variant="line">
+              <TabsTrigger value="canvas" className="text-xs">
+                <Workflow className="mr-1 size-3" aria-hidden />
+                {t(($) => $.code.canvas_tab)}
+              </TabsTrigger>
+              <TabsTrigger value="code" className="text-xs">
+                <Code2 className="mr-1 size-3" aria-hidden />
+                {t(($) => $.code.code_tab)}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        {view === "code" ? (
+          <div className="space-y-2">
+            <Textarea
+              aria-label={t(($) => $.code.code_tab)}
+              className="min-h-[min(48vh,420px)] font-mono text-xs"
+              spellCheck={false}
+              value={codeDraft}
+              onChange={(event) => setCodeDraft(event.target.value)}
+            />
+            {codeError !== "" && <p className="text-xs text-destructive">{codeError}</p>}
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={applyCode}>
+                {t(($) => $.code.apply)}
+              </Button>
+              <p className="text-xs text-muted-foreground">{t(($) => $.code.hint)}</p>
+            </div>
+          </div>
+        ) : (
+          catalog && (
+            <AutomationFlowEditor
+              value={flow}
+              catalog={catalog}
+              onChange={updateFlow}
+              disabled={saving}
+              lastRun={dirty ? undefined : runs?.[0]}
+            />
+          )
         )}
         {!isNew && <AutomationRunList runs={runs ?? []} />}
       </div>

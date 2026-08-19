@@ -74,7 +74,9 @@
     "conditions_count_many": "{{count}} shart",
     "fullscreen": "To‘liq ekran",
     "exit_fullscreen": "To‘liq ekrandan chiqish",
-    "and": "va"
+    "and": "va",
+    "add_value": "Qiymat qo‘shish…",
+    "any_of_hint": "Bulardan istalgani mos keladi."
   },
   "trigger": {
     "issue.created": "vazifa yaratilganda",
@@ -181,5 +183,14 @@
     "done": "Tayyor",
     "cancelled": "Bekor qilingan",
     "blocked": "Bloklangan"
+  },
+  "code": {
+    "canvas_tab": "Maydon",
+    "code_tab": "Kod",
+    "apply": "Maydonga qo‘llash",
+    "hint": "Xuddi shu oqim JSON ko‘rinishida — tahrirlang yoki joylashtiring va qo‘llang. Saqlashda har bir qadam baribir tekshiriladi.",
+    "invalid_json": "Bu yaroqli JSON emas.",
+    "needs_trigger": "Oqimga trigger_type kerak.",
+    "needs_actions": "Oqimga actions massivi kerak."
   }
 }

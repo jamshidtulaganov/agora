@@ -74,7 +74,9 @@
     "conditions_count_many": "{{count}} 个条件",
     "fullscreen": "全屏",
     "exit_fullscreen": "退出全屏",
-    "and": "且"
+    "and": "且",
+    "add_value": "添加值…",
+    "any_of_hint": "命中其中任意一个即可。"
   },
   "trigger": {
     "issue.created": "创建任务时",
@@ -181,5 +183,14 @@
     "done": "已完成",
     "cancelled": "已取消",
     "blocked": "已阻塞"
+  },
+  "code": {
+    "canvas_tab": "画布",
+    "code_tab": "代码",
+    "apply": "应用到画布",
+    "hint": "同一流程的 JSON 形式——编辑或粘贴后应用。保存时仍会校验每个步骤。",
+    "invalid_json": "这不是有效的 JSON。",
+    "needs_trigger": "流程需要 trigger_type。",
+    "needs_actions": "流程需要 actions 数组。"
   }
 }

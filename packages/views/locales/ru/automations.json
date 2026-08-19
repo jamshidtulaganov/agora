@@ -74,7 +74,9 @@
     "conditions_count_other": "{{count}} условия",
     "fullscreen": "На весь экран",
     "exit_fullscreen": "Выйти из полноэкранного режима",
-    "and": "и"
+    "and": "и",
+    "add_value": "Добавить значение…",
+    "any_of_hint": "Подойдёт любое из них."
   },
   "trigger": {
     "issue.created": "создана задача",
@@ -181,5 +183,14 @@
     "done": "Готово",
     "cancelled": "Отменено",
     "blocked": "Заблокировано"
+  },
+  "code": {
+    "canvas_tab": "Холст",
+    "code_tab": "Код",
+    "apply": "Применить к холсту",
+    "hint": "Тот же поток в JSON — отредактируйте или вставьте и примените. Сохранение по-прежнему проверяет каждый шаг.",
+    "invalid_json": "Это не валидный JSON.",
+    "needs_trigger": "Потоку нужен trigger_type.",
+    "needs_actions": "Потоку нужен массив actions."
   }
 }

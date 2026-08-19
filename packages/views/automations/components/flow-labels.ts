@@ -126,3 +126,59 @@ export function summarizeStep(
   }
   return "";
 }
+
+/** One selectable value for a condition field with a known domain. */
+export interface FieldValueOption {
+  value: string;
+  label: string;
+}
+
+/** Which fields have an enumerable domain, and where it comes from. Free-text
+ *  fields (a tracker column name, a title fragment) are absent on purpose — a
+ *  picker over an open vocabulary would be a lie. */
+export type FieldDomain =
+  | "statuses"
+  | "projects"
+  | "labels"
+  | "agents"
+  | "priorities"
+  | "assignee_types"
+  | "actor_types";
+
+export function fieldValueDomain(field: string): FieldDomain | undefined {
+  switch (field.trim()) {
+    case "status":
+    case "from_status":
+    case "to_status":
+      return "statuses";
+    case "project_id":
+      return "projects";
+    case "label":
+    case "labels":
+      return "labels";
+    case "assignee_id":
+      return "agents";
+    case "priority":
+      return "priorities";
+    case "assignee_type":
+      return "assignee_types";
+    case "actor_type":
+      return "actor_types";
+    default:
+      return undefined;
+  }
+}
+
+/** Condition values are a string or a list; the pickers edit them as a list.
+ *  These two normalize without losing a hand-typed free value. */
+export function conditionValueList(value: AutomationCondition["value"]): string[] {
+  if (Array.isArray(value)) return value.filter((item) => item.trim() !== "");
+  const single = (value ?? "").trim();
+  return single === "" ? [] : single.split(",").map((part) => part.trim()).filter((part) => part !== "");
+}
+
+export function listToConditionValue(values: string[]): string | string[] {
+  const cleaned = values.map((item) => item.trim()).filter((item) => item !== "");
+  if (cleaned.length <= 1) return cleaned[0] ?? "";
+  return cleaned;
+}

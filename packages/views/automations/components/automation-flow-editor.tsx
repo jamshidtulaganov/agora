@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { labelListOptions } from "@agora/core/labels";
+import { projectListOptions } from "@agora/core/projects/queries";
+import { agentListOptions } from "@agora/core/workspace/queries";
+import { useWorkspaceId } from "@agora/core/hooks";
 import type {
   AutomationCatalog,
   AutomationCondition,
@@ -10,7 +15,7 @@ import type {
 import { useT } from "../../i18n";
 import { AutomationFlowCanvas, type FlowCanvasNode } from "./automation-flow-canvas";
 import { AutomationNodePanel } from "./automation-node-panel";
-import { labelFor, summarizeStep } from "./flow-labels";
+import { labelFor, summarizeStep, type FieldValueOption } from "./flow-labels";
 
 // The flow editor: an n8n-style canvas for the SHAPE of the automation, plus a
 // panel for the selected node's parameters. Controlled — the page owns the draft
@@ -48,6 +53,30 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
   // The trigger is selected by default: it is the one node every flow has, and
   // opening onto an empty panel would make the editor look broken.
   const [selectedId, setSelectedId] = useState("trigger");
+
+  // Value domains for condition fields with a known vocabulary, resolved from
+  // the workspace's own data: a project condition offers projects (title shown,
+  // id stored), a label condition offers labels, an assignee condition offers
+  // agents. Static domains (statuses, priorities, actor kinds) come from the
+  // catalog and the platform's fixed sets.
+  const wsId = useWorkspaceId();
+  const { data: projects } = useQuery(projectListOptions(wsId));
+  const { data: labels } = useQuery(labelListOptions(wsId));
+  const { data: agents } = useQuery(agentListOptions(wsId));
+  const valueOptions = useMemo((): Partial<Record<string, FieldValueOption[]>> => {
+    return {
+      statuses: catalog.statuses.map((status) => ({ value: status, label: labelFor(statusLabels, status) })),
+      priorities: ["urgent", "high", "medium", "low", "none"].map((priority) => ({
+        value: priority,
+        label: priority,
+      })),
+      assignee_types: ["member", "agent", "squad"].map((kind) => ({ value: kind, label: kind })),
+      actor_types: ["member", "agent", "system", "automation"].map((kind) => ({ value: kind, label: kind })),
+      projects: (projects ?? []).map((project) => ({ value: project.id, label: project.title })),
+      labels: (labels ?? []).map((label) => ({ value: label.name, label: label.name })),
+      agents: (agents ?? []).map((agent) => ({ value: agent.id, label: agent.name })),
+    };
+  }, [catalog.statuses, statusLabels, projects, labels, agents]);
 
   // Keep the selection valid as steps come and go — a stale index would render an
   // empty panel for a node that no longer exists.
@@ -163,6 +192,7 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
         triggerConditions={value.conditions}
         step={selectedStep}
         catalog={catalog}
+        valueOptions={valueOptions}
         disabled={disabled}
         onTriggerChange={(trigger) =>
           // Conditions are cleared on a trigger change: they were written against

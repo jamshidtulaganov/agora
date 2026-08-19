@@ -1,8 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AutomationCatalog } from "@agora/core/automations";
 import { renderWithI18n } from "../../test/i18n";
+
+// The editor resolves value domains (projects, labels, agents) from workspace
+// queries; tests pin the domain lists instead of the network (standard views
+// pattern: mock @agora/core, never the framework).
+vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@agora/core/projects/queries", () => ({
+  projectListOptions: () => ({
+    queryKey: ["projects", "ws-1", "list"],
+    queryFn: async () => [{ id: "p-1", title: "Bitrix" }],
+  }),
+}));
+vi.mock("@agora/core/labels", () => ({
+  labelListOptions: () => ({
+    queryKey: ["labels", "ws-1", "list"],
+    queryFn: async () => [{ id: "l-1", name: "review:fail" }],
+  }),
+}));
+vi.mock("@agora/core/workspace/queries", () => ({
+  agentListOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "agents"],
+    queryFn: async () => [{ id: "a-1", name: "SD Reviewer" }],
+  }),
+}));
+
 import { AutomationFlowEditor, type AutomationFlowValue } from "./automation-flow-editor";
 
 // A catalog shaped like the server's, plus one trigger/step the client has never
@@ -26,8 +51,11 @@ const CATALOG: AutomationCatalog = {
 
 function setup(value: AutomationFlowValue) {
   const onChange = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = renderWithI18n(
-    <AutomationFlowEditor value={value} catalog={CATALOG} onChange={onChange} />,
+    <QueryClientProvider client={client}>
+      <AutomationFlowEditor value={value} catalog={CATALOG} onChange={onChange} />
+    </QueryClientProvider>,
   );
   return { onChange, ...result };
 }

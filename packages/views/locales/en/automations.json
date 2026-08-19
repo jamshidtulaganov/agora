@@ -74,7 +74,9 @@
     "conditions_count_many": "{{count}} conditions",
     "fullscreen": "Fullscreen",
     "exit_fullscreen": "Exit fullscreen",
-    "and": "and"
+    "and": "and",
+    "add_value": "Add a value…",
+    "any_of_hint": "Any of these matches."
   },
   "trigger": {
     "issue.created": "an issue is created",
@@ -181,5 +183,14 @@
     "done": "Done",
     "cancelled": "Cancelled",
     "blocked": "Blocked"
+  },
+  "code": {
+    "canvas_tab": "Canvas",
+    "code_tab": "Code",
+    "apply": "Apply to canvas",
+    "hint": "The same flow as JSON — edit or paste, then apply. Saving still validates every step.",
+    "invalid_json": "That is not valid JSON.",
+    "needs_trigger": "The flow needs a trigger_type.",
+    "needs_actions": "The flow needs an actions array."
   }
 }

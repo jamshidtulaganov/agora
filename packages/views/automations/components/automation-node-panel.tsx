@@ -12,11 +12,15 @@ import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { useT } from "../../i18n";
 import {
+  conditionValueList,
   conditionValueToText,
+  fieldValueDomain,
   labelFor,
+  listToConditionValue,
   operatorTakesValue,
   stepConfigFields,
   textToConditionValue,
+  type FieldValueOption,
 } from "./flow-labels";
 
 // The node parameter panel — n8n's node-details view, adapted: the canvas shows the
@@ -30,6 +34,10 @@ interface AutomationNodePanelProps {
   triggerConditions: AutomationCondition[];
   step?: AutomationStep;
   catalog: AutomationCatalog;
+  /** Per-domain value options for condition fields with a known vocabulary
+   *  (statuses, projects, labels, agents…), resolved by the editor from the
+   *  workspace's own data so a project condition offers PROJECTS, not free text. */
+  valueOptions?: Partial<Record<string, FieldValueOption[]>>;
   disabled?: boolean;
   onTriggerChange: (trigger: string) => void;
   onTriggerConditionsChange: (conditions: AutomationCondition[]) => void;
@@ -44,6 +52,7 @@ export function AutomationNodePanel({
   triggerConditions,
   step,
   catalog,
+  valueOptions,
   disabled,
   onTriggerChange,
   onTriggerConditionsChange,
@@ -119,6 +128,7 @@ export function AutomationNodePanel({
               conditions={triggerConditions}
               fields={fields}
               operators={catalog.operators}
+              valueOptions={valueOptions}
               disabled={disabled}
               onChange={onTriggerConditionsChange}
               emptyHint={t(($) => $.flow.no_conditions)}
@@ -154,6 +164,7 @@ export function AutomationNodePanel({
                   conditions={step.conditions ?? []}
                   fields={fields}
                   operators={catalog.operators}
+                  valueOptions={valueOptions}
                   disabled={disabled}
                   onChange={(conditions) => onStepChange({ ...step, conditions })}
                   emptyHint={t(($) => $.flow.filter_hint)}
@@ -194,6 +205,7 @@ function ConditionRows({
   conditions,
   fields,
   operators,
+  valueOptions,
   disabled,
   onChange,
   emptyHint,
@@ -201,6 +213,7 @@ function ConditionRows({
   conditions: AutomationCondition[];
   fields: string[];
   operators: string[];
+  valueOptions?: Partial<Record<string, FieldValueOption[]>>;
   disabled?: boolean;
   onChange: (next: AutomationCondition[]) => void;
   emptyHint: string;
@@ -289,24 +302,13 @@ function ConditionRows({
             </label>
 
             {operatorTakesValue(condition.op) && (
-              <label className="block space-y-1">
-                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {t(($) => $.flow.value)}
-                </span>
-                <Input
-                  aria-label={t(($) => $.flow.value)}
-                  className="h-9"
-                  placeholder={t(($) => $.flow.value_placeholder)}
-                  value={conditionValueToText(condition.value)}
-                  disabled={disabled}
-                  onChange={(event) => update(index, { value: textToConditionValue(event.target.value) })}
-                />
-                {listOp(condition.op) && (
-                  <span className="block text-[11px] leading-snug text-muted-foreground">
-                    {t(($) => $.flow.value_list_hint)}
-                  </span>
-                )}
-              </label>
+              <ConditionValueControl
+                condition={condition}
+                options={optionsForField(condition.field, valueOptions)}
+                listHint={listOp(condition.op)}
+                disabled={disabled}
+                onChange={(value) => update(index, { value })}
+              />
             )}
           </div>
         </div>
@@ -472,5 +474,122 @@ function LabeledRow({ label, children }: { label: string; children: React.ReactN
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+// optionsForField resolves a field's value options from the editor-supplied
+// domains. undefined = free text (a tracker column name, a title fragment).
+function optionsForField(
+  field: string,
+  valueOptions?: Partial<Record<string, FieldValueOption[]>>,
+): FieldValueOption[] | undefined {
+  const domain = fieldValueDomain(field);
+  if (!domain) return undefined;
+  const options = valueOptions?.[domain];
+  return options && options.length > 0 ? options : undefined;
+}
+
+// ConditionValueControl edits one condition's value. Fields with a KNOWN
+// vocabulary get a picker: current values as removable chips plus an "add"
+// select over the remaining options — a project condition offers the
+// workspace's projects instead of asking a human to paste a uuid, which is the
+// exact mistake free text invited (a column name typed into a project field).
+// Free-text fields keep the plain input with the comma hint.
+function ConditionValueControl({
+  condition,
+  options,
+  listHint,
+  disabled,
+  onChange,
+}: {
+  condition: AutomationCondition;
+  options?: FieldValueOption[];
+  listHint: boolean;
+  disabled?: boolean;
+  onChange: (value: AutomationCondition["value"]) => void;
+}) {
+  const { t } = useT("automations");
+
+  if (!options) {
+    return (
+      <label className="block space-y-1">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t(($) => $.flow.value)}
+        </span>
+        <Input
+          aria-label={t(($) => $.flow.value)}
+          className="h-9"
+          placeholder={t(($) => $.flow.value_placeholder)}
+          value={conditionValueToText(condition.value)}
+          disabled={disabled}
+          onChange={(event) => onChange(textToConditionValue(event.target.value))}
+        />
+        {listHint && (
+          <span className="block text-[11px] leading-snug text-muted-foreground">
+            {t(($) => $.flow.value_list_hint)}
+          </span>
+        )}
+      </label>
+    );
+  }
+
+  const selected = conditionValueList(condition.value);
+  const byValue = new Map(options.map((option) => [option.value, option.label]));
+  const remaining = options.filter((option) => !selected.includes(option.value));
+
+  return (
+    <div className="space-y-1">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {t(($) => $.flow.value)}
+      </span>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selected.map((value) => (
+            <span
+              key={value}
+              className="inline-flex items-center gap-1 rounded-md border bg-muted px-1.5 py-0.5 text-xs"
+            >
+              {/* A stored value the domain no longer lists (a deleted project, a
+                  hand-typed one) still shows — as its raw value — and stays
+                  removable, so an old rule round-trips instead of hiding state. */}
+              {byValue.get(value) ?? value}
+              <button
+                type="button"
+                aria-label={t(($) => $.flow.remove)}
+                disabled={disabled}
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => onChange(listToConditionValue(selected.filter((item) => item !== value)))}
+              >
+                <X className="size-3" aria-hidden />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {remaining.length > 0 && (
+        <NativeSelect
+          aria-label={t(($) => $.flow.add_value)}
+          value=""
+          disabled={disabled}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "") return;
+            onChange(listToConditionValue([...selected, value]));
+          }}
+        >
+          <NativeSelectOption value="">{t(($) => $.flow.add_value)}</NativeSelectOption>
+          {remaining.map((option) => (
+            <NativeSelectOption key={option.value} value={option.value}>
+              {option.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      )}
+      {selected.length > 1 && (
+        <span className="block text-[11px] leading-snug text-muted-foreground">
+          {t(($) => $.flow.any_of_hint)}
+        </span>
+      )}
+    </div>
   );
 }

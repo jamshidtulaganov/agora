@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  conditionValueList,
   conditionValueToText,
+  fieldValueDomain,
+  listToConditionValue,
   humanizeMachineName,
   labelFor,
   operatorTakesValue,
@@ -92,5 +95,44 @@ describe("stepConfigFields", () => {
 describe("humanizeMachineName", () => {
   it("replaces separators", () => {
     expect(humanizeMachineName("issue.label_attached")).toBe("issue label attached");
+  });
+});
+
+describe("fieldValueDomain", () => {
+  it("maps enumerable fields to their domains", () => {
+    expect(fieldValueDomain("status")).toBe("statuses");
+    expect(fieldValueDomain("from_status")).toBe("statuses");
+    expect(fieldValueDomain("to_status")).toBe("statuses");
+    expect(fieldValueDomain("project_id")).toBe("projects");
+    expect(fieldValueDomain("label")).toBe("labels");
+    expect(fieldValueDomain("labels")).toBe("labels");
+    expect(fieldValueDomain("assignee_id")).toBe("agents");
+    expect(fieldValueDomain("priority")).toBe("priorities");
+  });
+
+  // A tracker column or a title fragment is an open vocabulary — a picker over
+  // it would be a lie, so those stay free text.
+  it("leaves open-vocabulary fields without a domain", () => {
+    expect(fieldValueDomain("stage")).toBeUndefined();
+    expect(fieldValueDomain("prev_stage")).toBeUndefined();
+    expect(fieldValueDomain("title")).toBeUndefined();
+    expect(fieldValueDomain("comment_body")).toBeUndefined();
+  });
+});
+
+describe("condition value list round-trip", () => {
+  it("normalizes a comma string into a list", () => {
+    expect(conditionValueList("a, b , c")).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps an array as-is minus blanks", () => {
+    expect(conditionValueList(["a", " ", "b"])).toEqual(["a", "b"]);
+    expect(conditionValueList(undefined)).toEqual([]);
+  });
+
+  it("collapses back to a single string when one value remains", () => {
+    expect(listToConditionValue(["a"])).toBe("a");
+    expect(listToConditionValue(["a", "b"])).toEqual(["a", "b"]);
+    expect(listToConditionValue([])).toBe("");
   });
 });
