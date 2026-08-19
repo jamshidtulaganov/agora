@@ -578,7 +578,11 @@ func TestBitrixStageIDForIssueStatus(t *testing.T) {
 		{"entering review lands on the EARLIEST review column", "in_review", "2533", nil, "2879"},
 		{"done moves to Сделаны", "done", "2533", nil, "2535"},
 		{"in_progress from Новые", "in_progress", "2531", nil, "2533"},
-		{"returned already means in_progress", "in_progress", "2883", nil, ""},
+		// "Returned" means TODO (re-queued), not in_progress: a task the reviewer
+		// sent back is un-owned until someone restarts it. So a task Agora moved
+		// to in_progress while parked in Returned DOES move to the dev column.
+		{"returned means todo, so in_progress moves to the dev column", "in_progress", "2883", nil, "2533"},
+		{"returned already means todo — no churn", "todo", "2883", nil, ""},
 		{"no blocked column on this board — no move", "blocked", "2531", nil, ""},
 		{"unknown status has no column", "backlog", "2531", nil, ""},
 		{
@@ -682,5 +686,54 @@ func TestBitrixTaskIsClosed(t *testing.T) {
 					tc.mappedStatus, tc.stageDecided, tc.bitrixStatus, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBitrixStageIDForIssueStatusReturnColumn pins the RETURN preference: a task
+// leaving a review/testing column for todo lands on the board's "Returned"
+// column, not on the earliest todo column. That is what the reviewer sending work
+// back actually looks like on the kanban — Новые would read as "never started".
+func TestBitrixStageIDForIssueStatusReturnColumn(t *testing.T) {
+	stages := []bitrix.Stage{
+		{ID: "2531", Title: "Новые", Sort: 100},
+		{ID: "2533", Title: "Выполняются", Sort: 200},
+		{ID: "2883", Title: "Returned", Sort: 250},
+		{ID: "2879", Title: "Code Review", Sort: 300},
+		{ID: "2901", Title: "Тестинг", Sort: 500},
+		{ID: "2535", Title: "Сделаны", Sort: 800},
+	}
+	cases := []struct {
+		name    string
+		status  string
+		current string
+		want    string
+	}{
+		{"review:fail from Code Review lands on Returned", "todo", "2879", "2883"},
+		{"QA fail from Testing lands on Returned too", "todo", "2901", "2883"},
+		{"re-queue from the dev column keeps the earliest todo column", "todo", "2533", "2531"},
+		{"already parked in Returned — no churn", "todo", "2883", ""},
+		{"in_review still lands on the earliest review column", "in_review", "2533", "2879"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bitrixStageIDForIssueStatus(tc.status, stages, tc.current, nil); got != tc.want {
+				t.Errorf("bitrixStageIDForIssueStatus(%q, current=%q) = %q, want %q",
+					tc.status, tc.current, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBitrixStageIDForIssueStatusNoReturnColumn: a board WITHOUT a return column
+// must keep working — the preference degrades to the earliest todo column instead
+// of returning "" and stranding the task in the review column.
+func TestBitrixStageIDForIssueStatusNoReturnColumn(t *testing.T) {
+	stages := []bitrix.Stage{
+		{ID: "1", Title: "To Do", Sort: 100},
+		{ID: "2", Title: "Doing", Sort: 200},
+		{ID: "3", Title: "Code Review", Sort: 300},
+	}
+	if got := bitrixStageIDForIssueStatus("todo", stages, "3", nil); got != "1" {
+		t.Errorf("without a Returned column, todo from review = %q, want %q", got, "1")
 	}
 }

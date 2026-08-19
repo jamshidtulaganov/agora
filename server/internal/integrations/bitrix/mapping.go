@@ -112,6 +112,9 @@ func MapStatus(bitrixStatus string) string {
 //     while "Ready for testing"/"Testing" is handed to QA.
 //   - todo carries "к выполнен" (К выполнению = To Do) which must not be
 //     confused with "выполня" (Выполняются = in progress).
+//   - return BEFORE review AND before in-progress: a "Returned"/"Возвращена с
+//     ревью" column is work coming BACK, so it maps to todo (re-queued) — the
+//     review and in-progress keywords must not claim it first.
 func MapStage(stage string) string {
 	s := strings.ToLower(strings.TrimSpace(stage))
 	if s == "" {
@@ -130,13 +133,17 @@ func MapStage(stage string) string {
 		return StatusDone
 	case containsAny(s, "dev test", "dev тест", "разработчик тест"):
 		return StatusInProgress
+	case containsAny(s, "return", "возврат", "возвращ", "вернул"):
+		// QA/reviewer sent it back. It lands in TODO, not in_progress: the work
+		// is queued again and un-owned until someone (or an agent) picks it up,
+		// and in_progress would claim work nobody has restarted — it also makes
+		// the return invisible on a board read as "who is working on what".
+		// Entering todo is what re-opens the pipeline for this task.
+		return StatusTodo
 	case containsAny(s, "review", "ревью", "ревю", "merg", "мерж"):
 		return StatusInReview
 	case containsAny(s, "test", "тест", "qa", "проверк"):
 		return StatusInReview
-	case containsAny(s, "return", "возврат", "вернул"):
-		// QA/reviewer sent it back — the ball is with the developer again.
-		return StatusInProgress
 	case containsAny(s, "выполня", "progress", "doing", "develop", "разработ", "в работе", "процесс"):
 		return StatusInProgress
 	case containsAny(s, "нов", "new", "to do", "todo", "к выполнен", "unready", "given",
@@ -145,6 +152,45 @@ func MapStage(stage string) string {
 	default:
 		return ""
 	}
+}
+
+// StageIsCodeReview reports whether a Bitrix kanban column IS the code-review
+// column — the trigger for the automated code review (review-first pipeline).
+//
+// This is deliberately NARROWER than MapStage's in_review bucket. MapStage
+// collapses Code Review, Ready for testing, Testing, Need Merge and Ready for
+// release ALL into in_review (Agora has one review column), so the mapped
+// status cannot tell "a diff is waiting for a reviewer" from "QA is testing it"
+// or "it is waiting to be merged". Two exclusions carry the distinction:
+//
+//   - a RETURN column ("Returned", "Возвращена") is the reviewer sending work
+//     BACK, not work arriving for review — and it is checked first because such
+//     a label may still mention review;
+//   - a MERGE column ("Need Merge", "READY MERGING") sits AFTER the review, so
+//     firing a review there would re-review an already-judged diff.
+//
+// Everything else that names a review ("Code Review", "In Code Review",
+// "Review", "NEED REVIEWING", "Ревью") matches, case-insensitively.
+func StageIsCodeReview(stage string) bool {
+	s := strings.ToLower(strings.TrimSpace(stage))
+	if s == "" {
+		return false
+	}
+	if containsAny(s, "return", "возврат", "возвращ", "вернул") {
+		return false
+	}
+	if containsAny(s, "merg", "мерж") {
+		return false
+	}
+	return containsAny(s, "review", "ревью", "ревю")
+}
+
+// StageIsReturned reports whether a Bitrix kanban column is a RETURN column —
+// the reviewer/QA sending the task back to the developer. Kept next to
+// StageIsCodeReview so the two share one keyword vocabulary.
+func StageIsReturned(stage string) bool {
+	s := strings.ToLower(strings.TrimSpace(stage))
+	return s != "" && containsAny(s, "return", "возврат", "возвращ", "вернул")
 }
 
 // containsAny reports whether s contains any of the substrings.

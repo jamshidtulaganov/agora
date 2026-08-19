@@ -479,7 +479,7 @@ func TestMapStage(t *testing.T) {
 		"To Do":                     StatusTodo,
 		"Draft":                     StatusTodo,
 		"Выполняются":               StatusInProgress,
-		"Returned":                  StatusInProgress,
+		"Returned":                  StatusTodo,
 		"Dev testing":               StatusInProgress,
 		"Dev Testing":               StatusInProgress,
 		"Blocker":                   StatusBlocked,
@@ -885,5 +885,56 @@ func TestWithinRecencyWindow(t *testing.T) {
 				t.Errorf("WithinRecencyWindow(%+v, %d) = %v, want %v", c.task, c.days, got, c.want)
 			}
 		})
+	}
+}
+
+// TestStageIsCodeReview pins the NARROW code-review predicate against the same
+// real SD kanban vocabulary TestMapStage uses. The point of the test is the two
+// exclusions: every column below maps to in_review under MapStage, but only the
+// review columns may fire the automated code review — a merge column would
+// re-review an already-judged diff, and a return column is work coming back.
+func TestStageIsCodeReview(t *testing.T) {
+	cases := map[string]bool{
+		"Code Review":        true,
+		"In Code Review":     true,
+		"Review":             true,
+		"NEED REVIEWING":     true,
+		"code review":        true,
+		"Ревью":              true,
+		"Код ревью":          true,
+		"Need Merge":         false, // post-review
+		"Need merge":         false,
+		"READY MERGING":      false,
+		"Нужен Merge":        false,
+		"Returned":           false, // work coming back, not arriving
+		"Возвращена":         false,
+		"Возвращена с ревью": false, // return wins over the review keyword
+		"Ready for testing":  false,
+		"Testing web":        false,
+		"Ready for release":  false,
+		"To Do":              false,
+		"Done":               false,
+		"":                   false,
+		"   ":                false,
+	}
+	for stage, want := range cases {
+		if got := StageIsCodeReview(stage); got != want {
+			t.Errorf("StageIsCodeReview(%q) = %v, want %v", stage, got, want)
+		}
+	}
+}
+
+// TestStageIsReturned covers the return predicate, including the Russian labels
+// and the "returned from review" collision that StageIsCodeReview must lose.
+func TestStageIsReturned(t *testing.T) {
+	for _, stage := range []string{"Returned", "returned", "Возвращена", "Возвращена с ревью", "Вернули на доработку"} {
+		if !StageIsReturned(stage) {
+			t.Errorf("StageIsReturned(%q) = false, want true", stage)
+		}
+	}
+	for _, stage := range []string{"", "Code Review", "To Do", "Done", "Need Merge"} {
+		if StageIsReturned(stage) {
+			t.Errorf("StageIsReturned(%q) = true, want false", stage)
+		}
 	}
 }

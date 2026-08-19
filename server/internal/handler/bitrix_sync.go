@@ -798,6 +798,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	}
 
 	if found {
+		// The kanban column this issue carried BEFORE this sync. Read FIRST:
+		// setBitrixIssueMetadata below overwrites it, and onBitrixStageChanged
+		// needs the diff to tell "entered Code Review" from "parked in Code
+		// Review since the last poll".
+		prevStage := bitrixStageFromMetadata(existing.Metadata)
+
 		// Already synced. Reconcile status AND assignee, doing both RAW (no bus
 		// publish) so we don't trigger our own outbound listener and echo the
 		// change straight back to Bitrix.
@@ -909,6 +915,11 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		if oid, oerr := h.bitrixWorkspaceOwner(ctx, ws.ID); oerr == nil {
 			h.embedInlineDiskImages(ctx, ws.ID, existing.ID, oid, st)
 		}
+		// Automation: a kanban move INTO the code-review column starts the
+		// review-first pipeline. Last in the branch so the dispatch's re-read
+		// sees this sync's status, project, sprint and metadata writes. Detached
+		// inside — never delays or fails the sync.
+		h.onBitrixStageChanged(ctx, existing, prevStage, stageName)
 		st.updated++
 		return nil
 	}
@@ -2053,6 +2064,27 @@ func bitrixStageIDForIssueStatus(issueStatus string, stages []bitrix.Stage, curr
 		return bitrix.MapStage(name)
 	}
 	currentStageID = strings.TrimSpace(currentStageID)
+	// A task LEAVING a review/testing column for todo is a RETURN, not fresh
+	// intake: it is exactly what the board's "Возвращена"/"Returned" column
+	// means. Without this the earliest-column rule below drops it into
+	// Новые/To Do, which reads as "never started" and loses the fact that the
+	// reviewer sent it back. Only applies when such a column exists AND the task
+	// is coming from review/testing; a genuine re-queue from anywhere else keeps
+	// the earliest-column behavior.
+	returningFromReview := false
+	for _, s := range stages {
+		if s.ID == currentStageID {
+			returningFromReview = statusOf(s.Title) == bitrix.StatusInReview
+			break
+		}
+	}
+	if issueStatus == bitrix.StatusTodo && returningFromReview {
+		for _, s := range stages {
+			if bitrix.StageIsReturned(s.Title) && s.ID != currentStageID {
+				return s.ID
+			}
+		}
+	}
 	target := ""
 	for _, s := range stages {
 		mapped := statusOf(s.Title)
