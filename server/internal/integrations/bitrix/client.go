@@ -467,7 +467,7 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	// Ask Bitrix to return the fields we map. Bitrix ignores unknown select
 	// entries, so over-asking is safe and forward-compatible.
 	// CREATED_DATE / CHANGED_DATE drive the import recency window.
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "CHAT_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "CHAT_ID", "RESPONSIBLE_ID", "CREATED_BY", "GROUP_ID", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
 		form.Add("select[]", f)
 	}
 
@@ -644,7 +644,7 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 		if t := strings.TrimSpace(tag); t != "" {
 			form.Set("filter[TAG]", t)
 		}
-		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
+		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "CREATED_BY", "STATUS", "TAGS", "CREATED_DATE", "CHANGED_DATE"} {
 			form.Add("select[]", f)
 		}
 		form.Set("order[ID]", "DESC")
@@ -852,7 +852,7 @@ func (c *Client) ListTasksByUser(ctx context.Context, userID, tag string) ([]Tas
 		if t := strings.TrimSpace(tag); t != "" {
 			form.Set("filter[TAG]", t)
 		}
-		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "CREATED_BY", "STATUS", "TAGS"} {
 			form.Add("select[]", f)
 		}
 		form.Set("order[ID]", "DESC")

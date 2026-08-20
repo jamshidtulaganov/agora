@@ -502,3 +502,24 @@ func TestAutomationExpandTemplateIncludesOwnership(t *testing.T) {
 		t.Fatalf("expanded template = %q, want %q", got, want)
 	}
 }
+
+func TestAutomationFactsIncludeUpstreamPeople(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	issue := db.Issue{
+		ID:          testUUID(testWorkspaceID),
+		WorkspaceID: testUUID(testWorkspaceID),
+		Metadata: []byte(`{
+			"bitrix_responsible_email":"j.tulaganov@salesdoc.io",
+			"bitrix_created_by_email":"s.tajiyev@salesdoc.io"
+		}`),
+	}
+	facts := testHandler.automationFactsFor(context.Background(), AutomationEvent{Issue: issue})
+	if got := facts.field("source_assignee_email"); got != "j.tulaganov@salesdoc.io" {
+		t.Errorf("source_assignee_email = %q", got)
+	}
+	if got := facts.field("source_creator_email"); got != "s.tajiyev@salesdoc.io" {
+		t.Errorf("source_creator_email = %q", got)
+	}
+}

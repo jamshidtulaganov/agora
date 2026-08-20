@@ -19,13 +19,14 @@ import (
 type bitrixMockPortal struct {
 	srv      *httptest.Server
 	tasks    map[string]string // taskID -> JSON for result.task
+	users    map[string]string // userID -> JSON for one user.get result row
 	comments []string
 	statuses []string
 }
 
 func newBitrixMockPortal(t *testing.T) *bitrixMockPortal {
 	t.Helper()
-	p := &bitrixMockPortal{tasks: map[string]string{}}
+	p := &bitrixMockPortal{tasks: map[string]string{}, users: map[string]string{}}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -38,6 +39,14 @@ func newBitrixMockPortal(t *testing.T) *bitrixMockPortal {
 				return
 			}
 			io.WriteString(w, `{"result":{"task":`+body+`}}`)
+		case strings.HasSuffix(r.URL.Path, "/user.get"):
+			r.ParseForm()
+			body, ok := p.users[r.PostForm.Get("ID")]
+			if !ok {
+				io.WriteString(w, `{"result":[]}`)
+				return
+			}
+			io.WriteString(w, `{"result":[`+body+`]}`)
 		case strings.HasSuffix(r.URL.Path, "/task.commentitem.add"):
 			r.ParseForm()
 			p.comments = append(p.comments, r.PostForm.Get("FIELDS[POST_MESSAGE]"))
@@ -60,6 +69,8 @@ func newBitrixMockPortal(t *testing.T) *bitrixMockPortal {
 
 // setTask registers a task body (the JSON that goes inside result.task).
 func (p *bitrixMockPortal) setTask(id, body string) { p.tasks[id] = body }
+
+func (p *bitrixMockPortal) setUser(id, body string) { p.users[id] = body }
 
 // postBitrixWebhook fires the inbound webhook handler with a form-encoded
 // ONTASK* event for the given task id and returns the recorder.
@@ -444,6 +455,46 @@ func TestBitrixWebhookReassignsOnUpdate(t *testing.T) {
 	}
 	if assigneeID2 != testUserID {
 		t.Errorf("after reassign: assignee_id = %q, want %q", assigneeID2, testUserID)
+	}
+}
+
+func TestBitrixWebhookStoresResponsibleAndCreatorMetadata(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	portal := newBitrixMockPortal(t)
+	configureBitrixEnv(t, portal.srv.URL)
+
+	const taskID = "bx-people-metadata-1"
+	cleanupBitrixIssues(t, taskID)
+	portal.setUser("525", `{"ID":"525","NAME":"Jamshid","LAST_NAME":"Tulaganov","EMAIL":"j.tulaganov@salesdoc.io"}`)
+	portal.setUser("777", `{"ID":"777","NAME":"Shaxzod","LAST_NAME":"Tadjiyev","EMAIL":"s.tajiyev@salesdoc.io"}`)
+	portal.setTask(taskID, `{
+		"id":"`+taskID+`","title":"Track both people","status":3,
+		"responsibleId":"525","createdBy":"777","tags":["ai"]
+	}`)
+
+	if w := postBitrixWebhook(t, "ONTASKADD", taskID); w.Code != http.StatusOK {
+		t.Fatalf("webhook status = %d, body = %s", w.Code, w.Body.String())
+	}
+	filter, _ := json.Marshal(map[string]string{bitrixTaskIDMetaKey: taskID})
+	var raw []byte
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT metadata FROM issue
+		WHERE workspace_id = $1::uuid AND metadata @> $2::jsonb
+	`, testWorkspaceID, string(filter)).Scan(&raw); err != nil {
+		t.Fatalf("query issue metadata: %v", err)
+	}
+	metadata := parseIssueMetadata(raw)
+	for key, want := range map[string]string{
+		"bitrix_responsible_email": "j.tulaganov@salesdoc.io",
+		"bitrix_responsible_name":  "Jamshid Tulaganov",
+		"bitrix_created_by_email":  "s.tajiyev@salesdoc.io",
+		"bitrix_created_by_name":   "Shaxzod Tadjiyev",
+	} {
+		if got, _ := metadata[key].(string); got != want {
+			t.Errorf("metadata[%q] = %q, want %q", key, got, want)
+		}
 	}
 }
 

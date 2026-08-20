@@ -72,6 +72,11 @@ link (`external_issue_url`, falling back to the Bitrix importer's `bitrix_task_u
 and `{{source_assignee}}` for the upstream responsible person (`external_assignee`,
 falling back to `bitrix_responsible_name` and then the Agora assignee).
 
+Rules may condition on `source_assignee_email` and `source_creator_email` to route
+notifications by upstream ownership. Provider-neutral metadata keys are preferred;
+Bitrix mirrors populate them from `bitrix_responsible_email` and
+`bitrix_created_by_email`.
+
 A human can retry a failed automation run with
 `POST /api/automations/{automation_id}/runs/{run_id}/rerun`. The retry creates a new
 audit row linked by `detail.retry_of` and executes only failed steps; successful

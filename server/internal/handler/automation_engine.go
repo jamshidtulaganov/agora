@@ -117,6 +117,8 @@ func (h *Handler) automationFactsFor(ctx context.Context, ev AutomationEvent) au
 		facts.set("assignee_id", uuidToString(issue.AssigneeID))
 	}
 	facts.set("priority", issue.Priority)
+	facts.set("source_assignee_email", firstNonEmptyMetadata(issue.Metadata, "external_assignee_email", "bitrix_responsible_email"))
+	facts.set("source_creator_email", firstNonEmptyMetadata(issue.Metadata, "external_creator_email", "bitrix_created_by_email"))
 
 	if labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
@@ -132,6 +134,15 @@ func (h *Handler) automationFactsFor(ctx context.Context, ev AutomationEvent) au
 		facts.Labels[l] = true
 	}
 	return facts
+}
+
+func firstNonEmptyMetadata(raw []byte, keys ...string) string {
+	for _, key := range keys {
+		if value := issueMetadataString(raw, key); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // applyAutomation runs one rule against one event. Order of checks is cheapest

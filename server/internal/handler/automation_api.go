@@ -506,7 +506,7 @@ func automationJSONColumns(req automationWriteRequest) (triggerConfig, condition
 // automationTriggerCatalog describes each trigger and the facts it carries, so the
 // editor's condition picker is generated rather than hand-maintained.
 func automationTriggerCatalog() []map[string]any {
-	common := []string{"status", "project_id", "assignee_type", "assignee_id", "priority", "title", "actor_type"}
+	common := []string{"status", "project_id", "assignee_type", "assignee_id", "priority", "title", "actor_type", "source_assignee_email", "source_creator_email"}
 	fieldsFor := func(extra ...string) []string {
 		return append(append([]string{}, extra...), common...)
 	}

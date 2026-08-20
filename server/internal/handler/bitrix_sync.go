@@ -830,6 +830,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// RAW bus-free update (no EventIssueUpdated publish, to avoid an
 		// outbound echo).
 		responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
+		creator := h.bitrixPortalUser(ctx, st, task.CreatedByID)
 		assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 		if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
 			assigneeType, assigneeID = reviewType, reviewID
@@ -848,7 +849,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// Always refresh the responsible's display metadata (name/email/position)
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
-		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID,
+		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, task.CreatedByID, creator, stageName, stageDecided, task.ID,
 			task.GroupID, h.bitrixTaskGroupName(ctx, task, st))
 		// Bitrix tags → Agora labels (additive; backfills older mirrors too).
 		h.syncBitrixTagsAsLabels(ctx, ws.ID, existing.ID, task)
@@ -943,6 +944,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	draft := bitrix.MapTaskToIssue(task, bitrix.PortalOrigin(bitrixWebhookURL()))
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
+	creator := h.bitrixPortalUser(ctx, st, task.CreatedByID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 	responsibleIsWorkspaceMember := assigneeType.Valid
 	if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
@@ -1019,7 +1021,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
-	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, stageDecided, task.ID,
+	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, task.CreatedByID, creator, stageName, stageDecided, task.ID,
 		task.GroupID, h.bitrixTaskGroupName(ctx, task, st))
 	// Bitrix tags → Agora labels (bug/feature → type:*, aliases collapsed).
 	h.syncBitrixTagsAsLabels(ctx, ws.ID, res.Issue.ID, task)
@@ -1642,7 +1644,11 @@ func (h *Handler) assigneeIfMember(ctx context.Context, wsID pgtype.UUID, userID
 // fails — callers treat nil as "no assignee info". The nil result is cached so
 // a failed/unknown id isn't re-queried for every task in the batch.
 func (h *Handler) bitrixResponsible(ctx context.Context, st *bitrixSyncState, responsibleID string) *bitrix.User {
-	id := strings.TrimSpace(responsibleID)
+	return h.bitrixPortalUser(ctx, st, responsibleID)
+}
+
+func (h *Handler) bitrixPortalUser(ctx context.Context, st *bitrixSyncState, userID string) *bitrix.User {
+	id := strings.TrimSpace(userID)
 	if id == "" {
 		return nil
 	}
@@ -1652,7 +1658,7 @@ func (h *Handler) bitrixResponsible(ctx context.Context, st *bitrixSyncState, re
 	u, err := st.client.GetUser(ctx, id)
 	if err != nil || strings.TrimSpace(u.ID) == "" {
 		if err != nil {
-			slog.Warn("bitrix sync: user.get failed", "responsible_id", id, "error", err)
+			slog.Warn("bitrix sync: user.get failed", "user_id", id, "error", err)
 		}
 		st.userCache[id] = nil
 		return nil
@@ -1696,10 +1702,9 @@ func (h *Handler) bitrixTaskGroupName(ctx context.Context, task *bitrix.Task, st
 }
 
 // setBitrixIssueMetadata records the Bitrix provenance on the issue metadata:
-// the responsible person (id/name/email/position — so the assignee is visible
-// even when they're not an Agora member), the live kanban STAGE name, the source
-// workgroup ("project" in Bitrix's UI), and a deep link back to the original
-// task. Best-effort per key; runs on create + re-sync.
+// the responsible person, the task creator, the live kanban stage, the source
+// workgroup, and a deep link back to the original task. Best-effort per key;
+// runs on create + re-sync.
 //
 // The group is stamped even though routing already files the issue under an
 // Agora project/sprint, because those are lossy: named-project routing sends
@@ -1708,13 +1713,22 @@ func (h *Handler) bitrixTaskGroupName(ctx context.Context, task *bitrix.Task, st
 // leaving no way to tell which Bitrix project they came from. The raw group id +
 // name make provenance exact, filterable (`?metadata={"bitrix_group_id":"153"}`)
 // and displayable.
-func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName string, stageDecided bool, taskID, groupID, groupName string) {
+func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, responsible *bitrix.User, createdByID string, creator *bitrix.User, stageName string, stageDecided bool, taskID, groupID, groupName string) {
 	kv := [][2]string{{"bitrix_responsible_id", strings.TrimSpace(responsibleID)}}
-	if u != nil {
+	if responsible != nil {
 		kv = append(kv,
-			[2]string{"bitrix_responsible_name", u.FullName()},
-			[2]string{"bitrix_responsible_email", strings.TrimSpace(u.Email)},
-			[2]string{"bitrix_responsible_position", strings.TrimSpace(u.Position)},
+			[2]string{"bitrix_responsible_name", responsible.FullName()},
+			[2]string{"bitrix_responsible_email", strings.TrimSpace(responsible.Email)},
+			[2]string{"bitrix_responsible_position", strings.TrimSpace(responsible.Position)},
+		)
+	}
+	if id := strings.TrimSpace(createdByID); id != "" {
+		kv = append(kv, [2]string{"bitrix_created_by_id", id})
+	}
+	if creator != nil {
+		kv = append(kv,
+			[2]string{"bitrix_created_by_name", creator.FullName()},
+			[2]string{"bitrix_created_by_email", strings.TrimSpace(creator.Email)},
 		)
 	}
 	if s := strings.TrimSpace(stageName); s != "" {
