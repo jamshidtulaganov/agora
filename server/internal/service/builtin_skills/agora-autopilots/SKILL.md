@@ -65,10 +65,12 @@ from Telegram on the platform path means that platform bot token is invalid; it 
 not mean the automation condition failed.
 
 Message templates support `{{issue}}`, `{{title}}`, `{{status}}`, `{{automation}}`,
-`{{assignee}}`, `{{actor}}`, and `{{source_url}}`. Use `{{assignee}}` for the current
-task owner, `{{actor}}` for the member or agent whose event triggered the flow, and
-`{{source_url}}` for the canonical upstream task link (`external_issue_url`, falling
-back to the Bitrix importer's `bitrix_task_url`).
+`{{assignee}}`, `{{actor}}`, `{{source_url}}`, and `{{source_assignee}}`. Use
+`{{assignee}}` for the current Agora task owner, `{{actor}}` for the member or agent
+whose event triggered the flow, `{{source_url}}` for the canonical upstream task
+link (`external_issue_url`, falling back to the Bitrix importer's `bitrix_task_url`),
+and `{{source_assignee}}` for the upstream responsible person (`external_assignee`,
+falling back to `bitrix_responsible_name` and then the Agora assignee).
 
 A human can retry a failed automation run with
 `POST /api/automations/{automation_id}/runs/{run_id}/rerun`. The retry creates a new

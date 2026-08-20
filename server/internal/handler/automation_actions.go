@@ -631,7 +631,7 @@ func (h *Handler) automationIssueOwnerUserID(ctx context.Context, issue db.Issue
 
 // automationExpandTemplate substitutes the small, fixed vocabulary a flow may
 // use in human-facing messages. It remains deliberately non-programmable: these
-// seven facts cover task identity, ownership, and source without introducing a
+// eight facts cover task identity, ownership, and source without introducing a
 // template language or an evaluation surface.
 func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName, assigneeName, actorName string) string {
 	replacer := strings.NewReplacer(
@@ -642,8 +642,21 @@ func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName, a
 		"{{assignee}}", assigneeName,
 		"{{actor}}", actorName,
 		"{{source_url}}", automationIssueSourceURL(issue),
+		"{{source_assignee}}", automationIssueSourceAssigneeName(issue, assigneeName),
 	)
 	return replacer.Replace(text)
+}
+
+// automationIssueSourceAssigneeName returns the person assigned by the upstream
+// tracker. When an issue is not synced, the Agora assignee remains the useful
+// answer rather than leaving a blank notification line.
+func automationIssueSourceAssigneeName(issue db.Issue, fallback string) string {
+	for _, key := range []string{"external_assignee", "bitrix_responsible_name"} {
+		if value := issueMetadataString(issue.Metadata, key); value != "" {
+			return value
+		}
+	}
+	return fallback
 }
 
 // automationIssueSourceURL returns the canonical upstream task link carried by

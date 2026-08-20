@@ -8,4 +8,4 @@
 - `AgentReadiness` blocks archived/runtime-unready agents before enqueue.
 - `server/cmd/server/router.go` exposes authenticated `/api/autopilots` routes and unauthenticated webhook ingress `/api/webhooks/autopilots/{token}`.
 - `server/internal/handler/telegram_issue_destination.go` resolves automation Telegram group notices: issue speaker bot, authorized workspace bot, then platform bot.
-- `server/internal/handler/automation_api.go` exposes human-only failed-run retries and the message-variable catalog; `automation_actions.go` retries only failed steps and expands assignee, actor, and upstream source URL variables (`external_issue_url` then `bitrix_task_url`).
+- `server/internal/handler/automation_api.go` exposes human-only failed-run retries and the message-variable catalog; `automation_actions.go` retries only failed steps and expands Agora/upstream assignees, actor, and upstream source URL variables from issue metadata.

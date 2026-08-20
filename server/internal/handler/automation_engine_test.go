@@ -490,14 +490,14 @@ func TestAutomationExpandTemplateIncludesOwnership(t *testing.T) {
 	issue := db.Issue{
 		Title:    "Fix Telegram delivery",
 		Status:   "in_review",
-		Metadata: []byte(`{"bitrix_task_url":"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/"}`),
+		Metadata: []byte(`{"bitrix_task_url":"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/","bitrix_responsible_name":"Jamshid Tulaganov"}`),
 	}
 	got := automationExpandTemplate(
-		"{{issue}} · {{title}} · {{status}} · {{automation}} · {{assignee}} · {{actor}} · {{source_url}}",
+		"{{issue}} · {{title}} · {{status}} · {{automation}} · {{assignee}} · {{actor}} · {{source_url}} · {{source_assignee}}",
 		issue, "ISSUE-69", "Review passed", "Octane Principal", "Code Reviewer",
 	)
 	want := "ISSUE-69 · Fix Telegram delivery · in_review · Review passed · Octane Principal · Code Reviewer · " +
-		"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/"
+		"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/ · Jamshid Tulaganov"
 	if got != want {
 		t.Fatalf("expanded template = %q, want %q", got, want)
 	}
