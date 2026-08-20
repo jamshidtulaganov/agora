@@ -454,7 +454,7 @@ func (h *Handler) GetAutomationCatalog(w http.ResponseWriter, r *http.Request) {
 		"assign_targets":       []string{"orchestrator", "qa_leader", "reviewer", "agent", "none"},
 		"agent_selectors":      []string{"", "orchestrator", "qa_leader", "reviewer", "qa", "agent"},
 		"telegram_targets":     []string{"group", "owner"},
-		"template_variables":   []string{"{{issue}}", "{{title}}", "{{status}}", "{{automation}}", "{{assignee}}", "{{actor}}"},
+		"template_variables":   []string{"{{issue}}", "{{title}}", "{{status}}", "{{automation}}", "{{assignee}}", "{{actor}}", "{{source_url}}"},
 		"min_interval_default": automationDefaultMinIntervalSeconds,
 		"max_per_hour_default": automationDefaultMaxPerHour,
 	})

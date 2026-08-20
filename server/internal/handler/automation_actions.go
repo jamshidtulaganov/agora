@@ -631,8 +631,8 @@ func (h *Handler) automationIssueOwnerUserID(ctx context.Context, issue db.Issue
 
 // automationExpandTemplate substitutes the small, fixed vocabulary a flow may
 // use in human-facing messages. It remains deliberately non-programmable: these
-// six facts cover task identity and ownership without introducing a template
-// language or an evaluation surface.
+// seven facts cover task identity, ownership, and source without introducing a
+// template language or an evaluation surface.
 func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName, assigneeName, actorName string) string {
 	replacer := strings.NewReplacer(
 		"{{issue}}", issueKey,
@@ -641,8 +641,21 @@ func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName, a
 		"{{automation}}", ruleName,
 		"{{assignee}}", assigneeName,
 		"{{actor}}", actorName,
+		"{{source_url}}", automationIssueSourceURL(issue),
 	)
 	return replacer.Replace(text)
+}
+
+// automationIssueSourceURL returns the canonical upstream task link carried by
+// synced issues. external_issue_url is the provider-neutral agent/API key;
+// bitrix_task_url is stamped by the Bitrix importer on every mirrored task.
+func automationIssueSourceURL(issue db.Issue) string {
+	for _, key := range []string{"external_issue_url", "bitrix_task_url"} {
+		if value := issueMetadataString(issue.Metadata, key); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *Handler) automationIssueAssigneeName(ctx context.Context, issue db.Issue) string {

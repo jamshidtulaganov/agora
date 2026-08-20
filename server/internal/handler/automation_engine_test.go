@@ -487,12 +487,17 @@ func TestRerunAutomationRunRetriesOnlyFailedSteps(t *testing.T) {
 }
 
 func TestAutomationExpandTemplateIncludesOwnership(t *testing.T) {
-	issue := db.Issue{Title: "Fix Telegram delivery", Status: "in_review"}
+	issue := db.Issue{
+		Title:    "Fix Telegram delivery",
+		Status:   "in_review",
+		Metadata: []byte(`{"bitrix_task_url":"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/"}`),
+	}
 	got := automationExpandTemplate(
-		"{{issue}} · {{title}} · {{status}} · {{automation}} · {{assignee}} · {{actor}}",
+		"{{issue}} · {{title}} · {{status}} · {{automation}} · {{assignee}} · {{actor}} · {{source_url}}",
 		issue, "ISSUE-69", "Review passed", "Octane Principal", "Code Reviewer",
 	)
-	want := "ISSUE-69 · Fix Telegram delivery · in_review · Review passed · Octane Principal · Code Reviewer"
+	want := "ISSUE-69 · Fix Telegram delivery · in_review · Review passed · Octane Principal · Code Reviewer · " +
+		"https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/25/"
 	if got != want {
 		t.Fatalf("expanded template = %q, want %q", got, want)
 	}

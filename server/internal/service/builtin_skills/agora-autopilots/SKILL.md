@@ -65,8 +65,10 @@ from Telegram on the platform path means that platform bot token is invalid; it 
 not mean the automation condition failed.
 
 Message templates support `{{issue}}`, `{{title}}`, `{{status}}`, `{{automation}}`,
-`{{assignee}}`, and `{{actor}}`. Use `{{assignee}}` for the current task owner and
-`{{actor}}` for the member or agent whose event triggered the flow.
+`{{assignee}}`, `{{actor}}`, and `{{source_url}}`. Use `{{assignee}}` for the current
+task owner, `{{actor}}` for the member or agent whose event triggered the flow, and
+`{{source_url}}` for the canonical upstream task link (`external_issue_url`, falling
+back to the Bitrix importer's `bitrix_task_url`).
 
 A human can retry a failed automation run with
 `POST /api/automations/{automation_id}/runs/{run_id}/rerun`. The retry creates a new
