@@ -71,6 +71,10 @@ WHERE automation_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3;
 
+-- name: GetAutomationRun :one
+SELECT * FROM automation_run
+WHERE id = $1 AND automation_id = $2 AND workspace_id = $3;
+
 -- name: ListAutomationRunsForWorkspace :many
 SELECT * FROM automation_run
 WHERE workspace_id = $1

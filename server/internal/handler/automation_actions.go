@@ -82,6 +82,44 @@ func (h *Handler) runAutomationActions(
 	return outcomes, applied, firstErr
 }
 
+// retryFailedAutomationActions replays only the steps that failed in the source
+// run. Successful steps are copied into the new audit row without executing them
+// again, preventing a retry from duplicating comments, notifications, agent
+// dispatches, or webhooks that already succeeded.
+func (h *Handler) retryFailedAutomationActions(
+	ctx context.Context, rule db.Automation, ev AutomationEvent, actions []automationAction,
+	previous []automationActionOutcome,
+) ([]automationActionOutcome, int, error) {
+	outcomes := make([]automationActionOutcome, 0, len(actions))
+	applied := 0
+	var firstErr error
+	issue := ev.Issue
+
+	for index, action := range actions {
+		prior := previous[index]
+		if prior.OK {
+			outcomes = append(outcomes, automationActionOutcome{
+				Type: action.Type, OK: true, Detail: "not retried — succeeded in the original run",
+			})
+			continue
+		}
+		if fresh, err := h.Queries.GetIssue(ctx, issue.ID); err == nil {
+			issue = fresh
+		}
+		detail, err := h.runAutomationAction(ctx, rule, ev, issue, action)
+		if err != nil {
+			outcomes = append(outcomes, automationActionOutcome{Type: action.Type, OK: false, Detail: err.Error()})
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		applied++
+		outcomes = append(outcomes, automationActionOutcome{Type: action.Type, OK: true, Detail: detail})
+	}
+	return outcomes, applied, firstErr
+}
+
 func (h *Handler) runAutomationAction(
 	ctx context.Context, rule db.Automation, ev AutomationEvent, issue db.Issue, action automationAction,
 ) (string, error) {
@@ -95,7 +133,7 @@ func (h *Handler) runAutomationAction(
 	case automationActionRemoveLabel:
 		return h.automationRemoveLabel(ctx, issue, action)
 	case automationActionPostComment:
-		return h.automationPostComment(ctx, rule, issue, action)
+		return h.automationPostComment(ctx, rule, ev, issue, action)
 	case automationActionDispatchSlice:
 		return h.automationDispatchSlice(ctx, rule, issue, action)
 	case automationActionSendTelegram:
@@ -150,6 +188,7 @@ func (h *Handler) automationSendWebhook(
 
 	message := automationExpandTemplate(
 		strings.TrimSpace(action.Config["message"]), issue, h.issueKey(ctx, issue), rule.Name,
+		h.automationIssueAssigneeName(ctx, issue), h.automationEventActorName(ctx, ev),
 	)
 	issuePayload := map[string]any{
 		"id": uuidToString(issue.ID), "key": h.issueKey(ctx, issue),
@@ -356,12 +395,17 @@ func (h *Handler) automationRemoveLabel(ctx context.Context, issue db.Issue, act
 // goes through the normal comment-trigger path, so a body that @mentions an agent
 // summons that agent — which is how a rule can hand work to a human's own agent
 // without a dedicated action type.
-func (h *Handler) automationPostComment(ctx context.Context, rule db.Automation, issue db.Issue, action automationAction) (string, error) {
+func (h *Handler) automationPostComment(
+	ctx context.Context, rule db.Automation, ev AutomationEvent, issue db.Issue, action automationAction,
+) (string, error) {
 	body := strings.TrimSpace(action.Config["body"])
 	if body == "" {
 		return "", errors.New("no body")
 	}
-	body = automationExpandTemplate(body, issue, h.issueKey(ctx, issue), rule.Name)
+	body = automationExpandTemplate(
+		body, issue, h.issueKey(ctx, issue), rule.Name,
+		h.automationIssueAssigneeName(ctx, issue), h.automationEventActorName(ctx, ev),
+	)
 	authorType := issue.CreatorType
 	if authorType != "member" && authorType != "agent" {
 		authorType = "member"
@@ -511,14 +555,14 @@ func (h *Handler) automationSliceInstruction(ctx context.Context, issue db.Issue
 func (h *Handler) automationSendTelegram(
 	ctx context.Context, rule db.Automation, ev AutomationEvent, issue db.Issue, action automationAction,
 ) (string, error) {
-	if h.telegramBot == nil {
-		return "", errors.New("no Telegram bot is configured on this deployment")
-	}
 	text := strings.TrimSpace(action.Config["text"])
 	if text == "" {
 		text = rule.Name
 	}
-	text = automationExpandTemplate(text, issue, h.issueKey(ctx, issue), rule.Name)
+	text = automationExpandTemplate(
+		text, issue, h.issueKey(ctx, issue), rule.Name,
+		h.automationIssueAssigneeName(ctx, issue), h.automationEventActorName(ctx, ev),
+	)
 
 	switch strings.ToLower(strings.TrimSpace(action.Config["destination"])) {
 	case "group":
@@ -526,15 +570,21 @@ func (h *Handler) automationSendTelegram(
 		// Settings → Integrations → Telegram, so the chat id lives on the agent's
 		// installation. A step may still name one explicitly (chat_id) to post
 		// somewhere other than the agent's own room.
-		dest, sent := h.sendIssueTelegramGroupNotice(ctx, issue, action.Config["chat_id"], text, "", "")
+		dest, sent, sendErr := h.sendIssueTelegramGroupNotice(ctx, issue, action.Config["chat_id"], text, "", "")
 		if !sent {
 			if dest.chatID == "" {
 				return "", errors.New("no Telegram group is bound for this issue — connect a bot and add a group, or set chat_id on this step")
 			}
-			return "", fmt.Errorf("telegram send to %s failed", dest.chatID)
+			if sendErr != nil {
+				return "", fmt.Errorf("Telegram could not send to %s via the %s bot: %w", dest.chatID, dest.via, sendErr)
+			}
+			return "", fmt.Errorf("Telegram could not send to %s via the %s bot", dest.chatID, dest.via)
 		}
 		return "notified " + dest.chatID + " via the " + dest.via + " bot", nil
 	case "owner":
+		if h.telegramBot == nil {
+			return "", errors.New("no platform Telegram bot is configured for direct messages")
+		}
 		userID := h.automationIssueOwnerUserID(ctx, issue)
 		if userID == "" {
 			return "", errors.New("this issue has no human owner to notify")
@@ -579,15 +629,75 @@ func (h *Handler) automationIssueOwnerUserID(ctx context.Context, issue db.Issue
 	return ""
 }
 
-// automationExpandTemplate substitutes the few placeholders a rule body may use.
-// Deliberately tiny: a full template language in a notification body is an
-// injection surface and a support burden, and these four cover the real messages.
-func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName string) string {
+// automationExpandTemplate substitutes the small, fixed vocabulary a flow may
+// use in human-facing messages. It remains deliberately non-programmable: these
+// six facts cover task identity and ownership without introducing a template
+// language or an evaluation surface.
+func automationExpandTemplate(text string, issue db.Issue, issueKey, ruleName, assigneeName, actorName string) string {
 	replacer := strings.NewReplacer(
 		"{{issue}}", issueKey,
 		"{{title}}", issue.Title,
 		"{{status}}", issue.Status,
 		"{{automation}}", ruleName,
+		"{{assignee}}", assigneeName,
+		"{{actor}}", actorName,
 	)
 	return replacer.Replace(text)
+}
+
+func (h *Handler) automationIssueAssigneeName(ctx context.Context, issue db.Issue) string {
+	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+		return "Unassigned"
+	}
+	switch strings.TrimSpace(issue.AssigneeType.String) {
+	case "agent":
+		if agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID,
+		}); err == nil && strings.TrimSpace(agent.Name) != "" {
+			return strings.TrimSpace(agent.Name)
+		}
+	case "member":
+		if member, err := h.Queries.GetMember(ctx, issue.AssigneeID); err == nil {
+			if user, err := h.Queries.GetUser(ctx, member.UserID); err == nil && strings.TrimSpace(user.Name) != "" {
+				return strings.TrimSpace(user.Name)
+			}
+		}
+	case "squad":
+		if squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+			ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID,
+		}); err == nil && strings.TrimSpace(squad.Name) != "" {
+			return strings.TrimSpace(squad.Name)
+		}
+	}
+	return "Unassigned"
+}
+
+func (h *Handler) automationEventActorName(ctx context.Context, ev AutomationEvent) string {
+	actorID := strings.TrimSpace(ev.ActorID)
+	switch strings.TrimSpace(ev.ActorType) {
+	case "agent":
+		if id, err := parseUUIDErr(actorID); err == nil {
+			if agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+				ID: id, WorkspaceID: ev.Issue.WorkspaceID,
+			}); err == nil && strings.TrimSpace(agent.Name) != "" {
+				return strings.TrimSpace(agent.Name)
+			}
+		}
+	case "member":
+		// Human write paths carry the user id, while a few internal paths carry a
+		// member id. Resolve both shapes without leaking an opaque UUID into chat.
+		if id, err := parseUUIDErr(actorID); err == nil {
+			if user, err := h.Queries.GetUser(ctx, id); err == nil && strings.TrimSpace(user.Name) != "" {
+				return strings.TrimSpace(user.Name)
+			}
+			if member, err := h.Queries.GetMember(ctx, id); err == nil {
+				if user, err := h.Queries.GetUser(ctx, member.UserID); err == nil && strings.TrimSpace(user.Name) != "" {
+					return strings.TrimSpace(user.Name)
+				}
+			}
+		}
+	case "system":
+		return "Agora"
+	}
+	return "Unknown"
 }

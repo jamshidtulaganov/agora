@@ -117,6 +117,31 @@ func TestAutomationAppliesActions(t *testing.T) {
 	}
 }
 
+func TestAutomationPartialProgressStillReportsFailure(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	issueID := sliceActionTestIssue(t, "", "")
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	rule := seedAutomation(t, ctx, "show partial failures", automationTriggerLabelAttached, nil,
+		[]automationAction{
+			{Type: automationActionAddLabel, Config: map[string]string{"name": "first-step-worked"}},
+			{Type: "unknown_step", Config: map[string]string{}},
+		}, pgtype.UUID{}, "")
+
+	testHandler.runAutomationsForEvent(ctx, AutomationEvent{
+		Trigger: automationTriggerLabelAttached, Issue: issue, Label: "x", ActorType: "member",
+	})
+	runs := automationRunsFor(t, ctx, rule)
+	if len(runs) != 1 || runs[0].Status != "failed" || runs[0].ActionsApplied != 1 {
+		t.Fatalf("run = %+v, want failed with one successful step", runs)
+	}
+}
+
 // TestAutomationRecordsWhyItSkipped: a rule whose conditions fail must leave an
 // explanation. "My automation does nothing" is the question the run list answers.
 func TestAutomationRecordsWhyItSkipped(t *testing.T) {
@@ -401,5 +426,74 @@ func TestInstallAutomationRecipeRefusesDuplicate(t *testing.T) {
 	}
 	if w := install(); w.Code != http.StatusCreated {
 		t.Errorf("re-install after delete: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRerunAutomationRunRetriesOnlyFailedSteps(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	issueID := sliceActionTestIssue(t, "", "")
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	rule := seedAutomation(t, ctx, "retry only the failed step", automationTriggerLabelAttached, nil,
+		[]automationAction{
+			{Type: automationActionAddLabel, Config: map[string]string{"name": "must-not-repeat"}},
+			{Type: automationActionAddLabel, Config: map[string]string{"name": "retried-step"}},
+		}, pgtype.UUID{}, "")
+	source, err := testHandler.Queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
+		AutomationID: rule.ID, WorkspaceID: rule.WorkspaceID, IssueID: issue.ID,
+		TriggerType: automationTriggerLabelAttached, Status: "failed", ActionsApplied: 1,
+		Detail: []byte(`{"actions":[{"type":"add_label","ok":true,"detail":"done"},{"type":"add_label","ok":false,"detail":"temporary failure"}]}`),
+		Error:  "temporary failure",
+	})
+	if err != nil {
+		t.Fatalf("seed failed run: %v", err)
+	}
+
+	req := newRequest("POST", "/api/automations/"+uuidToString(rule.ID)+"/runs/"+uuidToString(source.ID)+"/rerun?workspace_id="+testWorkspaceID, nil)
+	req = withURLParams(req, "id", uuidToString(rule.ID), "runId", uuidToString(source.ID))
+	w := httptest.NewRecorder()
+	testHandler.RerunAutomationRun(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("rerun: %d %s", w.Code, w.Body.String())
+	}
+	reloaded, err := testHandler.Queries.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("reload issue: %v", err)
+	}
+	if testHandler.issueHasLabelNameHandler(ctx, reloaded, "must-not-repeat") {
+		t.Error("a step that already succeeded was executed again")
+	}
+	if !testHandler.issueHasLabelNameHandler(ctx, reloaded, "retried-step") {
+		t.Error("the failed step was not retried")
+	}
+	runs := automationRunsFor(t, ctx, rule)
+	if len(runs) != 2 || runs[0].Status != "applied" {
+		t.Fatalf("runs = %+v, want a new applied retry row", runs)
+	}
+	var detail struct {
+		RetryOf string `json:"retry_of"`
+	}
+	if err := json.Unmarshal(runs[0].Detail, &detail); err != nil {
+		t.Fatalf("decode retry detail: %v", err)
+	}
+	if detail.RetryOf != uuidToString(source.ID) {
+		t.Errorf("retry_of = %q, want %s", detail.RetryOf, uuidToString(source.ID))
+	}
+}
+
+func TestAutomationExpandTemplateIncludesOwnership(t *testing.T) {
+	issue := db.Issue{Title: "Fix Telegram delivery", Status: "in_review"}
+	got := automationExpandTemplate(
+		"{{issue}} · {{title}} · {{status}} · {{automation}} · {{assignee}} · {{actor}}",
+		issue, "ISSUE-69", "Review passed", "Octane Principal", "Code Reviewer",
+	)
+	want := "ISSUE-69 · Fix Telegram delivery · in_review · Review passed · Octane Principal · Code Reviewer"
+	if got != want {
+		t.Fatalf("expanded template = %q, want %q", got, want)
 	}
 }

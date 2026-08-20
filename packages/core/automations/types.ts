@@ -57,6 +57,9 @@ export interface AutomationRun {
 
 export interface AutomationRunDetail {
   reason?: string;
+  retry_of?: string;
+  actor_type?: string;
+  actor_id?: string;
   actions?: Array<{ type: string; ok: boolean; detail?: string }>;
 }
 

@@ -65,7 +65,7 @@ func (h *Handler) SendReviewVerdictGroupNotify(ctx context.Context, issue db.Iss
 			h.issueKey(bgctx, issue), issue.Title, verdict, summary, nextStep, blockers,
 			h.resolveIssueAssigneeDisplayName(bgctx, issueToResponse(issue, h.getIssuePrefix(bgctx, issue.WorkspaceID))),
 		)
-		dest, sent := h.sendIssueTelegramGroupNotice(bgctx, issue, "", text, "Open issue", link)
+		dest, sent, _ := h.sendIssueTelegramGroupNotice(bgctx, issue, "", text, "Open issue", link)
 		if !sent {
 			// No room bound and no override configured is the normal state of a
 			// workspace that has not connected a bot — not an error worth shouting

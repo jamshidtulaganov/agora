@@ -69,7 +69,7 @@ func automationRecipes() []automationRecipe {
 						{Type: automationActionDispatchSlice, Config: map[string]string{"kind": sliceActionRunReview, "agent": "reviewer"}},
 						{Type: automationActionSendTelegram, Config: map[string]string{
 							"destination": "group",
-							"text":        "🔍 {{issue}} — {{title}}\nCode review started (moved into review).",
+							"text":        "🔍 {{issue}} — {{title}}\nReview started\n👤 Worker: {{assignee}}",
 						}},
 					},
 				},
@@ -83,7 +83,7 @@ func automationRecipes() []automationRecipe {
 					Actions: []automationAction{
 						{Type: automationActionSendTelegram, Config: map[string]string{
 							"destination": "group",
-							"text":        "✅ {{issue}} — {{title}}\nCode review passed.",
+							"text":        "✅ {{issue}} — {{title}}\nReview passed\n👤 Worker: {{assignee}}\n🔎 Reviewed by: {{actor}}",
 						}},
 					},
 				},
@@ -99,11 +99,11 @@ func automationRecipes() []automationRecipe {
 						{Type: automationActionAssign, Config: map[string]string{"target": "orchestrator"}},
 						{Type: automationActionSendTelegram, Config: map[string]string{
 							"destination": "owner",
-							"text":        "❌ {{issue}} — {{title}}\nCode review failed and the task is back in To Do. Read the reviewer's findings on the issue.",
+							"text":        "❌ {{issue}} — {{title}}\nReview failed; returned to To Do\n👤 Worker: {{assignee}}\n🔎 Reviewed by: {{actor}}",
 						}},
 						{Type: automationActionSendTelegram, Config: map[string]string{
 							"destination": "group",
-							"text":        "❌ {{issue}} — {{title}}\nCode review failed → returned to To Do.",
+							"text":        "❌ {{issue}} — {{title}}\nReview failed; returned to To Do\n👤 Worker: {{assignee}}\n🔎 Reviewed by: {{actor}}",
 						}},
 					},
 				},

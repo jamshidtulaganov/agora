@@ -64,6 +64,16 @@ allowed-groups list contains the id, and only then the platform bot. A `404 Not 
 from Telegram on the platform path means that platform bot token is invalid; it does
 not mean the automation condition failed.
 
+Message templates support `{{issue}}`, `{{title}}`, `{{status}}`, `{{automation}}`,
+`{{assignee}}`, and `{{actor}}`. Use `{{assignee}}` for the current task owner and
+`{{actor}}` for the member or agent whose event triggered the flow.
+
+A human can retry a failed automation run with
+`POST /api/automations/{automation_id}/runs/{run_id}/rerun`. The retry creates a new
+audit row linked by `detail.retry_of` and executes only failed steps; successful
+steps from the original run are not duplicated. The automation must still be enabled
+and unchanged since the selected run.
+
 ## CLI
 
 ```bash

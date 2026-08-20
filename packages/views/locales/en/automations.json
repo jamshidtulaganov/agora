@@ -64,7 +64,7 @@
     "no_conditions": "Runs on every event of this type.",
     "filter_hint": "The flow stops here when this does not hold.",
     "guard_note": "A flow applies to the same task at most once every {{seconds}}s, and at most {{max}} times an hour.",
-    "template_hint": "You can use {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} and {{'{{automation}}'}} in text.",
+    "template_hint": "You can use {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}}, {{'{{automation}}'}}, {{'{{assignee}}'}} and {{'{{actor}}'}} in text.",
     "canvas_label": "Automation flow canvas",
     "canvas_hint": "Drag to pan · ⌘ scroll to zoom · drag a node to reorder · 1 fits",
     "zoom_in": "Zoom in",
@@ -173,7 +173,13 @@
     "actions_applied_one": "{{count}} step ran",
     "actions_applied_other": "{{count}} steps ran",
     "open_issue": "Open task",
-    "load_failed": "Runs could not be loaded"
+    "load_failed": "Runs could not be loaded",
+    "error_details": "What failed",
+    "rerun": "Re-run pipeline",
+    "rerunning": "Re-running…",
+    "rerun_hint": "Retry only the failed steps. Steps that already succeeded will not run again.",
+    "rerun_succeeded": "Pipeline re-run finished.",
+    "rerun_failed": "Could not re-run this pipeline."
   },
   "kind": {
     "run_review": "Review the code",

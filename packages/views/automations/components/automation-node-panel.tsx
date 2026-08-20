@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Plus, Trash2, X, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, RotateCcw, Trash2, X, XCircle } from "lucide-react";
 import type {
   AutomationCatalog,
   AutomationCondition,
@@ -44,6 +44,8 @@ interface AutomationNodePanelProps {
   disabled?: boolean;
   fillHeight?: boolean;
   runResult?: { ok: boolean; label: string; detail?: string };
+  onRerun?: () => void;
+  rerunning?: boolean;
   onTriggerChange: (trigger: string) => void;
   onTriggerConditionsChange: (conditions: AutomationCondition[]) => void;
   onStepChange: (step: AutomationStep) => void;
@@ -62,6 +64,8 @@ export function AutomationNodePanel({
   disabled,
   fillHeight,
   runResult,
+  onRerun,
+  rerunning,
   onTriggerChange,
   onTriggerConditionsChange,
   onStepChange,
@@ -111,12 +115,21 @@ export function AutomationNodePanel({
       </header>
 
       {runResult && (
-        <div className={runResult.ok ? "border-b bg-success/10 px-3 py-2 text-xs text-success" : "border-b bg-destructive/10 px-3 py-2 text-xs text-destructive"}>
+        <div role={runResult.ok ? undefined : "alert"} className={runResult.ok ? "border-b bg-success/10 px-3 py-2 text-xs text-success" : "border-b border-destructive/20 bg-destructive/10 px-3 py-3 text-xs text-destructive"}>
           <div className="flex items-center gap-1.5 font-medium">
             {runResult.ok ? <CheckCircle2 className="size-3.5" aria-hidden /> : <XCircle className="size-3.5" aria-hidden />}
             {runResult.label}
           </div>
-          {runResult.detail && <p className="mt-0.5 line-clamp-3 text-[11px] opacity-80">{runResult.detail}</p>}
+          {runResult.detail && <p className="mt-1 break-words text-[11px] leading-relaxed opacity-90">{runResult.detail}</p>}
+          {!runResult.ok && onRerun && (
+            <div className="mt-2.5 border-t border-destructive/20 pt-2.5">
+              <p className="mb-2 text-[11px] text-foreground/70">{t(($) => $.runs.rerun_hint)}</p>
+              <Button size="sm" variant="outline" className="h-7 border-destructive/30 bg-background text-xs text-destructive hover:bg-destructive/10" disabled={rerunning} onClick={onRerun}>
+                {rerunning ? <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden /> : <RotateCcw className="size-3" aria-hidden />}
+                {rerunning ? t(($) => $.runs.rerunning) : t(($) => $.runs.rerun)}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

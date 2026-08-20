@@ -64,7 +64,7 @@
     "no_conditions": "Bu turdagi har bir hodisada ishga tushadi.",
     "filter_hint": "Shart bajarilmasa, oqim shu yerda to‘xtaydi.",
     "guard_note": "Bitta vazifaga oqim {{seconds}} soniyada bir martadan va soatda {{max}} martadan ko‘p qo‘llanmaydi.",
-    "template_hint": "Matnda {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}} va {{'{{automation}}'}} ishlatish mumkin.",
+    "template_hint": "Matnda {{'{{issue}}'}}, {{'{{title}}'}}, {{'{{status}}'}}, {{'{{automation}}'}}, {{'{{assignee}}'}} va {{'{{actor}}'}} ishlatish mumkin.",
     "canvas_label": "Avtomatizatsiya oqimi maydoni",
     "canvas_hint": "Surish — panorama · ⌘ + g‘ildirak — masshtab · tugunni sudrab tartibni o‘zgartiring · 1 — sig‘dirish",
     "zoom_in": "Yaqinlashtirish",
@@ -173,7 +173,13 @@
     "actions_applied_one": "{{count}} qadam bajarildi",
     "actions_applied_other": "{{count}} qadam bajarildi",
     "open_issue": "Vazifani ochish",
-    "load_failed": "Ishga tushishlarni yuklab bo‘lmadi"
+    "load_failed": "Ishga tushishlarni yuklab bo‘lmadi",
+    "error_details": "Nima bajarilmadi",
+    "rerun": "Jarayonni qayta ishga tushirish",
+    "rerunning": "Qayta ishga tushirilmoqda…",
+    "rerun_hint": "Faqat muvaffaqiyatsiz bosqichlarni takrorlang. Muvaffaqiyatli bosqichlar qayta bajarilmaydi.",
+    "rerun_succeeded": "Jarayonni qayta ishga tushirish yakunlandi.",
+    "rerun_failed": "Bu jarayonni qayta ishga tushirib bo‘lmadi."
   },
   "kind": {
     "run_review": "Kod-revyu o‘tkazish",

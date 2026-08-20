@@ -1230,6 +1230,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Delete("/", h.DeleteAutomation)
 					r.With(handler.RequireHumanActor).Post("/enabled", h.SetAutomationEnabled)
 					r.Get("/runs", h.ListAutomationRuns)
+					r.With(handler.RequireHumanActor).Post("/runs/{runId}/rerun", h.RerunAutomationRun)
 				})
 			})
 

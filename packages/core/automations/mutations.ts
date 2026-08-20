@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { automationKeys } from "./queries";
-import type { Automation, AutomationWriteRequest } from "./types";
+import type { Automation, AutomationRun, AutomationWriteRequest } from "./types";
 
 // Automation writes are NOT optimistic. The flow list shows a rule's authored
 // state and its run counters, and the server can reject a flow the editor thought
@@ -70,6 +70,18 @@ export function useDeleteAutomation(wsId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: automationKeys.list(wsId) });
       void queryClient.invalidateQueries({ queryKey: automationKeys.recipes(wsId) });
+    },
+  });
+}
+
+export function useRerunAutomationRun(wsId: string, automationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string): Promise<AutomationRun> => api.rerunAutomationRun(automationId, runId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: automationKeys.runs(wsId, automationId) });
+      void queryClient.invalidateQueries({ queryKey: automationKeys.detail(wsId, automationId) });
+      void queryClient.invalidateQueries({ queryKey: automationKeys.list(wsId) });
     },
   });
 }

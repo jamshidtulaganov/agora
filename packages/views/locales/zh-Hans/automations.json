@@ -64,7 +64,7 @@
     "no_conditions": "该类型的每个事件都会触发。",
     "filter_hint": "条件不成立时，流程在此停止。",
     "guard_note": "同一任务上，流程每 {{seconds}} 秒最多应用一次，每小时最多 {{max}} 次。",
-    "template_hint": "文本中可使用 {{'{{issue}}'}}、{{'{{title}}'}}、{{'{{status}}'}} 和 {{'{{automation}}'}}。",
+    "template_hint": "文本中可使用 {{'{{issue}}'}}、{{'{{title}}'}}、{{'{{status}}'}}、{{'{{automation}}'}}、{{'{{assignee}}'}} 和 {{'{{actor}}'}}。",
     "canvas_label": "自动化流程画布",
     "canvas_hint": "拖拽平移 · ⌘+滚轮缩放 · 拖动节点调整顺序 · 按 1 适配",
     "zoom_in": "放大",
@@ -173,7 +173,13 @@
     "actions_applied_one": "执行了 {{count}} 个步骤",
     "actions_applied_other": "执行了 {{count}} 个步骤",
     "open_issue": "打开任务",
-    "load_failed": "无法加载运行记录"
+    "load_failed": "无法加载运行记录",
+    "error_details": "失败详情",
+    "rerun": "重新运行流程",
+    "rerunning": "正在重新运行…",
+    "rerun_hint": "仅重试失败步骤；已经成功的步骤不会再次运行。",
+    "rerun_succeeded": "流程重新运行完成。",
+    "rerun_failed": "无法重新运行此流程。"
   },
   "kind": {
     "run_review": "进行代码评审",

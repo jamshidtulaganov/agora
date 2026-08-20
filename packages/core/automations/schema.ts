@@ -3,6 +3,7 @@ import { parseWithFallback } from "../api/schema";
 import type {
   Automation,
   AutomationCatalog,
+  AutomationRun,
   InstallAutomationRecipeResponse,
   ListAutomationRecipesResponse,
   ListAutomationRunsResponse,
@@ -53,6 +54,9 @@ const RunSchema = z.object({
   actions_applied: z.number().default(0),
   detail: z.object({
     reason: z.string().optional(),
+    retry_of: z.string().optional(),
+    actor_type: z.string().optional(),
+    actor_id: z.string().optional(),
     actions: z.array(z.object({
       type: z.string().default(""),
       ok: z.boolean().default(false),
@@ -165,6 +169,22 @@ export function parseAutomationResponse(value: unknown): Automation {
 export function parseAutomationRunsResponse(value: unknown): ListAutomationRunsResponse {
   return parseWithFallback(value, RunsSchema, { runs: [], total: 0 }, {
     endpoint: "GET /api/automations/{id}/runs",
+  });
+}
+
+export function parseAutomationRunResponse(value: unknown): AutomationRun {
+  return parseWithFallback(value, RunSchema, {
+    id: "",
+    automation_id: "",
+    issue_id: null,
+    trigger_type: "",
+    status: "failed",
+    actions_applied: 0,
+    detail: {},
+    error: "",
+    created_at: "",
+  }, {
+    endpoint: "POST /api/automations/{id}/runs/{runId}/rerun",
   });
 }
 

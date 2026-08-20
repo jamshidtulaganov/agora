@@ -5,6 +5,7 @@ export {
   parseAutomationCatalogResponse,
   parseAutomationRecipesResponse,
   parseAutomationResponse,
+  parseAutomationRunResponse,
   parseAutomationRunsResponse,
   parseAutomationsResponse,
   parseInstallRecipeResponse,

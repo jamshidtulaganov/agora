@@ -224,6 +224,7 @@ import {
   parseAutomationCatalogResponse,
   parseAutomationRecipesResponse,
   parseAutomationResponse,
+  parseAutomationRunResponse,
   parseAutomationRunsResponse,
   parseAutomationsResponse,
   parseInstallRecipeResponse,
@@ -231,6 +232,7 @@ import {
 import type {
   Automation,
   AutomationCatalog,
+  AutomationRun,
   AutomationWriteRequest,
   InstallAutomationRecipeResponse,
   ListAutomationRecipesResponse,
@@ -3184,6 +3186,12 @@ export class ApiClient {
     if (limit) search.set("limit", String(limit));
     return parseAutomationRunsResponse(
       await this.fetch<unknown>(`/api/automations/${id}/runs?${search}`),
+    );
+  }
+
+  async rerunAutomationRun(id: string, runId: string): Promise<AutomationRun> {
+    return parseAutomationRunResponse(
+      await this.fetch<unknown>(`/api/automations/${id}/runs/${runId}/rerun`, { method: "POST" }),
     );
   }
 

@@ -38,10 +38,12 @@ interface AutomationFlowEditorProps {
    *  while the draft is UNEDITED — an edited flow no longer matches the run's
    *  step order, and a misaligned badge is worse than none. */
   lastRun?: AutomationRun | null;
+  onRerunLastRun?: () => void;
+  rerunningLastRun?: boolean;
   fillHeight?: boolean;
 }
 
-export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastRun, fillHeight }: AutomationFlowEditorProps) {
+export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastRun, onRerunLastRun, rerunningLastRun, fillHeight }: AutomationFlowEditorProps) {
   const { t } = useT("automations");
   const triggerLabels = t(($) => $.trigger, { returnObjects: true }) as Record<string, string>;
   const stepLabels = t(($) => $.step, { returnObjects: true }) as Record<string, string>;
@@ -242,6 +244,8 @@ export function AutomationFlowEditor({ value, catalog, onChange, disabled, lastR
         disabled={disabled}
         fillHeight={fillHeight}
         runResult={selectedRunResult}
+        onRerun={lastRun?.status === "failed" ? onRerunLastRun : undefined}
+        rerunning={rerunningLastRun}
         onTriggerChange={(trigger) => {
           // A trigger change keeps the conditions the new trigger can still
           // evaluate (the common facts — status, project, priority… — exist on

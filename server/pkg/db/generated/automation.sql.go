@@ -207,6 +207,35 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 	return i, err
 }
 
+const getAutomationRun = `-- name: GetAutomationRun :one
+SELECT id, automation_id, workspace_id, issue_id, trigger_type, status, actions_applied, detail, error, created_at FROM automation_run
+WHERE id = $1 AND automation_id = $2 AND workspace_id = $3
+`
+
+type GetAutomationRunParams struct {
+	ID           pgtype.UUID `json:"id"`
+	AutomationID pgtype.UUID `json:"automation_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetAutomationRun(ctx context.Context, arg GetAutomationRunParams) (AutomationRun, error) {
+	row := q.db.QueryRow(ctx, getAutomationRun, arg.ID, arg.AutomationID, arg.WorkspaceID)
+	var i AutomationRun
+	err := row.Scan(
+		&i.ID,
+		&i.AutomationID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.TriggerType,
+		&i.Status,
+		&i.ActionsApplied,
+		&i.Detail,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const latestAppliedAutomationRunForIssue = `-- name: LatestAppliedAutomationRunForIssue :one
 SELECT id, automation_id, workspace_id, issue_id, trigger_type, status, actions_applied, detail, error, created_at FROM automation_run
 WHERE automation_id = $1 AND issue_id = $2 AND status IN ('applied', 'failed')

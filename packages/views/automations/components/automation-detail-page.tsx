@@ -10,6 +10,7 @@ import {
   automationRunsOptions,
   useCreateAutomation,
   useDeleteAutomation,
+  useRerunAutomationRun,
   useSetAutomationEnabled,
   useUpdateAutomation,
   type Automation,
@@ -68,6 +69,7 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   const updateAutomation = useUpdateAutomation(wsId);
   const deleteAutomation = useDeleteAutomation(wsId);
   const setEnabledMutation = useSetAutomationEnabled(wsId);
+  const rerunAutomation = useRerunAutomationRun(wsId, automationId);
 
   // Draft state. Local because a flow is edited as a whole and saved once — a
   // per-keystroke mutation would fire the engine's validation on half-built nodes.
@@ -228,6 +230,19 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
   };
 
   const saving = createAutomation.isPending || updateAutomation.isPending;
+
+  const rerunSelected = () => {
+    if (!selectedRun || selectedRun.status !== "failed") return;
+    rerunAutomation.mutate(selectedRun.id, {
+      onSuccess: (run) => {
+        setSelectedRunId(run.id);
+        toast.success(t(($) => $.runs.rerun_succeeded));
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error && error.message !== "" ? error.message : t(($) => $.runs.rerun_failed));
+      },
+    });
+  };
 
   if (!isNew && isLoading) {
     return (
@@ -392,6 +407,8 @@ export function AutomationDetailPage({ automationId }: AutomationDetailPageProps
               onChange={updateFlow}
               disabled={saving}
               lastRun={dirty ? undefined : selectedRun}
+              onRerunLastRun={dirty || !enabled ? undefined : rerunSelected}
+              rerunningLastRun={rerunAutomation.isPending}
               fillHeight
             />
           </div>
@@ -532,11 +549,17 @@ function AutomationRunList({
         ))}
       </ul>
       {selectedRunId && (
-        <footer className="border-t p-2 text-[11px] text-muted-foreground">
+        <footer className="space-y-2 border-t p-2 text-[11px] text-muted-foreground">
+          {runs.find((run) => run.id === selectedRunId)?.error && (
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-destructive">
+              <p className="font-medium">{t(($) => $.runs.error_details)}</p>
+              <p className="mt-1 break-words leading-relaxed">{runs.find((run) => run.id === selectedRunId)?.error}</p>
+            </div>
+          )}
           {(runs.find((run) => run.id === selectedRunId)?.detail.actions ?? []).map((action, index) => (
-            <div key={index} className="flex items-center gap-1.5 py-0.5">
+            <div key={index} className="flex items-start gap-1.5 py-0.5">
               {action.ok ? <CheckCircle2 className="size-3 text-emerald-500" aria-hidden /> : <XCircle className="size-3 text-destructive" aria-hidden />}
-              <span className="truncate">{stepLabels[action.type] ?? action.type}{action.detail ? ` — ${action.detail}` : ""}</span>
+              <span className="min-w-0 break-words leading-relaxed">{stepLabels[action.type] ?? action.type}{action.detail ? ` — ${action.detail}` : ""}</span>
             </div>
           ))}
         </footer>

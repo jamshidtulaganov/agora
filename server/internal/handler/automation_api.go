@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -342,6 +343,102 @@ func (h *Handler) ListAutomationRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"runs": resp, "total": len(resp)})
 }
 
+// RerunAutomationRun handles POST /api/automations/{id}/runs/{runId}/rerun.
+// It retries only the source run's failed steps against the same issue. Steps
+// that already succeeded are copied into the new audit row but never executed
+// again, so retrying a Telegram failure cannot duplicate an earlier comment,
+// webhook, or agent dispatch.
+func (h *Handler) RerunAutomationRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := parseUUID(h.resolveWorkspaceID(r))
+	automationID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "automation id")
+	if !ok {
+		return
+	}
+	runID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "runId"), "automation run id")
+	if !ok {
+		return
+	}
+	rule, err := h.Queries.GetAutomation(r.Context(), db.GetAutomationParams{
+		ID: automationID, WorkspaceID: workspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "automation not found")
+		return
+	}
+	if !rule.Enabled {
+		writeError(w, http.StatusConflict, "enable this automation before re-running it")
+		return
+	}
+	source, err := h.Queries.GetAutomationRun(r.Context(), db.GetAutomationRunParams{
+		ID: runID, AutomationID: automationID, WorkspaceID: workspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "automation run not found")
+		return
+	}
+	if !source.IssueID.Valid {
+		writeError(w, http.StatusConflict, "this run has no task to re-run")
+		return
+	}
+	issue, err := h.Queries.GetIssue(r.Context(), source.IssueID)
+	if err != nil || issue.WorkspaceID.Bytes != workspaceID.Bytes {
+		writeError(w, http.StatusNotFound, "the run's task no longer exists")
+		return
+	}
+	actions, err := decodeAutomationActions(rule.Actions)
+	if err != nil {
+		writeError(w, http.StatusConflict, "the automation actions are not valid JSON")
+		return
+	}
+	var previous struct {
+		Actions   []automationActionOutcome `json:"actions"`
+		ActorType string                    `json:"actor_type"`
+		ActorID   string                    `json:"actor_id"`
+	}
+	if err := json.Unmarshal(source.Detail, &previous); err != nil || len(previous.Actions) != len(actions) {
+		writeError(w, http.StatusConflict, "this automation changed after the selected run; wait for a new run before retrying")
+		return
+	}
+	hasFailure := false
+	for index, outcome := range previous.Actions {
+		if outcome.Type != actions[index].Type {
+			writeError(w, http.StatusConflict, "this automation changed after the selected run; wait for a new run before retrying")
+			return
+		}
+		if !outcome.OK {
+			hasFailure = true
+		}
+	}
+	if !hasFailure {
+		writeError(w, http.StatusConflict, "the selected run has no failed steps to retry")
+		return
+	}
+
+	ev := AutomationEvent{
+		Trigger: source.TriggerType, Issue: issue,
+		ActorType: previous.ActorType, ActorID: previous.ActorID,
+	}
+	unlock := lockIssueQA(uuidToString(issue.ID))
+	outcomes, applied, retryErr := h.retryFailedAutomationActions(r.Context(), rule, ev, actions, previous.Actions)
+	status, errText := "applied", ""
+	if retryErr != nil {
+		status, errText = "failed", retryErr.Error()
+	}
+	created, createErr := h.recordAutomationRunWithMetadata(
+		r.Context(), rule, ev, status, applied, outcomes, errText,
+		map[string]any{"retry_of": uuidToString(source.ID)},
+	)
+	unlock()
+	if createErr != nil {
+		writeError(w, http.StatusInternalServerError, "the retry finished but its audit row could not be saved")
+		return
+	}
+	if err := h.Queries.RecordAutomationFired(r.Context(), rule.ID); err != nil {
+		slog.Warn("automation: retry counter bump failed", "error", err, "automation_id", uuidToString(rule.ID))
+	}
+	writeJSON(w, http.StatusCreated, automationRunToResponse(created))
+}
+
 // GetAutomationCatalog handles GET /api/automations/catalog — the node palette the
 // flow editor renders: triggers, the fields each one carries (so a condition picker
 // can only offer facts that exist for the chosen trigger), step types, operators,
@@ -357,7 +454,7 @@ func (h *Handler) GetAutomationCatalog(w http.ResponseWriter, r *http.Request) {
 		"assign_targets":       []string{"orchestrator", "qa_leader", "reviewer", "agent", "none"},
 		"agent_selectors":      []string{"", "orchestrator", "qa_leader", "reviewer", "qa", "agent"},
 		"telegram_targets":     []string{"group", "owner"},
-		"template_variables":   []string{"{{issue}}", "{{title}}", "{{status}}", "{{automation}}"},
+		"template_variables":   []string{"{{issue}}", "{{title}}", "{{status}}", "{{automation}}", "{{assignee}}", "{{actor}}"},
 		"min_interval_default": automationDefaultMinIntervalSeconds,
 		"max_per_hour_default": automationDefaultMaxPerHour,
 	})

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AutomationCatalog } from "@agora/core/automations";
+import type { AutomationCatalog, AutomationRun } from "@agora/core/automations";
 import { renderWithI18n } from "../../test/i18n";
 
 // The editor resolves value domains (projects, labels, agents) from workspace
@@ -64,12 +64,18 @@ const CATALOG: AutomationCatalog = {
   max_per_hour_default: 20,
 };
 
-function setup(value: AutomationFlowValue) {
+function setup(value: AutomationFlowValue, options?: { lastRun?: AutomationRun; onRerun?: () => void }) {
   const onChange = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = renderWithI18n(
     <QueryClientProvider client={client}>
-      <AutomationFlowEditor value={value} catalog={CATALOG} onChange={onChange} />
+      <AutomationFlowEditor
+        value={value}
+        catalog={CATALOG}
+        onChange={onChange}
+        lastRun={options?.lastRun}
+        onRerunLastRun={options?.onRerun}
+      />
     </QueryClientProvider>,
   );
   return { onChange, ...result };
@@ -206,5 +212,32 @@ describe("AutomationFlowEditor", () => {
   it("keeps a stored trigger the catalog no longer lists", () => {
     setup({ trigger_type: "issue.retired_trigger", conditions: [], actions: [] });
     expect(screen.getByLabelText("Trigger")).toHaveValue("issue.retired_trigger");
+  });
+
+  it("shows the full failed-step error and reruns the selected pipeline", async () => {
+    const user = userEvent.setup();
+    const onRerun = vi.fn();
+    setup({
+      trigger_type: "issue.label_attached",
+      conditions: [{ field: "label", op: "eq", value: "review:pass" }],
+      actions: [{ type: "send_telegram", config: { destination: "group" } }],
+    }, {
+      lastRun: {
+        id: "run-1",
+        automation_id: "automation-1",
+        issue_id: "issue-1",
+        trigger_type: "issue.label_attached",
+        status: "failed",
+        actions_applied: 0,
+        detail: { actions: [{ type: "send_telegram", ok: false, detail: "Telegram could not send to -1003501835836 via the workspace bot: 404 Not Found" }] },
+        error: "Telegram could not send to -1003501835836 via the workspace bot: 404 Not Found",
+        created_at: "2026-08-20T00:00:00Z",
+      },
+      onRerun,
+    });
+    await user.click(screen.getByRole("button", { name: /Send a Telegram message/ }));
+    expect(screen.getByText(/Telegram could not send to -1003501835836/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Re-run pipeline" }));
+    expect(onRerun).toHaveBeenCalledOnce();
   });
 });

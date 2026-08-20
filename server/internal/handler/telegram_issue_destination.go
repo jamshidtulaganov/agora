@@ -25,7 +25,7 @@ import (
 //
 //  1. an explicit chat id on the caller (an automation step may name one) —
 //     delivered through the agent's own bot when that bot is actually in the
-//     room, else through the platform bot;
+//     room, else an authorized workspace bot, else the platform bot;
 //  2. the issue's SPEAKER agent (its agent assignee, else its orchestrator /
 //     squad leader) — its own bot, posting into its own bound group, so the
 //     message arrives under the agent's identity;
@@ -40,7 +40,7 @@ import (
 type issueTelegramDestination struct {
 	bot    *telegram.BotClient
 	chatID string
-	// via is "agent" or "platform" — logged so a missing message can be traced
+	// via is "agent", "workspace", or "platform" — logged so a missing message can be traced
 	// to the bot that was actually used.
 	via string
 }
@@ -213,19 +213,20 @@ func chooseIssueTelegramDestination(
 }
 
 // sendIssueTelegramGroupNotice delivers HTML text (plus an optional deep-link
-// button) to the resolved room. Reports whether it was delivered, and to where,
-// so an automation's audit row can say "notified <chat> via <bot>".
+// button) to the resolved room. The send error is returned as well as logged so
+// automation run history can explain the actual Bot API rejection instead of
+// reducing every failure to "send failed".
 func (h *Handler) sendIssueTelegramGroupNotice(
 	ctx context.Context, issue db.Issue, explicitChatID, text, buttonText, buttonURL string,
-) (issueTelegramDestination, bool) {
+) (issueTelegramDestination, bool, error) {
 	dest, ok := h.resolveIssueTelegramDestination(ctx, issue, explicitChatID)
 	if !ok {
-		return issueTelegramDestination{}, false
+		return issueTelegramDestination{}, false, nil
 	}
 	if err := dest.bot.SendMessageWithButton(ctx, dest.chatID, text, buttonText, buttonURL); err != nil {
 		slog.Warn("telegram issue notice: send failed",
 			"error", err, "issue_id", uuidToString(issue.ID), "chat_id", dest.chatID, "via", dest.via)
-		return dest, false
+		return dest, false, err
 	}
-	return dest, true
+	return dest, true, nil
 }

@@ -183,9 +183,10 @@ func (h *Handler) applyAutomation(ctx context.Context, rule db.Automation, ev Au
 	errText := ""
 	if firstErr != nil {
 		errText = firstErr.Error()
-		if applied == 0 {
-			status = "failed"
-		}
+		// A pipeline with one failed step is failed even when an earlier step
+		// succeeded. actions_applied still preserves the partial progress, while
+		// the top-level status keeps the failure visible and retryable in the UI.
+		status = "failed"
 	}
 	h.recordAutomationRun(ctx, rule, ev, status, applied, outcomes, errText)
 	unlock()
@@ -271,8 +272,23 @@ type automationActionOutcome struct {
 func (h *Handler) recordAutomationRun(
 	ctx context.Context, rule db.Automation, ev AutomationEvent,
 	status string, applied int, outcomes []automationActionOutcome, errText string,
-) {
-	detail := map[string]any{"actions": outcomes}
+) (db.AutomationRun, error) {
+	return h.recordAutomationRunWithMetadata(ctx, rule, ev, status, applied, outcomes, errText, nil)
+}
+
+func (h *Handler) recordAutomationRunWithMetadata(
+	ctx context.Context, rule db.Automation, ev AutomationEvent,
+	status string, applied int, outcomes []automationActionOutcome, errText string,
+	metadata map[string]any,
+) (db.AutomationRun, error) {
+	detail := map[string]any{
+		"actions":    outcomes,
+		"actor_type": ev.ActorType,
+		"actor_id":   ev.ActorID,
+	}
+	for key, value := range metadata {
+		detail[key] = value
+	}
 	if status == "skipped" && errText != "" {
 		detail["reason"] = errText
 		errText = ""
@@ -281,7 +297,7 @@ func (h *Handler) recordAutomationRun(
 	if err != nil {
 		payload = []byte(`{}`)
 	}
-	if _, err := h.Queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
+	row, createErr := h.Queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
 		AutomationID:   rule.ID,
 		WorkspaceID:    rule.WorkspaceID,
 		IssueID:        ev.Issue.ID,
@@ -290,9 +306,10 @@ func (h *Handler) recordAutomationRun(
 		ActionsApplied: int32(applied),
 		Detail:         payload,
 		Error:          errText,
-	}); err != nil {
+	})
+	if createErr != nil {
 		slog.Warn("automation: run row write failed",
-			"error", err, "automation_id", uuidToString(rule.ID), "status", status)
+			"error", createErr, "automation_id", uuidToString(rule.ID), "status", status)
 	}
 	// Live update: the run history and the list's counters refresh over WS the
 	// moment an evaluation lands. Attributed to the automation actor — the engine
@@ -304,4 +321,5 @@ func (h *Handler) recordAutomationRun(
 			"status":        status,
 			"trigger_type":  ev.Trigger,
 		})
+	return row, createErr
 }
