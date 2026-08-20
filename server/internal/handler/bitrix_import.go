@@ -196,6 +196,11 @@ type bitrixPrefixRule struct {
 type bitrixRoutingConfig struct {
 	Prefixes []bitrixPrefixRule
 	Default  string
+	// IdentityAliases maps a Bitrix email to the canonical Agora account email
+	// for workspaces where the same person uses different addresses (or where a
+	// legacy duplicate member exists). Aliases are applied before external-id and
+	// direct-email resolution so workspace ownership stays authoritative.
+	IdentityAliases map[string]string
 	// ProvisionAssignees, when true, makes the importer create an Agora user +
 	// workspace member for a Bitrix responsible who has no Agora account yet, so
 	// the imported task gets a REAL assignee (not just a metadata chip).
@@ -227,10 +232,11 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		return bitrixRoutingConfig{}
 	}
 	var parsed struct {
-		Rules     []bitrixPrefixRule `json:"bitrix_project_prefixes"`
-		Default   string             `json:"bitrix_default_project"`
-		Provision bool               `json:"bitrix_provision_assignees"`
-		StageMap  map[string]string  `json:"bitrix_stage_map"`
+		Rules           []bitrixPrefixRule `json:"bitrix_project_prefixes"`
+		Default         string             `json:"bitrix_default_project"`
+		IdentityAliases map[string]string  `json:"bitrix_identity_aliases"`
+		Provision       bool               `json:"bitrix_provision_assignees"`
+		StageMap        map[string]string  `json:"bitrix_stage_map"`
 	}
 	if len(settings) == 0 || json.Unmarshal(settings, &parsed) != nil {
 		cfg := bitrixRoutingConfig{
@@ -249,6 +255,17 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 			}
 		}
 	}
+	var identityAliases map[string]string
+	if len(parsed.IdentityAliases) > 0 {
+		identityAliases = make(map[string]string, len(parsed.IdentityAliases))
+		for sourceEmail, targetEmail := range parsed.IdentityAliases {
+			source := strings.ToLower(strings.TrimSpace(sourceEmail))
+			target := strings.ToLower(strings.TrimSpace(targetEmail))
+			if source != "" && target != "" {
+				identityAliases[source] = target
+			}
+		}
+	}
 	rules := make([]bitrixPrefixRule, 0, len(parsed.Rules))
 	for _, r := range parsed.Rules {
 		prefix := strings.TrimSpace(r.Prefix)
@@ -263,7 +280,13 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		defaultProject = strings.TrimSpace(os.Getenv("BITRIX_TARGET_PROJECT"))
 	}
 	provision := bitrixProvisionAssigneesEnabled(parsed.Provision)
-	cfg := bitrixRoutingConfig{Prefixes: rules, Default: defaultProject, ProvisionAssignees: provision, StageMap: stageMap}
+	cfg := bitrixRoutingConfig{
+		Prefixes:           rules,
+		Default:            defaultProject,
+		IdentityAliases:    identityAliases,
+		ProvisionAssignees: provision,
+		StageMap:           stageMap,
+	}
 	st.routing[key] = cfg
 	return cfg
 }
@@ -319,10 +342,8 @@ func (h *Handler) resolveProjectByTitle(ctx context.Context, wsID pgtype.UUID, t
 }
 
 // bitrixProjectSquadAssignee returns the squad bound to a resolved target
-// project. Project workforce binding is more specific than the portal-wide
-// Bitrix responsible/review routing, so callers apply this last. That prevents a
-// configured review squad from conflicting with project.squad_id and causing a
-// processed import to create no issue.
+// project. Import callers use it only as a fallback when the Bitrix responsible
+// does not resolve to a workspace member; human ownership always wins.
 func (h *Handler) bitrixProjectSquadAssignee(ctx context.Context, wsID, projectID pgtype.UUID, st *bitrixSyncState) (pgtype.Text, pgtype.UUID, bool) {
 	if !projectID.Valid {
 		return pgtype.Text{}, pgtype.UUID{}, false

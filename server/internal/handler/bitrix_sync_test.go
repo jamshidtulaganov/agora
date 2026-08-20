@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
@@ -183,6 +185,33 @@ func TestBitrixWebhookCreatesAndAssignsIssue(t *testing.T) {
 	}
 	if assigneeID != testUserID {
 		t.Errorf("assignee_id = %q, want %q", assigneeID, testUserID)
+	}
+}
+
+// TestBitrixIdentityAliasOverridesExactEmailMatch covers legacy duplicate
+// accounts: a workspace alias must select the canonical member before the
+// importer's ordinary external-id or exact-email resolution.
+func TestBitrixIdentityAliasOverridesExactEmailMatch(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+	sourceEmail := fmt.Sprintf("bitrix-alias-%d@salesdoc.io", time.Now().UnixNano())
+	duplicateUserID := createHandlerTestMember(t, sourceEmail, "member")
+
+	var canonicalEmail string
+	if err := testPool.QueryRow(ctx, `SELECT email FROM "user" WHERE id = $1::uuid`, testUserID).Scan(&canonicalEmail); err != nil {
+		t.Fatalf("query canonical user email: %v", err)
+	}
+	setWorkspaceBitrixRouting(t, `{"bitrix_identity_aliases":{`+jsonStr(sourceEmail)+`:`+jsonStr(canonicalEmail)+`}}`)
+
+	assigneeType, assigneeID := testHandler.bitrixResolveOrProvisionAssignee(ctx, parseUUID(testWorkspaceID), "", &bitrix.User{Email: sourceEmail}, testHandler.newBitrixSyncState())
+	if !assigneeType.Valid || assigneeType.String != "member" {
+		t.Fatalf("assignee type = %#v, want member", assigneeType)
+	}
+	got := uuidToString(assigneeID)
+	if got != testUserID {
+		t.Fatalf("alias resolved user = %s, want canonical %s (duplicate was %s)", got, testUserID, duplicateUserID)
 	}
 }
 

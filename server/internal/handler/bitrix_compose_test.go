@@ -7,12 +7,10 @@ import (
 	"time"
 )
 
-// TestBitrixProjectBindingOwnsAssignee pins the project-workforce contract for
-// imports: once routing resolves a squad-bound project, that project's squad
-// must win over the Bitrix responsible/review fallback. Otherwise the issue
-// service rejects the import as an out-of-squad assignment while progress still
-// advances, leaving a misleading 200/200 run with no created issues.
-func TestBitrixProjectBindingOwnsAssignee(t *testing.T) {
+// TestBitrixProjectBindingFallsBackAfterHumanResponsible pins import ownership:
+// a project squad is used when Bitrix has no resolvable responsible, but a real
+// workspace member responsible wins even when the target project is squad-bound.
+func TestBitrixProjectBindingFallsBackAfterHumanResponsible(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
 	}
@@ -38,24 +36,48 @@ func TestBitrixProjectBindingOwnsAssignee(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	const taskID = "bx-compose-bound-squad"
-	cleanupBitrixIssues(t, taskID)
+	const fallbackTaskID = "bx-compose-bound-squad"
+	const humanTaskID = "bx-compose-human-owner"
+	const bitrixUserID = "bx-compose-member-100"
+	cleanupBitrixIssues(t, fallbackTaskID)
+	cleanupBitrixIssues(t, humanTaskID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1::uuid`, projectID)
 		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1::uuid`, squadID)
 	})
 	setWorkspaceBitrixRouting(t, `{"bitrix_default_project":`+jsonStr(projectTitle)+`}`)
-	portal.setTask(taskID, `{"id":"`+taskID+`","title":"Bound project task","status":2,"tags":["ai"]}`)
+	portal.setTask(fallbackTaskID, `{"id":"`+fallbackTaskID+`","title":"Bound project fallback task","status":2,"tags":["ai"]}`)
 
-	if err := testHandler.syncBitrixTaskWithState(ctx, taskID, bitrixRouteConfig(), testHandler.newBitrixSyncState()); err != nil {
-		t.Fatalf("sync task: %v", err)
+	if err := testHandler.syncBitrixTaskWithState(ctx, fallbackTaskID, bitrixRouteConfig(), testHandler.newBitrixSyncState()); err != nil {
+		t.Fatalf("sync fallback task: %v", err)
 	}
-	_, _, assigneeType, assigneeID, count := issueByBitrixTaskID(t, taskID)
+	_, _, assigneeType, assigneeID, count := issueByBitrixTaskID(t, fallbackTaskID)
 	if count != 1 {
-		t.Fatalf("issue count = %d, want 1", count)
+		t.Fatalf("fallback issue count = %d, want 1", count)
 	}
 	if assigneeType != "squad" || assigneeID != squadID {
-		t.Fatalf("assignee = %s:%s, want bound squad:%s", assigneeType, assigneeID, squadID)
+		t.Fatalf("fallback assignee = %s:%s, want bound squad:%s", assigneeType, assigneeID, squadID)
+	}
+
+	if err := testHandler.linkExternalIdentity(ctx, providerBitrix, bitrixUserID, testUserID); err != nil {
+		t.Fatalf("link responsible identity: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(),
+			`DELETE FROM user_external_identity WHERE provider = $1 AND external_id = $2`,
+			providerBitrix, bitrixUserID)
+	})
+	portal.setTask(humanTaskID, `{"id":"`+humanTaskID+`","title":"Bound project human task","status":2,"responsibleId":"`+bitrixUserID+`","tags":["ai"]}`)
+
+	if err := testHandler.syncBitrixTaskWithState(ctx, humanTaskID, bitrixRouteConfig(), testHandler.newBitrixSyncState()); err != nil {
+		t.Fatalf("sync human task: %v", err)
+	}
+	_, _, humanType, humanID, humanCount := issueByBitrixTaskID(t, humanTaskID)
+	if humanCount != 1 {
+		t.Fatalf("human issue count = %d, want 1", humanCount)
+	}
+	if humanType != "member" || humanID != testUserID {
+		t.Fatalf("human assignee = %s:%s, want member:%s", humanType, humanID, testUserID)
 	}
 }
 

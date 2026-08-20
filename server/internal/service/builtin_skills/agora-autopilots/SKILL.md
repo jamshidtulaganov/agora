@@ -77,6 +77,13 @@ notifications by upstream ownership. Provider-neutral metadata keys are preferre
 Bitrix mirrors populate them from `bitrix_responsible_email` and
 `bitrix_created_by_email`.
 
+Bitrix import assignment is human-first: a responsible person who resolves to a
+workspace member remains the Agora assignee, including on a squad-bound project;
+the review/project squad is only a fallback. For provider spelling differences or
+legacy duplicate accounts, set `workspace.settings.bitrix_identity_aliases` to a
+map of Bitrix email → canonical Agora email. Aliases are case-insensitive and run
+before external-id and exact-email matching.
+
 A human can retry a failed automation run with
 `POST /api/automations/{automation_id}/runs/{run_id}/rerun`. The retry creates a new
 audit row linked by `detail.retry_of` and executes only failed steps; successful

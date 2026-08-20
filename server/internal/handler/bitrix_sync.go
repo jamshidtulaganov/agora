@@ -427,8 +427,8 @@ type bitrixSyncState struct {
 	// project (sd-main / sd-cs / sd-billing) once per batch.
 	projectByTitle map[string]pgtype.UUID
 	// projectSquads maps a resolved project id to its bound squad id (zero when
-	// unbound). Project workforce binding is authoritative over Bitrix's generic
-	// responsible/review assignee and is resolved once per project per batch.
+	// unbound). It is the fallback when the Bitrix responsible is not a workspace
+	// member and is resolved once per project per batch.
 	projectSquads map[string]pgtype.UUID
 	// routing maps "<workspaceID>" -> the project-routing config loaded from
 	// workspace.settings (title-prefix rules + default project). A present key
@@ -821,8 +821,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		}
 
 		// Resolve the task's group to its Agora target (project + optional sprint)
-		// before the assignee. A squad-bound project owns its workforce and must
-		// override a conflicting generic Bitrix review squad.
+		// before the assignee. A matched human responsible owns the task; review or
+		// project squads are fallbacks only when no member resolves.
 		targetProject, targetSprint := h.resolveBitrixTarget(ctx, ws.ID, task, st)
 
 		// Re-resolve the assignee from RESPONSIBLE_ID; an ONTASKUPDATE may have
@@ -832,11 +832,13 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 		creator := h.bitrixPortalUser(ctx, st, task.CreatedByID)
 		assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
-		if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
-			assigneeType, assigneeID = reviewType, reviewID
-		}
-		if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, targetProject, st); ok {
-			assigneeType, assigneeID = projectType, projectSquadID
+		if !assigneeType.Valid {
+			if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
+				assigneeType, assigneeID = reviewType, reviewID
+			}
+			if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, targetProject, st); ok {
+				assigneeType, assigneeID = projectType, projectSquadID
+			}
 		}
 		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.bitrixSetIssueAssignee(ctx, existing.ID, ws.ID, assigneeType, assigneeID); err != nil {
@@ -947,11 +949,13 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	creator := h.bitrixPortalUser(ctx, st, task.CreatedByID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 	responsibleIsWorkspaceMember := assigneeType.Valid
-	if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
-		assigneeType, assigneeID = reviewType, reviewID
-	}
-	if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, projectID, st); ok {
-		assigneeType, assigneeID = projectType, projectSquadID
+	if !assigneeType.Valid {
+		if reviewType, reviewID, ok := h.bitrixReviewSquadAssignee(ctx, task, st); ok {
+			assigneeType, assigneeID = reviewType, reviewID
+		}
+		if projectType, projectSquadID, ok := h.bitrixProjectSquadAssignee(ctx, ws.ID, projectID, st); ok {
+			assigneeType, assigneeID = projectType, projectSquadID
+		}
 	}
 
 	// Per-user scope: only import a task that belongs to one of THIS workspace's
@@ -1435,6 +1439,23 @@ func (h *Handler) bitrixResolveAssignee(ctx context.Context, wsID pgtype.UUID, r
 // is best-effort; on any failure it degrades to the unassigned pair (the
 // responsible name still lands in metadata via setBitrixResponsibleMetadata).
 func (h *Handler) bitrixResolveOrProvisionAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string, u *bitrix.User, st *bitrixSyncState) (pgtype.Text, pgtype.UUID) {
+	// Workspace aliases deliberately run before explicit external identities and
+	// exact-email matches. They let an admin collapse legacy duplicate accounts
+	// and reconcile provider spelling differences without deleting member data.
+	cfg := h.bitrixRoutingForWorkspace(ctx, wsID, st)
+	if u != nil {
+		sourceEmail := strings.ToLower(strings.TrimSpace(u.Email))
+		if targetEmail := cfg.IdentityAliases[sourceEmail]; targetEmail != "" {
+			if agoraUser, err := h.Queries.GetUserByEmail(ctx, targetEmail); err == nil {
+				if t, uid := h.assigneeIfMember(ctx, wsID, util.UUIDToString(agoraUser.ID)); t.Valid {
+					return t, uid
+				}
+			} else {
+				slog.Warn("bitrix sync: identity alias target lookup failed",
+					"source_email", sourceEmail, "target_email", targetEmail, "error", err)
+			}
+		}
+	}
 	if t, uid := h.bitrixResolveAssignee(ctx, wsID, responsibleID, u); t.Valid {
 		return t, uid
 	}
@@ -1442,7 +1463,7 @@ func (h *Handler) bitrixResolveOrProvisionAssignee(ctx context.Context, wsID pgt
 	// from outside the configured department(s) is NOT added to the workspace —
 	// the task still imports, just unassigned. Existing members (resolved above)
 	// are never affected. No filter configured → provision as before.
-	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees && h.bitrixUserInTeam(ctx, st, u) {
+	if cfg.ProvisionAssignees && h.bitrixUserInTeam(ctx, st, u) {
 		return h.provisionBitrixAssignee(ctx, wsID, responsibleID, u)
 	}
 	return pgtype.Text{}, pgtype.UUID{}
