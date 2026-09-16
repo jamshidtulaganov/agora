@@ -79,6 +79,7 @@ import type {
   CancelTaskResponse,
   AssistantSession,
   AssistantRun,
+  AssistantOperation,
   SendAssistantMessageRequest,
   AssistantMessage,
   AssistantAvailability,
@@ -394,6 +395,10 @@ import {
   EMPTY_ORCHESTRATION_RUN,
   AssistantSessionSchema,
   AssistantRunSchema,
+  AssistantOperationSchema,
+  AssistantOperationListSchema,
+  EMPTY_ASSISTANT_OPERATION,
+  EMPTY_ASSISTANT_OPERATION_LIST,
   AssistantRunListSchema,
   EMPTY_ASSISTANT_RUN,
   EMPTY_ASSISTANT_RUN_LIST,
@@ -2416,6 +2421,20 @@ export class ApiClient {
       { method: "POST" },
     );
     return this.assistantOperationDecision(raw, "POST /api/assistant/operations/{id}/confirm");
+  }
+
+  async getAssistantOperation(operationId: string): Promise<AssistantOperation> {
+    const raw = await this.fetch<unknown>(`/api/assistant/operations/${operationId}`);
+    return parseWithFallback(raw, AssistantOperationSchema, EMPTY_ASSISTANT_OPERATION, {
+      endpoint: "GET /api/assistant/operations/{id}",
+    });
+  }
+
+  async listAssistantOperations(sessionId: string): Promise<AssistantOperation[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/operations`);
+    return parseWithFallback(raw, AssistantOperationListSchema, EMPTY_ASSISTANT_OPERATION_LIST, {
+      endpoint: "GET /api/assistant/sessions/{id}/operations",
+    });
   }
 
   /** Declines a pending operation. Specified as 204 + a "cancelled" tool message. */

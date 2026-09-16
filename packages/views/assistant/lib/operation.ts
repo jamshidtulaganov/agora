@@ -17,6 +17,7 @@
 // into the message list. Same rule as lib/artifact.ts.
 
 import type { AssistantMessage } from "@agora/core/types";
+import type { AssistantOperation } from "@agora/core/types";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -223,7 +224,25 @@ export function parseUncertainOutcome(result: unknown): UncertainOutcome | null 
 
 // --- outcome of a confirmation ------------------------------------------
 
-export type OperationOutcome = "confirmed" | "rejected" | "expired";
+export type OperationOutcome = "confirmed" | "rejected" | "expired" | "processing" | "failed" | "uncertain" | "unavailable";
+
+/** Only a persisted execution outcome can claim success. */
+export function operationState(operation: AssistantOperation): OperationOutcome | null {
+  switch (operation.status) {
+    case "pending": return null;
+    case "rejected": return "rejected";
+    case "expired": return "expired";
+    case "uncertain": return "uncertain";
+    case "confirmed":
+      switch (operation.outcome) {
+        case "succeeded": return "confirmed";
+        case "failed": return "failed";
+        case "uncertain": return "uncertain";
+        default: return "processing";
+      }
+    default: return "unavailable";
+  }
+}
 
 /**
  * Synthetic `tool_call_id` the server gives a receipt row so it can never
@@ -267,7 +286,10 @@ export function operationOutcomeAfter(
     if (status === "needs_confirmation") continue;
     if (REJECTED_STATUSES.has(status)) return "rejected";
     if (EXPIRED_STATUSES.has(status)) return "expired";
-    return "confirmed";
+    if (status === "uncertain") return "uncertain";
+    if (status === "failed" || status === "error") return "failed";
+    if (asRecord(result.receipt)) return "confirmed";
+    return "processing";
   }
   return null;
 }

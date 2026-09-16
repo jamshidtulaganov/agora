@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@agora/core/i18n/react";
@@ -413,5 +413,65 @@ describe("AssistantPage — artifact pane", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Close artifact" }));
     expect(mockSetOpenArtifact).toHaveBeenCalledWith("session-1", null);
+  });
+});
+
+// Narrow viewports fold the rail away behind a header toggle; the page keeps
+// exactly one obvious way back to it.
+describe("AssistantPage — narrow-width rail", () => {
+  const sessions = [
+    {
+      id: "s1",
+      title: "Plan my week",
+      focus_workspace_id: null,
+      created_at: "2026-09-16T09:00:00Z",
+      updated_at: "2026-09-16T09:00:00Z",
+    },
+    {
+      id: "s2",
+      title: "Usage",
+      focus_workspace_id: null,
+      created_at: "2026-09-15T09:00:00Z",
+      updated_at: "2026-09-15T09:00:00Z",
+    },
+  ];
+
+  beforeEach(() => {
+    mockGetAvailability.mockResolvedValue({ enabled: true, model_label: "Agora" });
+    mockGetSessions.mockResolvedValue(sessions);
+    assistantStoreState.activeSessionId = "s1";
+  });
+
+  it("toggles the rail from the header and closes it again on pick", async () => {
+    renderPage();
+
+    const toggle = await screen.findByRole("button", { name: "Show chats" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(toggle);
+    expect(await screen.findByRole("button", { name: "Hide chats" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+
+    await userEvent.click(screen.getByText("Usage"));
+
+    expect(mockSetActiveSession).toHaveBeenCalledWith("s2");
+    expect(await screen.findByRole("button", { name: "Show chats" })).toBeInTheDocument();
+  });
+
+  it("starts a new chat on Cmd/Ctrl+Shift+O (Cmd+K belongs to global search)", async () => {
+    renderPage();
+    await screen.findByText("Plan my week");
+
+    fireEvent.keyDown(document, { key: "O", code: "KeyO", metaKey: true, shiftKey: true });
+    expect(mockCreateMutate).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(document, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
+    expect(mockCreateMutate).toHaveBeenCalledTimes(2);
+
+    // Bare ⌘K stays out of it.
+    fireEvent.keyDown(document, { key: "k", code: "KeyK", metaKey: true });
+    expect(mockCreateMutate).toHaveBeenCalledTimes(2);
   });
 });

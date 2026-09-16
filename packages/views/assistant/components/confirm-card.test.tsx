@@ -12,11 +12,19 @@ vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }));
 
 const mockConfirm = vi.hoisted(() => vi.fn());
 const mockReject = vi.hoisted(() => vi.fn());
+const mockOperation = vi.hoisted(() => ({
+  data: { id: "op-1", status: "pending", outcome: null } as { id: string; status: string; outcome: string | null },
+  isPending: false,
+  isError: false,
+  isFetching: false,
+  refetch: vi.fn(),
+}));
 
 // The card is self-contained (it owns its two mutations) so the transcript
 // needs no confirmation plumbing of its own — which is exactly what these
 // mocks stand in for.
 vi.mock("@agora/core/assistant", () => ({
+  useAssistantOperation: () => mockOperation,
   useConfirmAssistantOperation: (sessionId: string) => ({
     mutate: (operationId: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void }) =>
       mockConfirm(sessionId, operationId, opts),
@@ -77,6 +85,11 @@ const PENDING = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockOperation.data = { id: "op-1", status: "pending", outcome: null };
+  mockOperation.isPending = false;
+  mockOperation.isError = false;
+  mockOperation.isFetching = false;
+  mockOperation.refetch.mockResolvedValue({ data: mockOperation.data, isError: false });
 });
 
 afterEach(() => {
@@ -109,28 +122,28 @@ describe("ConfirmCard — pending", () => {
 });
 
 describe("ConfirmCard — confirm and reject", () => {
-  it("confirms the exact operation id and flips to confirmed", async () => {
+  it("confirms the exact operation id and waits for the persisted outcome", async () => {
     mockConfirm.mockImplementation((_s, _id, opts) => opts?.onSuccess?.());
     renderList([toolMessage("m1", PENDING)]);
 
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(mockConfirm).toHaveBeenCalledWith("session-1", "op-1", expect.anything());
-    expect(await screen.findByText("Confirmed")).toBeInTheDocument();
+    expect(await screen.findByText("Checking the result…")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
   });
 
-  it("rejects the exact operation id and flips to cancelled", async () => {
+  it("rejects the exact operation id and waits for the persisted state", async () => {
     mockReject.mockImplementation((_s, _id, opts) => opts?.onSuccess?.());
     renderList([toolMessage("m1", PENDING)]);
 
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(mockReject).toHaveBeenCalledWith("session-1", "op-1", expect.anything());
-    expect(await screen.findByText("Cancelled")).toBeInTheDocument();
+    expect(await screen.findByText("Checking the result…")).toBeInTheDocument();
   });
 
-  it("flips to expired and explains itself on a 409", async () => {
+  it("reconciles after a 409 rather than claiming expiry", async () => {
     mockConfirm.mockImplementation((_s, _id, opts) =>
       opts?.onError?.(new ApiError("conflict", 409, "Conflict")),
     );
@@ -138,7 +151,7 @@ describe("ConfirmCard — confirm and reject", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    expect(await screen.findByText("This action changed — ask again.")).toBeInTheDocument();
+    expect(await screen.findByText("Checking the result…")).toBeInTheDocument();
     expect(toastError).toHaveBeenCalledWith("This action changed — ask again.");
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
   });
@@ -152,15 +165,47 @@ describe("ConfirmCard — confirm and reject", () => {
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(toastError).toHaveBeenCalledWith("Failed to send message");
-    // Retryable: a deploy can fix this, so the buttons stay.
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument(),
-    );
+    // Unknown network outcome is blocked until an authoritative read arrives.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument());
     expect(screen.queryByText("This action changed — ask again.")).not.toBeInTheDocument();
   });
 });
 
 describe("ConfirmCard — outcome already in the transcript", () => {
+  it.each([
+    ["confirmed", "succeeded", "Confirmed"],
+    ["confirmed", "failed", "The action failed. Review the result before trying again."],
+    ["confirmed", null, "Checking the result…"],
+    ["uncertain", null, "The outcome is unclear. Check the affected item before trying again."],
+    ["rejected", null, "Cancelled"],
+    ["expired", null, "This action changed — ask again."],
+  ])("reads persisted %s/%s after reload", (status, outcome, expected) => {
+    mockOperation.data = { id: "op-1", status, outcome };
+    renderList([toolMessage("m1", PENDING)]);
+    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  });
+
+  it("blocks confirmation while the operation read is unavailable", () => {
+    mockOperation.isError = true;
+    renderList([toolMessage("m1", PENDING)]);
+    expect(screen.getByText("Could not check this action. Reopen the conversation to try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check status" })).toBeInTheDocument();
+  });
+
+  it("re-enables a pending confirmation only after a fresh status check", async () => {
+    mockConfirm.mockImplementation((_s, _id, opts) =>
+      opts?.onError?.(new ApiError("unavailable", 503, "Unavailable")),
+    );
+    renderList([toolMessage("m1", PENDING)]);
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check status" }));
+    expect(mockOperation.refetch).toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
+
   it("reads a later receipt row as confirmed, without a click", () => {
     renderList([
       toolMessage("m1", PENDING),

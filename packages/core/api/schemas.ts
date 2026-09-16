@@ -38,6 +38,7 @@ import type {
   SendAssistantMessageResponse,
   AssistantArtifact,
   AssistantArtifactSummary,
+  AssistantOperation,
   AssistantOperationDecision,
 } from "../types";
 
@@ -2160,6 +2161,30 @@ export const EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE: SendAssistantMessageResponse
 };
 
 // Confirmation binding — POST /api/assistant/operations/{id}/confirm|reject.
+export const AssistantOperationSchema = z.object({
+  id: z.string().min(1),
+  tool_name: z.string().catch("").default(""),
+  summary: z.string().catch("").default(""),
+  workspace_slug: z.string().catch("").default(""),
+  target: z.object({
+    type: z.string().catch("").default(""),
+    identifier: z.string().catch("").default(""),
+    title: z.string().catch("").default(""),
+  }).nullable().catch(null).default(null),
+  status: z.string().min(1),
+  outcome: z.string().nullable().catch(null).optional(),
+  created_at: z.string().optional(),
+  expires_at: z.string().optional(),
+}).loose();
+
+export const EMPTY_ASSISTANT_OPERATION: AssistantOperation = {
+  id: "", tool_name: "", summary: "", workspace_slug: "", target: null,
+  status: "unknown", outcome: null,
+};
+
+export const AssistantOperationListSchema = z.array(AssistantOperationSchema).catch([]);
+export const EMPTY_ASSISTANT_OPERATION_LIST: AssistantOperation[] = [];
+
 // See docs/agora-assistant-final-plan.md ("Pinned wire contract") and
 // server/internal/handler/assistant_operations.go, which answers confirm with
 // `{operation, message}` and reject with a bare 204.

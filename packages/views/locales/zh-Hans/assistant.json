@@ -14,7 +14,8 @@
   },
   "fab": {
     "default": "问问 Agora",
-    "running": "Agora 正在处理..."
+    "running": "Agora 正在处理...",
+    "unseen": "Agora 已完成 — 打开查看"
   },
   "empty_state": {
     "title": "问 Agora 任何问题",
@@ -36,7 +37,9 @@
     "delete_confirm_description": "此对话及其消息将被永久删除。",
     "delete_confirm_cancel": "取消",
     "delete_confirm_confirm": "删除",
-    "empty": "还没有对话"
+    "empty": "还没有对话",
+    "show_chats": "显示对话",
+    "hide_chats": "隐藏对话"
   },
   "composer": {
     "placeholder": "给助手发消息...",
@@ -102,6 +105,11 @@
     "confirmed": "已确认",
     "rejected": "已取消",
     "expired": "这个操作已经变了，重新问一次。",
+    "processing": "正在核实结果…",
+    "check_status": "检查状态",
+    "failed": "操作失败。重试前请检查结果。",
+    "uncertain": "结果不确定。重试前请检查受影响的内容。",
+    "unavailable": "无法核实这个操作。请重新打开对话。",
     "toast_changed": "这个操作已经变了，重新问一次。"
   },
   "receipt": {
@@ -135,7 +143,9 @@
   },
   "message_actions": {
     "copy": "复制",
-    "copied": "已复制"
+    "copied": "已复制",
+    "regenerate": "重新生成",
+    "regenerating": "正在重新生成…"
   },
   "run": {
     "failed": "助手未能完成回复。你可以发送新消息或重试请求。",
@@ -144,6 +154,26 @@
     "effects_notice": "部分更改可能已经生效。重试前请检查对话和受影响的内容。",
     "status_unavailable": "无法确认助手是否仍在运行。",
     "retry_status": "重试",
-    "checking_status": "正在检查助手状态..."
+    "checking_status": "正在检查助手状态...",
+    "retry": "重试",
+    "error_detail_label": "详情"
+  },
+  "transcript": {
+    "jump_to_latest": "回到最新",
+    "today": "今天",
+    "yesterday": "昨天"
+  },
+  "follow_ups": {
+    "label": "接下来可以问",
+    "assign_issue": "分配给某个人",
+    "set_due_date": "设置截止日期",
+    "add_issue_context": "再补充一些细节",
+    "add_project_issues": "添加第一批 issue",
+    "compare_last_week": "和上周对比一下",
+    "usage_by_agent": "按智能体拆开看",
+    "create_from_results": "据此创建一个任务",
+    "summarize_results": "把这些结果总结一下",
+    "what_is_urgent": "最紧急的是什么？",
+    "what_needs_me": "今天有什么需要我处理？"
   }
 }

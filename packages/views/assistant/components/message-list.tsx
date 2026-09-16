@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Wrench, AlertCircle, Check, Copy } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Wrench, AlertCircle, Check, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { copyText } from "@agora/ui/lib/clipboard";
@@ -14,6 +14,7 @@ import { AssistantAvatar } from "./assistant-avatar";
 import { ArtifactCard } from "./artifact-card";
 import { humanizeToolName, isToolResultError, summarizeToolResult } from "../lib/tool-summary";
 import { isArtifactToolName, parseArtifactToolResult } from "../lib/artifact";
+import { isDayBoundary, relativeDay } from "../lib/transcript-days";
 import {
   operationOutcomeAfter,
   parseConfirmationRequest,
@@ -28,9 +29,23 @@ interface MessageListProps {
   /** Opens an artifact produced in this session. Omitted where there is
    *  nowhere to open it — the cards then render static. */
   onOpenArtifact?: (artifactId: string) => void;
+  /** Re-sends the last user message. Offered on the LAST assistant row only
+   *  (ChatGPT-style) and omitted while a run is active, which is what keeps
+   *  the action from racing the reply it would replace. */
+  onRegenerate?: () => void;
 }
 
-export function MessageList({ messages, onOpenArtifact }: MessageListProps) {
+/** The row a regenerate action belongs on: the final assistant turn that
+ *  actually said something. Pure tool-call turns render nothing. */
+function lastSpokenAssistantId(messages: AssistantMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "assistant" && message.content.trim()) return message.id;
+  }
+  return null;
+}
+
+export function MessageList({ messages, onOpenArtifact, onRegenerate }: MessageListProps) {
   // A confirmation card has to know whether a LATER row already reported its
   // outcome, so every row needs its position in the flat transcript — the
   // grouping below loses that.
@@ -40,6 +55,8 @@ export function MessageList({ messages, onOpenArtifact }: MessageListProps) {
     return map;
   }, [messages]);
 
+  const regenerateId = onRegenerate ? lastSpokenAssistantId(messages) : null;
+
   const row = (message: AssistantMessage) => (
     <MessageRow
       key={message.id}
@@ -47,25 +64,68 @@ export function MessageList({ messages, onOpenArtifact }: MessageListProps) {
       messages={messages}
       index={indexById.get(message.id) ?? -1}
       onOpenArtifact={onOpenArtifact}
+      onRegenerate={message.id === regenerateId ? onRegenerate : undefined}
     />
   );
 
+  const groups = groupMessages(messages);
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-5">
-      {groupMessages(messages).map((group) =>
-        group.length > 1 ? (
-          // A run that called several tools in a row is ONE action by the
-          // model; stacking those chips tight (gap-1 inside the transcript's
-          // gap-4) reads as a single step instead of four separate turns.
-          <div key={group[0]!.id} className="flex flex-col gap-1">
-            {group.map(row)}
-          </div>
-        ) : (
-          row(group[0]!)
-        ),
-      )}
+      {groups.map((group, index) => {
+        const previous = groups[index - 1];
+        const showDaySeparator = isDayBoundary(
+          previous?.[previous.length - 1]?.created_at,
+          group[0]!.created_at,
+        );
+        return (
+          <Fragment key={group[0]!.id}>
+            {showDaySeparator && <DaySeparator iso={group[0]!.created_at} />}
+            {group.length > 1 ? (
+              // A run that called several tools in a row is ONE action by the
+              // model; stacking those chips tight (gap-1 inside the
+              // transcript's gap-4) reads as a single step instead of four
+              // separate turns.
+              <div className="flex flex-col gap-1">{group.map(row)}</div>
+            ) : (
+              row(group[0]!)
+            )}
+          </Fragment>
+        );
+      })}
     </div>
   );
+}
+
+/**
+ * Hairline date divider, shown only where the reader's local day changed
+ * between two rows (lib/transcript-days.ts). Today and yesterday are named;
+ * anything older is formatted in the reader's own locale.
+ */
+function DaySeparator({ iso }: { iso: string }) {
+  const { t, i18n } = useT("assistant");
+  const relative = relativeDay(iso);
+  const label =
+    relative === "today"
+      ? t(($) => $.transcript.today)
+      : relative === "yesterday"
+        ? t(($) => $.transcript.yesterday)
+        : formatDay(iso, i18n.language);
+
+  return (
+    <div className="flex items-center gap-3" role="separator" aria-label={label}>
+      <span className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[11px] text-muted-foreground">{label}</span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+function formatDay(iso: string, locale: string): string {
+  const date = new Date(iso);
+  const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
+  return date.toLocaleDateString(locale, options);
 }
 
 /** Consecutive `tool` rows become one cluster; everything else stays alone. */
@@ -87,12 +147,15 @@ function MessageRow({
   messages,
   index,
   onOpenArtifact,
+  onRegenerate,
 }: {
   message: AssistantMessage;
   /** Full transcript — a confirmation row reads its outcome from later rows. */
   messages: AssistantMessage[];
   index: number;
   onOpenArtifact?: (artifactId: string) => void;
+  /** Set on the last assistant row only. */
+  onRegenerate?: () => void;
 }) {
   if (message.role === "tool") {
     // Every branch below decodes an OPTIONAL tool_result shape and falls back
@@ -155,7 +218,7 @@ function MessageRow({
         <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
           <Markdown>{message.content}</Markdown>
         </div>
-        <MessageActions content={message.content} align="start" />
+        <MessageActions content={message.content} align="start" onRegenerate={onRegenerate} />
       </div>
     </div>
   );
@@ -169,7 +232,15 @@ function MessageRow({
  * Hidden until the row is hovered or something inside it takes focus, and
  * permanently visible on coarse pointers, where there is no hover to reveal it.
  */
-function MessageActions({ content, align }: { content: string; align: "start" | "end" }) {
+function MessageActions({
+  content,
+  align,
+  onRegenerate,
+}: {
+  content: string;
+  align: "start" | "end";
+  onRegenerate?: () => void;
+}) {
   const { t } = useT("assistant");
   const [copied, setCopied] = useState(false);
 
@@ -180,6 +251,7 @@ function MessageActions({ content, align }: { content: string; align: "start" | 
   }, [copied]);
 
   const label = copied ? t(($) => $.message_actions.copied) : t(($) => $.message_actions.copy);
+  const regenerateLabel = t(($) => $.message_actions.regenerate);
 
   return (
     <div
@@ -208,6 +280,24 @@ function MessageActions({ content, align }: { content: string; align: "start" | 
         </TooltipTrigger>
         <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
+      {onRegenerate && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={regenerateLabel}
+                className="size-6 text-muted-foreground"
+                onClick={onRegenerate}
+              />
+            }
+          >
+            <RotateCcw className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{regenerateLabel}</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

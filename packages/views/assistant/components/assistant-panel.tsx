@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { toast } from "sonner";
@@ -75,6 +75,22 @@ function AssistantPanelWindow() {
   // then this is delivered once ActiveConversation mounts bound to the real id.
   const [pendingInitialMessage, setPendingInitialMessage] = useState<InitialAssistantMessage | null>(null);
   const [draftValue, setDraftValue] = useState("");
+
+  // Escape closes the panel — the same gesture every other dismissible
+  // surface in the app answers to. Two deliberate exemptions: a keystroke
+  // something else already consumed (the composer's slash menu calls
+  // preventDefault), and any open dialog/menu/listbox, which owns Escape
+  // until it is dismissed. Composer content is irrelevant: Escape never
+  // discards a draft, it is persisted and waiting on reopen.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]')) return;
+      setOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [setOpen]);
 
   const windowRef = useRef<HTMLDivElement>(null);
   const { renderWidth, renderHeight, isAtMax, boundsReady, isDragging, toggleExpand, startDrag } =

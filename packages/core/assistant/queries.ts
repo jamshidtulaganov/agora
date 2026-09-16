@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 
 // The Agora Assistant is USER-scoped, not workspace-scoped (see
@@ -13,6 +13,8 @@ export const assistantKeys = {
   messages: (sessionId: string) => [...assistantKeys.all, "messages", sessionId] as const,
   runs: (sessionId: string) => [...assistantKeys.all, "runs", sessionId] as const,
   run: (id: string) => [...assistantKeys.all, "run", id] as const,
+  operations: (sessionId: string) => [...assistantKeys.all, "operations", sessionId] as const,
+  operation: (id: string) => [...assistantKeys.all, "operation", id] as const,
   availability: () => [...assistantKeys.all, "availability"] as const,
   /** Prefix for every single-artifact query — lets a WS event invalidate
    *  "whatever artifact is on screen" without knowing its id. */
@@ -66,6 +68,30 @@ export function assistantRunOptions(id: string) {
     enabled: !!id,
     staleTime: Infinity,
   });
+}
+
+export function assistantOperationOptions(id: string) {
+  return queryOptions({
+    queryKey: assistantKeys.operation(id),
+    queryFn: () => api.getAssistantOperation(id),
+    enabled: !!id,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+export function assistantOperationsOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: assistantKeys.operations(sessionId),
+    queryFn: () => api.listAssistantOperations(sessionId),
+    enabled: !!sessionId,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+export function useAssistantOperation(id: string) {
+  return useQuery(assistantOperationOptions(id));
 }
 
 /**

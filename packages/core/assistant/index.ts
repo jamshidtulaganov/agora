@@ -5,6 +5,9 @@ export {
   assistantMessagesOptions,
   assistantRunsOptions,
   assistantRunOptions,
+  assistantOperationOptions,
+  assistantOperationsOptions,
+  useAssistantOperation,
   assistantAvailabilityOptions,
   assistantArtifactOptions,
   assistantSessionArtifactListOptions,
@@ -18,6 +21,11 @@ export {
   useConfirmAssistantOperation,
   useRejectAssistantOperation,
 } from "./mutations";
+export {
+  deriveSessionTitle,
+  autoTitleAssistantSession,
+  ASSISTANT_TITLE_MAX_LENGTH,
+} from "./auto-title";
 export {
   onAssistantMessage,
   onAssistantToolActivity,

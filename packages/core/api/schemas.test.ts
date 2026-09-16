@@ -62,6 +62,9 @@ import {
   AssistantAvailabilitySchema,
   EMPTY_ASSISTANT_AVAILABILITY,
   AssistantOperationDecisionSchema,
+  AssistantOperationSchema,
+  AssistantOperationListSchema,
+  EMPTY_ASSISTANT_OPERATION,
   EMPTY_ASSISTANT_OPERATION_DECISION,
   AssistantArtifactSchema,
   AssistantArtifactSummarySchema,
@@ -1845,6 +1848,30 @@ describe("AssistantAvailabilitySchema drift", () => {
 // Confirmation binding — the confirm/reject endpoints ship after this UI, so
 // "the runtime doesn't have them yet" is a real production state. See
 // docs/agora-assistant-final-plan.md ("Pinned wire contract").
+describe("AssistantOperationSchema drift", () => {
+  const operation = {
+    id: "op-1", tool_name: "delete_issue", summary: "Delete MUL-1",
+    workspace_slug: "acme", target: { type: "issue", identifier: "MUL-1", title: "Test" },
+    status: "confirmed", outcome: "succeeded",
+  };
+
+  it.each(["pending", "confirmed", "rejected", "expired", "uncertain", "future_status"])(
+    "preserves %s for safe UI handling", (status) => {
+      expect(AssistantOperationSchema.parse({ ...operation, status }).status).toBe(status);
+    },
+  );
+
+  it("preserves known and unknown outcomes", () => {
+    expect(AssistantOperationSchema.parse({ ...operation, outcome: "failed" }).outcome).toBe("failed");
+    expect(AssistantOperationSchema.parse({ ...operation, outcome: "future_outcome" }).outcome).toBe("future_outcome");
+  });
+
+  it("fails closed on a malformed receipt and list", () => {
+    expect(parseWithFallback({ ...operation, status: 42 }, AssistantOperationSchema, EMPTY_ASSISTANT_OPERATION, { endpoint: "operation" })).toBe(EMPTY_ASSISTANT_OPERATION);
+    expect(AssistantOperationListSchema.parse(null)).toEqual([]);
+  });
+});
+
 describe("AssistantOperationDecisionSchema drift", () => {
   it("parses the decision body the confirm handler returns", () => {
     expect(

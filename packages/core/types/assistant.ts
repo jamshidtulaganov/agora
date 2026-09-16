@@ -113,6 +113,19 @@ export interface AssistantOperationDecision {
   message_id: string;
 }
 
+/** Persisted confirmation state; outcome is the execution result, not the click. */
+export interface AssistantOperation {
+  id: string;
+  tool_name: string;
+  summary: string;
+  workspace_slug: string;
+  target: { type: string; identifier: string; title: string } | null;
+  status: string;
+  outcome?: string | null;
+  created_at?: string;
+  expires_at?: string;
+}
+
 // --- Assistant artifacts -----------------------------------------------
 // Standalone rich outputs the assistant produces (chart / table / markdown /
 // html), rendered in the artifact pane. See

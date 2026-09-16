@@ -6,12 +6,13 @@ import { AlertTriangle, Check, ShieldQuestion, X } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { ApiError } from "@agora/core/api";
 import {
+  useAssistantOperation,
   useConfirmAssistantOperation,
   useRejectAssistantOperation,
 } from "@agora/core/assistant";
 import { useT } from "../../i18n";
 import type { ConfirmationRequest, OperationOutcome } from "../lib/operation";
-import { targetLabel } from "../lib/operation";
+import { operationState, targetLabel } from "../lib/operation";
 
 interface ConfirmCardProps {
   /** Session the operation belongs to — drives the transcript invalidation. */
@@ -46,35 +47,47 @@ export function ConfirmCard({ sessionId, request, outcome }: ConfirmCardProps) {
   // Set by a 409 (the operation changed or aged out server-side) and as
   // immediate feedback for our own click, until the receipt lands over WS.
   const [localOutcome, setLocalOutcome] = useState<OperationOutcome | null>(null);
+  const operation = useAssistantOperation(request.operationId);
   const confirmOperation = useConfirmAssistantOperation(sessionId);
   const rejectOperation = useRejectAssistantOperation(sessionId);
 
-  const settled = outcome ?? localOutcome;
-  const isBusy = confirmOperation.isPending || rejectOperation.isPending;
+  const authoritative = operation.data?.id === request.operationId
+    ? operationState(operation.data)
+    : null;
+  const settled = authoritative ?? outcome ?? localOutcome ??
+    (operation.isPending ? "processing" : operation.isError || !operation.data?.id ? "unavailable" : null);
+  const isBusy = confirmOperation.isPending || rejectOperation.isPending || operation.isFetching;
 
   const handleError = (err: unknown) => {
-    // 409 is the contract's "you confirmed something that no longer matches" —
-    // the only failure that changes the card, because retrying cannot help.
     if (err instanceof ApiError && err.status === 409) {
-      setLocalOutcome("expired");
+      setLocalOutcome("processing");
       toast.error(t(($) => $.confirm.toast_changed));
       return;
     }
+    setLocalOutcome("processing");
     toast.error(t(($) => $.toast.send_failed));
   };
 
   const handleConfirm = () => {
     confirmOperation.mutate(request.operationId, {
-      onSuccess: () => setLocalOutcome("confirmed"),
+      onSuccess: () => setLocalOutcome("processing"),
       onError: handleError,
     });
   };
 
   const handleReject = () => {
     rejectOperation.mutate(request.operationId, {
-      onSuccess: () => setLocalOutcome("rejected"),
+      onSuccess: () => setLocalOutcome("processing"),
       onError: handleError,
     });
+  };
+
+  const handleCheck = async () => {
+    const result = await operation.refetch();
+    // A fresh server read is the only reason to re-enable an ambiguous click.
+    if (!result.isError && result.data?.id === request.operationId && result.data.status === "pending") {
+      setLocalOutcome(null);
+    }
   };
 
   const summary = request.summary || t(($) => $.confirm.fallback_summary);
@@ -98,6 +111,7 @@ export function ConfirmCard({ sessionId, request, outcome }: ConfirmCardProps) {
         isBusy={isBusy}
         onConfirm={handleConfirm}
         onReject={handleReject}
+        onCheck={handleCheck}
       />
     </div>
   );
@@ -108,11 +122,13 @@ function ConfirmFooter({
   isBusy,
   onConfirm,
   onReject,
+  onCheck,
 }: {
   state: OperationOutcome | null;
   isBusy: boolean;
   onConfirm: () => void;
   onReject: () => void;
+  onCheck: () => void;
 }) {
   const { t } = useT("assistant");
 
@@ -141,6 +157,24 @@ function ConfirmFooter({
         {t(($) => $.confirm.expired)}
       </p>
     );
+  }
+
+  if (state === "processing" || state === "unavailable") {
+    return <div className="flex items-center gap-2">
+      <p role="status" className="text-xs text-muted-foreground">
+        {t(($) => state === "processing" ? $.confirm.processing : $.confirm.unavailable)}
+      </p>
+      <Button size="sm" variant="ghost" onClick={onCheck} disabled={isBusy}>
+        {t(($) => $.confirm.check_status)}
+      </Button>
+    </div>;
+  }
+
+  if (state === "failed" || state === "uncertain") {
+    return <p role="status" className="flex items-start gap-1.5 text-xs text-warning">
+      <AlertTriangle className="mt-px size-3.5 shrink-0" />
+      {t(($) => state === "failed" ? $.confirm.failed : $.confirm.uncertain)}
+    </p>;
   }
 
   return (

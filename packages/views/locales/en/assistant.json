@@ -14,7 +14,8 @@
   },
   "fab": {
     "default": "Ask Agora",
-    "running": "Agora is working..."
+    "running": "Agora is working...",
+    "unseen": "Agora finished — open to read it"
   },
   "empty_state": {
     "title": "Ask Agora anything",
@@ -36,7 +37,9 @@
     "delete_confirm_description": "This chat and its messages will be permanently removed.",
     "delete_confirm_cancel": "Cancel",
     "delete_confirm_confirm": "Delete",
-    "empty": "No conversations yet"
+    "empty": "No conversations yet",
+    "show_chats": "Show chats",
+    "hide_chats": "Hide chats"
   },
   "composer": {
     "placeholder": "Message the Assistant...",
@@ -102,6 +105,11 @@
     "confirmed": "Confirmed",
     "rejected": "Cancelled",
     "expired": "This action changed — ask again.",
+    "processing": "Checking the result…",
+    "check_status": "Check status",
+    "failed": "The action failed. Review the result before trying again.",
+    "uncertain": "The outcome is unclear. Check the affected item before trying again.",
+    "unavailable": "Could not check this action. Reopen the conversation to try again.",
     "toast_changed": "This action changed — ask again."
   },
   "receipt": {
@@ -135,7 +143,9 @@
   },
   "message_actions": {
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "regenerate": "Regenerate",
+    "regenerating": "Regenerating…"
   },
   "run": {
     "failed": "The Assistant could not finish this reply. You can send another message or try your request again.",
@@ -144,6 +154,26 @@
     "effects_notice": "Some changes may already have been applied. Check the conversation and affected items before retrying.",
     "status_unavailable": "Could not check whether the Assistant is still working.",
     "retry_status": "Try again",
-    "checking_status": "Checking Assistant status..."
+    "checking_status": "Checking Assistant status...",
+    "retry": "Retry",
+    "error_detail_label": "Details"
+  },
+  "transcript": {
+    "jump_to_latest": "Jump to latest",
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "follow_ups": {
+    "label": "Suggested follow-ups",
+    "assign_issue": "Assign it to someone",
+    "set_due_date": "Set a due date",
+    "add_issue_context": "Add more detail to it",
+    "add_project_issues": "Add the first issues to it",
+    "compare_last_week": "Compare with last week",
+    "usage_by_agent": "Break it down by agent",
+    "create_from_results": "Create a task from this",
+    "summarize_results": "Summarize these results",
+    "what_is_urgent": "What's most urgent?",
+    "what_needs_me": "What needs me today?"
   }
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { assistantKeys } from "./queries";
+import { autoTitleAssistantSession } from "./auto-title";
 import { createLogger } from "../logger";
 import type {
   AssistantSession,
@@ -146,6 +147,9 @@ export function useSendAssistantMessage(sessionId: string) {
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: assistantKeys.messages(sessionId) });
       const previous = qc.getQueryData<AssistantMessage[]>(assistantKeys.messages(sessionId));
+      // Captured BEFORE the optimistic row lands: auto-titling only ever
+      // reacts to the session's very first user turn.
+      const isFirstUserMessage = (previous ?? []).every((message) => message.role !== "user");
       const optimistic: AssistantMessage = {
         id: `optimistic-${Date.now()}`,
         session_id: sessionId,
@@ -157,9 +161,15 @@ export function useSendAssistantMessage(sessionId: string) {
         ...(old ?? []),
         optimistic,
       ]);
-      return { previous };
+      return { previous, isFirstUserMessage };
     },
-    onSuccess: (response) => logger.info("sendMessage.success", { sessionId, runId: response.run_id }),
+    onSuccess: (response, input, ctx) => {
+      logger.info("sendMessage.success", { sessionId, runId: response.run_id });
+      // "New chat" forever is the single loudest papercut in the rail. The
+      // first accepted user turn names the session client-side — no model
+      // call — and only while the title is still empty (auto-title.ts).
+      if (ctx?.isFirstUserMessage) void autoTitleAssistantSession(qc, sessionId, input.content);
+    },
     onError: (err, _content, ctx) => {
       logger.warn("sendMessage.error.rollback", { sessionId, err });
       qc.setQueryData(assistantKeys.messages(sessionId), ctx?.previous);
@@ -193,7 +203,7 @@ export function useConfirmAssistantOperation(sessionId: string) {
     onError: (err, operationId) => {
       logger.warn("confirmOperation.error", { sessionId, operationId, err });
     },
-    onSettled: () => invalidateAfterDecision(qc, sessionId),
+    onSettled: (_data, _error, operationId) => invalidateAfterDecision(qc, sessionId, operationId),
   });
 }
 
@@ -208,12 +218,14 @@ export function useRejectAssistantOperation(sessionId: string) {
     onError: (err, operationId) => {
       logger.warn("rejectOperation.error", { sessionId, operationId, err });
     },
-    onSettled: () => invalidateAfterDecision(qc, sessionId),
+    onSettled: (_data, _error, operationId) => invalidateAfterDecision(qc, sessionId, operationId),
   });
 }
 
 /** Both decisions append a tool message and may resume the run that asked. */
-function invalidateAfterDecision(qc: ReturnType<typeof useQueryClient>, sessionId: string) {
+function invalidateAfterDecision(qc: ReturnType<typeof useQueryClient>, sessionId: string, operationId: string) {
+  qc.invalidateQueries({ queryKey: assistantKeys.operation(operationId) });
+  qc.invalidateQueries({ queryKey: assistantKeys.operations(sessionId) });
   qc.invalidateQueries({ queryKey: assistantKeys.messages(sessionId) });
   qc.invalidateQueries({ queryKey: assistantKeys.runs(sessionId) });
   qc.invalidateQueries({ queryKey: assistantKeys.sessions() });

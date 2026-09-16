@@ -23,6 +23,12 @@ export const ASSISTANT_PANEL_DEFAULT_H = 600;
 
 export interface AssistantPanelState {
   isOpen: boolean;
+  /**
+   * A run finished while the panel was closed — drives the dot on the FAB.
+   * Deliberately ephemeral (never persisted): a badge that survives a reload
+   * is a badge nobody trusts.
+   */
+  hasUnseenResult: boolean;
   /** Raw user-chosen size — no clamp applied. The UI clamps at render time. */
   panelWidth: number;
   panelHeight: number;
@@ -32,6 +38,8 @@ export interface AssistantPanelState {
   /** Persist raw size and auto-exit expanded mode. */
   setPanelSize: (width: number, height: number) => void;
   setExpanded: (expanded: boolean) => void;
+  markUnseenResult: () => void;
+  clearUnseenResult: () => void;
 }
 
 export interface AssistantPanelStoreOptions {
@@ -49,19 +57,21 @@ export function createAssistantPanelStore(options: AssistantPanelStoreOptions) {
 
   return create<AssistantPanelState>((set, get) => ({
     isOpen: initialIsOpen,
+    hasUnseenResult: false,
     panelWidth: Number(storage.getItem(WIDTH_KEY)) || ASSISTANT_PANEL_DEFAULT_W,
     panelHeight: Number(storage.getItem(HEIGHT_KEY)) || ASSISTANT_PANEL_DEFAULT_H,
     isExpanded: storage.getItem(EXPANDED_KEY) === "true",
     setOpen: (open) => {
       logger.debug("setOpen", { from: get().isOpen, to: open });
       storage.setItem(OPEN_KEY, String(open));
-      set({ isOpen: open });
+      // Opening IS seeing it — the result is on screen a frame later.
+      set(open ? { isOpen: true, hasUnseenResult: false } : { isOpen: false });
     },
     toggle: () => {
       const next = !get().isOpen;
       logger.debug("toggle", { to: next });
       storage.setItem(OPEN_KEY, String(next));
-      set({ isOpen: next });
+      set(next ? { isOpen: true, hasUnseenResult: false } : { isOpen: false });
     },
     setPanelSize: (width, height) => {
       storage.setItem(WIDTH_KEY, String(width));
@@ -75,6 +85,14 @@ export function createAssistantPanelStore(options: AssistantPanelStoreOptions) {
       if (expanded) storage.setItem(EXPANDED_KEY, "true");
       else storage.removeItem(EXPANDED_KEY);
       set({ isExpanded: expanded });
+    },
+    markUnseenResult: () => {
+      if (get().isOpen || get().hasUnseenResult) return;
+      set({ hasUnseenResult: true });
+    },
+    clearUnseenResult: () => {
+      if (!get().hasUnseenResult) return;
+      set({ hasUnseenResult: false });
     },
   }));
 }

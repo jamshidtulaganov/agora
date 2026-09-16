@@ -250,7 +250,7 @@ describe("operationOutcomeAfter", () => {
   it("reads the nested id shapes a receipt may carry", () => {
     expect(
       operationOutcomeAfter([toolRow("m1", PENDING), toolRow("m2", { operation: { id: "op-1" } })], 0, "op-1"),
-    ).toBe("confirmed");
+    ).toBe("processing");
     expect(
       operationOutcomeAfter(
         [toolRow("m1", PENDING), toolRow("m2", { receipt: { operation_id: "op-1", action: "Deleted" } })],

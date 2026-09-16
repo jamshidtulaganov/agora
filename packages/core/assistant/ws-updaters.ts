@@ -22,6 +22,7 @@ export function onAssistantMessage(qc: QueryClient, payload: AssistantMessageEve
   invalidateSessionRun(qc, payload.session_id, payload.run_id);
   qc.invalidateQueries({ queryKey: assistantKeys.artifacts() });
   qc.invalidateQueries({ queryKey: assistantKeys.sessionArtifacts(payload.session_id) });
+  qc.invalidateQueries({ queryKey: assistantKeys.all, predicate: (query) => query.queryKey[1] === "operation" || query.queryKey[1] === "operations" });
 }
 
 export function onAssistantToolActivity(qc: QueryClient, payload: AssistantToolActivityEventPayload): void {

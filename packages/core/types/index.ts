@@ -97,6 +97,7 @@ export type {
   PatchAssistantSessionRequest,
   SendAssistantMessageResponse,
   AssistantOperationDecision,
+  AssistantOperation,
 } from "./assistant";
 export type {
   OrchestrationRun,

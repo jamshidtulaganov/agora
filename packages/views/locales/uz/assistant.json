@@ -14,7 +14,8 @@
   },
   "fab": {
     "default": "Agora’dan so‘rang",
-    "running": "Agora ishlamoqda..."
+    "running": "Agora ishlamoqda...",
+    "unseen": "Agora tugatdi — o‘qish uchun oching"
   },
   "empty_state": {
     "title": "Agora’dan xohlagan narsangizni so‘rang",
@@ -36,7 +37,9 @@
     "delete_confirm_description": "Suhbat va uning xabarlari butunlay o‘chiriladi.",
     "delete_confirm_cancel": "Bekor qilish",
     "delete_confirm_confirm": "O‘chirish",
-    "empty": "Hali suhbatlar yo‘q"
+    "empty": "Hali suhbatlar yo‘q",
+    "show_chats": "Suhbatlarni ko‘rsatish",
+    "hide_chats": "Suhbatlarni yashirish"
   },
   "composer": {
     "placeholder": "Yordamchiga xabar...",
@@ -102,6 +105,11 @@
     "confirmed": "Tasdiqlandi",
     "rejected": "Bekor qilindi",
     "expired": "Bu amal o‘zgardi — qaytadan so‘rang.",
+    "processing": "Natija tekshirilmoqda…",
+    "check_status": "Holatini tekshirish",
+    "failed": "Amal bajarilmadi. Qayta urinishdan oldin natijani tekshiring.",
+    "uncertain": "Natija aniq emas. Qayta urinishdan oldin ta’sirlangan elementni tekshiring.",
+    "unavailable": "Amal holatini tekshirib bo‘lmadi. Suhbatni qayta oching.",
     "toast_changed": "Bu amal o‘zgardi — qaytadan so‘rang."
   },
   "receipt": {
@@ -135,7 +143,9 @@
   },
   "message_actions": {
     "copy": "Nusxalash",
-    "copied": "Nusxalandi"
+    "copied": "Nusxalandi",
+    "regenerate": "Qayta yaratish",
+    "regenerating": "Qayta yaratilmoqda…"
   },
   "run": {
     "failed": "Yordamchi javobni yakunlay olmadi. Yangi xabar yuboring yoki so‘rovni qayta urinib ko‘ring.",
@@ -144,6 +154,26 @@
     "effects_notice": "Ayrim o‘zgarishlar allaqachon qo‘llangan bo‘lishi mumkin. Qayta urinishdan oldin suhbat va tegishli narsalarni tekshiring.",
     "status_unavailable": "Yordamchi hali ishlayotganini tekshirib bo‘lmadi.",
     "retry_status": "Qayta urinish",
-    "checking_status": "Yordamchi holati tekshirilmoqda..."
+    "checking_status": "Yordamchi holati tekshirilmoqda...",
+    "retry": "Qayta urinish",
+    "error_detail_label": "Tafsilotlar"
+  },
+  "transcript": {
+    "jump_to_latest": "Oxirgisiga o‘tish",
+    "today": "Bugun",
+    "yesterday": "Kecha"
+  },
+  "follow_ups": {
+    "label": "Keyingi qadamlar",
+    "assign_issue": "Kimgadir biriktir",
+    "set_due_date": "Muddat qo‘y",
+    "add_issue_context": "Batafsilroq yoz",
+    "add_project_issues": "Birinchi issue’larni qo‘sh",
+    "compare_last_week": "O‘tgan hafta bilan solishtir",
+    "usage_by_agent": "Agentlar bo‘yicha ajrat",
+    "create_from_results": "Shundan vazifa yarat",
+    "summarize_results": "Natijalarni qisqacha yoz",
+    "what_is_urgent": "Eng shoshilinchi nima?",
+    "what_needs_me": "Bugun mendan nima talab qilinadi?"
   }
 }

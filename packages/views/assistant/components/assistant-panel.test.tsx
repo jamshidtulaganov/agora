@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { act, render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -35,6 +35,17 @@ const mockSetOpen = vi.hoisted(() => vi.fn());
 const mockToggle = vi.hoisted(() => vi.fn());
 const mockSetPanelSize = vi.hoisted(() => vi.fn());
 const mockSetExpanded = vi.hoisted(() => vi.fn());
+const mockMarkUnseenResult = vi.hoisted(() => vi.fn());
+const mockClearUnseenResult = vi.hoisted(() => vi.fn());
+
+// The FAB subscribes to assistant:run_finished for its unseen dot. Capture the
+// handler so a test can deliver an event without a live WebSocket.
+const wsHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => void>());
+vi.mock("@agora/core/realtime", () => ({
+  useWSEvent: (event: string, handler: (payload: unknown) => void) => {
+    wsHandlers.set(event, handler);
+  },
+}));
 
 const mockSetOpenArtifact = vi.hoisted(() => vi.fn());
 const assistantStoreState = vi.hoisted(() => ({
@@ -48,6 +59,7 @@ const panelStoreState = vi.hoisted(() => ({
   panelWidth: 380,
   panelHeight: 600,
   isExpanded: false,
+  hasUnseenResult: false,
 }));
 
 // Zustand stores are both callable (with a selector) and expose .getState() —
@@ -81,10 +93,13 @@ vi.mock("@agora/core/assistant", async () => {
     panelWidth: panelStoreState.panelWidth,
     panelHeight: panelStoreState.panelHeight,
     isExpanded: panelStoreState.isExpanded,
+    hasUnseenResult: panelStoreState.hasUnseenResult,
     setOpen: mockSetOpen,
     toggle: mockToggle,
     setPanelSize: mockSetPanelSize,
     setExpanded: mockSetExpanded,
+    markUnseenResult: mockMarkUnseenResult,
+    clearUnseenResult: mockClearUnseenResult,
   });
   const useAssistantPanelStore = Object.assign(
     (selector?: (s: ReturnType<typeof panelState>) => unknown) =>
@@ -156,6 +171,8 @@ beforeEach(() => {
   assistantStoreState.openArtifactId = {};
   panelStoreState.isOpen = false;
   panelStoreState.isExpanded = false;
+  panelStoreState.hasUnseenResult = false;
+  wsHandlers.clear();
   mockGetAvailability.mockResolvedValue({ enabled: true, model_label: "Agora" });
   mockGetSessions.mockResolvedValue([]);
   mockGetMessages.mockResolvedValue([]);
@@ -319,6 +336,95 @@ describe("AssistantFab — availability gate and placement", () => {
 
     await vi.waitFor(() => expect(mockGetAvailability).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Ask Agora" })).not.toBeInTheDocument();
+  });
+});
+
+// A reply that lands while nobody is looking leaves a dot; opening the panel
+// (or standing on the full page) is what clears it.
+describe("AssistantFab — unseen-result dot", () => {
+  it("marks a finished run unseen when it succeeds", async () => {
+    renderWithShell(<AssistantFab />);
+
+    await screen.findByRole("button", { name: "Ask Agora" });
+    act(() => {
+      wsHandlers.get("assistant:run_finished")!({
+        user_id: "u1",
+        session_id: "s1",
+        run_id: "r1",
+        status: "ok",
+      });
+    });
+
+    expect(mockMarkUnseenResult).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a run that ended failed or cancelled — the transcript reports those", async () => {
+    renderWithShell(<AssistantFab />);
+
+    await screen.findByRole("button", { name: "Ask Agora" });
+    act(() => {
+      const notify = wsHandlers.get("assistant:run_finished")!;
+      notify({ user_id: "u1", session_id: "s1", run_id: "r1", status: "failed" });
+      notify({ user_id: "u1", session_id: "s1", run_id: "r2", status: "cancelled" });
+      notify(null);
+    });
+
+    expect(mockMarkUnseenResult).not.toHaveBeenCalled();
+  });
+
+  it("labels the bubble differently while a result is waiting", async () => {
+    panelStoreState.hasUnseenResult = true;
+
+    renderWithShell(<AssistantFab />);
+
+    expect(
+      await screen.findByRole("button", { name: "Agora finished — open to read it" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the dot once the panel is open or the full page is showing", async () => {
+    panelStoreState.isOpen = true;
+    const openPanel = renderWithShell(<AssistantFab />);
+    await vi.waitFor(() => expect(mockClearUnseenResult).toHaveBeenCalled());
+    openPanel.unmount();
+
+    mockClearUnseenResult.mockClear();
+    panelStoreState.isOpen = false;
+    renderWithShell(<AssistantFab />, "/acme/assistant");
+    await vi.waitFor(() => expect(mockClearUnseenResult).toHaveBeenCalled());
+  });
+});
+
+// Escape is the dismissal every other floating surface answers to. The one
+// keystroke it must NOT swallow is the one the composer's slash menu ate.
+describe("AssistantPanel — Escape", () => {
+  it("closes the panel", async () => {
+    panelStoreState.isOpen = true;
+
+    renderWithShell(<AssistantPanel />);
+    await screen.findByText("Assistant");
+    await userEvent.keyboard("{Escape}");
+
+    expect(mockSetOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves the panel open when the slash menu consumed the keystroke", async () => {
+    panelStoreState.isOpen = true;
+    assistantStoreState.activeSessionId = "s1";
+    mockGetMessages.mockResolvedValue([
+      { id: "m1", session_id: "s1", role: "user", content: "hi", created_at: "2026-09-16T09:00:00Z" },
+    ]);
+
+    renderWithShell(<AssistantPanel />);
+
+    const textarea = await screen.findByPlaceholderText("Message the Assistant...");
+    await userEvent.type(textarea, "/");
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(mockSetOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 });
 

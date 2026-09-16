@@ -31,6 +31,12 @@ interface ComposerProps {
    */
   contextChip?: ReactNode;
   /**
+   * Put the caret in the field on mount. The docked composer asks for this so
+   * a session switch (which remounts the conversation) lands ready to type;
+   * the hero variant autofocuses unconditionally.
+   */
+  autoFocus?: boolean;
+  /**
    * "docked" (default) — the conventional bottom bar under a transcript.
    * "hero" — the launcher form of the same composer, rendered centered in
    * the canvas before a conversation exists: no top border, a roomier field.
@@ -51,6 +57,7 @@ export function Composer({
   onValueChange,
   scopeLabel,
   contextChip,
+  autoFocus,
   variant = "docked",
 }: ComposerProps) {
   const { t } = useT("assistant");
@@ -178,7 +185,7 @@ export function Composer({
           placeholder={t(($) => $.composer.placeholder)}
           maxLength={ASSISTANT_MESSAGE_MAX_LENGTH}
           rows={hero ? 2 : 1}
-          autoFocus={hero}
+          autoFocus={hero || autoFocus}
           className={cn(
             "flex-1 resize-none border-0 bg-transparent px-1 py-1 shadow-none outline-none focus-visible:ring-0 dark:bg-transparent",
             hero ? "max-h-48 min-h-14" : "max-h-40 min-h-9",
