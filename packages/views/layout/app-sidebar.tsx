@@ -16,29 +16,17 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { toast } from "sonner";
 import {
-  Inbox,
-  ListTodo,
-  Bot,
-  Monitor,
-  KeyRound,
   ChevronDown,
   ChevronRight,
-  Settings,
+  EyeOff,
   LogOut,
   Plus,
   Check,
-  BookOpenText,
+  SlidersHorizontal,
   SquarePen,
-  CircleUser,
-  FolderKanban,
-  BarChart3,
   X,
-  Zap,
-  Users,
-  Plug,
-  Boxes,
-  Workflow,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
@@ -85,6 +73,22 @@ import { useDeletePin, useReorderPins } from "@agora/core/pins/mutations";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import type { PinnedItem } from "@agora/core/types";
+import { useHiddenNav, useSetHiddenNav, toggleHiddenNavKey } from "@agora/core/sidebar";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@agora/ui/components/ui/context-menu";
+import {
+  configureNav,
+  isNavKeyHideable,
+  personalNav,
+  visibleNavItems,
+  workspaceNav,
+  type NavItem,
+  type NavKey,
+} from "./nav-items";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useT } from "../i18n";
@@ -107,99 +111,70 @@ const EMPTY_WORKSPACES: Awaited<ReturnType<typeof api.listWorkspaces>> = [];
 const EMPTY_INVITATIONS: Awaited<ReturnType<typeof api.listMyInvitations>> = [];
 const EMPTY_INBOX: Awaited<ReturnType<typeof api.listInbox>> = [];
 
-// Nav items reference WorkspacePaths method names so they can be resolved
-// against the current workspace slug at render time (see AppSidebar body).
-// Only parameterless paths are valid nav destinations.
-type NavKey =
-  | "inbox"
-  | "myIssues"
-  | "policy"
-  | "issues"
-  | "projects"
-  | "autopilots"
-  | "automations"
-  | "agents"
-  | "squads"
-  | "usage"
-  | "runtimes"
-  | "aiAccounts"
-  | "skills"
-  | "plugins"
-  | "mcp"
-  | "bitrix"
-  | "settings";
-
-// Static schema (key + icon) — labels resolved at render via useT("layout").
-type NavLabelKey =
-  | "inbox"
-  | "my_issues"
-  | "policy"
-  | "issues"
-  | "projects"
-  | "autopilots"
-  | "automations"
-  | "agents"
-  | "squads"
-  | "usage"
-  | "runtimes"
-  | "ai_accounts"
-  | "skills"
-  | "plugins"
-  | "mcp"
-  | "bitrix"
-  | "settings";
-
-const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
-  { key: "inbox", labelKey: "inbox", icon: Inbox },
-  { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
-  // Release remains reachable from issue review flows and direct URLs. It is
-  // not a primary personal destination, so it does not occupy the sidebar.
-  // "policy" (fleet cockpit) removed from the nav — the route stays reachable by
-  // URL; agent fleet health/details will live inside the agent detail page.
-];
-
-const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
-  { key: "issues", labelKey: "issues", icon: ListTodo },
-  { key: "projects", labelKey: "projects", icon: FolderKanban },
-  { key: "autopilots", labelKey: "autopilots", icon: Zap },
-  { key: "automations", labelKey: "automations", icon: Workflow },
-  { key: "agents", labelKey: "agents", icon: Bot },
-  { key: "squads", labelKey: "squads", icon: Users },
-  { key: "usage", labelKey: "usage", icon: BarChart3 },
-];
-
-const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
-  { key: "runtimes", labelKey: "runtimes", icon: Monitor },
-  { key: "aiAccounts", labelKey: "ai_accounts", icon: KeyRound },
-  { key: "skills", labelKey: "skills", icon: BookOpenText },
-  { key: "plugins", labelKey: "plugins", icon: Boxes },
-  { key: "mcp", labelKey: "mcp", icon: Plug },
-  // Bitrix removed from sidebar — accessed via Settings → Integrations instead.
-  { key: "settings", labelKey: "settings", icon: Settings },
-];
-
-/**
- * Every workspace-scoped nav key this sidebar renders, in nav order.
- *
- * Exported so each app can assert its router actually serves them. The sidebar
- * is shared, so a key added here immediately becomes a clickable link in BOTH
- * web and desktop — but desktop's router is hand-maintained, and `ai-accounts`,
- * `plugins` and `mcp` all shipped as links that 404'd on desktop because
- * nobody added the matching route. See apps/desktop routes.test.tsx.
- *
- * Covers all three groups — `personalNav` entries (inbox / my-issues) are
- * workspace-scoped URLs too, not global ones.
- */
-export const SIDEBAR_WORKSPACE_NAV_KEYS: NavKey[] = [
-  ...personalNav.map((n) => n.key),
-  ...workspaceNav.map((n) => n.key),
-  ...configureNav.map((n) => n.key),
-];
-
 function DraftDot() {
   const hasDraft = useIssueDraftStore((s) => !!(s.draft.title || s.draft.description));
   if (!hasDraft) return null;
   return <span className="absolute top-0 right-0 size-1.5 rounded-full bg-brand" />;
+}
+
+/**
+ * One top-level nav row.
+ *
+ * Every hideable item carries a right-click menu so a user can remove a
+ * destination they never use from where they actually notice it, instead of
+ * hunting for a settings screen. The same list is editable (and restorable)
+ * in Settings → Preferences → Sidebar, which the second menu entry links to.
+ */
+function NavRow({
+  item,
+  href,
+  isActive,
+  onHide,
+  customizeHref,
+  children,
+}: {
+  item: NavItem;
+  href: string;
+  isActive: boolean;
+  /** Omitted for always-visible items — they get no context menu. */
+  onHide?: () => void;
+  customizeHref: string;
+  /** Trailing badge (unread count, update dot, …). */
+  children?: React.ReactNode;
+}) {
+  const { t } = useT("layout");
+
+  const row = (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isActive}
+        render={<AppLink href={href} />}
+        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+      >
+        <item.icon />
+        <span>{t(($) => $.nav[item.labelKey])}</span>
+        {children}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (!onHide) return row;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={row} />
+      <ContextMenuContent>
+        <ContextMenuItem onClick={onHide}>
+          <EyeOff className="size-3.5" />
+          {t(($) => $.sidebar.hide_item)}
+        </ContextMenuItem>
+        <ContextMenuItem render={<AppLink href={customizeHref} />}>
+          <SlidersHorizontal className="size-3.5" />
+          {t(($) => $.sidebar.customize)}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 /**
@@ -424,6 +399,36 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     [taskSnapshot],
   );
   const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
+  // Per-user sidebar customization. Lives on the user record (not local
+  // storage) so hiding an item here also hides it on desktop and on the
+  // user's other machines.
+  const hiddenNav = useHiddenNav();
+  const setHiddenNav = useSetHiddenNav();
+  const nav = React.useMemo(
+    () => ({
+      personal: visibleNavItems(personalNav, hiddenNav),
+      workspace: visibleNavItems(workspaceNav, hiddenNav),
+      configure: visibleNavItems(configureNav, hiddenNav),
+    }),
+    [hiddenNav],
+  );
+  const customizeHref = `${p.settings()}?tab=preferences`;
+  // Hiding removes the row the user just right-clicked, so offer the way
+  // back immediately — `hiddenNav` here is the pre-hide list, which restores
+  // exactly what was there before.
+  const hideNavItem = useCallback(
+    (key: NavKey) => {
+      const previous = hiddenNav;
+      setHiddenNav.mutate(toggleHiddenNavKey(previous, key, true));
+      toast(t(($) => $.sidebar.hidden_toast), {
+        action: {
+          label: t(($) => $.sidebar.undo),
+          onClick: () => setHiddenNav.mutate(previous),
+        },
+      });
+    },
+    [hiddenNav, setHiddenNav, t],
+  );
   const { data: pinnedItems = EMPTY_PINS } = useQuery({
     ...pinListOptions(wsId ?? "", userId ?? ""),
     enabled: !!wsId && !!userId,
@@ -678,21 +683,21 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
 
         {/* Navigation */}
         <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {personalNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+          {nav.personal.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {nav.personal.map((item) => {
+                    const href = p[item.key]();
+                    return (
+                      <NavRow
+                        key={item.key}
+                        item={item}
+                        href={href}
+                        isActive={isNavActive(pathname, href)}
+                        customizeHref={customizeHref}
+                        onHide={isNavKeyHideable(item.key) ? () => hideNavItem(item.key) : undefined}
                       >
-                        <item.icon />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
                         {item.key === "inbox" && (unreadCount > 0 || runningCount > 0) && (
                           <span className="ml-auto flex items-center gap-1.5 text-xs">
                             {/* Live-agents indicator = pulsing dot ONLY, no number.
@@ -715,13 +720,13 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                             )}
                           </span>
                         )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                      </NavRow>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
           {visiblePinned.length > 0 && (
             <Collapsible defaultOpen>
@@ -758,56 +763,55 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             </Collapsible>
           )}
 
-          <SidebarGroup>
-            <SidebarGroupLabel>{t(($) => $.sidebar.workspace_group)}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {workspaceNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                      >
-                        <item.icon />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {nav.workspace.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel>{t(($) => $.sidebar.workspace_group)}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {nav.workspace.map((item) => {
+                    const href = p[item.key]();
+                    return (
+                      <NavRow
+                        key={item.key}
+                        item={item}
+                        href={href}
+                        isActive={isNavActive(pathname, href)}
+                        customizeHref={customizeHref}
+                        onHide={isNavKeyHideable(item.key) ? () => hideNavItem(item.key) : undefined}
+                      />
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
-          <SidebarGroup>
-            <SidebarGroupLabel>{t(($) => $.sidebar.configure_group)}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {configureNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+          {nav.configure.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel>{t(($) => $.sidebar.configure_group)}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {nav.configure.map((item) => {
+                    const href = p[item.key]();
+                    return (
+                      <NavRow
+                        key={item.key}
+                        item={item}
+                        href={href}
+                        isActive={isNavActive(pathname, href)}
+                        customizeHref={customizeHref}
+                        onHide={isNavKeyHideable(item.key) ? () => hideNavItem(item.key) : undefined}
                       >
-                        <item.icon />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
                         {item.key === "runtimes" && hasRuntimeUpdates && (
                           <span className="ml-auto size-1.5 rounded-full bg-destructive" />
                         )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                      </NavRow>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
         </SidebarContent>
 
         <SidebarFooter className="p-2">

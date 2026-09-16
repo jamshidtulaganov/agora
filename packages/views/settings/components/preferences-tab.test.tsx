@@ -44,6 +44,14 @@ vi.mock("sonner", () => ({
   toast: { warning: mockToastWarning, error: mockToastError },
 }));
 
+// SidebarSection lives in this tab but has its own test file. Stub the store
+// hooks it depends on so these cases don't need a QueryClientProvider.
+vi.mock("@agora/core/sidebar", () => ({
+  useHiddenNav: () => [],
+  useSetHiddenNav: () => ({ mutate: vi.fn() }),
+  toggleHiddenNavKey: (current: string[]) => current,
+}));
+
 vi.mock("@agora/core/auth", async () => {
   const actual =
     await vi.importActual<typeof import("@agora/core/auth")>(

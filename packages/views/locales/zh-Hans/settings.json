@@ -19,6 +19,18 @@
       "browser_suffix": "（浏览器）",
       "hint": "用于仪表盘、图表和「今天」标签。这是个人偏好，在你的所有工作区中通用。",
       "sync_failed": "保存时区偏好失败。"
+    },
+    "sidebar": {
+      "title": "侧边栏",
+      "hint": "关闭你不用的条目。此设置仅对你生效，在所有工作区和所有设备上一致。",
+      "always_visible": "始终显示",
+      "show_all": "全部显示",
+      "sync_failed": "保存侧边栏设置失败。",
+      "groups": {
+        "personal": "个人",
+        "workspace": "工作区",
+        "configure": "配置"
+      }
     }
   },
   "page": {

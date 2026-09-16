@@ -19,6 +19,18 @@
       "browser_suffix": " (browser)",
       "hint": "Used for dashboards, charts, and any 'today' label shown to you. It's a personal preference that applies across all your workspaces.",
       "sync_failed": "Failed to save your timezone preference."
+    },
+    "sidebar": {
+      "title": "Sidebar",
+      "hint": "Turn off the items you don't use. This applies to you only, in every workspace and on every device.",
+      "always_visible": "Always visible",
+      "show_all": "Show all",
+      "sync_failed": "Failed to save your sidebar preference.",
+      "groups": {
+        "personal": "Personal",
+        "workspace": "Workspace",
+        "configure": "Configure"
+      }
     }
   },
   "page": {

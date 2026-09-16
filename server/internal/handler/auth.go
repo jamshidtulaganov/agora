@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,6 +52,52 @@ var supportedLanguages = map[string]struct{}{
 	"ru":      {},
 }
 
+// MaxHiddenNavKeys bounds the sidebar-customization payload. The sidebar
+// renders ~17 entries today; 64 leaves headroom for new nav items without
+// letting /api/me become a general-purpose blob store on the user row.
+const MaxHiddenNavKeys = 64
+
+// hiddenNavKeyPattern matches the nav-key slugs the sidebar uses
+// ("inbox", "my_issues", "ai-accounts"). The key set is frontend-owned, so
+// the server validates shape rather than membership — a key this server
+// doesn't know about is simply ignored by clients that don't render it,
+// which is also what lets an older client keep working after the sidebar
+// gains or renames an entry.
+var hiddenNavKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,39}$`)
+
+// alwaysVisibleNavKeys can never be hidden. Settings is the only route back
+// to the screen where a hidden item is restored, so allowing it to be hidden
+// would let a user lock themselves out of their own preference.
+var alwaysVisibleNavKeys = map[string]bool{"settings": true}
+
+// normalizeHiddenNav validates and canonicalizes a hidden-nav list: trims
+// each key, rejects malformed or always-visible ones, and de-duplicates
+// while preserving caller order. Returns a non-nil slice so the column is
+// always written as a JSON array, never null. The second return value is a
+// user-facing error message, empty when the input is valid.
+func normalizeHiddenNav(raw []string) ([]string, string) {
+	if len(raw) > MaxHiddenNavKeys {
+		return nil, fmt.Sprintf("hidden_nav exceeds %d entries", MaxHiddenNavKeys)
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, k := range raw {
+		key := strings.TrimSpace(k)
+		if !hiddenNavKeyPattern.MatchString(key) {
+			return nil, "invalid hidden_nav key"
+		}
+		if alwaysVisibleNavKeys[key] {
+			return nil, "nav item cannot be hidden: " + key
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, key)
+	}
+	return out, ""
+}
+
 type UserResponse struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
@@ -63,8 +110,11 @@ type UserResponse struct {
 	OnboardingQuestionnaire json.RawMessage `json:"onboarding_questionnaire"`
 	StarterContentState     *string         `json:"starter_content_state"`
 	ProfileDescription      string          `json:"profile_description"`
-	CreatedAt               string          `json:"created_at"`
-	UpdatedAt               string          `json:"updated_at"`
+	// Sidebar nav keys this user chose to hide. Always an array (never
+	// null) so clients can iterate without a nil guard.
+	HiddenNav []string `json:"hidden_nav"`
+	CreatedAt string   `json:"created_at"`
+	UpdatedAt string   `json:"updated_at"`
 }
 
 // MaxProfileDescriptionLen caps the user-supplied profile_description body.
@@ -81,6 +131,14 @@ func userToResponse(u db.User) UserResponse {
 	if len(q) == 0 {
 		q = []byte("{}")
 	}
+	// hidden_nav is NOT NULL DEFAULT '[]', but a malformed blob must not
+	// take down /api/me — degrade to "hide nothing".
+	hiddenNav := []string{}
+	if len(u.HiddenNav) > 0 {
+		if err := json.Unmarshal(u.HiddenNav, &hiddenNav); err != nil {
+			hiddenNav = []string{}
+		}
+	}
 	return UserResponse{
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
@@ -92,6 +150,7 @@ func userToResponse(u db.User) UserResponse {
 		OnboardingQuestionnaire: json.RawMessage(q),
 		StarterContentState:     textToPtr(u.StarterContentState),
 		ProfileDescription:      u.ProfileDescription,
+		HiddenNav:               hiddenNav,
 		CreatedAt:               timestampToString(u.CreatedAt),
 		UpdatedAt:               timestampToString(u.UpdatedAt),
 	}
@@ -526,6 +585,9 @@ type UpdateMeRequest struct {
 	ProfileDescription *string `json:"profile_description"`
 	// IANA tz to pin; "" clears back to NULL; nil leaves untouched.
 	Timezone *string `json:"timezone"`
+	// Sidebar nav keys to hide. nil leaves the stored list untouched; an
+	// empty (non-nil) array resets the sidebar to showing everything.
+	HiddenNav *[]string `json:"hidden_nav"`
 }
 
 type GoogleLoginRequest struct {
@@ -816,6 +878,20 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		params.Timezone = pgtype.Text{String: tz, Valid: true}
+	}
+
+	if req.HiddenNav != nil {
+		keys, errMsg := normalizeHiddenNav(*req.HiddenNav)
+		if errMsg != "" {
+			writeError(w, http.StatusBadRequest, errMsg)
+			return
+		}
+		blob, err := json.Marshal(keys)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encode hidden_nav")
+			return
+		}
+		params.HiddenNav = blob
 	}
 
 	updatedUser, err := h.Queries.UpdateUser(r.Context(), params)

@@ -1,4 +1,12 @@
-export { AppSidebar, SIDEBAR_WORKSPACE_NAV_KEYS } from "./app-sidebar";
+export { AppSidebar } from "./app-sidebar";
+export {
+  NAV_GROUPS,
+  SIDEBAR_WORKSPACE_NAV_KEYS,
+  isNavKeyHideable,
+  visibleNavItems,
+  type NavItem,
+  type NavKey,
+} from "./nav-items";
 export { NotificationToastBridge } from "./notification-toast-bridge";
 export { CockpitFrame } from "./cockpit-frame";
 export { DashboardGuard } from "./dashboard-guard";

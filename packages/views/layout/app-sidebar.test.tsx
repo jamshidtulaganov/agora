@@ -1,11 +1,15 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@agora/core/api";
 import { AppSidebar } from "./app-sidebar";
 
-const { detail, deletePin, pins } = vi.hoisted(() => ({
+const { detail, deletePin, pins, hiddenNav, setHiddenNav, toastFn } = vi.hoisted(() => ({
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
   deletePin: vi.fn(),
+  hiddenNav: { current: [] as string[] },
+  setHiddenNav: vi.fn(),
+  toastFn: vi.fn(),
   pins: {
     current: [
       {
@@ -40,11 +44,30 @@ vi.mock("@agora/ui/components/ui/sidebar", () => ({
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarGroupContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="sidebar-group-label">{children}</div>
+  ),
   SidebarHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SidebarMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SidebarMenuButton: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
-  SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarMenu: ({ children }: { children: React.ReactNode }) => <ul>{children}</ul>,
+  // Surface the link target the real button forwards via `render`, so tests
+  // can identify nav rows by destination (i18n isn't initialised here, so
+  // every label renders empty).
+  SidebarMenuButton: ({
+    children,
+    render,
+  }: {
+    children: React.ReactNode;
+    render?: React.ReactElement<{ href?: string }>;
+  }) => (
+    <button type="button" data-href={render?.props?.href}>
+      {children}
+    </button>
+  ),
+  // A real <li>: NavRow hands this element to ContextMenuTrigger's `render`
+  // prop, so it has to be a single host element the way the real component is.
+  SidebarMenuItem: ({ children, ...props }: { children: React.ReactNode }) => (
+    <li {...props}>{children}</li>
+  ),
   SidebarRail: () => null,
 }));
 vi.mock("@agora/ui/components/ui/dropdown-menu", () => ({
@@ -66,6 +89,7 @@ vi.mock("@agora/ui/components/ui/tooltip", () => ({
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
 }));
+vi.mock("sonner", () => ({ toast: Object.assign(toastFn, { error: vi.fn() }) }));
 vi.mock("./help-launcher", () => ({ HelpLauncher: () => null }));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
@@ -86,6 +110,7 @@ vi.mock("@agora/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/acme/inbox",
     myIssues: () => "/acme/my-issues",
+    assistant: () => "/acme/assistant",
     qa: () => "/acme/qa",
     policy: () => "/acme/policy",
     issues: () => "/acme/issues",
@@ -131,6 +156,12 @@ vi.mock("@agora/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: de
 vi.mock("@agora/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
 vi.mock("@agora/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
 vi.mock("@agora/core/runtimes/hooks", () => ({ useMyRuntimesNeedUpdate: () => false }));
+vi.mock("@agora/core/sidebar", () => ({
+  useHiddenNav: () => hiddenNav.current,
+  useSetHiddenNav: () => ({ mutate: setHiddenNav }),
+  toggleHiddenNavKey: (current: string[], key: string, hidden: boolean) =>
+    hidden ? [...current, key] : current.filter((k) => k !== key),
+}));
 vi.mock("@agora/core/workspace/queries", () => ({
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
@@ -186,5 +217,109 @@ describe("PinRow", () => {
   it("does not render Release as a personal navigation item", () => {
     render(<AppSidebar />);
     expect(screen.queryByText("Release")).not.toBeInTheDocument();
+  });
+});
+
+const WORKSPACE_NAV_KEYS = [
+  "issues",
+  "projects",
+  "autopilots",
+  "automations",
+  "agents",
+  "squads",
+  "usage",
+];
+
+function navHrefs(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll("[data-href]")).map(
+    (el) => el.getAttribute("data-href") ?? "",
+  );
+}
+
+describe("per-user sidebar customization", () => {
+  beforeEach(() => {
+    hiddenNav.current = [];
+    setHiddenNav.mockReset();
+    toastFn.mockReset();
+    detail.current = { isPending: false, isError: false, data: null, error: null };
+  });
+
+  it("renders every nav item when nothing is hidden", () => {
+    const { container } = render(<AppSidebar />);
+    const hrefs = navHrefs(container);
+    expect(hrefs).toContain("/acme/usage");
+    expect(hrefs).toContain("/acme/mcp");
+    expect(hrefs).toContain("/acme/inbox");
+  });
+
+  it("omits the items the user hid", () => {
+    hiddenNav.current = ["usage", "mcp"];
+    const { container } = render(<AppSidebar />);
+    const hrefs = navHrefs(container);
+    expect(hrefs).not.toContain("/acme/usage");
+    expect(hrefs).not.toContain("/acme/mcp");
+    expect(hrefs).toContain("/acme/issues");
+  });
+
+  // Hiding Settings would strip the only route back to the screen that
+  // restores hidden items, so the sidebar keeps it regardless.
+  it("keeps Settings visible even if it appears in the hidden list", () => {
+    hiddenNav.current = ["settings"];
+    const { container } = render(<AppSidebar />);
+    expect(navHrefs(container)).toContain("/acme/settings");
+  });
+
+  it("hides an item from its right-click menu and offers an undo", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<AppSidebar />);
+    const usageRow = container.querySelector("[data-href='/acme/usage']");
+    expect(usageRow).not.toBeNull();
+
+    await user.pointer({ keys: "[MouseRight]", target: usageRow as Element });
+    // i18n isn't initialised here, so identify entries structurally: the hide
+    // action is the plain menu item, "Customize sidebar" renders as a link.
+    const items = await screen.findAllByRole("menuitem");
+    expect(items).toHaveLength(1);
+    expect(
+      document.querySelector("a[href='/acme/settings?tab=preferences']"),
+    ).not.toBeNull();
+    await user.click(items[0] as HTMLElement);
+
+    expect(setHiddenNav).toHaveBeenCalledWith(["usage"]);
+    expect(toastFn).toHaveBeenCalled();
+
+    // The toast's action restores the exact pre-hide list.
+    const [, options] = toastFn.mock.calls[0] as [
+      unknown,
+      { action?: { onClick?: () => void } } | undefined,
+    ];
+    options?.action?.onClick?.();
+    expect(setHiddenNav).toHaveBeenLastCalledWith([]);
+  });
+
+  // Settings must not offer a hide action at all.
+  it("gives the always-visible item no context menu", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<AppSidebar />);
+    const settingsRow = container.querySelector("[data-href='/acme/settings']");
+    await user.pointer({ keys: "[MouseRight]", target: settingsRow as Element });
+    expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
+  });
+
+  it("drops the group heading once every item in the group is hidden", () => {
+    const { container: full } = render(<AppSidebar />);
+    const labelsBefore = full.querySelectorAll(
+      "[data-testid='sidebar-group-label']",
+    ).length;
+
+    hiddenNav.current = [...WORKSPACE_NAV_KEYS];
+    const { container: trimmed } = render(<AppSidebar />);
+    const labelsAfter = trimmed.querySelectorAll(
+      "[data-testid='sidebar-group-label']",
+    ).length;
+
+    expect(labelsAfter).toBe(labelsBefore - 1);
+    // Configure is untouched, so its rows stay.
+    expect(navHrefs(trimmed)).toContain("/acme/runtimes");
   });
 });

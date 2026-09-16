@@ -171,6 +171,12 @@ export interface User {
   profile_description: string;
   /** Pinned IANA tz; null means "use browser-detected tz at render time". */
   timezone: string | null;
+  /**
+   * Sidebar nav keys this user chose to hide, e.g. `["usage", "mcp"]`.
+   * A personal preference that follows the user across workspaces and
+   * devices. Server always returns an array — empty means "show everything".
+   */
+  hidden_nav: string[];
   created_at: string;
   updated_at: string;
 }

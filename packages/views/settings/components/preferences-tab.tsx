@@ -20,6 +20,7 @@ import { useLocaleAdapter } from "@agora/core/i18n/react";
 import { useAuthStore } from "@agora/core/auth";
 import { api } from "@agora/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
+import { SidebarSection } from "./sidebar-section";
 import { useT } from "../../i18n";
 
 const LIGHT_COLORS = {
@@ -244,6 +245,8 @@ export function PreferencesTab() {
       </section>
 
       <TimezoneSection />
+
+      <SidebarSection />
     </div>
   );
 }

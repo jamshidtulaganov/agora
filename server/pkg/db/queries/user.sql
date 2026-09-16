@@ -24,6 +24,9 @@ RETURNING *;
 -- to leave the existing column untouched. Folding it into UpdateUser
 -- rather than carrying a dedicated UpdateUserTimezone keeps the
 -- profile-patch shape uniform between Preferences fields.
+-- `hidden_nav` (sidebar nav keys the user hid) is a plain
+-- COALESCE-on-NULL JSONB array: omit to leave untouched, pass `[]` to
+-- reset the sidebar back to showing every item.
 UPDATE "user" SET
     name = COALESCE($2, name),
     avatar_url = COALESCE($3, avatar_url),
@@ -34,6 +37,7 @@ UPDATE "user" SET
         WHEN sqlc.narg('timezone')::text = ''    THEN NULL
         ELSE sqlc.narg('timezone')::text
     END,
+    hidden_nav = COALESCE(sqlc.narg('hidden_nav'), hidden_nav),
     updated_at = now()
 WHERE id = $1
 RETURNING *;

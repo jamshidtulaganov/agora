@@ -439,6 +439,10 @@ export const UserSchema: z.ZodType<User> = z.object({
   language: z.string().nullable().default(null),
   profile_description: z.string().default(""),
   timezone: z.string().nullable().default(null),
+  // Web/desktop sidebar customization. Mobile has no sidebar, but the field
+  // is part of the shared User type, so it must round-trip — and degrade to
+  // [] rather than fail the parse when a server sends something odd.
+  hidden_nav: z.array(z.string()).catch([]).default([]),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
 }).loose();
@@ -457,6 +461,7 @@ export const EMPTY_USER: User = {
   language: null,
   profile_description: "",
   timezone: null,
+  hidden_nav: [],
   created_at: "",
   updated_at: "",
 };

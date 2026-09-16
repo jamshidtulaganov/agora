@@ -19,6 +19,18 @@
       "browser_suffix": " (brauzer)",
       "hint": "Boshqaruv panellari, diagrammalar va sizga ko‘rsatiladigan istalgan ‘bugun’ yorlig‘i uchun ishlatiladi. Bu barcha ish maydonlaringizga taalluqli shaxsiy sozlama.",
       "sync_failed": "Vaqt mintaqasi sozlamasini saqlashda xatolik."
+    },
+    "sidebar": {
+      "title": "Yon menyu",
+      "hint": "Ishlatmaydigan bo'limlarni o'chirib qo'ying. Bu sozlama faqat sizga — barcha ish maydonlarida va barcha qurilmalarda amal qiladi.",
+      "always_visible": "Doim ko'rinadi",
+      "show_all": "Hammasini ko'rsatish",
+      "sync_failed": "Yon menyu sozlamasini saqlab bo'lmadi.",
+      "groups": {
+        "personal": "Shaxsiy",
+        "workspace": "Ish maydoni",
+        "configure": "Sozlash"
+      }
     }
   },
   "page": {
