@@ -41,6 +41,18 @@ Not deployed anywhere. All local, all uncommitted (migrations 194–197).
 
 ## 3. Fix list — verified findings, priority order
 
+Status update 2026-09-17 (post-implementation): P0 #1 FIXED (DOM-based CSP
+insertion, comment/raw-text-immune, committed); P0 #2 FIXED (scope envelopes
+on all 19 list tools, real totals, coverage guidance); P1 #4 FIXED
+(caller-timezone windows); P1 #6 FIXED (membership-first denials); P1 #8
+FIXED (model label in prompt). The "uncertain write" bug's root cause was
+outcome misclassification (clean tool refusals filed as possibly-committed),
+fixed with three-valued classification + receipts persisted off the dying
+run context + confirm-path intent/outcome ordering (migrations 199/200).
+New small findings: reply-language drift (answers not always in the caller's
+language), cancel endpoint 404s for already-terminal runs (should be
+409/204). Scenario suite: 61 cases, 61/61 clean run recorded.
+
 **P0**
 1. **HTML-artifact network exfiltration** (from the GPT assessment — confirmed
    real): `sandbox="allow-scripts"` isolates the DOM but does not block
