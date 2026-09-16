@@ -32,7 +32,7 @@ interface CodeBlockIframeProps {
   /** Tailwind height token; defaults to h-[480px]. */
   heightClassName?: string;
   /**
-   * Blocks all NETWORK access from inside the document via an injected
+   * Blocks CSP-governed resource requests via an injected
    * CSP <meta> (default-src 'none'; inline script/style allowed). The
    * sandbox attribute isolates the DOM but does NOT stop fetch()/img/beacon
    * to external hosts — for model-generated content (assistant HTML
@@ -44,41 +44,22 @@ interface CodeBlockIframeProps {
 }
 
 /**
- * Injects the network-blocking CSP meta as the FIRST child of <head> (CSP
- * <meta> only applies from the head). Falls back to prepending a <head> when
- * the document has none — browsers parse the leading meta into the implied
- * head in that case.
+ * Place a trusted head before any supplied HTML. Scanning for a <head> token
+ * is unsafe because it may occur inside script/style raw text, comments, or
+ * attributes. Parsing the untrusted input before adding CSP is also unsafe:
+ * an inert DOMParser document may still fetch resources. The browser parses
+ * the supplied HTML as body content after our real head. Its document tags
+ * are ignored, while rendered content and inline scripts/styles remain.
+ *
+ * CSP controls resource requests but does not reliably prohibit navigation
+ * from this sandboxed frame; callers must not treat it as total isolation.
  */
-export function withNetworkBlockedCSP(html: string): string {
-  const meta =
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:; media-src data: blob:">';
-  const insertAt = headInsertionIndex(html);
-  if (insertAt !== null) {
-    return html.slice(0, insertAt) + meta + html.slice(insertAt);
-  }
-  return meta + html;
-}
+const NETWORK_BLOCKED_CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:";
 
-/**
- * Index just after the first REAL `<head...>` open tag — a match inside an
- * HTML comment (`<!-- <head> -->`) is skipped, because inserting the policy
- * there would put it inside the comment and silently disable it. Null when
- * the document has no head; the caller then prepends, which the HTML parser
- * hoists into the implied head.
- */
-function headInsertionIndex(html: string): number | null {
-  const re = /<head(\s[^>]*)?>/gi;
-  for (let m = re.exec(html); m !== null; m = re.exec(html)) {
-    const lastCommentOpen = html.lastIndexOf("<!--", m.index);
-    if (lastCommentOpen !== -1) {
-      const commentClose = html.indexOf("-->", lastCommentOpen);
-      // An unclosed comment swallows the rest of the document; a close after
-      // the match means the match sits inside the comment. Either way: skip.
-      if (commentClose === -1 || commentClose > m.index) continue;
-    }
-    return m.index + m[0].length;
-  }
-  return null;
+export function withNetworkBlockedCSP(html: string): string {
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${NETWORK_BLOCKED_CSP}">`;
+  return `<!doctype html><html><head>${meta}</head><body>${html}</body></html>`;
 }
 
 export function CodeBlockIframe({

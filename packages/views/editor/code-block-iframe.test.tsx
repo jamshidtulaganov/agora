@@ -2,16 +2,30 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { CodeBlockIframe, withNetworkBlockedCSP } from "./code-block-iframe";
 
+function cspMetaIn(html: string) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return doc.head.querySelectorAll('meta[http-equiv="Content-Security-Policy"]');
+}
+
 describe("withNetworkBlockedCSP", () => {
-  it("injects the CSP meta as the first child of an existing head", () => {
+  it("injects exactly one CSP meta as the first child of an existing head", () => {
     const out = withNetworkBlockedCSP("<html><head><title>x</title></head><body>hi</body></html>");
-    expect(out.indexOf("Content-Security-Policy")).toBeLessThan(out.indexOf("<title>"));
-    expect(out).toContain("default-src 'none'");
+    const metas = cspMetaIn(out);
+    expect(metas).toHaveLength(1);
+    expect(metas[0]?.getAttribute("content")).toContain("default-src 'none'");
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(doc.head.firstElementChild?.getAttribute("http-equiv")).toBe("Content-Security-Policy");
   });
 
-  it("prepends the meta when the document has no head", () => {
-    const out = withNetworkBlockedCSP("<div>bare fragment</div>");
-    expect(out.startsWith("<meta http-equiv=\"Content-Security-Policy\"")).toBe(true);
+  // A "<head>" string inside script raw text captured the old textual
+  // insertion and left the parsed document with no effective policy.
+  it("is not fooled by \"<head>\" inside script content", () => {
+    const out = withNetworkBlockedCSP(
+      '<html><head><title>t</title></head><body><script type="application/json">"<head>"</script></body></html>',
+    );
+    expect(cspMetaIn(out)).toHaveLength(1);
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(doc.querySelector("script")?.textContent).toBe('"<head>"');
   });
 
   // The regex must not be fooled by a commented-out head: the policy would
@@ -28,14 +42,37 @@ describe("withNetworkBlockedCSP", () => {
     expect(doc.head.innerHTML).toContain("Content-Security-Policy");
   });
 
-  it("an unclosed comment before head falls back to prepending, which the parser hoists into head", () => {
-    const html = "<!-- broken comment <head><body>x</body>";
-    const out = withNetworkBlockedCSP(html);
-    expect(out.startsWith("<meta http-equiv=\"Content-Security-Policy\"")).toBe(true);
+  it("survives an unclosed comment before head", () => {
+    const out = withNetworkBlockedCSP("<!-- broken comment <head><body>x</body>");
+    expect(cspMetaIn(out)).toHaveLength(1);
+  });
+
+  it("keeps a real policy before head-like text in style and attributes", () => {
+    const out = withNetworkBlockedCSP(
+      '<style>.label::after { content: "<head>"; }</style><div data-template="<head>">safe</div>',
+    );
     const doc = new DOMParser().parseFromString(out, "text/html");
-    expect(
-      doc.head.querySelector('meta[http-equiv="Content-Security-Policy"]'),
-    ).not.toBeNull();
+    expect(cspMetaIn(out)).toHaveLength(1);
+    expect(doc.head.firstElementChild?.getAttribute("http-equiv")).toBe("Content-Security-Policy");
+    expect(doc.querySelector("style")?.textContent).toContain('"<head>"');
+    expect(doc.querySelector("div")?.getAttribute("data-template")).toBe("<head>");
+  });
+
+  it("keeps the policy in a malformed document with stray closing tags", () => {
+    const out = withNetworkBlockedCSP(
+      '</head></body></html><script type="application/json">"<head>"</script><p>still visible',
+    );
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(cspMetaIn(out)).toHaveLength(1);
+    expect(doc.head.firstElementChild?.getAttribute("http-equiv")).toBe("Content-Security-Policy");
+    expect(doc.body.textContent).toContain("still visible");
+  });
+
+  it("preserves the doctype and standards mode when the input has one", () => {
+    const out = withNetworkBlockedCSP("<!doctype html><html><head></head><body>x</body></html>");
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(doc.compatMode).toBe("CSS1Compat");
+    expect(cspMetaIn(out)).toHaveLength(1);
   });
 
   it("headless documents get a DOM-effective policy via prepend-hoisting", () => {
@@ -48,9 +85,11 @@ describe("withNetworkBlockedCSP", () => {
 
   it("keeps inline script and style allowed, everything else denied", () => {
     const out = withNetworkBlockedCSP("<p/>");
-    expect(out).toContain("script-src 'unsafe-inline'");
-    expect(out).toContain("style-src 'unsafe-inline'");
-    expect(out).not.toContain("connect-src http");
+    const content = cspMetaIn(out)[0]?.getAttribute("content") ?? "";
+    expect(content).toContain("script-src 'unsafe-inline'");
+    expect(content).toContain("style-src 'unsafe-inline'");
+    expect(content).toContain("default-src 'none'");
+    expect(content).not.toContain("connect-src http");
   });
 });
 
