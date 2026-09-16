@@ -25,7 +25,7 @@ test.describe("Bitrix provenance", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((t) => {
       localStorage.setItem("agora_token", t);
-      localStorage.setItem("agora:chat:isOpen", "false");
+      localStorage.setItem("agora:assistant:panel:isOpen", "false");
     }, TOKEN);
   });
 

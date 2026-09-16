@@ -27,10 +27,10 @@ export async function loginAsDefault(
   const workspace = { slug: targetSlug ?? slug };
   await page.addInitScript((t) => {
     localStorage.setItem("agora_token", t);
-    // Keep the floating chat dock closed: it renders at z-50 over
+    // Keep the floating assistant panel closed: it renders at z-50 over
     // bottom-anchored controls (Save/Send/Create) and intercepts their
     // clicks. The store reads this raw "false" as an explicit user choice.
-    localStorage.setItem("agora:chat:isOpen", "false");
+    localStorage.setItem("agora:assistant:panel:isOpen", "false");
   }, token);
   await page.goto(`/${workspace.slug}/issues`);
   await page.waitForURL(`**/${workspace.slug}/issues`, { timeout: 15000 });
