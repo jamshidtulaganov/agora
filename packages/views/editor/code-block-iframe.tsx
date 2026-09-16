@@ -52,12 +52,33 @@ interface CodeBlockIframeProps {
 export function withNetworkBlockedCSP(html: string): string {
   const meta =
     '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:; media-src data: blob:">';
-  const headMatch = /<head(\s[^>]*)?>/i.exec(html);
-  if (headMatch) {
-    const insertAt = headMatch.index + headMatch[0].length;
+  const insertAt = headInsertionIndex(html);
+  if (insertAt !== null) {
     return html.slice(0, insertAt) + meta + html.slice(insertAt);
   }
   return meta + html;
+}
+
+/**
+ * Index just after the first REAL `<head...>` open tag — a match inside an
+ * HTML comment (`<!-- <head> -->`) is skipped, because inserting the policy
+ * there would put it inside the comment and silently disable it. Null when
+ * the document has no head; the caller then prepends, which the HTML parser
+ * hoists into the implied head.
+ */
+function headInsertionIndex(html: string): number | null {
+  const re = /<head(\s[^>]*)?>/gi;
+  for (let m = re.exec(html); m !== null; m = re.exec(html)) {
+    const lastCommentOpen = html.lastIndexOf("<!--", m.index);
+    if (lastCommentOpen !== -1) {
+      const commentClose = html.indexOf("-->", lastCommentOpen);
+      // An unclosed comment swallows the rest of the document; a close after
+      // the match means the match sits inside the comment. Either way: skip.
+      if (commentClose === -1 || commentClose > m.index) continue;
+    }
+    return m.index + m[0].length;
+  }
+  return null;
 }
 
 export function CodeBlockIframe({
