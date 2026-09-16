@@ -51,7 +51,7 @@
     "./layout": "./layout/index.ts",
     "./auth": "./auth/index.ts",
     "./search": "./search/index.ts",
-    "./chat": "./chat/index.ts",
+    "./assistant": "./assistant/index.ts",
     "./settings": "./settings/index.ts",
     "./settings/lark-tab": "./settings/components/lark-tab.tsx",
     "./lark": "./lark/index.ts",

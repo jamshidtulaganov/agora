@@ -104,7 +104,9 @@ describe("useRealtimeSync — ws instance change", () => {
     // Should have called invalidateQueries for all workspace-scoped keys
     // (16 workspace-scoped + 12 per-issue prefixes + 1 workspaceKeys.list()
     // + 1 artifact prefix = 30 calls — automations joined the blanket sweep)
-    expect(invalidateSpy).toHaveBeenCalledTimes(30);
+    // + 1 assistant prefix: the assistant is user-scoped, so it is swept as
+    // one `["assistant"]` prefix alongside the workspace sweep.
+    expect(invalidateSpy).toHaveBeenCalledTimes(31);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {

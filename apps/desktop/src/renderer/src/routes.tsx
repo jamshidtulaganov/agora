@@ -31,6 +31,7 @@ import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@agora/views/squads/components";
 import { InboxPage } from "@agora/views/inbox";
+import { AssistantPage } from "@agora/views/assistant";
 import { BitrixPage } from "@agora/views/bitrix";
 import { SettingsPage } from "@agora/views/settings";
 import { useT } from "@agora/views/i18n";
@@ -226,6 +227,7 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Squad" },
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
+          { path: "assistant", element: <AssistantPage />, handle: { title: "Assistant" } },
           {
             path: "bitrix",
             element: <BitrixPage />,

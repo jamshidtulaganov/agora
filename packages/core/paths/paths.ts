@@ -34,6 +34,12 @@ function workspaceScoped(slug: string) {
     squadDetail: (id: string) => `${ws}/squads/${encode(id)}`,
     inbox: () => `${ws}/inbox`,
     myIssues: () => `${ws}/my-issues`,
+    // User-scoped, identical content in every workspace — the slug just
+    // feeds `focus_workspace_id` on the assistant session. Kept as a
+    // workspace-scoped URL (not global) for router simplicity: desktop's
+    // per-tab memory router and web's [workspaceSlug] layout both already
+    // expect every sidebar destination to live under /{slug}/*.
+    assistant: () => `${ws}/assistant`,
     qa: () => `${ws}/qa`,
     policy: () => `${ws}/policy`,
     runtimes: () => `${ws}/runtimes`,

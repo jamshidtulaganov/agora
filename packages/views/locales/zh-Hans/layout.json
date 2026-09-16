@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "收件箱",
     "my_issues": "我的 issue",
+    "assistant": "助手",
     "qa": "发布",
     "policy": "Policy",
     "issues": "Issues",
@@ -43,7 +44,11 @@
     "pinned_label": "固定",
     "workspace_group": "工作区",
     "configure_group": "配置",
-    "unread_overflow": "99+"
+    "unread_overflow": "99+",
+    "hide_item": "从侧边栏隐藏",
+    "customize": "自定义侧边栏…",
+    "hidden_toast": "已从侧边栏隐藏",
+    "undo": "撤销"
   },
   "running": {
     "idle": "代理空闲",

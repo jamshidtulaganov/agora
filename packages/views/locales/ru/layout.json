@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Входящие",
     "my_issues": "Мои задачи",
+    "assistant": "Ассистент",
     "qa": "Релиз",
     "policy": "Policy",
     "issues": "Задачи",
@@ -43,7 +44,11 @@
     "pinned_label": "Закреплённые",
     "workspace_group": "Рабочее пространство",
     "configure_group": "Настройка",
-    "unread_overflow": "99+"
+    "unread_overflow": "99+",
+    "hide_item": "Скрыть из бокового меню",
+    "customize": "Настроить боковое меню…",
+    "hidden_toast": "Скрыто из бокового меню",
+    "undo": "Отменить"
   },
   "running": {
     "idle": "Агенты простаивают",

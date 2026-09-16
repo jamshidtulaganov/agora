@@ -17,7 +17,6 @@ import enProjects from "./en/projects.json";
 import enAutopilots from "./en/autopilots.json";
 import enAutomations from "./en/automations.json";
 import enSkills from "./en/skills.json";
-import enChat from "./en/chat.json";
 import enModals from "./en/modals.json";
 import enRuntimes from "./en/runtimes.json";
 import enLayout from "./en/layout.json";
@@ -25,6 +24,7 @@ import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
 import enSquads from "./en/squads.json";
 import enBilling from "./en/billing.json";
+import enAssistant from "./en/assistant.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
 import zhHansSettings from "./zh-Hans/settings.json";
@@ -43,7 +43,6 @@ import zhHansProjects from "./zh-Hans/projects.json";
 import zhHansAutopilots from "./zh-Hans/autopilots.json";
 import zhHansAutomations from "./zh-Hans/automations.json";
 import zhHansSkills from "./zh-Hans/skills.json";
-import zhHansChat from "./zh-Hans/chat.json";
 import zhHansModals from "./zh-Hans/modals.json";
 import zhHansRuntimes from "./zh-Hans/runtimes.json";
 import zhHansLayout from "./zh-Hans/layout.json";
@@ -51,6 +50,7 @@ import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
 import zhHansSquads from "./zh-Hans/squads.json";
 import zhHansBilling from "./zh-Hans/billing.json";
+import zhHansAssistant from "./zh-Hans/assistant.json";
 import uzCommon from "./uz/common.json";
 import uzAuth from "./uz/auth.json";
 import uzSettings from "./uz/settings.json";
@@ -69,7 +69,6 @@ import uzProjects from "./uz/projects.json";
 import uzAutopilots from "./uz/autopilots.json";
 import uzAutomations from "./uz/automations.json";
 import uzSkills from "./uz/skills.json";
-import uzChat from "./uz/chat.json";
 import uzModals from "./uz/modals.json";
 import uzRuntimes from "./uz/runtimes.json";
 import uzLayout from "./uz/layout.json";
@@ -77,6 +76,7 @@ import uzUsage from "./uz/usage.json";
 import uzUi from "./uz/ui.json";
 import uzSquads from "./uz/squads.json";
 import uzBilling from "./uz/billing.json";
+import uzAssistant from "./uz/assistant.json";
 import ruCommon from "./ru/common.json";
 import ruAuth from "./ru/auth.json";
 import ruSettings from "./ru/settings.json";
@@ -95,7 +95,6 @@ import ruProjects from "./ru/projects.json";
 import ruAutopilots from "./ru/autopilots.json";
 import ruAutomations from "./ru/automations.json";
 import ruSkills from "./ru/skills.json";
-import ruChat from "./ru/chat.json";
 import ruModals from "./ru/modals.json";
 import ruRuntimes from "./ru/runtimes.json";
 import ruLayout from "./ru/layout.json";
@@ -103,6 +102,7 @@ import ruUsage from "./ru/usage.json";
 import ruUi from "./ru/ui.json";
 import ruSquads from "./ru/squads.json";
 import ruBilling from "./ru/billing.json";
+import ruAssistant from "./ru/assistant.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
 // desktop App.tsx) import from here so adding a locale or namespace happens
@@ -127,7 +127,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: enAutopilots,
     automations: enAutomations,
     skills: enSkills,
-    chat: enChat,
     modals: enModals,
     runtimes: enRuntimes,
     layout: enLayout,
@@ -135,6 +134,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: enUi,
     squads: enSquads,
     billing: enBilling,
+    assistant: enAssistant,
   },
   "zh-Hans": {
     common: zhHansCommon,
@@ -155,7 +155,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: zhHansAutopilots,
     automations: zhHansAutomations,
     skills: zhHansSkills,
-    chat: zhHansChat,
     modals: zhHansModals,
     runtimes: zhHansRuntimes,
     layout: zhHansLayout,
@@ -163,6 +162,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: zhHansUi,
     squads: zhHansSquads,
     billing: zhHansBilling,
+    assistant: zhHansAssistant,
   },
   uz: {
     common: uzCommon,
@@ -183,7 +183,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: uzAutopilots,
     automations: uzAutomations,
     skills: uzSkills,
-    chat: uzChat,
     modals: uzModals,
     runtimes: uzRuntimes,
     layout: uzLayout,
@@ -191,6 +190,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: uzUi,
     squads: uzSquads,
     billing: uzBilling,
+    assistant: uzAssistant,
   },
   ru: {
     common: ruCommon,
@@ -211,7 +211,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: ruAutopilots,
     automations: ruAutomations,
     skills: ruSkills,
-    chat: ruChat,
     modals: ruModals,
     runtimes: ruRuntimes,
     layout: ruLayout,
@@ -219,5 +218,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: ruUi,
     squads: ruSquads,
     billing: ruBilling,
+    assistant: ruAssistant,
   },
 };

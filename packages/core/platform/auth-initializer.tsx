@@ -13,6 +13,7 @@ import {
 import { configStore } from "../config";
 import { workspaceKeys } from "../workspace/queries";
 import { useChatStore } from "../chat";
+import { useAssistantStore } from "../assistant";
 import { useRecentContextStore } from "../chat/recent-context-store";
 import { useRecentIssuesStore } from "../issues/stores/recent-issues-store";
 import { createLogger } from "../logger";
@@ -111,6 +112,7 @@ export function AuthInitializer({
       useRecentContextStore.getState().setIdentity(user.id);
       useRecentIssuesStore.getState().setIdentity(user.id);
       useChatStore.getState().setIdentity(user.id);
+      useAssistantStore.getState().setIdentity(user.id);
       onLogin?.();
       useAuthStore.setState({ user, isLoading: false });
       identifyAnalytics(user.id, { email: user.email, name: user.name });
@@ -120,6 +122,7 @@ export function AuthInitializer({
       useRecentContextStore.getState().setIdentity(null);
       useRecentIssuesStore.getState().setIdentity(null);
       useChatStore.getState().setIdentity(null);
+      useAssistantStore.getState().setIdentity(null);
       onLogout?.();
       resetAnalytics();
       useAuthStore.setState({ user: null, isLoading: false });

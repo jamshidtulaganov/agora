@@ -815,3 +815,99 @@ describe("ApiClient", () => {
     });
   });
 });
+
+// Confirmation binding — docs/agora-assistant-final-plan.md ("Pinned wire
+// contract"). The endpoints ship after this client, so the 404 case below is
+// a real deployment state rather than a hypothetical.
+describe("Assistant operation confirm / reject", () => {
+  it("posts the confirmation to the bound operation id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          operation: { id: "op-1", tool_name: "delete_issue", status: "confirmed" },
+          message: { id: "msg-9", role: "tool", tool_name: "delete_issue" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    const decision = await client.confirmAssistantOperation("op-1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/operations/op-1/confirm",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(decision).toEqual({ status: "confirmed", operation_id: "op-1", message_id: "msg-9" });
+  });
+
+  it("flattens a decision body that lost its fields rather than failing the click", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ operation: {}, message: {} }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.confirmAssistantOperation("op-1")).resolves.toEqual({
+      status: "",
+      operation_id: "",
+      message_id: "",
+    });
+  });
+
+  it("treats the specified 204 reject as a success, not a drifted body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204, statusText: "No Content" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    const decision = await client.rejectAssistantOperation("op-1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/operations/op-1/reject",
+    );
+    expect(decision).toEqual({ status: "", operation_id: "", message_id: "" });
+  });
+
+  it("propagates a 409 so the card can flip to expired", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "operation changed" }), {
+          status: 409,
+          statusText: "Conflict",
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.confirmAssistantOperation("op-1")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 409,
+    });
+  });
+
+  it("propagates a 404 from a runtime without confirmation binding", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          statusText: "Not Found",
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.confirmAssistantOperation("op-1")).rejects.toBeInstanceOf(ApiError);
+  });
+});

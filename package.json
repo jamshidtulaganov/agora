@@ -26,7 +26,8 @@
     "lint": "turbo lint --filter=!@agora/mobile",
     "clean": "turbo clean && rm -rf node_modules",
     "ui:add": "cd packages/ui && npx shadcn@latest add",
-    "generate:reserved-slugs": "node scripts/generate-reserved-slugs.mjs"
+    "generate:reserved-slugs": "node scripts/generate-reserved-slugs.mjs",
+    "test:assistant-scenarios": "node e2e/assistant-scenarios/run.ts"
   },
   "packageManager": "pnpm@10.28.2",
   "pnpm": {

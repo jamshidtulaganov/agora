@@ -31,6 +31,14 @@ import type {
   TimelineEntry,
   User,
   WebhookDelivery,
+  AssistantSession,
+  AssistantRun,
+  AssistantMessage,
+  AssistantAvailability,
+  SendAssistantMessageResponse,
+  AssistantArtifact,
+  AssistantArtifactSummary,
+  AssistantOperationDecision,
 } from "../types";
 
 const OrchestrationStepSchema = z.object({
@@ -975,6 +983,10 @@ export const UserSchema = z.object({
   language: z.string().nullable().default(null),
   profile_description: z.string().default(""),
   timezone: z.string().nullable().default(null),
+  // Older servers don't send hidden_nav at all, and a non-array value from a
+  // drifted server must not blank the whole user object — catch() degrades to
+  // "hide nothing" instead of failing the parse.
+  hidden_nav: z.array(z.string()).catch([]).default([]),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
 }).loose();
@@ -990,6 +1002,7 @@ export const EMPTY_USER: User = {
   language: null,
   profile_description: "",
   timezone: null,
+  hidden_nav: [],
   created_at: "",
   updated_at: "",
 };
@@ -2018,3 +2031,211 @@ export const EMPTY_TELEGRAM_LINK_START: TelegramLinkStartResponse = {
   nonce: "",
   deep_link: "",
 };
+
+// ---------------------------------------------------------------------------
+// Agora Assistant — user-scoped, no workspace_id. See
+// docs/agora-assistant-plan.md and server/internal/handler/assistant.go.
+// ---------------------------------------------------------------------------
+
+export const AssistantRunSchema = z.object({
+  id: z.string().default(""),
+  session_id: z.string().default(""),
+  message_id: z.string().default(""),
+  status: z.string().default("interrupted"),
+  active_tool: z.string().nullable().catch(null).default(null),
+  error: z.string().nullable().catch(null).default(null),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  finished_at: z.string().nullable().catch(null).default(null),
+  version: z.number().int().nonnegative().catch(0).default(0),
+  context: z.object({
+    workspace_id: z.string().nullable().catch(null).default(null),
+    timezone: z.string().optional(),
+  }).catch({ workspace_id: null }).default({ workspace_id: null }),
+}).loose();
+
+export const EMPTY_ASSISTANT_RUN: AssistantRun = {
+  id: "", session_id: "", message_id: "", status: "interrupted",
+  active_tool: null, error: null, created_at: "", updated_at: "",
+  finished_at: null, version: 0, context: { workspace_id: null },
+};
+
+export const AssistantRunListSchema = z.array(AssistantRunSchema).catch([]);
+export const EMPTY_ASSISTANT_RUN_LIST: AssistantRun[] = [];
+
+export const AssistantSessionSchema = z
+  .object({
+    id: z.string().default(""),
+    title: z.string().default(""),
+    focus_workspace_id: z.string().nullable().default(null),
+    created_at: z.string().default(""),
+    updated_at: z.string().default(""),
+    latest_run: AssistantRunSchema.nullable().catch(null).optional(),
+  })
+  .loose();
+
+export const EMPTY_ASSISTANT_SESSION: AssistantSession = {
+  id: "",
+  title: "",
+  focus_workspace_id: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const AssistantSessionListSchema = z
+  .array(AssistantSessionSchema)
+  // One malformed row must not blank the whole switcher — drop it, keep the rest.
+  .catch([]);
+
+export const EMPTY_ASSISTANT_SESSION_LIST: AssistantSession[] = [];
+
+const AssistantToolCallSchema = z
+  .object({
+    id: z.string().default(""),
+    name: z.string().default(""),
+    arguments: z.string().default(""),
+  })
+  .loose();
+
+// `role` is kept as a lenient string (not z.enum) rather than failing closed
+// on a future role the server adds — the UI's role switch already has a
+// default branch. `tool_result` is arbitrary tool-specific JSON (may be an
+// object, array, or primitive), so it stays z.unknown() — callers narrow it
+// defensively when building the action-chip summary.
+export const AssistantMessageSchema = z
+  .object({
+    id: z.string().default(""),
+    session_id: z.string().default(""),
+    role: z.string().default("assistant"),
+    content: z.string().default(""),
+    tool_calls: z.array(AssistantToolCallSchema).catch([]).optional(),
+    tool_call_id: z.string().nullable().optional(),
+    tool_name: z.string().nullable().optional(),
+    tool_result: z.unknown().optional(),
+    created_at: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_ASSISTANT_MESSAGE: AssistantMessage = {
+  id: "",
+  session_id: "",
+  role: "assistant",
+  content: "",
+  created_at: "",
+};
+
+export const AssistantMessageListSchema = z
+  .array(AssistantMessageSchema)
+  .catch([]);
+
+export const EMPTY_ASSISTANT_MESSAGE_LIST: AssistantMessage[] = [];
+
+export const AssistantAvailabilitySchema = z
+  .object({
+    // Defaults to FALSE: a drifted/older server that omits this field must
+    // read as "assistant unavailable" — the nav item and page hide rather
+    // than showing chat UI that 503s on first send.
+    enabled: z.boolean().default(false),
+    model_label: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_ASSISTANT_AVAILABILITY: AssistantAvailability = {
+  enabled: false,
+  model_label: "",
+};
+
+export const SendAssistantMessageResponseSchema = z
+  .object({
+    message_id: z.string().default(""),
+    run_id: z.string().default(""),
+    created_at: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE: SendAssistantMessageResponse = {
+  message_id: "",
+  run_id: "",
+  created_at: "",
+};
+
+// Confirmation binding — POST /api/assistant/operations/{id}/confirm|reject.
+// See docs/agora-assistant-final-plan.md ("Pinned wire contract") and
+// server/internal/handler/assistant_operations.go, which answers confirm with
+// `{operation, message}` and reject with a bare 204.
+//
+// Every field is defaulted on purpose: the authoritative outcome is the
+// receipt message the server persists and pushes over WS, never this body, so
+// a drifted or absent field must degrade to "decision accepted, wait for the
+// transcript" rather than surface as an error on a click that already ran.
+export const AssistantOperationDecisionSchema = z
+  .object({
+    operation: z
+      .object({
+        id: z.string().catch("").default(""),
+        status: z.string().catch("").default(""),
+      })
+      .loose()
+      .catch({ id: "", status: "" })
+      .default({ id: "", status: "" }),
+    message: z
+      .object({ id: z.string().catch("").default("") })
+      .loose()
+      .catch({ id: "" })
+      .default({ id: "" }),
+  })
+  .loose();
+
+export const EMPTY_ASSISTANT_OPERATION_DECISION: AssistantOperationDecision = {
+  status: "",
+  operation_id: "",
+  message_id: "",
+};
+
+// Assistant artifacts — see docs/agora-assistant-artifacts-plan.md §5.
+// `kind` stays a lenient string (not z.enum): a kind this build doesn't know
+// must still parse so the pane can downgrade to a raw-content view, per the
+// enum-drift rule. `title` / `version` use `.catch()` so a drifted *cosmetic*
+// field can't blank an otherwise renderable artifact, while `id` / `kind` /
+// `content` stay strict — without those there is nothing to render anyway,
+// and the EMPTY fallback drives the "artifact unavailable" state.
+const AssistantArtifactSummaryShape = {
+  id: z.string().default(""),
+  session_id: z.string().default(""),
+  title: z.string().catch(""),
+  kind: z.string().default(""),
+  version: z.number().catch(1),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+};
+
+export const AssistantArtifactSummarySchema = z
+  .object(AssistantArtifactSummaryShape)
+  .loose();
+
+export const AssistantArtifactSchema = z
+  .object({
+    ...AssistantArtifactSummaryShape,
+    content: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_ASSISTANT_ARTIFACT: AssistantArtifact = {
+  id: "",
+  session_id: "",
+  title: "",
+  kind: "",
+  content: "",
+  version: 1,
+  created_at: "",
+  updated_at: "",
+};
+
+export const AssistantArtifactListSchema = z
+  .array(AssistantArtifactSummarySchema)
+  // A malformed row degrades the whole list to empty rather than throwing —
+  // the artifact list is a convenience surface, never the only way back to
+  // an artifact (the transcript card is).
+  .catch([]);
+
+export const EMPTY_ASSISTANT_ARTIFACT_LIST: AssistantArtifactSummary[] = [];

@@ -82,6 +82,23 @@ export type {
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
+  AssistantSession,
+  AssistantRun,
+  AssistantRunStatus,
+  AssistantRunContext,
+  SendAssistantMessageRequest,
+  AssistantToolCall,
+  AssistantMessage,
+  AssistantAvailability,
+  AssistantArtifactKind,
+  AssistantArtifactSummary,
+  AssistantArtifact,
+  CreateAssistantSessionRequest,
+  PatchAssistantSessionRequest,
+  SendAssistantMessageResponse,
+  AssistantOperationDecision,
+} from "./assistant";
+export type {
   OrchestrationRun,
   OrchestrationRunStatus,
   ExecutionStrategy,

@@ -21,13 +21,13 @@ import type projects from "../locales/en/projects.json";
 import type autopilots from "../locales/en/autopilots.json";
 import type automations from "../locales/en/automations.json";
 import type skills from "../locales/en/skills.json";
-import type chat from "../locales/en/chat.json";
 import type modals from "../locales/en/modals.json";
 import type runtimes from "../locales/en/runtimes.json";
 import type layout from "../locales/en/layout.json";
 import type usage from "../locales/en/usage.json";
 import type squads from "../locales/en/squads.json";
 import type billing from "../locales/en/billing.json";
+import type assistant from "../locales/en/assistant.json";
 
 // Module augmentation enables i18next v26 selector API across the monorepo:
 // `t($ => $.signin.title)` resolves to the value in en/auth.json.
@@ -63,13 +63,13 @@ declare global {
     autopilots: typeof autopilots;
     automations: typeof automations;
     skills: typeof skills;
-    chat: typeof chat;
     modals: typeof modals;
     runtimes: typeof runtimes;
     layout: typeof layout;
     usage: typeof usage;
     squads: typeof squads;
     billing: typeof billing;
+    assistant: typeof assistant;
   }
 }
 

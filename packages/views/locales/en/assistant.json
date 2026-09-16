@@ -1,0 +1,149 @@
+{
+  "not_configured": {
+    "title": "The Assistant isn't available yet",
+    "description": "Ask a workspace admin to turn on the Agora Assistant for this instance."
+  },
+  "panel": {
+    "title": "Assistant",
+    "new_chat": "New chat",
+    "recent_chats": "Recent chats",
+    "open_full_page": "Open full page",
+    "expand": "Expand",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "fab": {
+    "default": "Ask Agora",
+    "running": "Agora is working..."
+  },
+  "empty_state": {
+    "title": "Ask Agora anything",
+    "subtitle": "It can see every workspace you're in — issues, projects, usage.",
+    "prompts": {
+      "create_issue": "Create an issue to update the pricing page copy",
+      "my_plate": "What's on my plate across all my workspaces?",
+      "usage_this_week": "How much have I used this week?",
+      "today_digest": "What happened across my workspaces today?"
+    }
+  },
+  "session_rail": {
+    "title": "Chats",
+    "new_session": "New chat",
+    "untitled": "New chat",
+    "rename_aria": "Rename chat",
+    "delete_aria": "Delete chat",
+    "delete_confirm_title": "Delete this chat?",
+    "delete_confirm_description": "This chat and its messages will be permanently removed.",
+    "delete_confirm_cancel": "Cancel",
+    "delete_confirm_confirm": "Delete",
+    "empty": "No conversations yet"
+  },
+  "composer": {
+    "placeholder": "Message the Assistant...",
+    "placeholder_running": "Waiting for a reply...",
+    "send_tooltip": "Send",
+    "stop_tooltip": "Stop",
+    "char_limit": "{{count}} / {{max}}",
+    "slash": {
+      "menu_label": "Assistant commands",
+      "add_task": {
+        "label": "Add task",
+        "description": "Describe a task and the Assistant creates it",
+        "template": "Create a task: "
+      },
+      "my_tasks": {
+        "label": "My tasks",
+        "description": "Everything assigned to you right now"
+      },
+      "find": {
+        "label": "Find issues",
+        "description": "Search issues across your workspaces",
+        "template": "Find issues about "
+      },
+      "usage": {
+        "label": "Usage",
+        "description": "Your usage so far this week"
+      },
+      "digest": {
+        "label": "Digest",
+        "description": "What happened across your workspaces today"
+      },
+      "project": {
+        "label": "New project",
+        "description": "Describe a project and the Assistant creates it",
+        "template": "Create a project called "
+      }
+    },
+    "scope_workspace": "Sending to {{workspace}}",
+    "scope_all": "All workspaces",
+    "scope_previous": "Previous workspace"
+  },
+  "context": {
+    "tooltip": "Actions default to this workspace",
+    "clear": "Clear workspace focus",
+    "unknown_workspace": "Focused workspace",
+    "clear_failed": "Couldn't clear the workspace focus"
+  },
+  "working": {
+    "generic": "Thinking...",
+    "with_tool": "Working: {{tool}}..."
+  },
+  "toast": {
+    "still_working": "The Assistant is still answering your last message",
+    "send_failed": "Failed to send message"
+  },
+  "tool_chip": {
+    "fallback_summary": "Done"
+  },
+  "confirm": {
+    "fallback_summary": "Confirm this action",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "confirmed": "Confirmed",
+    "rejected": "Cancelled",
+    "expired": "This action changed — ask again.",
+    "toast_changed": "This action changed — ask again."
+  },
+  "receipt": {
+    "effects_toggle": "Show what else changed",
+    "effects_more": "+{{count}} more",
+    "effects_hide": "Hide details"
+  },
+  "uncertain": {
+    "title": "Outcome unclear.",
+    "hint": "Check the affected items before trying again."
+  },
+  "stop_action": "Stop",
+  "artifact": {
+    "untitled": "Untitled artifact",
+    "open_aria": "Open artifact: {{title}}",
+    "version_badge": "v{{version}}",
+    "meta": "{{kind}} · v{{version}}",
+    "copy": "Copy content",
+    "copied": "Copied",
+    "close": "Close artifact",
+    "loading": "Opening artifact...",
+    "unavailable": "This artifact isn't available.",
+    "downgrade_notice": "This build can't render this artifact — showing its raw content.",
+    "kind": {
+      "chart": "Chart",
+      "table": "Table",
+      "markdown": "Document",
+      "html": "Interactive",
+      "unknown": "Artifact"
+    }
+  },
+  "message_actions": {
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "run": {
+    "failed": "The Assistant could not finish this reply. You can send another message or try your request again.",
+    "cancelled": "The Assistant stopped. You can continue the conversation.",
+    "interrupted": "The Assistant was interrupted. You can send another message or try your request again.",
+    "effects_notice": "Some changes may already have been applied. Check the conversation and affected items before retrying.",
+    "status_unavailable": "Could not check whether the Assistant is still working.",
+    "retry_status": "Try again",
+    "checking_status": "Checking Assistant status..."
+  }
+}

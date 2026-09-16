@@ -47,6 +47,7 @@ import {
 import type { Workspace } from "../types/workspace";
 import { chatKeys } from "../chat/queries";
 import { useChatStore } from "../chat";
+import { onAssistantMessage, onAssistantToolActivity, onAssistantRunFinished, invalidateAssistantQueries } from "../assistant";
 import { resolvePostAuthDestination, useHasOnboarded } from "../paths";
 import type {
   MemberAddedPayload,
@@ -87,6 +88,9 @@ import type {
   ChatPendingTask,
   ChatMessagesPage,
   InvitationCreatedPayload,
+  AssistantMessageEventPayload,
+  AssistantToolActivityEventPayload,
+  AssistantRunFinishedPayload,
 } from "../types";
 
 const chatWsLogger = createLogger("chat.ws");
@@ -411,6 +415,20 @@ export function useRealtimeSync(
   const { authStore } = stores;
   const qc = useQueryClient();
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const reconcile = () => invalidateAssistantQueries(qc);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reconcile();
+    };
+    window.addEventListener("focus", reconcile);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", reconcile);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [qc]);
+
   // Captured via ref so the (rare) hasOnboarded change doesn't re-subscribe
   // every WS handler in this effect. The resolver reads `.current` at the
   // moment workspace-loss fires, which is what we want.
@@ -609,6 +627,10 @@ export function useRealtimeSync(
       // Chat events are handled explicitly below; do not double-invalidate.
       "chat:message", "chat:done", "chat:session_read", "chat:session_deleted",
       "chat:session_updated",
+      // Agora Assistant events are handled explicitly below (they are
+      // user-scoped, not workspace-scoped, so the generic "assistant" prefix
+      // has no entry in refreshMap anyway — listed here for clarity).
+      "assistant:message", "assistant:tool_activity", "assistant:run_finished",
       // task:message stays out of the prefix path because it fires per
       // streamed message during a long run — invalidating the snapshot on
       // every message would flood the network. Specific chat handlers below
@@ -1141,6 +1163,25 @@ export function useRealtimeSync(
       }
     });
 
+    // --- Agora Assistant events (global, user-scoped — no wsId gate) ------
+    //
+    // The assistant spans every workspace the user belongs to, so unlike
+    // every handler above these never read getCurrentWsId(). See
+    // packages/core/assistant/ws-updaters.ts for the pure invalidate/store
+    // logic these call into.
+
+    const unsubAssistantMessage = ws.on("assistant:message", (p) => {
+      onAssistantMessage(qc, p as AssistantMessageEventPayload);
+    });
+
+    const unsubAssistantToolActivity = ws.on("assistant:tool_activity", (p) => {
+      onAssistantToolActivity(qc, p as AssistantToolActivityEventPayload);
+    });
+
+    const unsubAssistantRunFinished = ws.on("assistant:run_finished", (p) => {
+      onAssistantRunFinished(qc, p as AssistantRunFinishedPayload);
+    });
+
     return () => {
       unsubAny();
       unsubIssueUpdated();
@@ -1185,6 +1226,9 @@ export function useRealtimeSync(
       unsubChatSessionRead();
       unsubChatSessionDeleted();
       unsubChatSessionUpdated();
+      unsubAssistantMessage();
+      unsubAssistantToolActivity();
+      unsubAssistantRunFinished();
       timers.forEach(clearTimeout);
       timers.clear();
     };
@@ -1198,6 +1242,7 @@ export function useRealtimeSync(
       logger.info("reconnected, refetching all data");
       try {
         invalidateWorkspaceScopedQueries(qc);
+        invalidateAssistantQueries(qc);
       } catch (e) {
         logger.error("reconnect refetch failed", e);
       }
@@ -1222,5 +1267,6 @@ export function useRealtimeSync(
 
     logger.info("new WSClient instance detected, invalidating workspace queries");
     invalidateWorkspaceScopedQueries(qc);
+    invalidateAssistantQueries(qc);
   }, [ws, qc]);
 }

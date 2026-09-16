@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Inbox",
     "my_issues": "My Issues",
+    "assistant": "Assistant",
     "qa": "Release",
     "policy": "Policy",
     "issues": "Issues",
@@ -43,7 +44,11 @@
     "pinned_label": "Pinned",
     "workspace_group": "Workspace",
     "configure_group": "Configure",
-    "unread_overflow": "99+"
+    "unread_overflow": "99+",
+    "hide_item": "Hide from sidebar",
+    "customize": "Customize sidebar…",
+    "hidden_toast": "Hidden from sidebar",
+    "undo": "Undo"
   },
   "running": {
     "idle": "Agents idle",

@@ -1,0 +1,149 @@
+{
+  "not_configured": {
+    "title": "助手暂未启用",
+    "description": "请工作区管理员为该实例启用 Agora 助手。"
+  },
+  "panel": {
+    "title": "助手",
+    "new_chat": "新对话",
+    "recent_chats": "最近的对话",
+    "open_full_page": "打开完整页面",
+    "expand": "展开",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "fab": {
+    "default": "问问 Agora",
+    "running": "Agora 正在处理..."
+  },
+  "empty_state": {
+    "title": "问 Agora 任何问题",
+    "subtitle": "它能看到你所在的每个工作区 —— issue、项目、用量。",
+    "prompts": {
+      "create_issue": "创建一个 issue，更新定价页文案",
+      "my_plate": "我在所有工作区里手头都有什么？",
+      "usage_this_week": "我这周用了多少？",
+      "today_digest": "我的工作区今天发生了什么？"
+    }
+  },
+  "session_rail": {
+    "title": "对话",
+    "new_session": "新对话",
+    "untitled": "新对话",
+    "rename_aria": "重命名对话",
+    "delete_aria": "删除对话",
+    "delete_confirm_title": "删除这个对话？",
+    "delete_confirm_description": "此对话及其消息将被永久删除。",
+    "delete_confirm_cancel": "取消",
+    "delete_confirm_confirm": "删除",
+    "empty": "还没有对话"
+  },
+  "composer": {
+    "placeholder": "给助手发消息...",
+    "placeholder_running": "正在等待回复...",
+    "send_tooltip": "发送",
+    "stop_tooltip": "停止",
+    "char_limit": "{{count}} / {{max}}",
+    "slash": {
+      "menu_label": "助手命令",
+      "add_task": {
+        "label": "新建任务",
+        "description": "说清楚要做什么，助手帮你建任务",
+        "template": "创建一个任务："
+      },
+      "my_tasks": {
+        "label": "我的任务",
+        "description": "现在分配给你的所有事"
+      },
+      "find": {
+        "label": "查找 issue",
+        "description": "在你的所有工作区里搜 issue",
+        "template": "查找关于以下内容的 issue："
+      },
+      "usage": {
+        "label": "用量",
+        "description": "你这周用了多少"
+      },
+      "digest": {
+        "label": "今日动态",
+        "description": "今天你的工作区发生了什么"
+      },
+      "project": {
+        "label": "新建项目",
+        "description": "说清楚是什么项目，助手帮你建",
+        "template": "创建一个项目，名字叫："
+      }
+    },
+    "scope_workspace": "发送至{{workspace}}",
+    "scope_all": "所有工作区",
+    "scope_previous": "之前的工作区"
+  },
+  "context": {
+    "tooltip": "操作默认发生在这个工作区",
+    "clear": "清除工作区范围",
+    "unknown_workspace": "已锁定的工作区",
+    "clear_failed": "没能清除工作区范围"
+  },
+  "working": {
+    "generic": "思考中...",
+    "with_tool": "正在处理：{{tool}}..."
+  },
+  "toast": {
+    "still_working": "助手还在回复你的上一条消息",
+    "send_failed": "消息发送失败"
+  },
+  "tool_chip": {
+    "fallback_summary": "已完成"
+  },
+  "confirm": {
+    "fallback_summary": "确认这个操作",
+    "confirm": "确认",
+    "cancel": "取消",
+    "confirmed": "已确认",
+    "rejected": "已取消",
+    "expired": "这个操作已经变了，重新问一次。",
+    "toast_changed": "这个操作已经变了，重新问一次。"
+  },
+  "receipt": {
+    "effects_toggle": "看看还改了什么",
+    "effects_more": "还有 {{count}} 项",
+    "effects_hide": "收起"
+  },
+  "uncertain": {
+    "title": "结果不确定。",
+    "hint": "重试前先看看受影响的内容。"
+  },
+  "stop_action": "停止",
+  "artifact": {
+    "untitled": "未命名产物",
+    "open_aria": "打开产物：{{title}}",
+    "version_badge": "v{{version}}",
+    "meta": "{{kind}} · v{{version}}",
+    "copy": "复制内容",
+    "copied": "已复制",
+    "close": "关闭产物",
+    "loading": "正在打开产物...",
+    "unavailable": "这个产物暂时打不开。",
+    "downgrade_notice": "当前版本无法渲染这个产物，先显示原始内容。",
+    "kind": {
+      "chart": "图表",
+      "table": "表格",
+      "markdown": "文档",
+      "html": "交互页面",
+      "unknown": "产物"
+    }
+  },
+  "message_actions": {
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "run": {
+    "failed": "助手未能完成回复。你可以发送新消息或重试请求。",
+    "cancelled": "助手已停止。你可以继续对话。",
+    "interrupted": "助手运行中断。你可以发送新消息或重试请求。",
+    "effects_notice": "部分更改可能已经生效。重试前请检查对话和受影响的内容。",
+    "status_unavailable": "无法确认助手是否仍在运行。",
+    "retry_status": "重试",
+    "checking_status": "正在检查助手状态..."
+  }
+}

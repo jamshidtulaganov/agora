@@ -58,6 +58,9 @@ export type WSEventType =
   | "chat:session_read"
   | "chat:session_deleted"
   | "chat:session_updated"
+  | "assistant:message"
+  | "assistant:tool_activity"
+  | "assistant:run_finished"
   | "project:created"
   | "project:updated"
   | "project:deleted"
@@ -362,6 +365,45 @@ export interface ChatSessionDeletedPayload {
   chat_session_id: string;
 }
 
+/**
+ * Announces one persisted Agora Assistant transcript row (an assistant reply,
+ * or a tool answer). The assistant is user-scoped (no workspace room), so the
+ * payload carries `user_id` directly — see server/pkg/protocol/messages.go
+ * AssistantMessagePayload.
+ */
+export interface AssistantMessageEventPayload {
+  user_id: string;
+  session_id: string;
+  run_id: string;
+  message_id: string;
+  role: "user" | "assistant" | "tool";
+  content?: string;
+  tool_name?: string;
+  created_at: string;
+}
+
+/**
+ * Emitted the moment a tool call starts, before it has a result — drives the
+ * live "Searching issues…" working indicator. Ephemeral: never written to the
+ * Query cache, only to transient UI state.
+ */
+export interface AssistantToolActivityEventPayload {
+  user_id: string;
+  session_id: string;
+  run_id: string;
+  tool_call_id: string;
+  tool_name: string;
+}
+
+/** Closes an Agora Assistant run. `error` is set only when status is "failed". */
+export interface AssistantRunFinishedPayload {
+  user_id: string;
+  session_id: string;
+  run_id: string;
+  status: "ok" | "failed" | "cancelled";
+  error?: string;
+}
+
 export interface ProjectCreatedPayload {
   project: Project;
 }
@@ -453,6 +495,9 @@ export interface WSEventPayloadMap {
   "chat:session_read": ChatSessionReadPayload;
   "chat:session_deleted": ChatSessionDeletedPayload;
   "chat:session_updated": unknown;
+  "assistant:message": AssistantMessageEventPayload;
+  "assistant:tool_activity": AssistantToolActivityEventPayload;
+  "assistant:run_finished": AssistantRunFinishedPayload;
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;

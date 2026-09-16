@@ -31,6 +31,33 @@ interface CodeBlockIframeProps {
   className?: string;
   /** Tailwind height token; defaults to h-[480px]. */
   heightClassName?: string;
+  /**
+   * Blocks all NETWORK access from inside the document via an injected
+   * CSP <meta> (default-src 'none'; inline script/style allowed). The
+   * sandbox attribute isolates the DOM but does NOT stop fetch()/img/beacon
+   * to external hosts — for model-generated content (assistant HTML
+   * artifacts) that is an exfiltration channel, so the artifact viewer sets
+   * this. User-uploaded attachment previews keep today's behavior (their
+   * HTML may legitimately load external images).
+   */
+  restrictNetwork?: boolean;
+}
+
+/**
+ * Injects the network-blocking CSP meta as the FIRST child of <head> (CSP
+ * <meta> only applies from the head). Falls back to prepending a <head> when
+ * the document has none — browsers parse the leading meta into the implied
+ * head in that case.
+ */
+export function withNetworkBlockedCSP(html: string): string {
+  const meta =
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:; media-src data: blob:">';
+  const headMatch = /<head(\s[^>]*)?>/i.exec(html);
+  if (headMatch) {
+    const insertAt = headMatch.index + headMatch[0].length;
+    return html.slice(0, insertAt) + meta + html.slice(insertAt);
+  }
+  return meta + html;
 }
 
 export function CodeBlockIframe({
@@ -38,6 +65,7 @@ export function CodeBlockIframe({
   title,
   className,
   heightClassName = "h-[480px]",
+  restrictNetwork = false,
 }: CodeBlockIframeProps) {
   return (
     <iframe
@@ -45,7 +73,7 @@ export function CodeBlockIframe({
       // opaque origin via sandbox. Critical that we never combine
       // `allow-scripts` with `allow-same-origin` — that pairing defeats the
       // sandbox per the HTML spec (notes on the sandbox attribute).
-      srcDoc={html}
+      srcDoc={restrictNetwork ? withNetworkBlockedCSP(html) : html}
       sandbox="allow-scripts"
       title={title}
       className={cn(

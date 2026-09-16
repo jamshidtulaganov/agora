@@ -49,6 +49,25 @@ import {
   SquadListSchema,
   SquadSchema,
   UserSchema,
+  AssistantSessionSchema,
+  AssistantRunSchema,
+  AssistantRunListSchema,
+  EMPTY_ASSISTANT_RUN,
+  AssistantSessionListSchema,
+  EMPTY_ASSISTANT_SESSION,
+  EMPTY_ASSISTANT_SESSION_LIST,
+  AssistantMessageSchema,
+  AssistantMessageListSchema,
+  EMPTY_ASSISTANT_MESSAGE_LIST,
+  AssistantAvailabilitySchema,
+  EMPTY_ASSISTANT_AVAILABILITY,
+  AssistantOperationDecisionSchema,
+  EMPTY_ASSISTANT_OPERATION_DECISION,
+  AssistantArtifactSchema,
+  AssistantArtifactSummarySchema,
+  AssistantArtifactListSchema,
+  EMPTY_ASSISTANT_ARTIFACT,
+  EMPTY_ASSISTANT_ARTIFACT_LIST,
 } from "./schemas";
 import {
   EMPTY_DAEMON_BROWSE_TARGET,
@@ -240,6 +259,43 @@ describe("UserSchema timezone drift", () => {
       { endpoint: "GET /api/me" },
     );
     expect(parsed).toBe(EMPTY_USER);
+  });
+});
+
+// `user.hidden_nav` (per-user sidebar customization) is newer than every
+// installed desktop build. An older server omits the key entirely, and a
+// drifted one could send a non-array — neither may blank the user object,
+// because "no customization" is the correct degraded answer.
+describe("UserSchema hidden_nav drift", () => {
+  const base = {
+    id: "11111111-1111-1111-1111-111111111111",
+    name: "Ada",
+    email: "ada@example.com",
+  };
+
+  it("defaults hidden_nav to [] when the field is absent", () => {
+    expect(UserSchema.parse(base).hidden_nav).toEqual([]);
+  });
+
+  it("preserves an explicit hidden list", () => {
+    const parsed = UserSchema.parse({ ...base, hidden_nav: ["usage", "mcp"] });
+    expect(parsed.hidden_nav).toEqual(["usage", "mcp"]);
+  });
+
+  it("degrades a wrong-typed hidden_nav to [] without failing the parse", () => {
+    const parsed = parseWithFallback(
+      { ...base, hidden_nav: "usage" },
+      UserSchema,
+      EMPTY_USER,
+      { endpoint: "GET /api/me" },
+    );
+    expect(parsed).not.toBe(EMPTY_USER);
+    expect(parsed.hidden_nav).toEqual([]);
+    expect(parsed.id).toBe(base.id);
+  });
+
+  it("degrades a null hidden_nav to []", () => {
+    expect(UserSchema.parse({ ...base, hidden_nav: null }).hidden_nav).toEqual([]);
   });
 });
 
@@ -1607,5 +1663,319 @@ describe("ProjectDevServersSchema", () => {
       { endpoint: "GET /api/projects/{id}/dev-servers" },
     );
     expect(parsed).toEqual(EMPTY_PROJECT_DEV_SERVERS);
+  });
+});
+
+// Agora Assistant — user-scoped session/message/availability contracts.
+describe("AssistantRunSchema drift", () => {
+  const run = {
+    id: "run-1", session_id: "session-1", message_id: "message-1",
+    status: "running", active_tool: "search_issues", error: null,
+    created_at: "now", updated_at: "now", finished_at: null,
+    version: 2, context: { workspace_id: "ws-1", timezone: "Asia/Tashkent" },
+  };
+
+  it.each(["queued", "running", "completed", "failed", "cancelled", "interrupted", "future_status"])(
+    "accepts %s without crashing", (status) => {
+      expect(AssistantRunSchema.parse({ ...run, status }).status).toBe(status);
+    },
+  );
+
+  it("falls back for malformed detail and list responses", () => {
+    expect(parseWithFallback(null, AssistantRunSchema, EMPTY_ASSISTANT_RUN, { endpoint: "run" })).toBe(EMPTY_ASSISTANT_RUN);
+    expect(AssistantRunListSchema.parse(null)).toEqual([]);
+  });
+
+  it("degrades malformed optional run fields", () => {
+    expect(AssistantRunSchema.parse({ ...run, active_tool: 42, context: null }).context).toEqual({ workspace_id: null });
+  });
+});
+
+// See docs/agora-assistant-plan.md and server/internal/handler/assistant.go.
+describe("AssistantSessionSchema drift", () => {
+  const valid = {
+    id: "11111111-1111-1111-1111-111111111111",
+    title: "Plan my week",
+    focus_workspace_id: "22222222-2222-2222-2222-222222222222",
+    created_at: "2026-09-16T10:00:00Z",
+    updated_at: "2026-09-16T10:00:00Z",
+  };
+
+  it("parses a well-formed session", () => {
+    const parsed = AssistantSessionSchema.parse(valid);
+    expect(parsed).toMatchObject(valid);
+  });
+
+  it("defaults focus_workspace_id to null when absent (cross-workspace session)", () => {
+    const { focus_workspace_id: _omit, ...without } = valid;
+    const parsed = AssistantSessionSchema.parse(without);
+    expect(parsed.focus_workspace_id).toBe(null);
+  });
+
+  it("falls back to EMPTY_ASSISTANT_SESSION when a required field has the wrong type", () => {
+    const parsed = parseWithFallback(
+      { ...valid, id: 42 },
+      AssistantSessionSchema,
+      EMPTY_ASSISTANT_SESSION,
+      { endpoint: "GET /api/assistant/sessions/{id}" },
+    );
+    expect(parsed).toBe(EMPTY_ASSISTANT_SESSION);
+  });
+
+  it("drops a malformed row from the list instead of blanking the whole switcher", () => {
+    const parsed = AssistantSessionListSchema.parse([valid, { id: 123 }]);
+    // A row that fails validation is caught by the list-level `.catch([])`,
+    // which — unlike a per-item catch — degrades the WHOLE array. This
+    // documents that behavior: parseWithFallback still returns a working
+    // (empty) list rather than throwing into the UI.
+    expect(parsed).toEqual([]);
+  });
+
+  it("degrades a missing sessions array response to EMPTY_ASSISTANT_SESSION_LIST", () => {
+    const parsed = parseWithFallback(
+      null,
+      AssistantSessionListSchema,
+      EMPTY_ASSISTANT_SESSION_LIST,
+      { endpoint: "GET /api/assistant/sessions" },
+    );
+    expect(parsed).toEqual([]);
+  });
+});
+
+describe("AssistantMessageSchema drift", () => {
+  const userMessage = {
+    id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    session_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    role: "user",
+    content: "What's on my plate today?",
+    created_at: "2026-09-16T10:00:00Z",
+  };
+
+  it("parses a plain user message", () => {
+    const parsed = AssistantMessageSchema.parse(userMessage);
+    expect(parsed.role).toBe("user");
+    expect(parsed.tool_calls).toBeUndefined();
+  });
+
+  it("parses an assistant message carrying tool_calls", () => {
+    const parsed = AssistantMessageSchema.parse({
+      ...userMessage,
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "call_1", name: "list_my_issues", arguments: "{}" }],
+    });
+    expect(parsed.tool_calls).toHaveLength(1);
+    expect(parsed.tool_calls?.[0]).toMatchObject({ name: "list_my_issues" });
+  });
+
+  it("keeps an unrecognized future role as-is (enum drift downgrades, not crashes)", () => {
+    // `role` is a lenient string, not z.enum — a future role the server adds
+    // must still parse; the UI's role switch has a default branch.
+    const parsed = AssistantMessageSchema.parse({ ...userMessage, role: "system" });
+    expect(parsed.role).toBe("system");
+  });
+
+  it("degrades a malformed tool_calls entry to [] instead of failing the row", () => {
+    const parsed = AssistantMessageSchema.parse({
+      ...userMessage,
+      role: "assistant",
+      tool_calls: "not-an-array",
+    });
+    expect(parsed.tool_calls).toEqual([]);
+  });
+
+  it("accepts an arbitrary tool_result shape (tool-specific JSON)", () => {
+    const parsed = AssistantMessageSchema.parse({
+      id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      session_id: userMessage.session_id,
+      role: "tool",
+      content: "{}",
+      tool_call_id: "call_1",
+      tool_name: "create_issue",
+      tool_result: { issue_key: "MUL-931", url: "/acme/issues/MUL-931" },
+      created_at: userMessage.created_at,
+    });
+    expect(parsed.tool_result).toMatchObject({ issue_key: "MUL-931" });
+  });
+
+  it("degrades a null messages array to EMPTY_ASSISTANT_MESSAGE_LIST", () => {
+    const parsed = parseWithFallback(
+      { not: "an array" },
+      AssistantMessageListSchema,
+      EMPTY_ASSISTANT_MESSAGE_LIST,
+      { endpoint: "GET /api/assistant/sessions/{id}/messages" },
+    );
+    expect(parsed).toEqual([]);
+  });
+});
+
+describe("AssistantAvailabilitySchema drift", () => {
+  it("parses a well-formed enabled response", () => {
+    const parsed = AssistantAvailabilitySchema.parse({
+      enabled: true,
+      model_label: "Agora (glm-4.5-flash)",
+    });
+    expect(parsed).toEqual({ enabled: true, model_label: "Agora (glm-4.5-flash)" });
+  });
+
+  // Defaults to disabled: an older server predating this endpoint, or a
+  // drifted response missing `enabled`, must hide the nav item / page rather
+  // than render a chat UI that 503s on first send.
+  it("defaults to disabled when the response is missing fields", () => {
+    const parsed = parseWithFallback(
+      {},
+      AssistantAvailabilitySchema,
+      EMPTY_ASSISTANT_AVAILABILITY,
+      { endpoint: "GET /api/assistant/availability" },
+    );
+    expect(parsed.enabled).toBe(false);
+  });
+
+  it("falls back to EMPTY_ASSISTANT_AVAILABILITY when enabled has the wrong type", () => {
+    const parsed = parseWithFallback(
+      { enabled: "yes", model_label: "Agora" },
+      AssistantAvailabilitySchema,
+      EMPTY_ASSISTANT_AVAILABILITY,
+      { endpoint: "GET /api/assistant/availability" },
+    );
+    expect(parsed).toBe(EMPTY_ASSISTANT_AVAILABILITY);
+  });
+});
+
+// Confirmation binding — the confirm/reject endpoints ship after this UI, so
+// "the runtime doesn't have them yet" is a real production state. See
+// docs/agora-assistant-final-plan.md ("Pinned wire contract").
+describe("AssistantOperationDecisionSchema drift", () => {
+  it("parses the decision body the confirm handler returns", () => {
+    expect(
+      AssistantOperationDecisionSchema.parse({
+        operation: { id: "op-1", tool_name: "delete_issue", status: "confirmed" },
+        message: { id: "msg-9", role: "tool", tool_name: "delete_issue" },
+      }),
+    ).toMatchObject({
+      operation: { id: "op-1", status: "confirmed" },
+      message: { id: "msg-9" },
+    });
+  });
+
+  it("defaults every field — the receipt message is the real outcome", () => {
+    const parsed = parseWithFallback(
+      {},
+      AssistantOperationDecisionSchema,
+      EMPTY_ASSISTANT_OPERATION_DECISION,
+      { endpoint: "POST /api/assistant/operations/{id}/confirm" },
+    );
+    expect(parsed).toMatchObject({ operation: { id: "", status: "" }, message: { id: "" } });
+  });
+
+  it("survives wrong field types instead of throwing into the card", () => {
+    const parsed = AssistantOperationDecisionSchema.parse({
+      operation: { id: null, status: 204 },
+      message: "msg-9",
+    });
+    expect(parsed).toMatchObject({ operation: { id: "", status: "" }, message: { id: "" } });
+  });
+
+  it("falls back for a non-object body", () => {
+    const parsed = parseWithFallback(
+      "confirmed",
+      AssistantOperationDecisionSchema,
+      EMPTY_ASSISTANT_OPERATION_DECISION,
+      { endpoint: "POST /api/assistant/operations/{id}/reject" },
+    );
+    expect(parsed).toBe(EMPTY_ASSISTANT_OPERATION_DECISION);
+  });
+});
+
+// Assistant artifacts — see docs/agora-assistant-artifacts-plan.md §5.
+// These endpoints ship AFTER this frontend, so every one of these cases is a
+// real production shape for some window of time, not a hypothetical.
+describe("AssistantArtifactSchema drift", () => {
+  const valid = {
+    id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    session_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    title: "Agent usage by day",
+    kind: "chart",
+    content: '{"type":"bar","x":"day","series":[{"key":"runs"}],"rows":[]}',
+    version: 2,
+    created_at: "2026-09-16T10:00:00Z",
+    updated_at: "2026-09-16T11:00:00Z",
+  };
+
+  it("parses a well-formed artifact", () => {
+    const parsed = AssistantArtifactSchema.parse(valid);
+    expect(parsed).toMatchObject(valid);
+  });
+
+  it("defaults a missing version to 1 rather than rendering `vNaN`", () => {
+    const { version: _omit, ...without } = valid;
+    const parsed = AssistantArtifactSchema.parse(without);
+    expect(parsed.version).toBe(1);
+  });
+
+  it("keeps an unknown future kind as-is (enum drift downgrades, not crashes)", () => {
+    // The pane's kind switch has a default branch that shows raw content —
+    // failing to parse here would instead blank a renderable artifact.
+    const parsed = AssistantArtifactSchema.parse({ ...valid, kind: "mermaid" });
+    expect(parsed.kind).toBe("mermaid");
+  });
+
+  it("survives a drifted cosmetic field (version as a string) without losing content", () => {
+    const parsed = AssistantArtifactSchema.parse({ ...valid, version: "2" });
+    expect(parsed.version).toBe(1);
+    expect(parsed.content).toBe(valid.content);
+  });
+
+  it("falls back to EMPTY_ASSISTANT_ARTIFACT when content has the wrong type", () => {
+    const parsed = parseWithFallback(
+      { ...valid, content: { rows: [] } },
+      AssistantArtifactSchema,
+      EMPTY_ASSISTANT_ARTIFACT,
+      { endpoint: "GET /api/assistant/artifacts/{id}" },
+    );
+    expect(parsed).toBe(EMPTY_ASSISTANT_ARTIFACT);
+  });
+
+  it("degrades a null response (endpoint not deployed yet) to the empty artifact", () => {
+    const parsed = parseWithFallback(
+      null,
+      AssistantArtifactSchema,
+      EMPTY_ASSISTANT_ARTIFACT,
+      { endpoint: "GET /api/assistant/artifacts/{id}" },
+    );
+    expect(parsed.id).toBe("");
+  });
+});
+
+describe("AssistantArtifactListSchema drift", () => {
+  const row = {
+    id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    session_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    title: "Sprint report",
+    kind: "markdown",
+    version: 1,
+    created_at: "2026-09-16T10:00:00Z",
+    updated_at: "2026-09-16T10:00:00Z",
+  };
+
+  it("parses a list row that carries no content field", () => {
+    const parsed = AssistantArtifactSummarySchema.parse(row);
+    expect(parsed).toMatchObject(row);
+    expect("content" in parsed).toBe(false);
+  });
+
+  it("degrades a non-array response to EMPTY_ASSISTANT_ARTIFACT_LIST", () => {
+    const parsed = parseWithFallback(
+      { artifacts: [row] },
+      AssistantArtifactListSchema,
+      EMPTY_ASSISTANT_ARTIFACT_LIST,
+      { endpoint: "GET /api/assistant/sessions/{id}/artifacts" },
+    );
+    expect(parsed).toEqual([]);
+  });
+
+  it("degrades to an empty list when a row is malformed", () => {
+    const parsed = AssistantArtifactListSchema.parse([row, { id: 7 }]);
+    expect(parsed).toEqual([]);
   });
 });

@@ -719,6 +719,9 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             priority: "high",
             assignee_type: "member",
             assignee_id: me.id,
+            // Onboarding seed, not user intent — don't announce it to the
+            // team's Telegram report room (inbox/WS still fire).
+            suppress_external_notifications: true,
           },
         );
         // 2. agent-guide. Body is composed at call-time so it can embed
@@ -738,6 +741,7 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             priority: "medium",
             assignee_type: "member",
             assignee_id: me.id,
+            suppress_external_notifications: true,
           },
         );
         // 3. follow-up comment on install-runtime pointing at agent-guide

@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Kiruvchilar",
     "my_issues": "Mening vazifalarim",
+    "assistant": "Yordamchi",
     "qa": "Release",
     "policy": "Policy",
     "issues": "Vazifalar",
@@ -43,7 +44,11 @@
     "pinned_label": "Qadalgan",
     "workspace_group": "Ish maydoni",
     "configure_group": "Sozlash",
-    "unread_overflow": "99+"
+    "unread_overflow": "99+",
+    "hide_item": "Yon menyudan yashirish",
+    "customize": "Yon menyuni sozlash…",
+    "hidden_toast": "Yon menyudan yashirildi",
+    "undo": "Bekor qilish"
   },
   "running": {
     "idle": "Agentlar bo‘sh",

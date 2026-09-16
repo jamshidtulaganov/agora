@@ -1,0 +1,149 @@
+{
+  "not_configured": {
+    "title": "Yordamchi hali mavjud emas",
+    "description": "Ish maydoni adminidan shu instansiya uchun Agora Yordamchisini yoqishni so‘rang."
+  },
+  "panel": {
+    "title": "Yordamchi",
+    "new_chat": "Yangi suhbat",
+    "recent_chats": "So‘nggi suhbatlar",
+    "open_full_page": "To‘liq sahifada ochish",
+    "expand": "Kengaytirish",
+    "restore": "Tiklash",
+    "close": "Yopish"
+  },
+  "fab": {
+    "default": "Agora’dan so‘rang",
+    "running": "Agora ishlamoqda..."
+  },
+  "empty_state": {
+    "title": "Agora’dan xohlagan narsangizni so‘rang",
+    "subtitle": "U barcha ish maydonlaringizni ko‘radi — vazifalar, loyihalar, sarf.",
+    "prompts": {
+      "create_issue": "Narxlar sahifasi matnini yangilash uchun vazifa yarat",
+      "my_plate": "Barcha ish maydonlarimda mening zimmamda nima bor?",
+      "usage_this_week": "Bu hafta qancha sarfladim?",
+      "today_digest": "Bugun ish maydonlarimda nima bo‘ldi?"
+    }
+  },
+  "session_rail": {
+    "title": "Suhbatlar",
+    "new_session": "Yangi suhbat",
+    "untitled": "Yangi suhbat",
+    "rename_aria": "Suhbatni qayta nomlash",
+    "delete_aria": "Suhbatni o‘chirish",
+    "delete_confirm_title": "Bu suhbat o‘chirilsinmi?",
+    "delete_confirm_description": "Suhbat va uning xabarlari butunlay o‘chiriladi.",
+    "delete_confirm_cancel": "Bekor qilish",
+    "delete_confirm_confirm": "O‘chirish",
+    "empty": "Hali suhbatlar yo‘q"
+  },
+  "composer": {
+    "placeholder": "Yordamchiga xabar...",
+    "placeholder_running": "Javob kutilmoqda...",
+    "send_tooltip": "Yuborish",
+    "stop_tooltip": "To‘xtatish",
+    "char_limit": "{{count}} / {{max}}",
+    "slash": {
+      "menu_label": "Yordamchi buyruqlari",
+      "add_task": {
+        "label": "Vazifa qo‘shish",
+        "description": "Vazifani tasvirlang — Yordamchi uni yaratadi",
+        "template": "Vazifa yarat: "
+      },
+      "my_tasks": {
+        "label": "Mening vazifalarim",
+        "description": "Hozir sizga biriktirilgan hamma narsa"
+      },
+      "find": {
+        "label": "Vazifalarni topish",
+        "description": "Barcha ish maydonlaringiz bo‘ylab qidirish",
+        "template": "Shu haqda vazifalarni top: "
+      },
+      "usage": {
+        "label": "Sarf",
+        "description": "Bu hafta qancha sarflaganingiz"
+      },
+      "digest": {
+        "label": "Xulosa",
+        "description": "Bugun ish maydonlaringizda nima bo‘ldi"
+      },
+      "project": {
+        "label": "Yangi loyiha",
+        "description": "Loyihani tasvirlang — Yordamchi uni yaratadi",
+        "template": "Shunday nomli loyiha yarat: "
+      }
+    },
+    "scope_workspace": "{{workspace}}ga yuboriladi",
+    "scope_all": "Barcha ish maydonlari",
+    "scope_previous": "Oldingi ish maydoni"
+  },
+  "context": {
+    "tooltip": "Amallar sukut bo‘yicha shu ish maydonida bajariladi",
+    "clear": "Ish maydoni doirasini olib tashlash",
+    "unknown_workspace": "Tanlangan ish maydoni",
+    "clear_failed": "Ish maydoni doirasini olib tashlab bo‘lmadi"
+  },
+  "working": {
+    "generic": "O‘ylayapman...",
+    "with_tool": "Bajarilmoqda: {{tool}}..."
+  },
+  "toast": {
+    "still_working": "Yordamchi hali oldingi xabaringizga javob bermoqda",
+    "send_failed": "Xabarni yuborib bo‘lmadi"
+  },
+  "tool_chip": {
+    "fallback_summary": "Bajarildi"
+  },
+  "confirm": {
+    "fallback_summary": "Bu amalni tasdiqlang",
+    "confirm": "Tasdiqlash",
+    "cancel": "Bekor qilish",
+    "confirmed": "Tasdiqlandi",
+    "rejected": "Bekor qilindi",
+    "expired": "Bu amal o‘zgardi — qaytadan so‘rang.",
+    "toast_changed": "Bu amal o‘zgardi — qaytadan so‘rang."
+  },
+  "receipt": {
+    "effects_toggle": "Yana nima o‘zgarganini ko‘rsatish",
+    "effects_more": "yana {{count}} ta",
+    "effects_hide": "Yopish"
+  },
+  "uncertain": {
+    "title": "Natija aniq emas.",
+    "hint": "Qayta urinishdan oldin ta’sirlangan elementlarni tekshiring."
+  },
+  "stop_action": "To‘xtatish",
+  "artifact": {
+    "untitled": "Nomsiz artefakt",
+    "open_aria": "Artefaktni ochish: {{title}}",
+    "version_badge": "v{{version}}",
+    "meta": "{{kind}} · v{{version}}",
+    "copy": "Mazmunni nusxalash",
+    "copied": "Nusxalandi",
+    "close": "Artefaktni yopish",
+    "loading": "Artefakt ochilmoqda...",
+    "unavailable": "Bu artefakt mavjud emas.",
+    "downgrade_notice": "Bu versiya ushbu artefaktni ko‘rsata olmaydi — dastlabki mazmuni ko‘rsatilmoqda.",
+    "kind": {
+      "chart": "Diagramma",
+      "table": "Jadval",
+      "markdown": "Hujjat",
+      "html": "Interaktiv",
+      "unknown": "Artefakt"
+    }
+  },
+  "message_actions": {
+    "copy": "Nusxalash",
+    "copied": "Nusxalandi"
+  },
+  "run": {
+    "failed": "Yordamchi javobni yakunlay olmadi. Yangi xabar yuboring yoki so‘rovni qayta urinib ko‘ring.",
+    "cancelled": "Yordamchi to‘xtadi. Suhbatni davom ettirishingiz mumkin.",
+    "interrupted": "Yordamchining ishi uzildi. Yangi xabar yuboring yoki so‘rovni qayta urinib ko‘ring.",
+    "effects_notice": "Ayrim o‘zgarishlar allaqachon qo‘llangan bo‘lishi mumkin. Qayta urinishdan oldin suhbat va tegishli narsalarni tekshiring.",
+    "status_unavailable": "Yordamchi hali ishlayotganini tekshirib bo‘lmadi.",
+    "retry_status": "Qayta urinish",
+    "checking_status": "Yordamchi holati tekshirilmoqda..."
+  }
+}

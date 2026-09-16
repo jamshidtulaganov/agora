@@ -3,7 +3,7 @@
 import { DashboardLayout } from "@agora/views/layout";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { SearchCommand, SearchTrigger } from "@agora/views/search";
-import { ChatFab, ChatWindow } from "@agora/views/chat";
+import { AssistantFab, AssistantPanel } from "@agora/views/assistant";
 import { WebNotificationBridge } from "@/components/web-notification-bridge";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -14,8 +14,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       extra={
         <>
           <SearchCommand />
-          <ChatWindow />
-          <ChatFab />
+          <AssistantPanel />
+          <AssistantFab />
           <WebNotificationBridge />
         </>
       }

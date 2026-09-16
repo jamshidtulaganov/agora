@@ -77,6 +77,17 @@ import type {
   PendingChatTasksResponse,
   SendChatMessageResponse,
   CancelTaskResponse,
+  AssistantSession,
+  AssistantRun,
+  SendAssistantMessageRequest,
+  AssistantMessage,
+  AssistantAvailability,
+  AssistantArtifact,
+  AssistantArtifactSummary,
+  AssistantOperationDecision,
+  SendAssistantMessageResponse,
+  CreateAssistantSessionRequest,
+  PatchAssistantSessionRequest,
   OrchestrationRun,
   CreateOrchestrationRequest,
   RespondToOrchestrationStepRequest,
@@ -381,6 +392,26 @@ import {
   EMPTY_REVIEW_DECISION,
   OrchestrationRunSchema,
   EMPTY_ORCHESTRATION_RUN,
+  AssistantSessionSchema,
+  AssistantRunSchema,
+  AssistantRunListSchema,
+  EMPTY_ASSISTANT_RUN,
+  EMPTY_ASSISTANT_RUN_LIST,
+  AssistantSessionListSchema,
+  EMPTY_ASSISTANT_SESSION,
+  EMPTY_ASSISTANT_SESSION_LIST,
+  AssistantMessageListSchema,
+  EMPTY_ASSISTANT_MESSAGE_LIST,
+  AssistantAvailabilitySchema,
+  EMPTY_ASSISTANT_AVAILABILITY,
+  SendAssistantMessageResponseSchema,
+  EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE,
+  AssistantArtifactSchema,
+  EMPTY_ASSISTANT_ARTIFACT,
+  AssistantArtifactListSchema,
+  EMPTY_ASSISTANT_ARTIFACT_LIST,
+  AssistantOperationDecisionSchema,
+  EMPTY_ASSISTANT_OPERATION_DECISION,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2266,6 +2297,158 @@ export class ApiClient {
 
   async markChatSessionRead(sessionId: string): Promise<void> {
     await this.fetch(`/api/chat/sessions/${sessionId}/read`, { method: "POST" });
+  }
+
+  // Agora Assistant — user-scoped (no X-Workspace-ID needed). See
+  // docs/agora-assistant-plan.md and server/internal/handler/assistant.go.
+
+  async createAssistantSession(
+    data?: CreateAssistantSessionRequest,
+  ): Promise<AssistantSession> {
+    const raw = await this.fetch<unknown>("/api/assistant/sessions", {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    return parseWithFallback(raw, AssistantSessionSchema, EMPTY_ASSISTANT_SESSION, {
+      endpoint: "POST /api/assistant/sessions",
+    });
+  }
+
+  async listAssistantSessions(): Promise<AssistantSession[]> {
+    const raw = await this.fetch<unknown>("/api/assistant/sessions");
+    return parseWithFallback(raw, AssistantSessionListSchema, EMPTY_ASSISTANT_SESSION_LIST, {
+      endpoint: "GET /api/assistant/sessions",
+    });
+  }
+
+  async getAssistantSession(id: string): Promise<AssistantSession> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${id}`);
+    return parseWithFallback(raw, AssistantSessionSchema, EMPTY_ASSISTANT_SESSION, {
+      endpoint: "GET /api/assistant/sessions/{id}",
+    });
+  }
+
+  async updateAssistantSession(
+    id: string,
+    data: PatchAssistantSessionRequest,
+  ): Promise<AssistantSession> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, AssistantSessionSchema, EMPTY_ASSISTANT_SESSION, {
+      endpoint: "PATCH /api/assistant/sessions/{id}",
+    });
+  }
+
+  async deleteAssistantSession(id: string): Promise<void> {
+    await this.fetch(`/api/assistant/sessions/${id}`, { method: "DELETE" });
+  }
+
+  async listAssistantMessages(sessionId: string): Promise<AssistantMessage[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/messages`);
+    return parseWithFallback(raw, AssistantMessageListSchema, EMPTY_ASSISTANT_MESSAGE_LIST, {
+      endpoint: "GET /api/assistant/sessions/{id}/messages",
+    });
+  }
+
+  async listAssistantRuns(sessionId: string): Promise<AssistantRun[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/runs`);
+    return parseWithFallback(raw, AssistantRunListSchema, EMPTY_ASSISTANT_RUN_LIST, {
+      endpoint: "GET /api/assistant/sessions/{id}/runs",
+    });
+  }
+
+  async getAssistantRun(runId: string): Promise<AssistantRun> {
+    const raw = await this.fetch<unknown>(`/api/assistant/runs/${runId}`);
+    return parseWithFallback(raw, AssistantRunSchema, EMPTY_ASSISTANT_RUN, {
+      endpoint: "GET /api/assistant/runs/{id}",
+    });
+  }
+
+  async sendAssistantMessage(
+    sessionId: string,
+    input: SendAssistantMessageRequest,
+  ): Promise<SendAssistantMessageResponse> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return parseWithFallback(
+      raw,
+      SendAssistantMessageResponseSchema,
+      EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE,
+      { endpoint: "POST /api/assistant/sessions/{id}/messages" },
+    );
+  }
+
+  async cancelAssistantRun(runId: string): Promise<void> {
+    await this.fetch(`/api/assistant/runs/${runId}/cancel`, { method: "POST" });
+  }
+
+  async getAssistantAvailability(): Promise<AssistantAvailability> {
+    const raw = await this.fetch<unknown>("/api/assistant/availability");
+    return parseWithFallback(raw, AssistantAvailabilitySchema, EMPTY_ASSISTANT_AVAILABILITY, {
+      endpoint: "GET /api/assistant/availability",
+    });
+  }
+
+  async getAssistantArtifact(id: string): Promise<AssistantArtifact> {
+    const raw = await this.fetch<unknown>(`/api/assistant/artifacts/${id}`);
+    return parseWithFallback(raw, AssistantArtifactSchema, EMPTY_ASSISTANT_ARTIFACT, {
+      endpoint: "GET /api/assistant/artifacts/{id}",
+    });
+  }
+
+  /**
+   * Records the out-of-band human confirmation for a pending destructive
+   * operation and executes it server-side. See docs/agora-assistant-final-plan.md
+   * ("Pinned wire contract").
+   *
+   * Throws `ApiError` with status 409 when the bound operation changed or
+   * expired (the card then flips to its expired state), and 404 while a
+   * runtime that predates confirmation binding is still deployed — the card
+   * degrades to a toast in both cases rather than crashing the transcript.
+   */
+  async confirmAssistantOperation(operationId: string): Promise<AssistantOperationDecision> {
+    const raw = await this.fetch<unknown>(
+      `/api/assistant/operations/${operationId}/confirm`,
+      { method: "POST" },
+    );
+    return this.assistantOperationDecision(raw, "POST /api/assistant/operations/{id}/confirm");
+  }
+
+  /** Declines a pending operation. Specified as 204 + a "cancelled" tool message. */
+  async rejectAssistantOperation(operationId: string): Promise<AssistantOperationDecision> {
+    const raw = await this.fetch<unknown>(
+      `/api/assistant/operations/${operationId}/reject`,
+      { method: "POST" },
+    );
+    return this.assistantOperationDecision(raw, "POST /api/assistant/operations/{id}/reject");
+  }
+
+  /** Flattens the `{operation, message}` confirm body; an empty 204 body (the
+   *  reject contract) is a success, not drift, so it skips the schema warning. */
+  private assistantOperationDecision(raw: unknown, endpoint: string): AssistantOperationDecision {
+    if (raw === undefined || raw === null) return EMPTY_ASSISTANT_OPERATION_DECISION;
+    const parsed = parseWithFallback(
+      raw,
+      AssistantOperationDecisionSchema,
+      { operation: { id: "", status: "" }, message: { id: "" } },
+      { endpoint },
+    );
+    return {
+      status: parsed.operation.status,
+      operation_id: parsed.operation.id,
+      message_id: parsed.message.id,
+    };
+  }
+
+  async listAssistantArtifacts(sessionId: string): Promise<AssistantArtifactSummary[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/artifacts`);
+    return parseWithFallback(raw, AssistantArtifactListSchema, EMPTY_ASSISTANT_ARTIFACT_LIST, {
+      endpoint: "GET /api/assistant/sessions/{id}/artifacts",
+    });
   }
 
   async cancelTaskById(taskId: string): Promise<CancelTaskResponse> {

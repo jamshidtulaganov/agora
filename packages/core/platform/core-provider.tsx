@@ -6,6 +6,12 @@ import { setApiInstance, setSchemaLogger } from "../api";
 import { createAuthStore, registerAuthStore } from "../auth";
 import { createChatStore, registerChatStore } from "../chat";
 import {
+  createAssistantStore,
+  registerAssistantStore,
+  createAssistantPanelStore,
+  registerAssistantPanelStore,
+} from "../assistant";
+import {
   I18nProvider,
   LocaleAdapterProvider,
   UserLocaleSync,
@@ -23,6 +29,8 @@ import type { StorageAdapter } from "../types/storage";
 let initialized = false;
 let authStore: ReturnType<typeof createAuthStore>;
 let chatStore: ReturnType<typeof createChatStore>;
+let assistantStore: ReturnType<typeof createAssistantStore>;
+let assistantPanelStore: ReturnType<typeof createAssistantPanelStore>;
 function initCore(
   apiBaseUrl: string,
   storage: StorageAdapter,
@@ -58,6 +66,12 @@ function initCore(
 
   chatStore = createChatStore({ storage });
   registerChatStore(chatStore);
+
+  assistantStore = createAssistantStore({ storage });
+  registerAssistantStore(assistantStore);
+
+  assistantPanelStore = createAssistantPanelStore({ storage });
+  registerAssistantPanelStore(assistantPanelStore);
 
   initialized = true;
 }
