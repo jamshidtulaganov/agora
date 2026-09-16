@@ -43,6 +43,12 @@ func TestMain(m *testing.M) {
 	// Individual integration tests opt back in with t.Setenv and local fakes.
 	for _, key := range []string{
 		"AGORA_APP_URL",
+		"AGORA_ASSISTANT_ENABLED",
+		"AGORA_ASSISTANT_PROVIDER",
+		"AGORA_ASSISTANT_MODEL",
+		"ANTHROPIC_API_KEY",
+		"OPENAI_API_KEY",
+		"ZHIPU_API_KEY",
 		"AGORA_LARK_SECRET_KEY",
 		"AGORA_PUBLIC_URL",
 		"AGORA_TELEGRAM_SECRET_KEY",

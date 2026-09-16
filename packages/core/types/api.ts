@@ -15,6 +15,12 @@ export interface CreateIssueRequest {
   start_date?: string;
   due_date?: string;
   attachment_ids?: string[];
+  /**
+   * Scripted creations (onboarding starter issues) set this to skip the
+   * outward Telegram room notice. Inbox, WS events and automations still
+   * fire — this mutes only the external broadcast.
+   */
+  suppress_external_notifications?: boolean;
 }
 
 export interface UpdateIssueRequest {
@@ -165,6 +171,11 @@ export interface UpdateMeRequest {
   profile_description?: string;
   /** IANA tz to pin; "" clears back to browser-tz; undefined leaves untouched. */
   timezone?: string;
+  /**
+   * Sidebar nav keys to hide. `undefined` leaves the stored list untouched;
+   * `[]` resets the sidebar to showing every item.
+   */
+  hidden_nav?: string[];
 }
 
 export interface CreateMemberRequest {

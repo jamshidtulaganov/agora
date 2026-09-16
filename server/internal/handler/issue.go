@@ -2147,6 +2147,14 @@ type CreateIssueRequest struct {
 	OriginID   *string `json:"origin_id,omitempty"`
 
 	AllowDuplicate bool `json:"allow_duplicate,omitempty"`
+
+	// SuppressExternalNotifications lets a scripted creation (the onboarding
+	// starter issues the web app seeds after signup) skip the OUTWARD room
+	// broadcast (Telegram report chat). It mutes nothing else — inbox items,
+	// websocket events and automations all still fire. Client-declared and
+	// low-trust by design: the only thing a lying client gains is silence
+	// about an issue it itself created, which is not an escalation.
+	SuppressExternalNotifications bool `json:"suppress_external_notifications,omitempty"`
 }
 
 func duplicateIssueMessage(issue IssueResponse) string {
@@ -2294,7 +2302,8 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// report room. The marker is accepted only on a non-production server with
 	// the explicit local verification-code switch enabled; client metadata is
 	// never trusted for this decision in production.
-	suppressExternalNotifications := suppressExternalNotificationsForClient(clientPlatform)
+	suppressExternalNotifications := suppressExternalNotificationsForClient(clientPlatform) ||
+		req.SuppressExternalNotifications
 
 	// Analytics agent ID: assignee agent when the issue is being assigned
 	// to an agent, otherwise the creator agent for agent-authored issues.

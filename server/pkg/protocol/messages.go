@@ -188,3 +188,55 @@ type DaemonHeartbeatPendingLocalSkillImport struct {
 	ID       string `json:"id"`
 	SkillKey string `json:"skill_key"`
 }
+
+// ---------------------------------------------------------------------------
+// Agora Assistant
+// ---------------------------------------------------------------------------
+
+// AssistantRecipient is implemented by every assistant:* payload. The assistant
+// is user-scoped, so its events carry the recipient inside the payload instead
+// of riding a workspace room — the realtime fanout reads the user id through
+// this interface rather than type-switching each payload.
+type AssistantRecipient interface {
+	RecipientUserID() string
+}
+
+// AssistantMessagePayload announces one persisted transcript row (an assistant
+// reply, or a tool answer). The client appends it to the session's message
+// cache; the id lets a duplicate arriving after a refetch be dropped.
+type AssistantMessagePayload struct {
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	RunID     string `json:"run_id"`
+	MessageID string `json:"message_id"`
+	Role      string `json:"role"`
+	Content   string `json:"content,omitempty"`
+	ToolName  string `json:"tool_name,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (p AssistantMessagePayload) RecipientUserID() string { return p.UserID }
+
+// AssistantToolActivityPayload is emitted the moment a tool call starts, before
+// it has a result — it is what renders the live "Searching issues…" chip.
+type AssistantToolActivityPayload struct {
+	UserID     string `json:"user_id"`
+	SessionID  string `json:"session_id"`
+	RunID      string `json:"run_id"`
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+}
+
+func (p AssistantToolActivityPayload) RecipientUserID() string { return p.UserID }
+
+// AssistantRunFinishedPayload closes a run. Status is ok | failed | cancelled;
+// Error is set only for failed and is already user-safe (no provider internals).
+type AssistantRunFinishedPayload struct {
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+}
+
+func (p AssistantRunFinishedPayload) RecipientUserID() string { return p.UserID }

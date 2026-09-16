@@ -88,6 +88,13 @@ const (
 	EventChatSessionDeleted = "chat:session_deleted"
 	EventChatSessionUpdated = "chat:session_updated"
 
+	// Agora Assistant events. User-scoped (the whole feature is), so these are
+	// PERSONAL events — the realtime layer addresses them to the one user the
+	// payload names and never broadcasts them to a workspace room.
+	EventAssistantMessage      = "assistant:message"
+	EventAssistantToolActivity = "assistant:tool_activity"
+	EventAssistantRunFinished  = "assistant:run_finished"
+
 	// Project events
 	EventProjectCreated         = "project:created"
 	EventProjectUpdated         = "project:updated"

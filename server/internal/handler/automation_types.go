@@ -354,6 +354,18 @@ func isKnownIssueStatus(status string) bool {
 	}
 }
 
+// isKnownIssuePriority is the priority twin of isKnownIssueStatus. Both mirror
+// the CHECK constraints on the issue table, so a typo is refused with a
+// readable message instead of surfacing as an opaque database error.
+func isKnownIssuePriority(priority string) bool {
+	switch strings.ToLower(strings.TrimSpace(priority)) {
+	case "urgent", "high", "medium", "low", "none":
+		return true
+	default:
+		return false
+	}
+}
+
 // decodeAutomationConditions / decodeAutomationActions read the stored JSONB.
 // A malformed column yields an empty list plus an error the caller logs: the rule
 // then matches nothing (conditions) or does nothing (actions) instead of the

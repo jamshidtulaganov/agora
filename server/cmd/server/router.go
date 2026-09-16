@@ -579,6 +579,42 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// X-Actor-Source=task_token and resolves the acting Zoho identity
 		// server-side; no workspace header needed (the token carries it).
 		r.HandleFunc("/mcp/zoho", h.ZohoMcpProxy)
+		// Agora Assistant — the product's own system-level AI. Deliberately
+		// USER-scoped (no X-Workspace-ID): one conversation spans every
+		// workspace the person belongs to, and workspace scoping happens per
+		// tool call inside the executor. Sending a message is human-only:
+		// agents have their own runtime and must not burn assistant runs.
+		r.Post("/api/assistant/sessions", h.CreateAssistantSession)
+		r.Get("/api/assistant/sessions", h.ListAssistantSessions)
+		r.Get("/api/assistant/sessions/{id}", h.GetAssistantSession)
+		r.Patch("/api/assistant/sessions/{id}", h.PatchAssistantSession)
+		r.Delete("/api/assistant/sessions/{id}", h.DeleteAssistantSession)
+		r.With(handler.RequireHumanActor).Post("/api/assistant/sessions/{id}/messages", h.SendAssistantMessage)
+		r.Get("/api/assistant/sessions/{id}/messages", h.ListAssistantMessages)
+		r.Get("/api/assistant/sessions/{id}/runs", h.ListAssistantRuns)
+		r.Get("/api/assistant/runs/{id}", h.GetAssistantRun)
+		r.Post("/api/assistant/runs/{id}/cancel", h.CancelAssistantRun)
+		r.Get("/api/assistant/availability", h.GetAssistantAvailability)
+		// Confirmation binding (docs/agora-assistant-final-plan.md §3). A
+		// destructive tool call parks a pending operation and returns
+		// needs_confirmation; THIS request — an authenticated one from the
+		// session's owner, pressing a button in the transcript — is the
+		// authorization that executes it. RequireHumanActor because the whole
+		// point is that a machine credential (a task token, a cloud node, and
+		// therefore any agent the assistant itself talks to) can never supply
+		// the human half of a two-gesture delete.
+		r.Get("/api/assistant/operations/{id}", h.GetAssistantOperation)
+		r.Get("/api/assistant/sessions/{id}/operations", h.ListAssistantSessionOperations)
+		r.With(handler.RequireHumanActor).Post("/api/assistant/operations/{id}/confirm", h.ConfirmAssistantOperation)
+		r.With(handler.RequireHumanActor).Post("/api/assistant/operations/{id}/reject", h.RejectAssistantOperation)
+		// Assistant artifacts — the rich outputs (chart / table / report /
+		// html) a run produced. Owner-only through the session that made
+		// them, so they stay user-scoped like everything else here: an
+		// artifact may aggregate data from several workspaces at once and has
+		// no single workspace to be scoped by.
+		r.Get("/api/assistant/artifacts/{id}", h.GetAssistantArtifact)
+		r.Get("/api/assistant/sessions/{id}/artifacts", h.ListAssistantSessionArtifacts)
+
 		// Resolve an issue UUID to its workspace across the caller's memberships,
 		// WITHOUT the X-Workspace header needing to match first — lets a deep
 		// link opened in the wrong/last workspace switch to the right one.
@@ -979,6 +1015,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/", h.GetIssue)
 					r.Put("/", h.UpdateIssue)
 					r.Delete("/", h.DeleteIssue)
+					// Reversible alternative to DELETE: hides the issue from
+					// lists/boards, restored with {"archived": false}.
+					r.Post("/archive", h.ArchiveIssue)
 					r.Post("/comments/trigger-preview", h.PreviewCommentTriggers)
 					r.Post("/comments", h.CreateComment)
 					r.Post("/comments/summarize", h.SummarizeComments)

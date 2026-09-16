@@ -130,6 +130,93 @@ type AgentTaskQueue struct {
 	RunMode string `json:"run_mode"`
 }
 
+type AssistantArtifact struct {
+	ID        pgtype.UUID        `json:"id"`
+	SessionID pgtype.UUID        `json:"session_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Title     string             `json:"title"`
+	Kind      string             `json:"kind"`
+	Content   string             `json:"content"`
+	Version   int32              `json:"version"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AssistantMessage struct {
+	ID         pgtype.UUID        `json:"id"`
+	SessionID  pgtype.UUID        `json:"session_id"`
+	Role       string             `json:"role"`
+	Content    string             `json:"content"`
+	ToolCalls  []byte             `json:"tool_calls"`
+	ToolCallID pgtype.Text        `json:"tool_call_id"`
+	ToolName   pgtype.Text        `json:"tool_name"`
+	ToolResult []byte             `json:"tool_result"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	RunID      pgtype.UUID        `json:"run_id"`
+	Sequence   int64              `json:"sequence"`
+}
+
+type AssistantOperation struct {
+	ID         pgtype.UUID        `json:"id"`
+	RunID      pgtype.UUID        `json:"run_id"`
+	ToolCallID string             `json:"tool_call_id"`
+	ToolName   string             `json:"tool_name"`
+	Arguments  []byte             `json:"arguments"`
+	Status     string             `json:"status"`
+	Result     []byte             `json:"result"`
+	Error      pgtype.Text        `json:"error"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AssistantPendingOperation struct {
+	ID          pgtype.UUID        `json:"id"`
+	RunID       pgtype.UUID        `json:"run_id"`
+	SessionID   pgtype.UUID        `json:"session_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ToolName    string             `json:"tool_name"`
+	Arguments   []byte             `json:"arguments"`
+	Summary     string             `json:"summary"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Target      []byte             `json:"target"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt  pgtype.Timestamptz `json:"resolved_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+type AssistantRun struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SessionID          pgtype.UUID        `json:"session_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	MessageID          pgtype.UUID        `json:"message_id"`
+	RequestID          pgtype.UUID        `json:"request_id"`
+	RequestContent     string             `json:"request_content"`
+	RequestContext     string             `json:"request_context"`
+	Status             string             `json:"status"`
+	ContextWorkspaceID pgtype.UUID        `json:"context_workspace_id"`
+	ContextTimezone    string             `json:"context_timezone"`
+	ActiveTool         pgtype.Text        `json:"active_tool"`
+	Error              pgtype.Text        `json:"error"`
+	LeaseOwner         pgtype.UUID        `json:"lease_owner"`
+	LeaseExpiresAt     pgtype.Timestamptz `json:"lease_expires_at"`
+	CancelRequested    bool               `json:"cancel_requested"`
+	Version            int64              `json:"version"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	FinishedAt         pgtype.Timestamptz `json:"finished_at"`
+}
+
+type AssistantSession struct {
+	ID               pgtype.UUID        `json:"id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Title            string             `json:"title"`
+	FocusWorkspaceID pgtype.UUID        `json:"focus_workspace_id"`
+	Summary          string             `json:"summary"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Attachment struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
@@ -1216,7 +1303,8 @@ type User struct {
 	Language                pgtype.Text        `json:"language"`
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
-	Timezone pgtype.Text `json:"timezone"`
+	Timezone  pgtype.Text `json:"timezone"`
+	HiddenNav []byte      `json:"hidden_nav"`
 }
 
 type UserDevServer struct {

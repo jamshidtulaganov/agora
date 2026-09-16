@@ -186,3 +186,70 @@ func (q *Queries) ListActivitiesForIssue(ctx context.Context, arg ListActivities
 	}
 	return items, nil
 }
+
+const listRecentActivities = `-- name: ListRecentActivities :many
+SELECT a.id, a.workspace_id, a.issue_id, a.actor_type, a.actor_id, a.action, a.details, a.created_at, i.number AS issue_number, i.title AS issue_title
+FROM activity_log a
+LEFT JOIN issue i ON i.id = a.issue_id
+WHERE a.workspace_id = $1 AND a.created_at >= $2
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT $3
+`
+
+type ListRecentActivitiesParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Since       pgtype.Timestamptz `json:"since"`
+	Limit       int32              `json:"limit"`
+}
+
+type ListRecentActivitiesRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	ActorType   pgtype.Text        `json:"actor_type"`
+	ActorID     pgtype.UUID        `json:"actor_id"`
+	Action      string             `json:"action"`
+	Details     []byte             `json:"details"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	IssueNumber pgtype.Int4        `json:"issue_number"`
+	IssueTitle  pgtype.Text        `json:"issue_title"`
+}
+
+// Recent workspace activity, newest first, for the assistant's digest tool.
+// The LEFT JOIN carries the owning issue's number + title so a caller can
+// render "MUL-12 — Fix login" without an N+1; workspace-level activities
+// (no issue) keep a NULL issue and are still returned.
+//
+// NOT visibility-gated in SQL on purpose: the caller filters rows through
+// Queries.IssueBelongsToUser, so the non-owner gate stays defined in exactly
+// one place instead of gaining a fourth hand-copied ownership predicate.
+func (q *Queries) ListRecentActivities(ctx context.Context, arg ListRecentActivitiesParams) ([]ListRecentActivitiesRow, error) {
+	rows, err := q.db.Query(ctx, listRecentActivities, arg.WorkspaceID, arg.Since, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentActivitiesRow{}
+	for rows.Next() {
+		var i ListRecentActivitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.ActorType,
+			&i.ActorID,
+			&i.Action,
+			&i.Details,
+			&i.CreatedAt,
+			&i.IssueNumber,
+			&i.IssueTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

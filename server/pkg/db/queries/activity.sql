@@ -42,3 +42,19 @@ WHERE workspace_id = $1
   AND details->>'to_type' IS NOT NULL
   AND details->>'to_id' IS NOT NULL
 GROUP BY details->>'to_type', details->>'to_id';
+
+-- name: ListRecentActivities :many
+-- Recent workspace activity, newest first, for the assistant's digest tool.
+-- The LEFT JOIN carries the owning issue's number + title so a caller can
+-- render "MUL-12 — Fix login" without an N+1; workspace-level activities
+-- (no issue) keep a NULL issue and are still returned.
+--
+-- NOT visibility-gated in SQL on purpose: the caller filters rows through
+-- Queries.IssueBelongsToUser, so the non-owner gate stays defined in exactly
+-- one place instead of gaining a fourth hand-copied ownership predicate.
+SELECT a.*, i.number AS issue_number, i.title AS issue_title
+FROM activity_log a
+LEFT JOIN issue i ON i.id = a.issue_id
+WHERE a.workspace_id = $1 AND a.created_at >= sqlc.arg('since')
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT sqlc.arg('limit');

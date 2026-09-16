@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/assistant"
 	"github.com/jamshidtulaganov/agora/server/internal/auth"
 	"github.com/jamshidtulaganov/agora/server/internal/cloudruntime"
 	"github.com/jamshidtulaganov/agora/server/internal/daemonws"
@@ -94,13 +95,17 @@ type cloudRuntimeProxy interface {
 }
 
 type Handler struct {
-	Queries               *db.Queries
-	DB                    dbExecutor
-	TxStarter             txStarter
-	Hub                   *realtime.Hub
-	DaemonHub             *daemonws.Hub
-	Bus                   *events.Bus
-	TaskService           *service.TaskService
+	Queries     *db.Queries
+	DB          dbExecutor
+	TxStarter   txStarter
+	Hub         *realtime.Hub
+	DaemonHub   *daemonws.Hub
+	Bus         *events.Bus
+	TaskService *service.TaskService
+	// Assistant runs the Agora Assistant conversation loop. nil when the
+	// server is built without it (tests that never touch the feature); every
+	// assistant endpoint nil-checks before use.
+	Assistant             *assistant.Service
 	IssueService          *service.IssueService
 	AutopilotService      *service.AutopilotService
 	EmailService          *service.EmailService
@@ -232,6 +237,14 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		telegramWizards: telegram.NewWizardStore(),
 		cfg:             cfg,
 	}
+	// Agora Assistant. Built here, alongside TaskService/IssueService, because
+	// the handler is BOTH the owner of the service and its ToolExecutor — the
+	// executor needs h, so the wiring cannot happen before h exists.
+	h.Assistant = assistant.NewService(queries, bus, h.AssistantClient)
+	h.Assistant.Store = h.DB
+	h.Assistant.TxStarter = h.TxStarter
+	h.Assistant.Exec = h
+
 	// Review verdict → merge re-check seam for the internal (task-completion)
 	// ingress paths. The HTTP comment ingress fires this inline (comment.go); the
 	// service layer can't call back into the handler without an import cycle, so

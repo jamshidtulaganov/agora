@@ -72,6 +72,14 @@ var Registry = []Def{
 	// ---- Docs / knowledge ----------------------------------------------
 	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync.", ProjectScoped: true},
 
+	// ---- Agora Assistant --------------------------------------------------
+	// The product's own system-level AI (user-scoped, cross-workspace). Instance
+	// keys, never project-scoped: which model answers a person's chat is not a
+	// property of a project.
+	{Key: "AGORA_ASSISTANT_ENABLED", Kind: KindBool, Category: "Assistant", Label: "Agora Assistant", Description: "Expose the built-in Agora Assistant. Availability still requires the selected provider's API key — with no key the endpoint reports disabled and the UI hides the nav item.", Default: "true"},
+	{Key: "AGORA_ASSISTANT_PROVIDER", Kind: KindString, Category: "Assistant", Label: "Assistant provider", Description: "Which chat-completion provider answers the assistant: zhipu (the free branded Agora model), anthropic (instance ANTHROPIC_API_KEY) or openai (instance OPENAI_API_KEY).", Default: "zhipu"},
+	{Key: "AGORA_ASSISTANT_MODEL", Kind: KindString, Category: "Assistant", Label: "Assistant model", Description: "Model id passed to the provider. Leave empty to take the provider's own default.", Default: "glm-4.5-flash"},
+
 	// ---- Remote boxes / QA host ----------------------------------------
 	{Key: "AGORA_REMOTE_BOXES_ENABLED", Kind: KindBool, Category: "Remote boxes", Label: "Remote boxes", Description: "Enable the connected-box / remote QA-box onboarding surface."},
 	{Key: "AGORA_QA_HOST_BASE_DOMAIN", Kind: KindString, Category: "Remote boxes", Label: "QA host base domain", Description: "Base domain for provisioned per-dev QA boxes (e.g. sdteam.uz)."},
@@ -104,6 +112,8 @@ var Registry = []Def{
 	{Key: "AGORA_MCP_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "MCP credential seal key", Description: "Secretbox key for per-workspace remote-MCP auth headers (bearer tokens)."},
 	{Key: "TELEGRAM_BOT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Telegram bot token", Description: "Bot API token."},
 	{Key: "ZHIPU_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zhipu API key", Description: "GLM model API key."},
+	{Key: "ANTHROPIC_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Anthropic API key", Description: "Messages API key, used when AGORA_ASSISTANT_PROVIDER=anthropic."},
+	{Key: "OPENAI_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "OpenAI API key", Description: "Chat-completions key, used when AGORA_ASSISTANT_PROVIDER=openai."},
 	{Key: "BITRIX_WEBHOOK_URL", Kind: KindSecret, Category: "Secrets", Label: "Bitrix webhook URL", Description: "Inbound Bitrix REST webhook (carries a token)."},
 	{Key: "AGORA_REMOTE_BOXES_GIT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Remote-boxes git token", Description: "Token the box bootstrapper uses to clone repos."},
 	{Key: "AGORA_REMOTE_BOXES_SSH_KEY_B64", Kind: KindSecret, Category: "Secrets", Label: "Remote-boxes SSH key", Description: "Base64 SSH key for box onboarding."},

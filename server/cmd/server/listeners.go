@@ -62,6 +62,11 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 		protocol.EventInboxBatchArchived: true,
 		protocol.EventInvitationCreated:  true,
 		protocol.EventInvitationRevoked:  true,
+		// The Agora Assistant is user-scoped end to end: its events carry no
+		// workspace and must never reach a workspace room.
+		protocol.EventAssistantMessage:      true,
+		protocol.EventAssistantToolActivity: true,
+		protocol.EventAssistantRunFinished:  true,
 	}
 
 	// Helper: marshal event and send to a specific user.
@@ -104,6 +109,24 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 			}
 			recipientID, _ := payload["recipient_id"].(string)
 			sendToRecipient(b, e, recipientID)
+		})
+	}
+
+	// assistant:* — the payload names its own recipient. Every WS client is
+	// already auto-subscribed to its user scope, so one SendToUser reaches the
+	// person in whatever workspace tab they happen to have open.
+	for _, eventType := range []string{
+		protocol.EventAssistantMessage,
+		protocol.EventAssistantToolActivity,
+		protocol.EventAssistantRunFinished,
+	} {
+		bus.Subscribe(eventType, func(e events.Event) {
+			payload, ok := e.Payload.(protocol.AssistantRecipient)
+			if !ok {
+				slog.Warn("assistant event with no recipient", "event_type", e.Type, "type", fmt.Sprintf("%T", e.Payload))
+				return
+			}
+			sendToRecipient(b, e, payload.RecipientUserID())
 		})
 	}
 
