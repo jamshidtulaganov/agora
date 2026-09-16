@@ -599,7 +599,7 @@ agora issue assign <issue-id> --agent <agent-slug>
 
 ### 5.3 Chat — ⬜ Not started [v1]
 
-- **Source files**: `server/internal/handler/chat.go`, `server/pkg/db/queries/chat.sql`, `server/internal/service/task.go`（`EnqueueChatTask`）, `packages/views/chat/`
+- **Source files**: `server/internal/handler/chat.go`, `server/pkg/db/queries/chat.sql`, `server/internal/service/task.go`（`EnqueueChatTask`）, `apps/mobile/app/(app)/[workspace]/(tabs)/chat.tsx`, `apps/telegram/src/screens/chat-session-screen.tsx`（web/desktop 的浮动 chat 弹窗已移除，右下角气泡现在打开 Agora 助手）
 - **目标读者**: P1 重度用户
 - **叙事位置**: 第三种触发。"直接和 agent 对话，不绑 issue"。
 - **写什么**（1000-1500 字）:
