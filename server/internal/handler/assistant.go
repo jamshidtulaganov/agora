@@ -464,8 +464,10 @@ type SendAssistantMessageRequest struct {
 	Content   string `json:"content"`
 	RequestID string `json:"request_id"`
 	Context   *struct {
-		WorkspaceID json.RawMessage `json:"workspace_id"`
-		Timezone    string          `json:"timezone"`
+		WorkspaceID   json.RawMessage `json:"workspace_id"`
+		Timezone      string          `json:"timezone"`
+		ProjectID     json.RawMessage `json:"project_id"`
+		AttachmentIDs []string        `json:"attachment_ids"`
 	} `json:"context"`
 }
 
@@ -564,16 +566,33 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			runContext.Timezone = req.Context.Timezone
 		}
+		if req.Context.ProjectID != nil && !bytes.Equal(bytes.TrimSpace(req.Context.ProjectID), []byte("null")) {
+			var projectID string
+			if err := json.Unmarshal(req.Context.ProjectID, &projectID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid project_id")
+				return
+			}
+			if _, err := uuid.Parse(projectID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid project_id")
+				return
+			}
+			runContext.ProjectID = &projectID
+		}
+		runContext.AttachmentIDs = req.Context.AttachmentIDs
 	}
 	if runContext.WorkspaceID != nil {
 		if _, valid := h.assistantFocusWorkspace(w, r, userID, *runContext.WorkspaceID); !valid {
 			return
 		}
 	}
+	snapshot, valid := h.prepareAssistantContext(w, r, userID, runContext)
+	if !valid {
+		return
+	}
 
 	sessionID := uuidToString(session.ID)
 
-	accepted, err := h.Assistant.AcceptRun(r.Context(), session, userID, content, requestID, requestContext, runContext)
+	accepted, err := h.Assistant.AcceptRun(r.Context(), session, userID, content, requestID, requestContext, runContext, snapshot)
 	if errors.Is(err, assistant.ErrRunInProgress) {
 		writeError(w, http.StatusConflict, "the assistant is still answering your previous message")
 		return

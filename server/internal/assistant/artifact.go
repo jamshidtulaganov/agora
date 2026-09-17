@@ -50,6 +50,18 @@ const (
 	MaxArtifactsPerSession = 20
 	// MaxArtifactTitleLen caps the card label.
 	MaxArtifactTitleLen = 200
+	// MaxArtifactRevisions bounds the immutable history one artifact keeps
+	// (docs/agora-assistant-final-plan.md §4 Phase 4). 50 is chosen against
+	// the thing that actually generates revisions: a scheduled refresh
+	// (artifacts plan §8 Phase 3) writing a new version on every run, where 50
+	// covers seven weeks of a daily dashboard — long enough that "compare this
+	// with last month's" is answerable — while capping one artifact's storage
+	// at 50 x 256 KB.
+	//
+	// v1 is never dropped by the cap: it is the only version whose meaning is
+	// self-contained ("what this was before anyone edited it"), so the oldest
+	// surviving revision never silently starts claiming to be the original.
+	MaxArtifactRevisions = 50
 )
 
 // ArtifactKinds is the ordered kind list, for prompts and error text.

@@ -87,12 +87,14 @@ func (h *Handler) Execute(ctx context.Context, userID, sessionID, name string, a
 	// the human confirmation (present only on the confirm endpoint's path) down
 	// to the tool that needs it, and carries an uncertain outcome back up from
 	// the invoke helper. See assistant_operations.go.
-	exec := &assistantExecution{
-		tool:        name,
-		sessionID:   sessionID,
-		destructive: assistant.RequiresConfirmation(name),
-		confirmed:   assistantConfirmationFrom(ctx),
+	exec := assistantExecutionFrom(ctx)
+	if exec == nil {
+		exec = &assistantExecution{}
 	}
+	exec.tool = name
+	exec.sessionID = sessionID
+	exec.destructive = assistant.RequiresConfirmation(name)
+	exec.confirmed = assistantConfirmationFrom(ctx)
 	ctx = withAssistantExecution(ctx, exec)
 
 	result, err := h.assistantDispatch(ctx, caller, sessionID, name, args)
@@ -398,7 +400,13 @@ func (h *Handler) assistantListWorkspaces(ctx context.Context, caller assistantC
 			Role: role,
 		})
 	}
-	return json.Marshal(map[string]any{"workspaces": out})
+	// ListWorkspaces is exhaustive (it joins member, it has no LIMIT), so every
+	// workspace is trivially checked and the roster length IS the total.
+	slugs := make([]string, 0, len(out))
+	for _, ws := range out {
+		slugs = append(slugs, ws.Slug)
+	}
+	return assistantScopedResult(map[string]any{"workspaces": out}, assistantRosterScope(slugs))
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +436,14 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(map[string]any{"issues": issues})
+		total := h.assistantCountIssues(ctx, db.CountIssuesParams{
+			WorkspaceID:    ws.ID,
+			AssigneeID:     userUUID,
+			RestrictToUser: assistantVisibilityRestriction(role, userUUID),
+			Status:         assistantOptionalText(args.Status),
+		})
+		return assistantScopedResult(map[string]any{"issues": issues},
+			assistantCappedScope(ws.Slug, len(issues), int(limit), total))
 	}
 
 	// Unscoped: fan out across every membership. The per-workspace cap is what
@@ -443,6 +458,7 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 	}
 
 	all := []assistantIssueResult{}
+	scope := newAssistantScopeBuilder()
 	for _, ws := range workspaces {
 		role := ""
 		if member, merr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
@@ -453,13 +469,26 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 		}
 		issues, err := h.assistantMyIssuesIn(ctx, userUUID, ws, role, args.Status, limit)
 		if err != nil {
-			// One unreadable workspace must not sink the whole answer.
+			// One unreadable workspace must not sink the whole answer — but it
+			// is NAMED, so the model can say which one it could not read.
 			slog.Warn("assistant: list issues failed", "workspace_id", uuidToString(ws.ID), "error", err)
+			scope.failedWorkspace(ws.Slug)
 			continue
 		}
+		total := h.assistantCountIssues(ctx, db.CountIssuesParams{
+			WorkspaceID:    ws.ID,
+			AssigneeID:     userUUID,
+			RestrictToUser: assistantVisibilityRestriction(role, userUUID),
+			Status:         assistantOptionalText(args.Status),
+		})
+		truncated := len(issues) >= int(limit)
+		if total != nil {
+			truncated = *total > int64(len(issues))
+		}
+		scope.checkedWorkspace(ws.Slug, total, truncated)
 		all = append(all, issues...)
 	}
-	return json.Marshal(map[string]any{"issues": all})
+	return assistantScopedResult(map[string]any{"issues": all}, scope.scope())
 }
 
 func (h *Handler) assistantMyIssuesIn(ctx context.Context, userUUID pgtype.UUID, ws db.Workspace, role, status string, limit int32) ([]assistantIssueResult, error) {
@@ -580,14 +609,25 @@ func (h *Handler) assistantListIssues(ctx context.Context, caller assistantCalle
 			URLPath:       assistantIssueURLPath(ws.Slug, identifier),
 		})
 	}
-	// returned_count, not a total: the list is capped, and a model that reads a
-	// truncated list as "all of them" is the exact failure this tool exists to
-	// stop. The note says so in words the model will repeat.
+	// returned_count is what came back; scope.total is how many there ARE, from
+	// CountIssues run under the identical predicates (archive filter and
+	// non-owner gate included). A model that reads a truncated list as "all of
+	// them" is the exact failure this tool exists to stop.
+	total := h.assistantCountIssues(ctx, db.CountIssuesParams{
+		WorkspaceID:     params.WorkspaceID,
+		IncludeArchived: params.IncludeArchived,
+		Status:          params.Status,
+		Priority:        params.Priority,
+		AssigneeID:      params.AssigneeID,
+		ProjectID:       params.ProjectID,
+		RestrictToUser:  params.RestrictToUser,
+	})
 	result := map[string]any{"issues": out, "returned_count": len(out)}
-	if len(out) == int(params.Limit) {
-		result["note"] = "This list hit the limit — there may be more issues than shown. Raise limit (max 50) or narrow the filters before quoting a total."
+	scope := assistantCappedScope(ws.Slug, len(out), int(params.Limit), total)
+	if scope.Truncated {
+		result["note"] = "This list hit the limit — quote scope.total for the real number, and say how many of it you are showing. Raise limit (max 50) or narrow the filters to see more rows."
 	}
-	return json.Marshal(result)
+	return assistantScopedResult(result, scope)
 }
 
 // ---------------------------------------------------------------------------
@@ -607,13 +647,13 @@ func (h *Handler) assistantSearchIssues(ctx context.Context, caller assistantCal
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	q := strings.TrimSpace(args.Query)
-	if q == "" {
-		return nil, errors.New("query is required")
-	}
 	ws, role, err := h.assistantMembership(ctx, userUUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	q := strings.TrimSpace(args.Query)
+	if q == "" {
+		return nil, errors.New("query is required")
 	}
 
 	terms := splitSearchTerms(q)
@@ -635,6 +675,9 @@ func (h *Handler) assistantSearchIssues(ctx context.Context, caller assistantCal
 
 	prefix := h.getIssuePrefix(ctx, ws.ID)
 	out := []assistantIssueResult{}
+	// The search query carries its own window-function total on every row, so
+	// the exact number of matches costs nothing extra.
+	var matchTotal *int64
 	for rows.Next() {
 		var sr searchResult
 		if err := rows.Scan(
@@ -666,6 +709,8 @@ func (h *Handler) assistantSearchIssues(ctx context.Context, caller assistantCal
 			return nil, errors.New("could not search issues")
 		}
 		identifier := prefix + "-" + strconv.Itoa(int(sr.issue.Number))
+		matched := sr.totalCount
+		matchTotal = &matched
 		out = append(out, assistantIssueResult{
 			Identifier:    identifier,
 			Title:         sr.issue.Title,
@@ -679,7 +724,14 @@ func (h *Handler) assistantSearchIssues(ctx context.Context, caller assistantCal
 		slog.Warn("assistant: search rows error", "error", err)
 		return nil, errors.New("could not search issues")
 	}
-	return json.Marshal(map[string]any{"issues": out})
+	if len(out) == 0 {
+		// No rows means no window-function value came back; zero matches is an
+		// exact total, not an unknown one.
+		zero := int64(0)
+		matchTotal = &zero
+	}
+	return assistantScopedResult(map[string]any{"issues": out},
+		assistantCappedScope(ws.Slug, len(out), int(assistantLimit(args.Limit)), matchTotal))
 }
 
 // ---------------------------------------------------------------------------
@@ -855,7 +907,7 @@ func (h *Handler) assistantListProjects(ctx context.Context, caller assistantCal
 			Status: p.Status,
 		})
 	}
-	return json.Marshal(map[string]any{"projects": out})
+	return assistantScopedResult(map[string]any{"projects": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 type assistantAgentResult struct {
@@ -892,7 +944,9 @@ func (h *Handler) assistantListAgents(ctx context.Context, caller assistantCalle
 		}
 		out = append(out, assistantAgentResult{ID: uuidToString(a.ID), Name: a.Name})
 	}
-	return json.Marshal(map[string]any{"agents": out})
+	// The total is what THIS caller may see: the private-agent gate above is
+	// part of the answer, not a page boundary.
+	return assistantScopedResult(map[string]any{"agents": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 type assistantMemberResult struct {
@@ -919,7 +973,7 @@ func (h *Handler) assistantListMembers(ctx context.Context, caller assistantCall
 			Role:   m.Role,
 		})
 	}
-	return json.Marshal(map[string]any{"members": out})
+	return assistantScopedResult(map[string]any{"members": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // ---------------------------------------------------------------------------
@@ -958,11 +1012,6 @@ func assistantWindowDays(requested *int, def, max int) int {
 	return days
 }
 
-// assistantSince turns a day count into the cutoff the dashboard queries take.
-func assistantSince(days int) pgtype.Timestamptz {
-	return pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, -days), Valid: true}
-}
-
 // assistantUsageSummary wraps the dashboard usage rollups.
 //
 // Token counts only, no cost: this server deliberately keeps the model
@@ -979,11 +1028,13 @@ func (h *Handler) assistantUsageSummary(ctx context.Context, caller assistantCal
 		return nil, err
 	}
 	days := assistantWindowDays(args.RangeDays, 30, assistant.MaxUsageRangeDays)
-	since := assistantSince(days)
+	// The caller's calendar, not the server's: "the last 30 days" ends with the
+	// day they are having, and the daily buckets are cut on their midnights so
+	// the rollup the model quotes matches the dashboard they would open.
+	from, _, window := h.assistantDayWindow(ctx, caller, days)
+	since := pgtype.Timestamptz{Time: from, Valid: true}
 
-	// UTC rather than the viewer's tz: resolveViewingTZ needs a request, and a
-	// conversational "last 30 days" does not hinge on a day-boundary offset.
-	daily, err := h.listDashboardUsageDaily(ctx, ws.ID, "UTC", since, pgtype.UUID{})
+	daily, err := h.listDashboardUsageDaily(ctx, ws.ID, window.Timezone, since, pgtype.UUID{})
 	if err != nil {
 		slog.Warn("assistant: usage daily failed", "workspace_id", uuidToString(ws.ID), "error", err)
 		return nil, errors.New("could not load usage")
@@ -1030,7 +1081,9 @@ func (h *Handler) assistantUsageSummary(ctx context.Context, caller assistantCal
 		})
 	}
 
-	return json.Marshal(map[string]any{
+	scope := newAssistantScopeBuilder().withWindow(window)
+	scope.checkedWorkspace(ws.Slug, nil, false)
+	return assistantScopedResult(map[string]any{
 		"workspace_slug": ws.Slug,
 		"range_days":     days,
 		"total_tokens":   totalTokens,
@@ -1038,7 +1091,7 @@ func (h *Handler) assistantUsageSummary(ctx context.Context, caller assistantCal
 		"by_day":         byDay,
 		"by_agent":       byAgent,
 		"note":           "Token counts only. This instance prices tokens in the client, so no cost figure is available server-side.",
-	})
+	}, scope.scope())
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,7 +1119,11 @@ func (h *Handler) assistantActivityDigest(ctx context.Context, caller assistantC
 		return nil, errAssistantBadArgs
 	}
 	days := assistantWindowDays(args.SinceDays, 7, assistant.MaxDigestDays)
-	since := assistantSince(days)
+	// Calendar days in the caller's zone. days=1 is "today", and something
+	// filed at 23:50 local is in it even when UTC has already turned over —
+	// the digest that dropped a user's whole evening is this boundary.
+	from, _, window := h.assistantDayWindow(ctx, caller, days)
+	since := pgtype.Timestamptz{Time: from, Valid: true}
 
 	var scope []db.Workspace
 	if wsID := strings.TrimSpace(args.WorkspaceID); wsID != "" {
@@ -1085,19 +1142,28 @@ func (h *Handler) assistantActivityDigest(ctx context.Context, caller assistantC
 	}
 
 	out := []assistantActivityResult{}
+	coverage := newAssistantScopeBuilder().withWindow(window)
 	for _, ws := range scope {
-		rows, err := h.assistantWorkspaceActivity(ctx, caller, ws, since)
+		rows, truncated, err := h.assistantWorkspaceActivity(ctx, caller, ws, since)
 		if err != nil {
-			// One unreadable workspace must not sink the whole digest.
+			// One unreadable workspace must not sink the whole digest — and it
+			// is named, so the digest cannot quietly omit it.
 			slog.Warn("assistant: activity digest failed", "workspace_id", uuidToString(ws.ID), "error", err)
+			coverage.failedWorkspace(ws.Slug)
 			continue
 		}
+		// No count query: the rows are visibility-filtered in Go after the
+		// read, so any aggregate would describe a different set. Unknown is the
+		// honest answer.
+		coverage.checkedWorkspace(ws.Slug, nil, truncated)
 		out = append(out, rows...)
 	}
-	return json.Marshal(map[string]any{"since_days": days, "activity": out})
+	return assistantScopedResult(map[string]any{"since_days": days, "activity": out}, coverage.scope())
 }
 
-func (h *Handler) assistantWorkspaceActivity(ctx context.Context, caller assistantCaller, ws db.Workspace, since pgtype.Timestamptz) ([]assistantActivityResult, error) {
+// assistantWorkspaceActivity returns one workspace's rows plus whether the
+// per-workspace cap cut the window short.
+func (h *Handler) assistantWorkspaceActivity(ctx context.Context, caller assistantCaller, ws db.Workspace, since pgtype.Timestamptz) ([]assistantActivityResult, bool, error) {
 	role := ""
 	if member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      caller.UUID,
@@ -1113,10 +1179,14 @@ func (h *Handler) assistantWorkspaceActivity(ctx context.Context, caller assista
 		Limit:       assistant.MaxActivityRows,
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	// Truncation is decided on the ROWS THE QUERY RETURNED, before the
+	// visibility filter below thins them: a digest that shows three of fifty
+	// rows is still a digest that stopped at the cap.
+	truncated := len(rows) >= assistant.MaxActivityRows
 	if len(rows) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	prefix := h.getIssuePrefix(ctx, ws.ID)
@@ -1162,7 +1232,7 @@ func (h *Handler) assistantWorkspaceActivity(ctx context.Context, caller assista
 		}
 		out = append(out, entry)
 	}
-	return out, nil
+	return out, truncated, nil
 }
 
 // assistantActorNames maps member and agent UUIDs to display names for one
@@ -1213,6 +1283,7 @@ func (h *Handler) assistantInboxSummary(ctx context.Context, caller assistantCal
 		item assistantInboxResult
 	}
 	var all []dated
+	coverage := newAssistantScopeBuilder()
 	for _, ws := range workspaces {
 		items, ierr := h.Queries.ListInboxItems(ctx, db.ListInboxItemsParams{
 			WorkspaceID:   ws.ID,
@@ -1221,8 +1292,18 @@ func (h *Handler) assistantInboxSummary(ctx context.Context, caller assistantCal
 		})
 		if ierr != nil {
 			slog.Warn("assistant: list inbox failed", "workspace_id", uuidToString(ws.ID), "error", ierr)
+			coverage.failedWorkspace(ws.Slug)
 			continue
 		}
+		unread := int64(0)
+		for _, item := range items {
+			if !item.Read {
+				unread++
+			}
+		}
+		// ListInboxItems has no LIMIT, so this is an exact per-workspace count
+		// even though the merged list below is capped.
+		coverage.checkedWorkspace(ws.Slug, &unread, false)
 		for _, item := range items {
 			if item.Read {
 				continue
@@ -1244,6 +1325,10 @@ func (h *Handler) assistantInboxSummary(ctx context.Context, caller assistantCal
 	// capped — not capped per workspace, which would bury a fresh item behind
 	// a noisy workspace's backlog.
 	sort.Slice(all, func(i, j int) bool { return all[i].at.After(all[j].at) })
+	// unread_count is the number of unread items that EXIST, not the number
+	// that survived the cap — it used to be the latter, which made a busy inbox
+	// report exactly 30 unread forever.
+	unreadTotal := len(all)
 	if len(all) > assistant.MaxInboxRows {
 		all = all[:assistant.MaxInboxRows]
 	}
@@ -1251,7 +1336,13 @@ func (h *Handler) assistantInboxSummary(ctx context.Context, caller assistantCal
 	for _, d := range all {
 		out = append(out, d.item)
 	}
-	return json.Marshal(map[string]any{"unread_count": len(out), "items": out})
+	envelope := coverage.scope()
+	envelope.Truncated = unreadTotal > len(out)
+	return assistantScopedResult(map[string]any{
+		"unread_count":   unreadTotal,
+		"returned_count": len(out),
+		"items":          out,
+	}, envelope)
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,7 +1366,14 @@ func (h *Handler) assistantQAStatus(ctx context.Context, caller assistantCaller,
 		slog.Warn("assistant: qa coverage failed", "workspace_id", uuidToString(ws.ID), "error", cerr)
 	}
 
-	return json.Marshal(map[string]any{
+	// QAMetricsRunTotals carries its own `now() - interval '30 days'`, so the
+	// boundary is an absolute instant rather than a local midnight. The window
+	// is therefore RENDERED in the caller's zone, not recomputed in it —
+	// claiming a calendar window here would be an invented number.
+	_, _, window := h.assistantRollingWindow(ctx, caller, 30*24*time.Hour)
+	scope := newAssistantScopeBuilder().withWindow(window)
+	scope.checkedWorkspace(ws.Slug, nil, false)
+	return assistantScopedResult(map[string]any{
 		"workspace_slug":  ws.Slug,
 		"window_days":     30,
 		"runs_total":      totals.Total,
@@ -1284,7 +1382,7 @@ func (h *Handler) assistantQAStatus(ctx context.Context, caller assistantCaller,
 		"runs_skipped":    totals.Skipped,
 		"cases_automated": coverage.Automated,
 		"cases_scripted":  coverage.Scripted,
-	})
+	}, scope.scope())
 }
 
 // ---------------------------------------------------------------------------
@@ -1573,7 +1671,7 @@ func (h *Handler) assistantListSprints(ctx context.Context, caller assistantCall
 		for _, s := range sprints {
 			out = append(out, assistantSprintRow(s, project.Title))
 		}
-		return json.Marshal(map[string]any{"sprints": out})
+		return assistantScopedResult(map[string]any{"sprints": out}, assistantExactScope(ws.Slug, len(out)))
 	}
 
 	// Workspace-wide: the same rollup the bulk "move to sprint" picker uses.
@@ -1592,7 +1690,7 @@ func (h *Handler) assistantListSprints(ctx context.Context, caller assistantCall
 			ProjectTitle: row.ProjectTitle,
 		})
 	}
-	return json.Marshal(map[string]any{"sprints": out})
+	return assistantScopedResult(map[string]any{"sprints": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1619,7 +1717,7 @@ func (h *Handler) assistantListLabels(ctx context.Context, caller assistantCalle
 	for _, l := range labels {
 		out = append(out, assistantLabelResult{ID: uuidToString(l.ID), Name: l.Name, Color: l.Color})
 	}
-	return json.Marshal(map[string]any{"labels": out})
+	return assistantScopedResult(map[string]any{"labels": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 type assistantSquadResult struct {
@@ -1654,7 +1752,7 @@ func (h *Handler) assistantListSquads(ctx context.Context, caller assistantCalle
 		}
 		out = append(out, row)
 	}
-	return json.Marshal(map[string]any{"squads": out})
+	return assistantScopedResult(map[string]any{"squads": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1723,10 +1821,19 @@ func (h *Handler) assistantListComments(ctx context.Context, caller assistantCal
 		})
 	}
 	identifier := h.getIssuePrefix(ctx, ws.ID) + "-" + strconv.Itoa(int(issue.Number))
-	return json.Marshal(map[string]any{
+	// The thread is read from the NEWEST end, so a truncated read is missing
+	// the start of the conversation — exactly the half a summary would need.
+	var total *int64
+	if n, cerr := h.Queries.CountComments(ctx, db.CountCommentsParams{
+		IssueID:     issue.ID,
+		WorkspaceID: ws.ID,
+	}); cerr == nil {
+		total = &n
+	}
+	return assistantScopedResult(map[string]any{
 		"issue_identifier": identifier,
 		"comments":         out,
-	})
+	}, assistantCappedScope(ws.Slug, len(out), int(assistantLimit(args.Limit)), total))
 }
 
 // ---------------------------------------------------------------------------
@@ -1772,10 +1879,10 @@ func (h *Handler) assistantListRuntimes(ctx context.Context, caller assistantCal
 			Status:      rt.Status,
 		})
 	}
-	return json.Marshal(map[string]any{
+	return assistantScopedResult(map[string]any{
 		"runtimes": out,
 		"note":     "An agent must be created on one of these runtime ids. If this list is empty the workspace has no runtime connected yet, and no agent can be created until someone connects one in Settings → Runtimes.",
-	})
+	}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1826,7 +1933,11 @@ func (h *Handler) assistantListSkills(ctx context.Context, caller assistantCalle
 				Description: truncateRunes(s.Description, assistantInboxPreviewChars),
 			})
 		}
-		return json.Marshal(map[string]any{"agent_id": uuidToString(agent.ID), "agent_name": agent.Name, "skills": out})
+		return assistantScopedResult(map[string]any{
+			"agent_id":   uuidToString(agent.ID),
+			"agent_name": agent.Name,
+			"skills":     out,
+		}, assistantExactScope(ws.Slug, len(out)))
 	}
 
 	rows, err := h.Queries.ListSkillSummariesByWorkspace(ctx, ws.ID)
@@ -1842,7 +1953,7 @@ func (h *Handler) assistantListSkills(ctx context.Context, caller assistantCalle
 			Description: truncateRunes(s.Description, assistantInboxPreviewChars),
 		})
 	}
-	return json.Marshal(map[string]any{"skills": out})
+	return assistantScopedResult(map[string]any{"skills": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // assistantResolveAgent accepts an agent UUID or an agent name, and refuses an

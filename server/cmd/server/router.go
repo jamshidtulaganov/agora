@@ -612,8 +612,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// them, so they stay user-scoped like everything else here: an
 		// artifact may aggregate data from several workspaces at once and has
 		// no single workspace to be scoped by.
+		r.Get("/api/assistant/artifacts", h.ListMyAssistantArtifacts)
 		r.Get("/api/assistant/artifacts/{id}", h.GetAssistantArtifact)
 		r.Get("/api/assistant/sessions/{id}/artifacts", h.ListAssistantSessionArtifacts)
+		// Immutable revision history behind the workbench's version picker
+		// (docs/agora-assistant-final-plan.md §4 Phase 4). Same owner-only
+		// chain: both resolve the ARTIFACT first, so a revision is reachable
+		// only by someone who may read the artifact it belongs to.
+		r.Get("/api/assistant/artifacts/{id}/revisions", h.ListAssistantArtifactRevisions)
+		r.Get("/api/assistant/artifacts/{id}/revisions/{version}", h.GetAssistantArtifactRevision)
 
 		// Resolve an issue UUID to its workspace across the caller's memberships,
 		// WITHOUT the X-Workspace header needing to match first — lets a deep

@@ -243,7 +243,11 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	h.Assistant = assistant.NewService(queries, bus, h.AssistantClient)
 	h.Assistant.Store = h.DB
 	h.Assistant.TxStarter = h.TxStarter
+	h.Assistant.ContextValidator = h.validateAssistantRunContext
 	h.Assistant.Exec = h
+	// The same label the UI prints under a reply, so "which model are you" is
+	// answered from configuration rather than from the model's own guess.
+	h.Assistant.ModelLabel = assistantModelLabel
 
 	// Review verdict → merge re-check seam for the internal (task-completion)
 	// ingress paths. The HTTP comment ingress fires this inline (comment.go); the

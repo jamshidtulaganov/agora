@@ -134,6 +134,7 @@ func configureBitrixEnv(t *testing.T, portalURL string) {
 	t.Setenv("BITRIX_WORKSPACE_SLUGS", "")
 	t.Setenv("BITRIX_INBOUND_SECRET", "")
 	t.Setenv("BITRIX_PUSH_STATUS", "")
+	t.Setenv("BITRIX_PUSH_SYSTEM_COMMENTS", "true")
 }
 
 // TestBitrixWebhookCreatesAndAssignsIssue: an ONTASKUPDATE with status 3 on an

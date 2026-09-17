@@ -356,7 +356,9 @@ func ToolSpecs() []llm.Tool {
 			Name: ToolListMyIssues,
 			Description: "List the issues assigned to the user. Omit workspace_id to fan out across EVERY workspace " +
 				"the user belongs to (bounded per workspace) — that is how to answer \"what is on my plate\". " +
-				"Pass workspace_id to look at one workspace only.",
+				"Pass workspace_id to look at one workspace only. " +
+				"The result carries a scope object naming every workspace checked, any that could not be read, " +
+				"whether the list was truncated, and the exact total — quote those, never the row count.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -384,7 +386,9 @@ func ToolSpecs() []llm.Tool {
 				"issue list the board and the Issues page show, and it is what to COUNT from: " +
 				"\"how many bugs are open\", \"what is in the Platform project\", \"show me everything in review\". " +
 				"list_my_issues answers a narrower question (only the user's own) and will under-count if you " +
-				"use it for a workspace-wide total.",
+				"use it for a workspace-wide total. " +
+				"scope.total is an exact count taken with the same filters (archived issues excluded unless " +
+				"include_archived), so it is the number to quote even when the rows are capped.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -1437,7 +1441,8 @@ func ToolSpecs() []llm.Tool {
 			Description: "Replace the content of an artifact you already produced in this conversation, bumping " +
 				"its version. This is the right tool for every follow-up on something already on screen " +
 				"(\"add the QA numbers\", \"make it a line chart\", \"only the last 7 days\") — send the FULL new " +
-				"content, it replaces the old body rather than appending to it. The kind cannot change.",
+				"content, it replaces the old body rather than appending to it. The kind cannot change. " +
+				"Every version is kept, so the user can go back to an earlier one.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -1452,6 +1457,10 @@ func ToolSpecs() []llm.Tool {
     "title": {
       "type": "string",
       "description": "Optional new label. Omit to keep the title the user already sees."
+    },
+    "expected_version": {
+      "type": "integer",
+      "description": "Optional concurrency check: the version number you are editing, from the create_artifact or update_artifact result you are building on. If the artifact has moved on since then the update is refused and tells you its current version, instead of overwriting a change you never saw. Pass it whenever you are rewriting a body you read earlier."
     }
   },
   "required": ["artifact_id", "content"],

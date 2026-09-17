@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jamshidtulaganov/agora/server/internal/assistant"
@@ -101,6 +102,7 @@ type assistantOperationPayload struct {
 	WorkspaceSlug string                   `json:"workspace_slug"`
 	Target        assistantOperationTarget `json:"target"`
 	Status        string                   `json:"status,omitempty"`
+	Outcome       *string                  `json:"outcome,omitempty"`
 	CreatedAt     string                   `json:"created_at,omitempty"`
 	ExpiresAt     string                   `json:"expires_at,omitempty"`
 }
@@ -147,6 +149,11 @@ type assistantExecution struct {
 	// uncertain is non-empty when a mutation was dispatched and its outcome
 	// could not be established. It names what to go and look at.
 	uncertain string
+	// dispatched is set at the one gateway into a real HTTP handler. Errors
+	// after this point require checking the handler's response before deciding
+	// whether an effect may have landed.
+	dispatched     bool
+	responseStatus int
 }
 
 func withAssistantConfirmation(ctx context.Context, c *assistantConfirmation) context.Context {
@@ -269,15 +276,61 @@ func assistantTargetLabel(t assistantOperationTarget) string {
 	}
 }
 
+// assistantOperationOutcomeTTL is how long a claimed operation may sit without
+// an outcome before a reader is told the truth: nobody knows what it did.
+//
+// It has to clear the executor's own ceiling — one tool call is bounded at
+// assistant.ToolCallTimeout — so a confirm that is merely SLOW is never
+// reported as uncertain. Past that, the only honest answer is "inspect it".
+const assistantOperationOutcomeTTL = assistant.ToolCallTimeout + 45*time.Second
+
+// assistantOperationDisplayStatus is the status a READER is entitled to, which
+// is not always the one in the status column.
+//
+// Two states are evaluated at read time rather than by a sweeper, for the same
+// reason: the row only has to stop lying when somebody actually looks.
+//
+//   - pending past expires_at            → "expired"
+//   - confirmed, claimed, still no
+//     outcome, and older than the TTL    → "uncertain"
+//
+// The second is the crash window. `status` records the HUMAN DECISION and is
+// claimed before dispatch, so it says "confirmed" the instant a person clicks —
+// it can never say whether the work happened. `outcome` is what says that, and
+// its absence past the TTL means the answer was lost. The operation is NOT
+// replayed on the strength of this: the row is out of 'pending', so a second
+// confirm still matches no row and still 409s.
+func assistantOperationDisplayStatus(op db.AssistantPendingOperation, now time.Time) string {
+	if op.Status == "pending" && op.ExpiresAt.Valid && !op.ExpiresAt.Time.After(now) {
+		return "expired"
+	}
+	if op.Status != "confirmed" {
+		return op.Status
+	}
+	if op.Outcome.Valid {
+		if op.Outcome.String == "uncertain" {
+			return "uncertain"
+		}
+		return op.Status
+	}
+	if op.ExecutingAt.Valid && now.Sub(op.ExecutingAt.Time) > assistantOperationOutcomeTTL {
+		return "uncertain"
+	}
+	return op.Status
+}
+
 func assistantOperationPayloadFor(op db.AssistantPendingOperation, workspaceSlug string) assistantOperationPayload {
 	payload := assistantOperationPayload{
 		ID:            uuidToString(op.ID),
 		ToolName:      op.ToolName,
 		Summary:       op.Summary,
 		WorkspaceSlug: workspaceSlug,
-		Status:        op.Status,
+		Status:        assistantOperationDisplayStatus(op, time.Now()),
 		CreatedAt:     timestampToString(op.CreatedAt),
 		ExpiresAt:     timestampToString(op.ExpiresAt),
+	}
+	if op.Outcome.Valid {
+		payload.Outcome = &op.Outcome.String
 	}
 	// A target that no longer parses renders as an empty one rather than
 	// failing the read: the summary still says what the operation was.
@@ -392,9 +445,8 @@ func (h *Handler) ListAssistantSessionOperations(w http.ResponseWriter, r *http.
 	}
 	resp := make([]assistantOperationPayload, 0, len(ops))
 	for _, op := range ops {
-		if op.Status == "pending" && op.ExpiresAt.Valid && !op.ExpiresAt.Time.After(time.Now()) {
-			op.Status = "expired"
-		}
+		// Expiry and the lost-outcome window are both evaluated by
+		// assistantOperationPayloadFor, so the list cannot drift from the card.
 		resp = append(resp, assistantOperationPayloadFor(op, h.assistantOperationWorkspaceSlug(r.Context(), op)))
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -427,49 +479,89 @@ func (h *Handler) ConfirmAssistantOperation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if op.Status != "pending" {
-		writeError(w, http.StatusConflict, assistantOperationStateMessage(op.Status))
+		// The DISPLAY status, so an operation whose first execution lost its
+		// answer says so instead of a flat "already confirmed" — the user has
+		// to be told to inspect, not told it is done.
+		writeError(w, http.StatusConflict, assistantOperationStateMessage(assistantOperationDisplayStatus(op, time.Now())))
 		return
 	}
 
-	claimed, err := h.Queries.ResolveAssistantPendingOperation(r.Context(), db.ResolveAssistantPendingOperationParams{
-		ID:     op.ID,
-		Status: "confirmed",
-	})
+	// STEP 1 — claim. Single-use, and it stamps executing_at in the same
+	// statement, so "a human authorized this and it was handed to the executor"
+	// is durable BEFORE anything is dispatched.
+	claimed, err := h.claimAssistantOperation(r.Context(), op.ID)
 	if err != nil {
-		// No row matched: something else confirmed, rejected or expired it
-		// between the read above and this write.
-		writeError(w, http.StatusConflict, "this action is no longer waiting for confirmation")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusConflict, "this action is no longer waiting for confirmation")
+			return
+		}
+		slog.Error("assistant: claim confirmed operation failed", "operation_id", uuidToString(op.ID), "error", err)
+		writeError(w, http.StatusInternalServerError, "could not prepare this action for execution")
 		return
 	}
 
 	var target assistantOperationTarget
 	_ = json.Unmarshal(claimed.Target, &target)
-	ctx := withAssistantConfirmation(r.Context(), &assistantConfirmation{
+	execution := &assistantExecution{}
+	execCtx, cancelExec := context.WithTimeout(r.Context(), assistant.ToolCallTimeout)
+	defer cancelExec()
+	ctx := withAssistantExecution(withAssistantConfirmation(execCtx, &assistantConfirmation{
 		OperationID: uuidToString(claimed.ID),
 		ToolName:    claimed.ToolName,
 		UserID:      userID,
 		Target:      target,
-	})
+	}), execution)
 
-	// The SAME executor the run loop uses: membership, the non-owner visibility
-	// gate and the router's role middleware all run again, against the roles the
-	// caller holds NOW. A member demoted between the ask and the click is
-	// refused here, by the product's own refusal.
+	// STEP 3 — execute, through the SAME executor the run loop uses:
+	// membership, the non-owner visibility gate and the router's role
+	// middleware all run again, against the roles the caller holds NOW. A
+	// member demoted between the ask and the click is refused here, by the
+	// product's own refusal.
 	result, execErr := h.Execute(ctx, userID, uuidToString(claimed.SessionID), claimed.ToolName, claimed.Arguments)
+	// Start the detached receipt budget after execution, so a slow but bounded
+	// tool cannot consume it. A closed browser request cannot cancel this write.
+	persist, cancelPersist := assistantReceiptContext(r.Context())
+	defer cancelPersist()
 
-	slug := h.assistantOperationWorkspaceSlug(r.Context(), claimed)
+	slug := h.assistantOperationWorkspaceSlug(persist, claimed)
+	possiblyAffected := execution.dispatched && (execution.responseStatus < http.StatusBadRequest || execution.responseStatus >= http.StatusInternalServerError)
 	toolResult := result
 	if execErr != nil {
-		toolResult = assistantOperationRefusal(claimed, slug, execErr)
+		if possiblyAffected {
+			toolResult = assistantUncertainResult(claimed.ToolName + " was dispatched but returned an error; inspect the target before trying again")
+		} else {
+			toolResult = assistantOperationRefusal(claimed, slug, execErr)
+		}
 	}
-	message, ok := h.recordAssistantOperationMessage(r.Context(), claimed, toolResult)
+
+	// STEP 4 — the outcome, in the order a reader needs it: the durable
+	// receipt and the pending row's own outcome first (they are what a later
+	// GET reads), then the transcript message. An outcome that stays NULL past
+	// the TTL is reported as uncertain, which is exactly right if this process
+	// dies here.
+	outcome := assistantExecutionOutcome(toolResult, execErr, possiblyAffected)
+	h.recordAssistantExecutionReceipt(persist, claimed, toolResult, execErr, outcome)
+	if _, oerr := h.Queries.RecordAssistantPendingOperationOutcome(persist, db.RecordAssistantPendingOperationOutcomeParams{
+		ID:      claimed.ID,
+		Outcome: strToText(outcome),
+	}); oerr != nil {
+		slog.Error("assistant: persist operation outcome failed",
+			"operation_id", uuidToString(claimed.ID), "error", oerr)
+	} else {
+		claimed.Outcome = strToText(outcome)
+	}
+
+	message, ok := h.recordAssistantOperationMessage(persist, claimed, toolResult)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "the action ran but its receipt could not be saved")
 		return
 	}
-	h.recordAssistantExecutionReceipt(r.Context(), claimed, toolResult, execErr)
 
 	if execErr != nil {
+		if outcome == "uncertain" {
+			writeError(w, http.StatusConflict, "the action may have taken effect; inspect the target before trying again")
+			return
+		}
 		writeError(w, http.StatusConflict, execErr.Error())
 		return
 	}
@@ -477,6 +569,60 @@ func (h *Handler) ConfirmAssistantOperation(w http.ResponseWriter, r *http.Reque
 		Operation: assistantOperationPayloadFor(claimed, slug),
 		Message:   message,
 	})
+}
+
+// assistantReceiptPersistTimeout bounds the post-dispatch writes. They run on a
+// context detached from the request, so they need a ceiling of their own.
+const assistantReceiptPersistTimeout = 5 * time.Second
+
+func assistantReceiptContext(request context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(request), assistantReceiptPersistTimeout)
+}
+
+// assistantExecutionOutcome is the three-way verdict both receipt records use.
+func assistantExecutionOutcome(result json.RawMessage, execErr error, dispatched bool) string {
+	switch {
+	case assistantResultStatus(result) == assistant.StatusUncertain:
+		return "uncertain"
+	case execErr != nil && dispatched:
+		return "uncertain"
+	case execErr != nil:
+		return "failed"
+	}
+	return "succeeded"
+}
+
+// claimAssistantOperation commits the single-use authorization and durable
+// execution intent together. An intent write failure rolls back the claim, so
+// nothing can dispatch without an inspectable record. The pending row itself
+// remains the independent recovery record when the proposing run is terminal
+// or absent; a run-linked receipt is additional evidence, never its only home.
+func (h *Handler) claimAssistantOperation(ctx context.Context, id pgtype.UUID) (db.AssistantPendingOperation, error) {
+	if h.TxStarter == nil {
+		return db.AssistantPendingOperation{}, errors.New("assistant transaction unavailable")
+	}
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return db.AssistantPendingOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	claimed, err := db.New(tx).ResolveAssistantPendingOperation(ctx, db.ResolveAssistantPendingOperationParams{ID: id, Status: "confirmed"})
+	if err != nil {
+		return db.AssistantPendingOperation{}, err
+	}
+	if claimed.RunID.Valid {
+		tag, err := tx.Exec(ctx, `INSERT INTO assistant_operation (run_id,tool_call_id,tool_name,arguments,status) VALUES ($1,$2,$3,$4,'pending') ON CONFLICT (run_id,tool_call_id) DO NOTHING`, claimed.RunID, assistantReceiptTag+uuidToString(claimed.ID), claimed.ToolName, claimed.Arguments)
+		if err != nil {
+			return db.AssistantPendingOperation{}, err
+		}
+		if tag.RowsAffected() != 1 {
+			return db.AssistantPendingOperation{}, errors.New("assistant execution intent already exists")
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.AssistantPendingOperation{}, err
+	}
+	return claimed, nil
 }
 
 // RejectAssistantOperation is Cancel. Nothing ran, and the transcript says so
@@ -492,7 +638,10 @@ func (h *Handler) RejectAssistantOperation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if op.Status != "pending" {
-		writeError(w, http.StatusConflict, assistantOperationStateMessage(op.Status))
+		// The DISPLAY status, so an operation whose first execution lost its
+		// answer says so instead of a flat "already confirmed" — the user has
+		// to be told to inspect, not told it is done.
+		writeError(w, http.StatusConflict, assistantOperationStateMessage(assistantOperationDisplayStatus(op, time.Now())))
 		return
 	}
 	rejected, err := h.Queries.ResolveAssistantPendingOperation(r.Context(), db.ResolveAssistantPendingOperationParams{
@@ -530,6 +679,8 @@ func assistantOperationStateMessage(status string) string {
 		return "this action was already cancelled"
 	case "expired":
 		return "this confirmation has expired — ask the assistant again"
+	case "uncertain":
+		return "this action was already confirmed and its outcome was never recorded — check whether it took effect before asking again"
 	default:
 		return "this action is no longer waiting for confirmation"
 	}
@@ -598,24 +749,20 @@ func (h *Handler) recordAssistantOperationMessage(ctx context.Context, op db.Ass
 // first called the tool. That first row's stored result is the
 // needs_confirmation payload — an attempt that was parked — and overwriting it
 // would erase the fact that the model asked before a human answered.
-func (h *Handler) recordAssistantExecutionReceipt(ctx context.Context, op db.AssistantPendingOperation, result json.RawMessage, execErr error) {
+func (h *Handler) recordAssistantExecutionReceipt(ctx context.Context, op db.AssistantPendingOperation, result json.RawMessage, execErr error, outcome string) {
 	if h.DB == nil || !op.RunID.Valid {
 		return
 	}
-	status := "succeeded"
 	var errText any
-	switch {
-	case execErr != nil:
-		status, errText = "failed", execErr.Error()
-	case assistantResultStatus(result) == assistant.StatusUncertain:
-		status = "uncertain"
+	if execErr != nil {
+		errText = execErr.Error()
 	}
 	if _, err := h.DB.Exec(ctx, `
 		INSERT INTO assistant_operation (run_id, tool_call_id, tool_name, arguments, status, result, error)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (run_id, tool_call_id) DO UPDATE
 		SET status = EXCLUDED.status, result = EXCLUDED.result, error = EXCLUDED.error, updated_at = now()
-	`, op.RunID, assistantReceiptTag+uuidToString(op.ID), op.ToolName, op.Arguments, status, result, errText); err != nil {
+	`, op.RunID, assistantReceiptTag+uuidToString(op.ID), op.ToolName, op.Arguments, outcome, result, errText); err != nil {
 		slog.Warn("assistant: persist execution receipt failed",
 			"operation_id", uuidToString(op.ID), "error", err)
 	}

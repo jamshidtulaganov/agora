@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -56,12 +57,18 @@ type ClientFactory func() (llm.ToolChat, string, error)
 
 // Service owns the assistant conversation loop.
 type Service struct {
-	Queries   *db.Queries
-	Store     runDB
-	TxStarter runTxStarter
-	Bus       *events.Bus
-	Client    ClientFactory
-	Exec      ToolExecutor
+	Queries          *db.Queries
+	Store            runDB
+	TxStarter        runTxStarter
+	ContextValidator func(context.Context, string, RunContext) error
+	Bus              *events.Bus
+	Client           ClientFactory
+	Exec             ToolExecutor
+	// ModelLabel is the human name the UI shows under a reply ("GPT (gpt-5…)").
+	// Injected rather than derived because the label is instance configuration
+	// owned by the HTTP layer, and the assistant package must not read env.
+	// When unset the prompt falls back to the provider's raw model id.
+	ModelLabel func() string
 
 	mu sync.Mutex
 	// runs maps run id -> cancel, so POST /runs/{id}/cancel can stop one.
@@ -233,12 +240,16 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 
 	focus := session.FocusWorkspaceID
 	runTimezone := ""
+	runContext := RunContext{}
 	if s.Store != nil {
 		var workspace *string
 		var timezone string
-		if err := s.Store.QueryRow(ctx, `SELECT context_workspace_id::text, context_timezone FROM assistant_run WHERE id=$1 AND user_id=$2`, runID, userID).Scan(&workspace, &timezone); err != nil {
+		var project *string
+		var attachments []string
+		if err := s.Store.QueryRow(ctx, `SELECT context_workspace_id::text, context_timezone,context_project_id::text,context_attachment_ids::text[] FROM assistant_run WHERE id=$1 AND user_id=$2`, runID, userID).Scan(&workspace, &timezone, &project, &attachments); err != nil {
 			return RunStatusFailed, "could not load this message's workspace context"
 		}
+		runContext = RunContext{WorkspaceID: workspace, Timezone: timezone, ProjectID: project, AttachmentIDs: attachments}
 		focus = pgtype.UUID{}
 		if workspace != nil {
 			focus, err = util.ParseUUID(*workspace)
@@ -253,9 +264,54 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 		slog.Warn("assistant: user context failed", "user_id", userID, "error", err)
 		return RunStatusFailed, "could not load your workspaces"
 	}
+	if focus.Valid {
+		allowed := false
+		for _, ws := range uc.Workspaces {
+			if ws.ID == util.UUIDToString(focus) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return RunStatusFailed, "you no longer have access to this message's workspace"
+		}
+	}
+	if runContext.ProjectID != nil || len(runContext.AttachmentIDs) > 0 {
+		if s.ContextValidator == nil {
+			return RunStatusFailed, "selected project and file access could not be checked"
+		}
+		if err := s.ContextValidator(ctx, userID, runContext); err != nil {
+			return RunStatusFailed, "you no longer have access to selected project or files"
+		}
+	}
 	uc.Timezone = runTimezone
-	system := llm.Message{Role: "system", Content: buildSystemPrompt(uc, session.Summary)}
+	if s.ModelLabel != nil {
+		uc.ModelLabel = s.ModelLabel()
+	}
+	if uc.ModelLabel == "" {
+		uc.ModelLabel = model
+	}
+	systemText := buildSystemPrompt(uc, session.Summary)
+	if s.Store != nil {
+		var snapshotJSON []byte
+		if err := s.Store.QueryRow(ctx, `SELECT context_snapshot FROM assistant_run WHERE id=$1 AND user_id=$2`, runID, userID).Scan(&snapshotJSON); err != nil {
+			return RunStatusFailed, "could not load selected project and files"
+		}
+		var snapshot ContextSnapshot
+		if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+			return RunStatusFailed, "selected project and file context is unreadable"
+		}
+		if contextText := snapshot.Prompt(); contextText != "" {
+			systemText += "\n\n" + contextText
+		}
+	}
+	system := llm.Message{Role: "system", Content: systemText}
 	tools := ToolSpecs()
+
+	// The timezone the client captured when this message was sent rides on the
+	// context every tool executes under. "Today" is the caller's day, not the
+	// server's — see runcontext.go.
+	ctx = WithTimezone(ctx, runTimezone)
 
 	for round := 0; round < MaxToolRounds; round++ {
 		if status, done := terminalFromContext(ctx); done {
@@ -315,15 +371,22 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 			if status, done := terminalFromContext(ctx); done {
 				return status, contextErrorMessage(ctx)
 			}
-			if !s.runToolCall(ctx, sessionUUID, sessionID, runID, userID, call) {
-				if s.Store != nil {
-					var cancelled bool
-					if s.Store.QueryRow(ctx, `SELECT cancel_requested FROM assistant_run WHERE id=$1`, runID).Scan(&cancelled) == nil && cancelled {
-						return RunStatusCancelled, ""
-					}
-				}
-				return RunStatusFailed, "a write may have succeeded but its result could not be saved; review the affected item before retrying"
+			outcome := s.runToolCall(ctx, sessionUUID, sessionID, runID, userID, call)
+			if outcome == toolCallContinue {
+				continue
 			}
+			// A cancel that landed mid-tool outranks whichever bookkeeping
+			// step noticed the run was no longer ours.
+			if s.Store != nil {
+				var cancelled bool
+				if s.Store.QueryRow(ctx, `SELECT cancel_requested FROM assistant_run WHERE id=$1`, runID).Scan(&cancelled) == nil && cancelled {
+					return RunStatusCancelled, ""
+				}
+			}
+			if outcome == toolCallUncertain {
+				return RunStatusFailed, "a write was sent but its outcome could not be confirmed; check whether it took effect before retrying"
+			}
+			return RunStatusFailed, "this run could not record what it was doing and was stopped; review any recent change before retrying"
 		}
 	}
 
@@ -332,12 +395,85 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 	return RunStatusFailed, "the assistant used too many steps without reaching an answer"
 }
 
+// toolCallOutcome is what one tool call did to the run.
+//
+// It is three-valued rather than a bool because the three cases have genuinely
+// different consequences for the user, and collapsing them is what produced
+// the "a write may have succeeded" message on ordinary validation failures:
+// a tool that refuses is NOT an interrupted write.
+type toolCallOutcome int
+
+const (
+	// toolCallContinue: the answer (success OR a plain refusal) is on the
+	// transcript and the model can read it. The loop goes on.
+	toolCallContinue toolCallOutcome = iota
+	// toolCallUncertain: a mutation was dispatched and its outcome is unknown.
+	// The run stops and the user is told to inspect; nothing is retried.
+	toolCallUncertain
+	// toolCallAborted: the run's own bookkeeping failed (lease lost, receipt
+	// unwritable). Nothing can be trusted to have been recorded, so stop.
+	toolCallAborted
+)
+
+// assistant_operation statuses (migration 197). 'failed' is the one this file
+// used to never write, which is exactly how an ordinary refusal came out as an
+// interrupted write.
+const (
+	operationSucceeded = "succeeded"
+	operationFailed    = "failed"
+	operationUncertain = "uncertain"
+)
+
+// receiptPersistTimeout bounds the fresh contexts used to write receipts and
+// transcript rows AFTER a tool has run. They are deliberately short: this work
+// happens off the run's context, so nothing here can block on a dead pool.
+const receiptPersistTimeout = 5 * time.Second
+
+// classifyToolOutcome maps a tool's answer onto an assistant_operation status.
+//
+// The distinction is the whole point of the receipt table:
+//
+//   - uncertain — the request reached the server and the answer was lost. This
+//     is the ONLY case that must not be retried, and the only one that stops a
+//     run. It is signalled by the result's status field (never by an "error"
+//     key: an error invites a retry).
+//   - failed    — the tool refused, deterministically and with no effect: bad
+//     arguments, a missing target, a role the caller does not have. The model
+//     gets the message and corrects itself; the run continues.
+//   - succeeded — everything else, including a destructive call that parked a
+//     needs_confirmation card (the CALL succeeded — it asked).
+func classifyToolOutcome(result json.RawMessage, executeErr error) string {
+	var decoded map[string]json.RawMessage
+	if json.Unmarshal(result, &decoded) == nil {
+		var status string
+		if raw, ok := decoded["status"]; ok && json.Unmarshal(raw, &status) == nil && status == StatusUncertain {
+			return operationUncertain
+		}
+		if decoded["error"] != nil {
+			return operationFailed
+		}
+	}
+	if executeErr != nil {
+		return operationFailed
+	}
+	return operationSucceeded
+}
+
 // runToolCall executes one tool and persists its answer as a role="tool" turn.
+//
 // It never returns an error: a failing tool becomes an {"error": ...} result
 // the model reads and can recover from, which is strictly better than killing
 // a run the user is waiting on.
-func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sessionID, runID, userID string, call llm.ToolCall) bool {
+//
+// Everything AFTER the execution — the receipt, the transcript row, the
+// active_tool reset — runs on a FRESH context. The run's context (and the
+// 15 s tool context derived from it) may well have expired during the call
+// that just finished, and dropping the receipt exactly then is how a completed
+// write becomes an unexplained "uncertain" outcome. A receipt must outlive the
+// deadline of the thing it is a receipt for.
+func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sessionID, runID, userID string, call llm.ToolCall) toolCallOutcome {
 	mutating := IsMutating(call.Name) && s.Store != nil
+	receiptID := strings.TrimSpace(call.ID)
 	if s.Store != nil {
 		s.mu.Lock()
 		owner := ""
@@ -347,7 +483,7 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 		s.mu.Unlock()
 		tag, err := s.Store.Exec(ctx, `UPDATE assistant_run SET active_tool=$3,updated_at=now(),version=version+1 WHERE id=$1 AND lease_owner=$2 AND status='running' AND cancel_requested=false AND lease_expires_at>now()`, runID, owner, call.Name)
 		if err != nil || tag.RowsAffected() != 1 {
-			return false
+			return toolCallAborted
 		}
 	}
 	if mutating {
@@ -355,18 +491,20 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 		if len(args) == 0 {
 			args = json.RawMessage("{}")
 		}
-		_, err := s.Store.Exec(ctx, `INSERT INTO assistant_operation(run_id,tool_call_id,tool_name,arguments,status) VALUES($1,$2,$3,$4,'pending')`, runID, call.ID, call.Name, args)
+		id, err := s.insertOperation(ctx, runID, receiptID, call.Name, args)
 		if err != nil {
-			return false
+			slog.Warn("assistant: persist operation intent failed", "run_id", runID, "tool", call.Name, "error", err)
+			return toolCallAborted
 		}
+		receiptID = id
 	}
 	if ctx.Err() != nil {
-		return false
+		return toolCallAborted
 	}
 	if s.Store != nil {
 		var allowed bool
 		if err := s.Store.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assistant_run WHERE id=$1 AND status='running' AND cancel_requested=false AND lease_expires_at>now())`, runID).Scan(&allowed); err != nil || !allowed {
-			return false
+			return toolCallAborted
 		}
 	}
 	s.publish(protocol.EventAssistantToolActivity, protocol.AssistantToolActivityPayload{
@@ -378,9 +516,12 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 	})
 
 	result, executeErr := s.execute(ctx, userID, sessionID, call)
+
+	final, cancelFinal := context.WithTimeout(context.Background(), receiptPersistTimeout)
+	defer cancelFinal()
+
+	opStatus := operationSucceeded
 	if mutating {
-		final, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 		// assistant_operation (migration 197) is the run's EXECUTION RECEIPT,
 		// and it is not the same record as assistant_pending_operation
 		// (migration 198), which is the pre-authorization a destructive call
@@ -394,31 +535,16 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 		//     a SECOND row against this same run (tool_call_id "op_<id>") with
 		//     the outcome of the actual execution. Overwriting this one instead
 		//     would erase the fact that the model asked before a human answered.
-		opStatus := "succeeded"
-		var toolResult map[string]json.RawMessage
-		uncertainResult := false
-		if json.Unmarshal(result, &toolResult) == nil {
-			// An uncertain outcome carries no "error" key by design (an error
-			// invites a retry, and a retry is the one thing a possibly-committed
-			// write must not get), so it has to be recognised by status.
-			var status string
-			if raw, ok := toolResult["status"]; ok && json.Unmarshal(raw, &status) == nil {
-				uncertainResult = status == StatusUncertain
-			}
-		}
-		if executeErr != nil || toolResult["error"] != nil || uncertainResult {
-			opStatus = "uncertain"
-		}
-		tag, err := s.Store.Exec(final, `UPDATE assistant_operation SET status=$4,result=$3,updated_at=now() WHERE run_id=$1 AND tool_call_id=$2 AND status='pending'`, runID, call.ID, result, opStatus)
+		opStatus = classifyToolOutcome(result, executeErr)
+		tag, err := s.Store.Exec(final, `UPDATE assistant_operation SET status=$4,result=$3,updated_at=now() WHERE run_id=$1 AND tool_call_id=$2 AND status='pending'`, runID, receiptID, result, opStatus)
 		if err != nil || tag.RowsAffected() != 1 {
-			return false
-		}
-		if opStatus == "uncertain" {
-			return false
+			slog.Error("assistant: persist tool receipt failed",
+				"run_id", runID, "tool", call.Name, "status", opStatus, "error", err)
+			return toolCallAborted
 		}
 	}
 
-	msg, err := s.Queries.CreateAssistantMessage(ctx, db.CreateAssistantMessageParams{
+	msg, err := s.Queries.CreateAssistantMessage(final, db.CreateAssistantMessageParams{
 		SessionID:  sessionUUID,
 		Role:       "tool",
 		Content:    string(result),
@@ -428,10 +554,10 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 	})
 	if err != nil {
 		slog.Warn("assistant: persist tool result failed", "session_id", sessionID, "tool", call.Name, "error", err)
-		return false
+		return toolCallAborted
 	}
 	if s.Store != nil {
-		_, _ = s.Store.Exec(ctx, `UPDATE assistant_run SET active_tool=NULL,updated_at=now(),version=version+1 WHERE id=$1 AND status='running'`, runID)
+		_, _ = s.Store.Exec(final, `UPDATE assistant_run SET active_tool=NULL,updated_at=now(),version=version+1 WHERE id=$1 AND status='running'`, runID)
 	}
 	s.publish(protocol.EventAssistantMessage, protocol.AssistantMessagePayload{
 		UserID:    userID,
@@ -442,7 +568,41 @@ func (s *Service) runToolCall(ctx context.Context, sessionUUID pgtype.UUID, sess
 		ToolName:  call.Name,
 		CreatedAt: util.TimestampToString(msg.CreatedAt),
 	})
-	return true
+	// The answer is on the transcript either way; only an unknown outcome stops
+	// the run. A refusal is something the model reads and recovers from.
+	if opStatus == operationUncertain {
+		return toolCallUncertain
+	}
+	return toolCallContinue
+}
+
+// insertOperation writes the pre-execution intent row and returns the
+// tool_call_id it landed under.
+//
+// The id it is handed is whatever the provider called the tool call, and that
+// is not guaranteed to be unique — some providers reuse "call_0" every round,
+// and some send none at all. The table's UNIQUE(run_id, tool_call_id) turned
+// that into a failed INSERT, which aborted the run and told the user a write
+// might have half-landed when in fact nothing had run yet. So a collision is
+// resolved by suffixing rather than by failing.
+func (s *Service) insertOperation(ctx context.Context, runID, toolCallID, toolName string, args json.RawMessage) (string, error) {
+	if toolCallID == "" {
+		toolCallID = "call"
+	}
+	candidate := toolCallID
+	for attempt := 0; attempt < 8; attempt++ {
+		tag, err := s.Store.Exec(ctx,
+			`INSERT INTO assistant_operation(run_id,tool_call_id,tool_name,arguments,status) VALUES($1,$2,$3,$4,'pending') ON CONFLICT (run_id,tool_call_id) DO NOTHING`,
+			runID, candidate, toolName, args)
+		if err != nil {
+			return "", err
+		}
+		if tag.RowsAffected() == 1 {
+			return candidate, nil
+		}
+		candidate = toolCallID + "#" + strconv.Itoa(attempt+2)
+	}
+	return "", errors.New("assistant: could not record a receipt for this tool call")
 }
 
 func (s *Service) execute(ctx context.Context, userID, sessionID string, call llm.ToolCall) (json.RawMessage, error) {

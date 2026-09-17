@@ -142,6 +142,15 @@ type AssistantArtifact struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AssistantArtifactRevision struct {
+	ID         pgtype.UUID        `json:"id"`
+	ArtifactID pgtype.UUID        `json:"artifact_id"`
+	Version    int32              `json:"version"`
+	Title      string             `json:"title"`
+	Content    string             `json:"content"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type AssistantMessage struct {
 	ID         pgtype.UUID        `json:"id"`
 	SessionID  pgtype.UUID        `json:"session_id"`
@@ -183,28 +192,33 @@ type AssistantPendingOperation struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	ResolvedAt  pgtype.Timestamptz `json:"resolved_at"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ExecutingAt pgtype.Timestamptz `json:"executing_at"`
+	Outcome     pgtype.Text        `json:"outcome"`
 }
 
 type AssistantRun struct {
-	ID                 pgtype.UUID        `json:"id"`
-	SessionID          pgtype.UUID        `json:"session_id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	MessageID          pgtype.UUID        `json:"message_id"`
-	RequestID          pgtype.UUID        `json:"request_id"`
-	RequestContent     string             `json:"request_content"`
-	RequestContext     string             `json:"request_context"`
-	Status             string             `json:"status"`
-	ContextWorkspaceID pgtype.UUID        `json:"context_workspace_id"`
-	ContextTimezone    string             `json:"context_timezone"`
-	ActiveTool         pgtype.Text        `json:"active_tool"`
-	Error              pgtype.Text        `json:"error"`
-	LeaseOwner         pgtype.UUID        `json:"lease_owner"`
-	LeaseExpiresAt     pgtype.Timestamptz `json:"lease_expires_at"`
-	CancelRequested    bool               `json:"cancel_requested"`
-	Version            int64              `json:"version"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	FinishedAt         pgtype.Timestamptz `json:"finished_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	SessionID            pgtype.UUID        `json:"session_id"`
+	UserID               pgtype.UUID        `json:"user_id"`
+	MessageID            pgtype.UUID        `json:"message_id"`
+	RequestID            pgtype.UUID        `json:"request_id"`
+	RequestContent       string             `json:"request_content"`
+	RequestContext       string             `json:"request_context"`
+	Status               string             `json:"status"`
+	ContextWorkspaceID   pgtype.UUID        `json:"context_workspace_id"`
+	ContextTimezone      string             `json:"context_timezone"`
+	ActiveTool           pgtype.Text        `json:"active_tool"`
+	Error                pgtype.Text        `json:"error"`
+	LeaseOwner           pgtype.UUID        `json:"lease_owner"`
+	LeaseExpiresAt       pgtype.Timestamptz `json:"lease_expires_at"`
+	CancelRequested      bool               `json:"cancel_requested"`
+	Version              int64              `json:"version"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	FinishedAt           pgtype.Timestamptz `json:"finished_at"`
+	ContextProjectID     pgtype.UUID        `json:"context_project_id"`
+	ContextAttachmentIds []pgtype.UUID      `json:"context_attachment_ids"`
+	ContextSnapshot      []byte             `json:"context_snapshot"`
 }
 
 type AssistantSession struct {

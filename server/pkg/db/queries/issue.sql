@@ -293,9 +293,20 @@ WHERE i.workspace_id = $1
 ORDER BY i.position ASC, i.created_at DESC;
 
 -- name: CountIssues :one
--- See ListIssues for the semantics of involves_user_id.
+-- The exact-total twin of ListIssues. Every predicate below is a copy of the
+-- one there, in the same order, INCLUDING the archive filter and the non-owner
+-- visibility gate — the two that used to be missing.
+--
+-- They have to match, because this is what the assistant's tool envelope
+-- reports as scope.total next to a capped page of rows. A count taken under
+-- looser predicates than the list it describes is worse than no count: the
+-- model states it as fact, and the user reads "12 of 40" over a list whose real
+-- total is 12.
+--
+-- See ListIssues for the semantics of involves_user_id and restrict_to_user.
 SELECT count(*) FROM issue i
 WHERE i.workspace_id = $1
+  AND (sqlc.narg('include_archived')::bool IS TRUE OR i.archived_at IS NULL)
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
   AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
   AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
@@ -335,6 +346,26 @@ WHERE i.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
+  )
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
   );
 
 -- name: ListChildIssues :many

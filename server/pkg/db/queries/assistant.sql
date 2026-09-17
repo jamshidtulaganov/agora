@@ -92,12 +92,27 @@ LIMIT $2;
 -- single-use: the second confirm of the same operation matches no row and the
 -- caller answers 409. Expiry is evaluated here rather than by a sweeper, so an
 -- operation that has sat too long can never be claimed.
+--
+-- A claim for 'confirmed' also stamps executing_at, in the SAME statement: the
+-- durable "this was handed to the executor" marker has to be written before
+-- anything is dispatched, or a crash mid-execution is indistinguishable from
+-- one that never began (migration 199).
 UPDATE assistant_pending_operation
 SET status = sqlc.arg('status'),
-    resolved_at = now()
+    resolved_at = now(),
+    executing_at = CASE WHEN sqlc.arg('status')::text = 'confirmed' THEN now() ELSE executing_at END
 WHERE id = sqlc.arg('id')
   AND status = 'pending'
   AND expires_at > now()
+RETURNING *;
+
+-- name: RecordAssistantPendingOperationOutcome :one
+-- The other half of the claim above: what the execution actually did. Written
+-- once the executor has answered, so a row that still has outcome IS NULL past
+-- the read-time TTL is reported as uncertain rather than as nothing at all.
+UPDATE assistant_pending_operation
+SET outcome = sqlc.arg('outcome')
+WHERE id = sqlc.arg('id')
 RETURNING *;
 
 -- name: ExpireAssistantPendingOperation :exec

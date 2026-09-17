@@ -116,20 +116,21 @@ func (q *Queries) CountCreatedIssueAssignees(ctx context.Context, arg CountCreat
 const countIssues = `-- name: CountIssues :one
 SELECT count(*) FROM issue i
 WHERE i.workspace_id = $1
-  AND ($2::text IS NULL OR i.status = $2)
-  AND ($3::text IS NULL OR i.priority = $3)
-  AND ($4::uuid IS NULL OR i.assignee_id = $4)
-  AND ($5::uuid[] IS NULL OR i.assignee_id = ANY($5::uuid[]))
-  AND ($6::uuid IS NULL OR i.creator_id = $6)
-  AND ($7::uuid IS NULL OR i.project_id = $7)
-  AND ($8::bool IS NULL OR (i.start_date IS NOT NULL OR i.due_date IS NOT NULL))
-  AND ($9::jsonb IS NULL OR i.metadata @> $9::jsonb)
+  AND ($2::bool IS TRUE OR i.archived_at IS NULL)
+  AND ($3::text IS NULL OR i.status = $3)
+  AND ($4::text IS NULL OR i.priority = $4)
+  AND ($5::uuid IS NULL OR i.assignee_id = $5)
+  AND ($6::uuid[] IS NULL OR i.assignee_id = ANY($6::uuid[]))
+  AND ($7::uuid IS NULL OR i.creator_id = $7)
+  AND ($8::uuid IS NULL OR i.project_id = $8)
+  AND ($9::bool IS NULL OR (i.start_date IS NOT NULL OR i.due_date IS NOT NULL))
+  AND ($10::jsonb IS NULL OR i.metadata @> $10::jsonb)
   AND (
-    $10::uuid IS NULL
+    $11::uuid IS NULL
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
            WHERE a.workspace_id = $1
-             AND a.owner_id     = $10::uuid
+             AND a.owner_id     = $11::uuid
     ))
     OR (i.assignee_type = 'squad' AND i.assignee_id IN (
           SELECT sm.squad_id
@@ -137,14 +138,14 @@ WHERE i.workspace_id = $1
             JOIN squad s ON s.id = sm.squad_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
-             AND sm.member_id   = $10::uuid
+             AND sm.member_id   = $11::uuid
           UNION
           SELECT s.id
             FROM squad s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
-             AND a.owner_id     = $10::uuid
+             AND a.owner_id     = $11::uuid
           UNION
           SELECT sm.squad_id
             FROM squad_member sm
@@ -153,28 +154,61 @@ WHERE i.workspace_id = $1
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
              AND a.workspace_id = $1
-             AND a.owner_id     = $10::uuid
+             AND a.owner_id     = $11::uuid
     ))
+  )
+  AND (
+    $12::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = $12::uuid)
+    OR (i.assignee_type = 'member' AND i.assignee_id = $12::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = $12::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = $12::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = $12::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = $12::uuid))
   )
 `
 
 type CountIssuesParams struct {
-	WorkspaceID    pgtype.UUID   `json:"workspace_id"`
-	Status         pgtype.Text   `json:"status"`
-	Priority       pgtype.Text   `json:"priority"`
-	AssigneeID     pgtype.UUID   `json:"assignee_id"`
-	AssigneeIds    []pgtype.UUID `json:"assignee_ids"`
-	CreatorID      pgtype.UUID   `json:"creator_id"`
-	ProjectID      pgtype.UUID   `json:"project_id"`
-	Scheduled      pgtype.Bool   `json:"scheduled"`
-	MetadataFilter []byte        `json:"metadata_filter"`
-	InvolvesUserID pgtype.UUID   `json:"involves_user_id"`
+	WorkspaceID     pgtype.UUID   `json:"workspace_id"`
+	IncludeArchived pgtype.Bool   `json:"include_archived"`
+	Status          pgtype.Text   `json:"status"`
+	Priority        pgtype.Text   `json:"priority"`
+	AssigneeID      pgtype.UUID   `json:"assignee_id"`
+	AssigneeIds     []pgtype.UUID `json:"assignee_ids"`
+	CreatorID       pgtype.UUID   `json:"creator_id"`
+	ProjectID       pgtype.UUID   `json:"project_id"`
+	Scheduled       pgtype.Bool   `json:"scheduled"`
+	MetadataFilter  []byte        `json:"metadata_filter"`
+	InvolvesUserID  pgtype.UUID   `json:"involves_user_id"`
+	RestrictToUser  pgtype.UUID   `json:"restrict_to_user"`
 }
 
-// See ListIssues for the semantics of involves_user_id.
+// The exact-total twin of ListIssues. Every predicate below is a copy of the
+// one there, in the same order, INCLUDING the archive filter and the non-owner
+// visibility gate — the two that used to be missing.
+//
+// They have to match, because this is what the assistant's tool envelope
+// reports as scope.total next to a capped page of rows. A count taken under
+// looser predicates than the list it describes is worse than no count: the
+// model states it as fact, and the user reads "12 of 40" over a list whose real
+// total is 12.
+//
+// See ListIssues for the semantics of involves_user_id and restrict_to_user.
 func (q *Queries) CountIssues(ctx context.Context, arg CountIssuesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countIssues,
 		arg.WorkspaceID,
+		arg.IncludeArchived,
 		arg.Status,
 		arg.Priority,
 		arg.AssigneeID,
@@ -184,6 +218,7 @@ func (q *Queries) CountIssues(ctx context.Context, arg CountIssuesParams) (int64
 		arg.Scheduled,
 		arg.MetadataFilter,
 		arg.InvolvesUserID,
+		arg.RestrictToUser,
 	)
 	var count int64
 	err := row.Scan(&count)

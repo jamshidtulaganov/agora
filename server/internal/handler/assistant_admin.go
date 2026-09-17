@@ -66,6 +66,10 @@ func (h *Handler) assistantInviteMember(ctx context.Context, caller assistantCal
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	email := strings.ToLower(strings.TrimSpace(args.Email))
 	if email == "" {
 		return nil, errors.New("email is required")
@@ -75,10 +79,6 @@ func (h *Handler) assistantInviteMember(ctx context.Context, caller assistantCal
 	// will ever accept. The handler's own validation is otherwise the authority.
 	if !strings.Contains(email, "@") || strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
 		return nil, errors.New("email must be a full email address — ask the user for it rather than guessing one from a name")
-	}
-	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 
 	body := map[string]any{"email": email}
@@ -153,13 +153,13 @@ func (h *Handler) assistantUpdateMemberRole(ctx context.Context, caller assistan
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	role := strings.TrimSpace(args.Role)
-	if role == "" {
-		return nil, errors.New("role is required: one of owner, admin, member")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	role := strings.TrimSpace(args.Role)
+	if role == "" {
+		return nil, errors.New("role is required: one of owner, admin, member")
 	}
 	member, name, err := h.assistantResolveMember(ctx, ws, args.UserID)
 	if err != nil {
@@ -584,7 +584,7 @@ func (h *Handler) assistantListAutopilots(ctx context.Context, caller assistantC
 	for _, ap := range rows {
 		out = append(out, h.assistantAutopilotRow(ctx, ap, names))
 	}
-	return json.Marshal(map[string]any{"autopilots": out})
+	return assistantScopedResult(map[string]any{"autopilots": out}, assistantExactScope(ws.Slug, len(out)))
 }
 
 // assistantResolveAutopilot accepts an autopilot UUID or its title.
@@ -643,16 +643,16 @@ func (h *Handler) assistantCreateAutopilot(ctx context.Context, caller assistant
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	title := strings.TrimSpace(args.Title)
 	if title == "" {
 		return nil, errors.New("title is required")
 	}
 	if strings.TrimSpace(args.AssigneeID) == "" {
 		return nil, errors.New("assignee_id is required — call list_agents or list_squads and use one of the ids it returns")
-	}
-	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 
 	body := map[string]any{"title": title, "assignee_id": strings.TrimSpace(args.AssigneeID)}
@@ -948,7 +948,7 @@ func (h *Handler) assistantListAutomations(ctx context.Context, caller assistant
 		}
 		out = append(out, row)
 	}
-	return json.Marshal(map[string]any{
+	return assistantScopedResult(map[string]any{
 		"automations": out,
 		"catalog": map[string]any{
 			"trigger_types": automationTriggers,
@@ -960,7 +960,7 @@ func (h *Handler) assistantListAutomations(ctx context.Context, caller assistant
 			"statuses": []string{"backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"},
 		},
 		"note": "conditions and actions use exactly this JSON shape: conditions [{\"field\":..,\"op\":..,\"value\":..}], actions [{\"type\":..,\"config\":{..}}].",
-	})
+	}, assistantExactScope(ws.Slug, len(out)))
 }
 
 type assistantCreateAutomationArgs struct {
@@ -999,6 +999,10 @@ func (h *Handler) assistantCreateAutomation(ctx context.Context, caller assistan
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
 		return nil, errors.New("name is required")
@@ -1006,10 +1010,6 @@ func (h *Handler) assistantCreateAutomation(ctx context.Context, caller assistan
 	trigger := strings.TrimSpace(args.TriggerType)
 	if trigger == "" {
 		return nil, errors.New("trigger_type is required — list_automations returns the valid trigger types")
-	}
-	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 
 	var triggerConfig map[string]any
@@ -1128,12 +1128,12 @@ func (h *Handler) assistantSetAutomationEnabled(ctx context.Context, caller assi
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	if args.Enabled == nil {
-		return nil, errors.New("enabled is required: true switches the automation on, false switches it off")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	if args.Enabled == nil {
+		return nil, errors.New("enabled is required: true switches the automation on, false switches it off")
 	}
 	automation, err := h.assistantResolveAutomation(ctx, ws, args.Automation)
 	if err != nil {

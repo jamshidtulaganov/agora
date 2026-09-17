@@ -23,6 +23,10 @@ type UserContext struct {
 	Workspaces       []WorkspaceRef
 	FocusWorkspaceID string
 	Timezone         string
+	// ModelLabel is the same string the UI prints under a reply. Asked "which
+	// model are you", a model with no prompt-level self-knowledge answers from
+	// its training data and contradicts the footer the user is looking at.
+	ModelLabel string
 }
 
 // buildSystemPrompt renders the assistant's identity, the caller's workspace
@@ -52,7 +56,15 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	}
 	b.WriteString("You are talking to " + name + ".\n\n")
 	if uc.Timezone != "" {
-		b.WriteString("The user's timezone for this request is " + uc.Timezone + ".\n\n")
+		b.WriteString("The user's timezone for this request is " + uc.Timezone + ". ")
+		b.WriteString("Dates and \"today\"/\"this week\" always mean their local calendar, and the ")
+		b.WriteString("analytics tools already compute their windows in it — quote the window the tool returns ")
+		b.WriteString("rather than converting one yourself.\n\n")
+	}
+	if label := strings.TrimSpace(uc.ModelLabel); label != "" {
+		b.WriteString("You are running on " + label + ", which is exactly what this instance shows in the ")
+		b.WriteString("interface. If the user asks which model you are, or who made you, answer with that ")
+		b.WriteString("label — do not guess from your training data, and do not claim to be a different model.\n\n")
 	}
 
 	if len(uc.Workspaces) == 0 {
@@ -98,6 +110,21 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	b.WriteString("- COUNT from list_issues, never from list_my_issues. list_my_issues returns only what is ")
 	b.WriteString("assigned to this person, so using it for \"how many bugs are open\" under-counts the ")
 	b.WriteString("workspace. Same rule for anything you put in a chart.\n")
+	b.WriteString("\nCoverage — saying how much you actually saw:\n")
+	b.WriteString("- Every list tool answers with a \"scope\" object: workspaces_checked, failed, truncated, ")
+	b.WriteString("total, and (on the analytics tools) the window it measured. READ IT before you write a ")
+	b.WriteString("sentence about how many of anything there are.\n")
+	b.WriteString("- The number of rows in a result is NEVER the total. If scope.total is a number, that is the ")
+	b.WriteString("total; if it is null, you do not know the total and must not state one.\n")
+	b.WriteString("- When scope.truncated is true, say so in the answer, with the numbers: \"showing 20 of 143\", ")
+	b.WriteString("or \"showing the first 20 — there are more\" when total is null. Never present a truncated ")
+	b.WriteString("list as the whole picture, and never put a truncated list in a chart without saying what it covers.\n")
+	b.WriteString("- scope.failed lists workspaces that could not be read on this call. Name them: an answer that ")
+	b.WriteString("silently omits a workspace is wrong even when every row in it is right.\n")
+	b.WriteString("- scope.window is the exact date range a result covers, already in the user's timezone. Quote it ")
+	b.WriteString("rather than describing the range in your own words.\n")
+	b.WriteString("- If you need an exact count and the tool truncated, narrow the filters (status, priority, ")
+	b.WriteString("project) and count from scope.total — do not add the pages up yourself.\n")
 	b.WriteString("- get_project and the label/sprint arguments accept a title or a name as well as a UUID, so ")
 	b.WriteString("a name the user typed is enough to start from — but a name that matches nothing is an ")
 	b.WriteString("answer (\"there is no project called X\"), not a reason to create one uninvited.\n")
@@ -256,4 +283,10 @@ func writeArtifactGuidance(b *strings.Builder) {
 	b.WriteString("\"only the last 7 days\" — all of those are update_artifact on the artifact_id you already ")
 	b.WriteString("have, sending the complete new content. Only call create_artifact again when the user asks ")
 	b.WriteString("for a genuinely different output alongside the first.\n")
+	b.WriteString("- EVERY VERSION IS KEPT. update_artifact stores the new body as a new version and leaves the ")
+	b.WriteString("old ones readable, so the user can go back; you never need to keep a copy in chat. When you ")
+	b.WriteString("are rewriting an artifact whose content you read (rather than one you just wrote), pass ")
+	b.WriteString("`expected_version` — the version number you read. If it has moved on since, the update is ")
+	b.WriteString("refused and names the current version, and you re-read it instead of overwriting a change ")
+	b.WriteString("the user made in the meantime.\n")
 }

@@ -31,8 +31,10 @@ type runDB interface {
 }
 
 type RunContext struct {
-	WorkspaceID *string `json:"workspace_id"`
-	Timezone    string  `json:"timezone,omitempty"`
+	WorkspaceID   *string  `json:"workspace_id"`
+	Timezone      string   `json:"timezone,omitempty"`
+	ProjectID     *string  `json:"project_id,omitempty"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 type RunRecord struct {
@@ -116,12 +118,12 @@ func (s *Service) StartRecovery(ctx context.Context) {
 func scanRun(row pgx.Row) (RunRecord, error) {
 	var r RunRecord
 	var workspace, tool, runErr *string
-	err := row.Scan(&r.ID, &r.SessionID, &r.MessageID, &r.Status, &tool, &runErr, &r.CreatedAt, &r.UpdatedAt, &r.FinishedAt, &r.Version, &workspace, &r.Context.Timezone)
+	err := row.Scan(&r.ID, &r.SessionID, &r.MessageID, &r.Status, &tool, &runErr, &r.CreatedAt, &r.UpdatedAt, &r.FinishedAt, &r.Version, &workspace, &r.Context.Timezone, &r.Context.ProjectID, &r.Context.AttachmentIDs)
 	r.Context.WorkspaceID, r.ActiveTool, r.Error = workspace, tool, runErr
 	return r, err
 }
 
-const runColumns = `id::text, session_id::text, message_id::text, status, active_tool, error, created_at, updated_at, finished_at, version, context_workspace_id::text, context_timezone`
+const runColumns = `id::text, session_id::text, message_id::text, status, active_tool, error, created_at, updated_at, finished_at, version, context_workspace_id::text, context_timezone, context_project_id::text, context_attachment_ids::text[]`
 
 func (s *Service) GetRun(ctx context.Context, runID, userID string) (RunRecord, error) {
 	if err := s.recoverExpired(ctx); err != nil {
@@ -175,7 +177,7 @@ func (s *Service) ListRuns(ctx context.Context, sessionID, userID string) ([]Run
 
 // AcceptRun locks the session row so request replay, active-run exclusion, and
 // message/run insertion have one commit point across server processes.
-func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, userID, content string, requestID *string, requestContext string, context RunContext) (AcceptedRun, error) {
+func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, userID, content string, requestID *string, requestContext string, context RunContext, snapshot []byte) (AcceptedRun, error) {
 	if s.TxStarter == nil || s.Store == nil {
 		return AcceptedRun{}, errors.New("assistant run store unavailable")
 	}
@@ -234,7 +236,21 @@ func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, us
 	if requestID != nil {
 		rid = *requestID
 	}
-	run, err := scanRun(tx.QueryRow(ctx, `INSERT INTO assistant_run (session_id,user_id,message_id,request_id,request_content,request_context,status,context_workspace_id,context_timezone,lease_owner,lease_expires_at) VALUES ($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,now()+interval '30 seconds') RETURNING `+runColumns, session.ID, userID, message.ID, rid, content, requestContext, workspace, context.Timezone, owner))
+	var project any
+	if context.ProjectID != nil {
+		project = *context.ProjectID
+	}
+	if len(snapshot) == 0 {
+		snapshot = []byte(`{}`)
+	}
+	// A nil attachment slice must land as the empty array, not SQL NULL: the
+	// column is NOT NULL and its DEFAULT applies only when the column is
+	// omitted, never to an explicit NULL. Most sends carry no files.
+	attachments := context.AttachmentIDs
+	if attachments == nil {
+		attachments = []string{}
+	}
+	run, err := scanRun(tx.QueryRow(ctx, `INSERT INTO assistant_run (session_id,user_id,message_id,request_id,request_content,request_context,status,context_workspace_id,context_timezone,context_project_id,context_attachment_ids,context_snapshot,lease_owner,lease_expires_at) VALUES ($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,$10,$11,$12,now()+interval '30 seconds') RETURNING `+runColumns, session.ID, userID, message.ID, rid, content, requestContext, workspace, context.Timezone, project, attachments, snapshot, owner))
 	if err != nil {
 		return AcceptedRun{}, fmt.Errorf("insert assistant run: %w", err)
 	}

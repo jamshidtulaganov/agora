@@ -926,16 +926,12 @@ func TestAssistantQAStatusShape(t *testing.T) {
 // Cross-cutting
 // ---------------------------------------------------------------------------
 
-// Every tool in the catalog must be dispatchable and must refuse a caller who
-// is not a member — no tool may be added without a workspace gate.
-func TestEveryWorkspaceScopedToolRefusesNonMembers(t *testing.T) {
-	outsider := newAssistantTestUser(t, "assistant-allgates@agora.dev")
-	insider := newAssistantTestUser(t, "assistant-allgates-in@agora.dev")
-	ws := newAssistantTestWorkspace(t, "assistant-allgates-ws", "ALG")
-	addAssistantTestMember(t, ws, insider, "owner")
-	newAssistantTestIssue(t, ws, "guarded issue", insider, insider)
-
-	args := map[string]string{
+// assistantWorkspaceGateArgs is one well-formed argument blob per
+// workspace-scoped tool. Shared by the membership-gate meta-test and the
+// denial-wording test below so the two can never drift apart: a tool added to
+// one is covered by both.
+func assistantWorkspaceGateArgs(ws, insider string) map[string]string {
+	return map[string]string{
 		assistant.ToolListMyIssues:       `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolSearchIssues:       `{"workspace_id":"` + ws + `","query":"guarded"}`,
 		assistant.ToolGetIssue:           `{"workspace_id":"` + ws + `","ref":"ALG-1"}`,
@@ -1000,6 +996,30 @@ func TestEveryWorkspaceScopedToolRefusesNonMembers(t *testing.T) {
 		assistant.ToolSetAutomationEnabled: `{"workspace_id":"` + ws + `","automation":"R","enabled":false}`,
 		assistant.ToolDeleteAutomation:     `{"workspace_id":"` + ws + `","automation":"R","confirm":true}`,
 	}
+}
+
+// assistantUnscopedTools are the catalog entries that take no workspace at all.
+// Their gates are asserted individually (session ownership for the artifact
+// tools, membership-inside-the-tool for the two fan-outs, the auth layer plus
+// DISABLE_WORKSPACE_CREATION for create_workspace).
+var assistantUnscopedTools = map[string]bool{
+	assistant.ToolListWorkspaces:  true,
+	assistant.ToolInboxSummary:    true,
+	assistant.ToolCreateArtifact:  true,
+	assistant.ToolUpdateArtifact:  true,
+	assistant.ToolCreateWorkspace: true,
+}
+
+// Every tool in the catalog must be dispatchable and must refuse a caller who
+// is not a member — no tool may be added without a workspace gate.
+func TestEveryWorkspaceScopedToolRefusesNonMembers(t *testing.T) {
+	outsider := newAssistantTestUser(t, "assistant-allgates@agora.dev")
+	insider := newAssistantTestUser(t, "assistant-allgates-in@agora.dev")
+	ws := newAssistantTestWorkspace(t, "assistant-allgates-ws", "ALG")
+	addAssistantTestMember(t, ws, insider, "owner")
+	newAssistantTestIssue(t, ws, "guarded issue", insider, insider)
+
+	args := assistantWorkspaceGateArgs(ws, insider)
 	for name, blob := range args {
 		t.Run(name, func(t *testing.T) {
 			if _, err := executeAssistantTool(t, outsider, name, blob); err == nil {
@@ -1029,20 +1049,50 @@ func TestEveryWorkspaceScopedToolRefusesNonMembers(t *testing.T) {
 	// workspace-free (list_workspaces, inbox_summary are scoped by
 	// membership inside themselves; the artifact tools by session ownership,
 	// asserted just above).
-	unscoped := map[string]bool{
-		assistant.ToolListWorkspaces: true,
-		assistant.ToolInboxSummary:   true,
-		assistant.ToolCreateArtifact: true,
-		assistant.ToolUpdateArtifact: true,
-		// create_workspace takes no workspace at all — there is nothing to be a
-		// member of yet. Its gate is the auth layer (a user id) plus the
-		// instance-level DISABLE_WORKSPACE_CREATION check inside the handler.
-		assistant.ToolCreateWorkspace: true,
-	}
 	for _, spec := range assistant.ToolSpecs() {
-		if _, covered := args[spec.Name]; !covered && !unscoped[spec.Name] {
+		if _, covered := args[spec.Name]; !covered && !assistantUnscopedTools[spec.Name] {
 			t.Fatalf("tool %q has no membership-gate test — add one", spec.Name)
 		}
+	}
+}
+
+// A non-member gets ONE sentence, and it is always the same one.
+//
+// This is not tidiness. The refusal is relayed verbatim by the model, so it is
+// product copy: "you are not a member of that workspace" tells the user what
+// happened and what to do about it, while "query is required" — which is what
+// search_issues used to answer, because it validated its arguments before it
+// checked membership — tells them the assistant is broken. It also leaks the
+// ordering of the checks, which is the beginning of an existence oracle.
+//
+// So membership is resolved FIRST in every workspace-scoped tool, and this test
+// is what keeps it there.
+func TestWorkspaceToolDenialsUseTheMembershipWording(t *testing.T) {
+	outsider := newAssistantTestUser(t, "assistant-denial@agora.dev")
+	insider := newAssistantTestUser(t, "assistant-denial-in@agora.dev")
+	ws := newAssistantTestWorkspace(t, "assistant-denial-ws", "DNL")
+	addAssistantTestMember(t, ws, insider, "owner")
+	newAssistantTestIssue(t, ws, "guarded issue", insider, insider)
+
+	bare := `{"workspace_id":"` + ws + `"}`
+	for name, blob := range assistantWorkspaceGateArgs(ws, insider) {
+		t.Run(name, func(t *testing.T) {
+			// Both a well-formed call AND one missing everything except the
+			// workspace. The second is the probe that caught this: a model
+			// guessing at a workspace it cannot see rarely fills the other
+			// arguments in, and the answer it gets must still be about
+			// membership rather than about a missing field.
+			for _, args := range []string{blob, bare} {
+				_, err := executeAssistantTool(t, outsider, name, args)
+				if err == nil {
+					t.Fatalf("%s returned data to a non-member (args %s)", name, args)
+				}
+				if err.Error() != errAssistantNoAccess.Error() {
+					t.Fatalf("%s refused a non-member with %q (args %s), want %q — resolve membership before validating arguments",
+						name, err.Error(), args, errAssistantNoAccess.Error())
+				}
+			}
+		})
 	}
 }
 

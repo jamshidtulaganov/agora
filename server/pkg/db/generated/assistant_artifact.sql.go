@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAssistantArtifactRevisions = `-- name: CountAssistantArtifactRevisions :one
+SELECT COUNT(*) FROM assistant_artifact_revision
+WHERE artifact_id = $1
+`
+
+func (q *Queries) CountAssistantArtifactRevisions(ctx context.Context, artifactID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssistantArtifactRevisions, artifactID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAssistantArtifactsBySession = `-- name: CountAssistantArtifactsBySession :one
 SELECT COUNT(*) FROM assistant_artifact
 WHERE session_id = $1
@@ -64,6 +76,43 @@ func (q *Queries) CreateAssistantArtifact(ctx context.Context, arg CreateAssista
 	return i, err
 }
 
+const createAssistantArtifactRevision = `-- name: CreateAssistantArtifactRevision :one
+INSERT INTO assistant_artifact_revision (artifact_id, version, title, content)
+VALUES ($1, $2, $3, $4)
+RETURNING id, artifact_id, version, title, content, created_at
+`
+
+type CreateAssistantArtifactRevisionParams struct {
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+	Version    int32       `json:"version"`
+	Title      string      `json:"title"`
+	Content    string      `json:"content"`
+}
+
+// Appends one immutable revision. The version is supplied by the caller — it
+// is the number the artifact UPDATE just returned, inside the same
+// transaction, so the pointer and the history can never name different
+// versions for the same body. Never call this with a version the artifact row
+// does not hold.
+func (q *Queries) CreateAssistantArtifactRevision(ctx context.Context, arg CreateAssistantArtifactRevisionParams) (AssistantArtifactRevision, error) {
+	row := q.db.QueryRow(ctx, createAssistantArtifactRevision,
+		arg.ArtifactID,
+		arg.Version,
+		arg.Title,
+		arg.Content,
+	)
+	var i AssistantArtifactRevision
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.Version,
+		&i.Title,
+		&i.Content,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getAssistantArtifact = `-- name: GetAssistantArtifact :one
 SELECT id, session_id, user_id, title, kind, content, version, created_at, updated_at FROM assistant_artifact
 WHERE id = $1
@@ -88,6 +137,78 @@ func (q *Queries) GetAssistantArtifact(ctx context.Context, id pgtype.UUID) (Ass
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getAssistantArtifactRevision = `-- name: GetAssistantArtifactRevision :one
+SELECT id, artifact_id, version, title, content, created_at FROM assistant_artifact_revision
+WHERE artifact_id = $1 AND version = $2
+`
+
+type GetAssistantArtifactRevisionParams struct {
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+	Version    int32       `json:"version"`
+}
+
+// One historical version in full. Keyed by (artifact_id, version) rather than
+// by revision id: the picker knows "v3 of this artifact", and routing through
+// the artifact keeps the ownership chain (artifact -> session -> user) as the
+// single authorization path.
+func (q *Queries) GetAssistantArtifactRevision(ctx context.Context, arg GetAssistantArtifactRevisionParams) (AssistantArtifactRevision, error) {
+	row := q.db.QueryRow(ctx, getAssistantArtifactRevision, arg.ArtifactID, arg.Version)
+	var i AssistantArtifactRevision
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.Version,
+		&i.Title,
+		&i.Content,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listAssistantArtifactRevisions = `-- name: ListAssistantArtifactRevisions :many
+SELECT id, artifact_id, version, title, created_at
+FROM assistant_artifact_revision
+WHERE artifact_id = $1
+ORDER BY version DESC
+`
+
+type ListAssistantArtifactRevisionsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ArtifactID pgtype.UUID        `json:"artifact_id"`
+	Version    int32              `json:"version"`
+	Title      string             `json:"title"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+// The version picker's list: NEWEST FIRST, deliberately WITHOUT content. Same
+// reasoning as the artifact list — a body is up to 256 KB and up to 50 of them
+// per artifact, while the picker draws a version number, a title and a date.
+func (q *Queries) ListAssistantArtifactRevisions(ctx context.Context, artifactID pgtype.UUID) ([]ListAssistantArtifactRevisionsRow, error) {
+	rows, err := q.db.Query(ctx, listAssistantArtifactRevisions, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssistantArtifactRevisionsRow{}
+	for rows.Next() {
+		var i ListAssistantArtifactRevisionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArtifactID,
+			&i.Version,
+			&i.Title,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAssistantArtifactsBySession = `-- name: ListAssistantArtifactsBySession :many
@@ -140,6 +261,37 @@ func (q *Queries) ListAssistantArtifactsBySession(ctx context.Context, sessionID
 	return items, nil
 }
 
+const trimAssistantArtifactRevisions = `-- name: TrimAssistantArtifactRevisions :exec
+DELETE FROM assistant_artifact_revision AS doomed
+WHERE doomed.artifact_id = $1
+  AND doomed.version > 1
+  AND doomed.id NOT IN (
+      SELECT kept.id FROM assistant_artifact_revision AS kept
+      WHERE kept.artifact_id = $1
+        AND kept.version > 1
+      ORDER BY kept.version DESC
+      LIMIT $2
+  )
+`
+
+type TrimAssistantArtifactRevisionsParams struct {
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+	KeepNewest int32       `json:"keep_newest"`
+}
+
+// Retention cap, applied on append inside the same transaction.
+//
+// v1 is PINNED: it is the only version whose meaning does not depend on
+// another ("what was this before anyone edited it"), and losing it turns the
+// oldest surviving revision into a silent lie about where the artifact
+// started. So the cap keeps v1 plus the `keep` newest later revisions, and
+// deletes the middle — the versions with a surviving neighbour on both sides,
+// which are the cheapest to lose.
+func (q *Queries) TrimAssistantArtifactRevisions(ctx context.Context, arg TrimAssistantArtifactRevisionsParams) error {
+	_, err := q.db.Exec(ctx, trimAssistantArtifactRevisions, arg.ArtifactID, arg.KeepNewest)
+	return err
+}
+
 const updateAssistantArtifact = `-- name: UpdateAssistantArtifact :one
 UPDATE assistant_artifact
 SET content    = $1,
@@ -147,21 +299,45 @@ SET content    = $1,
     version    = version + 1,
     updated_at = now()
 WHERE id = $3
+  AND ($4::int IS NULL
+       OR version = $4::int)
 RETURNING id, session_id, user_id, title, kind, content, version, created_at, updated_at
 `
 
 type UpdateAssistantArtifactParams struct {
-	Content string      `json:"content"`
-	Title   pgtype.Text `json:"title"`
-	ID      pgtype.UUID `json:"id"`
+	Content         string      `json:"content"`
+	Title           pgtype.Text `json:"title"`
+	ID              pgtype.UUID `json:"id"`
+	ExpectedVersion pgtype.Int4 `json:"expected_version"`
 }
 
 // Content always replaces; title is optional (COALESCE narg), so "add the QA
 // numbers" keeps the name the user already sees on the card. version is
 // bumped in the same statement so a concurrent read can never observe new
 // content at the old version.
+//
+// Two things make this the concurrency primitive rather than just a write:
+//
+//	version = version + 1 RETURNING — the new number is computed by the
+//	database from the row it locked, never from a number the caller read
+//	earlier. Concurrent updaters queue on that row lock and each one leaves
+//	with a distinct version, which is what lets the revision insert in the
+//	same transaction use the returned number as a key.
+//
+//	expected_version — optional compare-and-swap. When NULL the update is
+//	unconditional (the normal "make this change" case). When supplied, the
+//	statement matches NOTHING unless the artifact is still at that version,
+//	so an update written against a body the caller read is refused rather
+//	than silently overwriting a newer one. The guard lives HERE, in the same
+//	statement as the bump, because a check done before the UPDATE would be a
+//	read the next writer can invalidate before the write lands.
 func (q *Queries) UpdateAssistantArtifact(ctx context.Context, arg UpdateAssistantArtifactParams) (AssistantArtifact, error) {
-	row := q.db.QueryRow(ctx, updateAssistantArtifact, arg.Content, arg.Title, arg.ID)
+	row := q.db.QueryRow(ctx, updateAssistantArtifact,
+		arg.Content,
+		arg.Title,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
 	var i AssistantArtifact
 	err := row.Scan(
 		&i.ID,

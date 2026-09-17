@@ -134,7 +134,12 @@ func (h *Handler) assistantInvokeAs(
 		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 	}
 
-	var entry http.Handler = handler
+	var entry http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if exec := assistantExecutionFrom(ctx); exec != nil && ctx.Err() == nil {
+			exec.dispatched = true
+		}
+		handler.ServeHTTP(w, r)
+	})
 	switch {
 	case workspaceID == "":
 		// User-scoped route; the router mounts no workspace middleware either.
@@ -152,6 +157,9 @@ func (h *Handler) assistantInvokeAs(
 	// inspect after every cancelled run.
 	live := ctx.Err() == nil
 	entry.ServeHTTP(rec, req)
+	if exec := assistantExecutionFrom(ctx); exec != nil {
+		exec.responseStatus = rec.status
+	}
 	if live && ctx.Err() != nil {
 		tool := ""
 		if exec := assistantExecutionFrom(ctx); exec != nil {
@@ -305,13 +313,13 @@ func (h *Handler) assistantCreateIssue(ctx context.Context, caller assistantCall
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	title := strings.TrimSpace(args.Title)
-	if title == "" {
-		return nil, errors.New("title is required")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	title := strings.TrimSpace(args.Title)
+	if title == "" {
+		return nil, errors.New("title is required")
 	}
 	if err := assistantValidateEnums(args.Status, args.Priority); err != nil {
 		return nil, err
@@ -532,16 +540,16 @@ func (h *Handler) assistantCommentIssue(ctx context.Context, caller assistantCal
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, role, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	content := strings.TrimSpace(args.Body)
 	if content == "" {
 		return nil, errors.New("body is required")
 	}
 	if len([]rune(content)) > assistantCommentMaxLen {
 		return nil, errors.New("comment is too long")
-	}
-	ws, role, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 	issue, err := h.assistantResolveIssue(ctx, caller, ws, role, args.Ref)
 	if err != nil {
@@ -819,13 +827,13 @@ func (h *Handler) assistantCreateProject(ctx context.Context, caller assistantCa
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	title := strings.TrimSpace(args.Title)
-	if title == "" {
-		return nil, errors.New("title is required")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	title := strings.TrimSpace(args.Title)
+	if title == "" {
+		return nil, errors.New("title is required")
 	}
 	leadType, leadID, err := h.assistantProjectLead(ctx, ws, args.LeadType, args.LeadID)
 	if err != nil {
@@ -999,13 +1007,13 @@ func (h *Handler) assistantCreateSprint(ctx context.Context, caller assistantCal
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	name := strings.TrimSpace(args.Name)
-	if name == "" {
-		return nil, errors.New("name is required")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	name := strings.TrimSpace(args.Name)
+	if name == "" {
+		return nil, errors.New("name is required")
 	}
 	project, err := h.assistantResolveProject(ctx, ws, args.ProjectID)
 	if err != nil {
@@ -1075,13 +1083,13 @@ func (h *Handler) assistantCreateLabel(ctx context.Context, caller assistantCall
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	name := strings.TrimSpace(args.Name)
-	if name == "" {
-		return nil, errors.New("name is required")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	name := strings.TrimSpace(args.Name)
+	if name == "" {
+		return nil, errors.New("name is required")
 	}
 	color := strings.TrimSpace(args.Color)
 	if color == "" {
@@ -1151,6 +1159,10 @@ func (h *Handler) assistantCreateAgent(ctx context.Context, caller assistantCall
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
 		return nil, errors.New("name is required")
@@ -1158,10 +1170,6 @@ func (h *Handler) assistantCreateAgent(ctx context.Context, caller assistantCall
 	runtimeID := strings.TrimSpace(args.RuntimeID)
 	if runtimeID == "" {
 		return nil, errors.New("runtime_id is required — call list_runtimes and use one of the ids it returns")
-	}
-	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 
 	body := map[string]any{"name": name, "runtime_id": runtimeID}
@@ -1360,13 +1368,13 @@ func (h *Handler) assistantAddSkill(ctx context.Context, caller assistantCaller,
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	url := strings.TrimSpace(args.URL)
-	if url == "" {
-		return nil, errors.New("url is required — a GitHub, ClawHub or skills.sh link to the skill")
-	}
 	ws, _, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	url := strings.TrimSpace(args.URL)
+	if url == "" {
+		return nil, errors.New("url is required — a GitHub, ClawHub or skills.sh link to the skill")
 	}
 	onConflict := strings.TrimSpace(args.OnConflict)
 	if onConflict == "" {
@@ -1513,16 +1521,16 @@ func (h *Handler) assistantUpdateComment(ctx context.Context, caller assistantCa
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	ws, role, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
 	content := strings.TrimSpace(args.Body)
 	if content == "" {
 		return nil, errors.New("body is required")
 	}
 	if len([]rune(content)) > assistantCommentMaxLen {
 		return nil, errors.New("comment is too long")
-	}
-	ws, role, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
-	if err != nil {
-		return nil, err
 	}
 	comment, err := h.assistantLoadComment(ctx, caller, ws, role, args.CommentID)
 	if err != nil {
@@ -1662,13 +1670,13 @@ func (h *Handler) assistantPinItem(ctx context.Context, caller assistantCaller, 
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
-	itemType := strings.TrimSpace(args.ItemType)
-	if itemType != "issue" && itemType != "project" {
-		return nil, errors.New("item_type must be one of: issue, project")
-	}
 	ws, role, err := h.assistantMembership(ctx, caller.UUID, strings.TrimSpace(args.WorkspaceID))
 	if err != nil {
 		return nil, err
+	}
+	itemType := strings.TrimSpace(args.ItemType)
+	if itemType != "issue" && itemType != "project" {
+		return nil, errors.New("item_type must be one of: issue, project")
 	}
 
 	// Resolved to a UUID here so the tool can take a MUL-123 or a project

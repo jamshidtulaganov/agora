@@ -61,7 +61,7 @@ INSERT INTO assistant_pending_operation (
     run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at
+RETURNING id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at, executing_at, outcome
 `
 
 type CreateAssistantPendingOperationParams struct {
@@ -104,6 +104,8 @@ func (q *Queries) CreateAssistantPendingOperation(ctx context.Context, arg Creat
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.ExpiresAt,
+		&i.ExecutingAt,
+		&i.Outcome,
 	)
 	return i, err
 }
@@ -166,7 +168,7 @@ func (q *Queries) ExpireAssistantPendingOperation(ctx context.Context, id pgtype
 }
 
 const getAssistantPendingOperation = `-- name: GetAssistantPendingOperation :one
-SELECT id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at FROM assistant_pending_operation
+SELECT id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at, executing_at, outcome FROM assistant_pending_operation
 WHERE id = $1
 `
 
@@ -187,6 +189,8 @@ func (q *Queries) GetAssistantPendingOperation(ctx context.Context, id pgtype.UU
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.ExpiresAt,
+		&i.ExecutingAt,
+		&i.Outcome,
 	)
 	return i, err
 }
@@ -251,7 +255,7 @@ func (q *Queries) ListAssistantMessages(ctx context.Context, sessionID pgtype.UU
 }
 
 const listAssistantPendingOperations = `-- name: ListAssistantPendingOperations :many
-SELECT id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at FROM assistant_pending_operation
+SELECT id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at, executing_at, outcome FROM assistant_pending_operation
 WHERE session_id = $1
 ORDER BY created_at DESC
 LIMIT $2
@@ -285,6 +289,8 @@ func (q *Queries) ListAssistantPendingOperations(ctx context.Context, arg ListAs
 			&i.CreatedAt,
 			&i.ResolvedAt,
 			&i.ExpiresAt,
+			&i.ExecutingAt,
+			&i.Outcome,
 		); err != nil {
 			return nil, err
 		}
@@ -382,14 +388,53 @@ func (q *Queries) ListRecentAssistantMessages(ctx context.Context, arg ListRecen
 	return items, nil
 }
 
+const recordAssistantPendingOperationOutcome = `-- name: RecordAssistantPendingOperationOutcome :one
+UPDATE assistant_pending_operation
+SET outcome = $1
+WHERE id = $2
+RETURNING id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at, executing_at, outcome
+`
+
+type RecordAssistantPendingOperationOutcomeParams struct {
+	Outcome pgtype.Text `json:"outcome"`
+	ID      pgtype.UUID `json:"id"`
+}
+
+// The other half of the claim above: what the execution actually did. Written
+// once the executor has answered, so a row that still has outcome IS NULL past
+// the read-time TTL is reported as uncertain rather than as nothing at all.
+func (q *Queries) RecordAssistantPendingOperationOutcome(ctx context.Context, arg RecordAssistantPendingOperationOutcomeParams) (AssistantPendingOperation, error) {
+	row := q.db.QueryRow(ctx, recordAssistantPendingOperationOutcome, arg.Outcome, arg.ID)
+	var i AssistantPendingOperation
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.SessionID,
+		&i.UserID,
+		&i.ToolName,
+		&i.Arguments,
+		&i.Summary,
+		&i.WorkspaceID,
+		&i.Target,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.ExpiresAt,
+		&i.ExecutingAt,
+		&i.Outcome,
+	)
+	return i, err
+}
+
 const resolveAssistantPendingOperation = `-- name: ResolveAssistantPendingOperation :one
 UPDATE assistant_pending_operation
 SET status = $1,
-    resolved_at = now()
+    resolved_at = now(),
+    executing_at = CASE WHEN $1::text = 'confirmed' THEN now() ELSE executing_at END
 WHERE id = $2
   AND status = 'pending'
   AND expires_at > now()
-RETURNING id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at
+RETURNING id, run_id, session_id, user_id, tool_name, arguments, summary, workspace_id, target, status, created_at, resolved_at, expires_at, executing_at, outcome
 `
 
 type ResolveAssistantPendingOperationParams struct {
@@ -401,6 +446,11 @@ type ResolveAssistantPendingOperationParams struct {
 // single-use: the second confirm of the same operation matches no row and the
 // caller answers 409. Expiry is evaluated here rather than by a sweeper, so an
 // operation that has sat too long can never be claimed.
+//
+// A claim for 'confirmed' also stamps executing_at, in the SAME statement: the
+// durable "this was handed to the executor" marker has to be written before
+// anything is dispatched, or a crash mid-execution is indistinguishable from
+// one that never began (migration 199).
 func (q *Queries) ResolveAssistantPendingOperation(ctx context.Context, arg ResolveAssistantPendingOperationParams) (AssistantPendingOperation, error) {
 	row := q.db.QueryRow(ctx, resolveAssistantPendingOperation, arg.Status, arg.ID)
 	var i AssistantPendingOperation
@@ -418,6 +468,8 @@ func (q *Queries) ResolveAssistantPendingOperation(ctx context.Context, arg Reso
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.ExpiresAt,
+		&i.ExecutingAt,
+		&i.Outcome,
 	)
 	return i, err
 }
