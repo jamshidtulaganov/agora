@@ -70,3 +70,10 @@ This file is a local handoff, not evidence that another agent has read it. Avoid
 - Malformed artifact library pages now produce a retryable error instead of silently stopping pagination.
 - Applied migrations through 202. Focused context/library permission and file-limit tests pass (five tests). Frontend agent checks covered composer/send/retry controls, safe preview/source display, and older session navigation.
 - Applied the Bitrix fixture-only environment fix described above. Full pipeline verification is still in progress; do not report it as passed based only on focused checks.
+
+### Final verification outcome
+
+- `make check`: TypeScript typecheck, all frontend unit tests, migrations, and all Go packages passed. Browser stage: 18 passed, 3 Bitrix fixture tests skipped, 2 navigation timeouts while the development server was compiling.
+- The first targeted navigation retry found the shared frontend had stopped (`ERR_CONNECTION_REFUSED`). Restarted the local frontend; the three navigation tests then passed in 31.5 seconds. No navigation production code change was needed.
+- Manually verified the Artifacts sidebar entry, left-aligned full-width library, and Assistant Project/Attach file controls in the browser. Screenshot: `/tmp/agora-artifacts-layout.png`.
+- Logs: `/tmp/agora-artifacts-full-check.log`, `/tmp/agora-artifacts-navigation-recheck.log`, `/tmp/agora-artifacts-handler-focused.log`.
