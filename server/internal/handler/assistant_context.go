@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 
@@ -54,6 +55,18 @@ func (h *Handler) validateAssistantRunContext(ctx context.Context, userID string
 			return err
 		}
 	}
+	if runContext.MemberID != nil {
+		memberUUID, err := util.ParseUUID(*runContext.MemberID)
+		if err != nil {
+			return err
+		}
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID:      memberUUID,
+			WorkspaceID: ws.ID,
+		}); err != nil {
+			return errors.New("attached member is no longer in that workspace")
+		}
+	}
 	for _, id := range runContext.AttachmentIDs {
 		attUUID, err := util.ParseUUID(id)
 		if err != nil {
@@ -88,16 +101,31 @@ func assistantBoundString(s string, max int) string {
 	return s[:max] + " [truncated]"
 }
 
+// Repository URLs can contain embedded credentials or signed query parameters.
+// The model only needs the repository location, so omit those parts from the
+// captured prompt context.
+func assistantRepoReference(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw // scp-style SSH references have no URL host.
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	return u.String()
+}
+
 // prepareAssistantContext validates each explicit reference under the current
 // human's permissions and captures only bounded, readable source data. It
 // never follows a resource URL or accesses a daemon's local path.
 func (h *Handler) prepareAssistantContext(w http.ResponseWriter, r *http.Request, userID string, context assistant.RunContext) ([]byte, bool) {
 	snapshot := assistant.ContextSnapshot{}
-	if context.ProjectID == nil && len(context.AttachmentIDs) == 0 {
+	if context.ProjectID == nil && context.MemberID == nil && len(context.AttachmentIDs) == 0 {
 		return []byte(`{}`), true
 	}
 	if context.WorkspaceID == nil {
-		writeError(w, http.StatusBadRequest, "select a workspace for project or file context")
+		writeError(w, http.StatusBadRequest, "select a workspace for project, member or file context")
 		return nil, false
 	}
 	userUUID := parseUUID(userID)
@@ -139,7 +167,7 @@ func (h *Handler) prepareAssistantContext(w http.ResponseWriter, r *http.Request
 			case "github_repo":
 				var ref githubRepoRef
 				if json.Unmarshal(res.ResourceRef, &ref) == nil {
-					item.Reference = assistantBoundString(ref.URL, 512)
+					item.Reference = assistantBoundString(assistantRepoReference(ref.URL), 512)
 					if ref.DefaultBranchHint != "" {
 						item.Reference += " branch=" + assistantBoundString(ref.DefaultBranchHint, 128)
 					}
@@ -153,6 +181,33 @@ func (h *Handler) prepareAssistantContext(w http.ResponseWriter, r *http.Request
 			p.Resources = append(p.Resources, item)
 		}
 		snapshot.Project = p
+	}
+	// A member the user picked is only a member of THIS workspace's roster.
+	// Checking membership here (rather than trusting the picker) is what stops
+	// a stale composer — or a hand-made request — from naming somebody outside
+	// the workspace this message runs in.
+	if context.MemberID != nil {
+		memberUUID, err := util.ParseUUID(*context.MemberID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid member_id")
+			return nil, false
+		}
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+			UserID:      memberUUID,
+			WorkspaceID: ws.ID,
+		}); err != nil {
+			writeError(w, http.StatusNotFound, "member not found in selected workspace")
+			return nil, false
+		}
+		member, err := h.Queries.GetUser(r.Context(), memberUUID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "member not found in selected workspace")
+			return nil, false
+		}
+		snapshot.Member = &assistant.MemberSnapshot{
+			UserID: uuidToString(memberUUID),
+			Name:   assistantBoundString(member.Name, 256),
+		}
 	}
 	if len(context.AttachmentIDs) > assistantMaxFiles {
 		writeError(w, http.StatusBadRequest, "too many files (max 5)")

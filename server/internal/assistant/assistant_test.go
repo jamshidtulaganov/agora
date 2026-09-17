@@ -59,6 +59,8 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		// Autopilots and automations.
 		ToolCreateAutopilot, ToolUpdateAutopilot, ToolRunAutopilotNow,
 		ToolCreateAutomation, ToolSetAutomationEnabled, ToolDeleteAutomation,
+		// The user's own settings.
+		ToolGetMySettings, ToolUpdateMySettings, ToolUpdateSidebar, ToolUpdateNotificationPreferences,
 		// Analytics.
 		ToolUsageSummary, ToolActivityDigest, ToolInboxSummary, ToolQAStatus,
 		// Artifacts — session-scoped, not workspace-scoped.
@@ -306,6 +308,11 @@ func TestMutatingToolsMatchTheCatalog(t *testing.T) {
 		ToolCreateAutomation:     true,
 		ToolSetAutomationEnabled: true,
 		ToolDeleteAutomation:     true,
+		// Personal settings. Writes, but reversible ones: they are deliberately
+		// absent from DestructiveTools.
+		ToolUpdateMySettings:              true,
+		ToolUpdateSidebar:                 true,
+		ToolUpdateNotificationPreferences: true,
 	}
 	for _, spec := range ToolSpecs() {
 		if IsMutating(spec.Name) != writes[spec.Name] {

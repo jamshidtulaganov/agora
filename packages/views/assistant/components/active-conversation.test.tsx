@@ -20,8 +20,20 @@ const mockGetRuns = vi.hoisted(() => vi.fn());
 const mockSendMutate = vi.hoisted(() => vi.fn());
 const mockCancelMutate = vi.hoisted(() => vi.fn());
 const mockUpdateMutate = vi.hoisted(() => vi.fn());
+interface TestComposerSelection {
+  workspace_id: string | null;
+  workspace_pinned?: boolean;
+  project_id?: string | null;
+  member?: { user_id: string; name: string } | null;
+  attachments?: { id: string; filename: string; size_bytes: number }[];
+}
+
 const assistantStoreState = vi.hoisted(() => ({
   drafts: {} as Record<string, { content: string; request_id: string; context?: { workspace_id: string | null } }>,
+  // Reassigned only by setComposerContext, never rebuilt per read: a selector
+  // that returns a fresh object every call re-renders forever (CLAUDE.md,
+  // Zustand footguns).
+  composer: {} as Record<string, TestComposerSelection>,
 }));
 
 vi.mock("@agora/core/assistant", async () => {
@@ -36,15 +48,18 @@ vi.mock("@agora/core/assistant", async () => {
     else delete assistantStoreState.drafts[sessionId];
     listeners.forEach((listener) => listener());
   };
-  // Composer resource selection (project / files) is a separate surface with
-  // its own test; this conversation only needs the store shape to exist.
-  // Both values are module-stable on purpose: a selector that returns a fresh
-  // object on every call re-renders forever (CLAUDE.md, Zustand footguns).
-  const composerContextBySession = {};
-  const setComposerContext = () => {};
+  // The composer's own chips have their own test (compose-resources.test.tsx);
+  // what this surface owns is what the selection DOES — the scope label it
+  // prints and the context it sends.
+  const setComposerContext = (sessionId: string, value: unknown) => {
+    assistantStoreState.composer = { ...assistantStoreState.composer };
+    if (value) assistantStoreState.composer[sessionId] = value as never;
+    else delete assistantStoreState.composer[sessionId];
+    listeners.forEach((listener) => listener());
+  };
   const state = () => ({
     draftsBySession: assistantStoreState.drafts,
-    composerContextBySession,
+    composerContextBySession: assistantStoreState.composer,
     setDraft,
     setComposerContext,
   });
@@ -134,6 +149,7 @@ function stubScroller(container: HTMLElement, scrollHeight = 4000, clientHeight 
 beforeEach(() => {
   vi.clearAllMocks();
   assistantStoreState.drafts = {};
+  assistantStoreState.composer = {};
   mockGetMessages.mockResolvedValue([
     message({ id: "m1", role: "user", content: "What is on my plate?" }),
     message({ id: "m2", role: "assistant", content: "Three issues are waiting on you." }),
@@ -361,5 +377,46 @@ describe("ActiveConversation — follow-up chips", () => {
 
     await screen.findByText("Created it.");
     expect(screen.queryByRole("button", { name: "Assign it to someone" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ActiveConversation — composer scope", () => {
+  it("sends to the picked workspace and says so above the composer", async () => {
+    assistantStoreState.composer = {
+      s1: {
+        workspace_id: "ws-2",
+        workspace_pinned: true,
+        member: { user_id: "user-7", name: "Dana Ruiz" },
+      },
+    };
+    const { qc } = renderConversation();
+    await screen.findByText("Three issues are waiting on you.");
+    act(() => {
+      qc.setQueryData(["workspaces", "list"], [
+        { id: "ws-1", slug: "acme", name: "Acme" },
+        { id: "ws-2", slug: "beta", name: "Beta" },
+      ]);
+    });
+
+    // The label is the user's last chance to notice the message is leaving
+    // the workspace they are looking at.
+    expect(await screen.findByText("Sending to Beta · Dana Ruiz")).toBeInTheDocument();
+
+    const composer = screen.getByRole("textbox");
+    await userEvent.type(composer, "assign the login bug to her");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(mockSendMutate).toHaveBeenCalled());
+    const sent = mockSendMutate.mock.calls[0]?.[0] as { context?: Record<string, unknown> };
+    expect(sent.context).toMatchObject({ workspace_id: "ws-2", member_id: "user-7" });
+  });
+
+  it("falls back to the page's workspace when nothing is pinned", async () => {
+    const { qc } = renderConversation();
+    await screen.findByText("Three issues are waiting on you.");
+    act(() => {
+      qc.setQueryData(["workspaces", "list"], [{ id: "ws-1", slug: "acme", name: "Acme" }]);
+    });
+    expect(await screen.findByText("Sending to Acme")).toBeInTheDocument();
   });
 });

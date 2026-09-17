@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -789,46 +790,49 @@ func assistantResultStatus(result json.RawMessage) string {
 // read out of the answer the tool already returns, so a tool that changes its
 // response shape degrades to a thinner receipt rather than a wrong one.
 var assistantToolTargets = map[string]string{
-	assistant.ToolCreateIssue:          "issue",
-	assistant.ToolUpdateIssue:          "issue",
-	assistant.ToolCommentIssue:         "issue",
-	assistant.ToolArchiveIssue:         "issue",
-	assistant.ToolAddIssueLabel:        "issue",
-	assistant.ToolRemoveIssueLabel:     "issue",
-	assistant.ToolMoveIssueToSprint:    "issue",
-	assistant.ToolSubscribeIssue:       "issue",
-	assistant.ToolDeleteIssue:          "issue",
-	assistant.ToolCreateProject:        "project",
-	assistant.ToolUpdateProject:        "project",
-	assistant.ToolDeleteProject:        "project",
-	assistant.ToolCreateSprint:         "sprint",
-	assistant.ToolDeleteSprint:         "sprint",
-	assistant.ToolCreateLabel:          "label",
-	assistant.ToolDeleteLabel:          "label",
-	assistant.ToolUpdateComment:        "comment",
-	assistant.ToolResolveComment:       "comment",
-	assistant.ToolDeleteComment:        "comment",
-	assistant.ToolCreateAgent:          "agent",
-	assistant.ToolUpdateAgent:          "agent",
-	assistant.ToolAttachSkillToAgent:   "agent",
-	assistant.ToolAddSkill:             "skill",
-	assistant.ToolInviteMember:         "member",
-	assistant.ToolUpdateMemberRole:     "member",
-	assistant.ToolRemoveMember:         "member",
-	assistant.ToolCreateWorkspace:      "workspace",
-	assistant.ToolUpdateWorkspace:      "workspace",
-	assistant.ToolLeaveWorkspace:       "workspace",
-	assistant.ToolDeleteWorkspace:      "workspace",
-	assistant.ToolCreateAutopilot:      "autopilot",
-	assistant.ToolUpdateAutopilot:      "autopilot",
-	assistant.ToolRunAutopilotNow:      "autopilot",
-	assistant.ToolCreateAutomation:     "automation",
-	assistant.ToolSetAutomationEnabled: "automation",
-	assistant.ToolDeleteAutomation:     "automation",
-	assistant.ToolMarkInboxRead:        "inbox",
-	assistant.ToolPinItem:              "item",
-	assistant.ToolCreateArtifact:       "artifact",
-	assistant.ToolUpdateArtifact:       "artifact",
+	assistant.ToolCreateIssue:                   "issue",
+	assistant.ToolUpdateIssue:                   "issue",
+	assistant.ToolCommentIssue:                  "issue",
+	assistant.ToolArchiveIssue:                  "issue",
+	assistant.ToolAddIssueLabel:                 "issue",
+	assistant.ToolRemoveIssueLabel:              "issue",
+	assistant.ToolMoveIssueToSprint:             "issue",
+	assistant.ToolSubscribeIssue:                "issue",
+	assistant.ToolDeleteIssue:                   "issue",
+	assistant.ToolCreateProject:                 "project",
+	assistant.ToolUpdateProject:                 "project",
+	assistant.ToolDeleteProject:                 "project",
+	assistant.ToolCreateSprint:                  "sprint",
+	assistant.ToolDeleteSprint:                  "sprint",
+	assistant.ToolCreateLabel:                   "label",
+	assistant.ToolDeleteLabel:                   "label",
+	assistant.ToolUpdateComment:                 "comment",
+	assistant.ToolResolveComment:                "comment",
+	assistant.ToolDeleteComment:                 "comment",
+	assistant.ToolCreateAgent:                   "agent",
+	assistant.ToolUpdateAgent:                   "agent",
+	assistant.ToolAttachSkillToAgent:            "agent",
+	assistant.ToolAddSkill:                      "skill",
+	assistant.ToolInviteMember:                  "member",
+	assistant.ToolUpdateMemberRole:              "member",
+	assistant.ToolRemoveMember:                  "member",
+	assistant.ToolCreateWorkspace:               "workspace",
+	assistant.ToolUpdateWorkspace:               "workspace",
+	assistant.ToolLeaveWorkspace:                "workspace",
+	assistant.ToolDeleteWorkspace:               "workspace",
+	assistant.ToolCreateAutopilot:               "autopilot",
+	assistant.ToolUpdateAutopilot:               "autopilot",
+	assistant.ToolRunAutopilotNow:               "autopilot",
+	assistant.ToolCreateAutomation:              "automation",
+	assistant.ToolSetAutomationEnabled:          "automation",
+	assistant.ToolDeleteAutomation:              "automation",
+	assistant.ToolMarkInboxRead:                 "inbox",
+	assistant.ToolUpdateMySettings:              "settings",
+	assistant.ToolUpdateSidebar:                 "sidebar",
+	assistant.ToolUpdateNotificationPreferences: "notifications",
+	assistant.ToolPinItem:                       "item",
+	assistant.ToolCreateArtifact:                "artifact",
+	assistant.ToolUpdateArtifact:                "artifact",
 }
 
 // assistantAttachReceipt answers the user's second question — "what did you
@@ -896,6 +900,23 @@ func assistantAttachReceipt(tool string, result json.RawMessage) json.RawMessage
 	return decorated
 }
 
+// assistantStringList reads a []string the tool already put in its answer.
+// Anything that is not a list of strings reads as empty — a receipt never
+// guesses at a shape the response did not produce.
+func assistantStringList(out map[string]any, key string) []string {
+	raw, ok := out[key].([]any)
+	if !ok {
+		return nil
+	}
+	values := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok && s != "" {
+			values = append(values, s)
+		}
+	}
+	return values
+}
+
 // assistantReceiptEffects lists the downstream consequences the RESPONSE
 // already encodes. Anything the response does not say is not listed — a receipt
 // that guesses is worse than a short one.
@@ -953,6 +974,28 @@ func assistantReceiptEffects(tool string, out map[string]any) []string {
 			add("taken out of its sprint")
 		} else if sprint := assistantFirstString(out, "sprint"); sprint != "" {
 			add("now in sprint " + sprint)
+		}
+	// A preference change renders nothing in the transcript, so the receipt is
+	// the only place the user can read back what moved.
+	case assistant.ToolUpdateSidebar:
+		if hidden := assistantStringList(out, "hidden"); len(hidden) > 0 {
+			add("hidden from the sidebar: " + strings.Join(hidden, ", "))
+		}
+		if shown := assistantStringList(out, "shown"); len(shown) > 0 {
+			add("restored to the sidebar: " + strings.Join(shown, ", "))
+		}
+	case assistant.ToolUpdateMySettings:
+		if updated := assistantStringList(out, "updated"); len(updated) > 0 {
+			add("changed: " + strings.Join(updated, ", "))
+		}
+	case assistant.ToolUpdateNotificationPreferences:
+		if changed, ok := out["changed"].(map[string]any); ok && len(changed) > 0 {
+			groups := make([]string, 0, len(changed))
+			for group := range changed {
+				groups = append(groups, group)
+			}
+			sort.Strings(groups)
+			add("notification groups changed: " + strings.Join(groups, ", "))
 		}
 	case assistant.ToolUpdateMemberRole:
 		if previous := assistantFirstString(out, "previous_role"); previous != "" {

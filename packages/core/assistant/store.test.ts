@@ -123,8 +123,41 @@ describe("createAssistantStore drafts and artifact state", () => {
     expect(store.getState().composerContextBySession["session-a"]).toEqual(selected);
 
     store.getState().setComposerContext("session-a", { workspace_id: "ws-2", project_id: "wrong-project", attachments: selected.attachments });
-    expect(store.getState().composerContextBySession["session-a"]).toEqual({ workspace_id: "ws-2", project_id: null, attachments: [] });
+    expect(store.getState().composerContextBySession["session-a"]).toEqual({ workspace_id: "ws-2", project_id: null, member: null, attachments: [] });
     expect(store.getState().draftsBySession).toEqual({});
+  });
+
+  it("keeps a pinned workspace and an attached member across a reload", () => {
+    const storage = memoryStorage();
+    const store = createAssistantStore({ storage });
+    store.getState().setIdentity("user-a");
+    const selected = {
+      workspace_id: "ws-2",
+      workspace_pinned: true,
+      member: { user_id: "user-7", name: "Dana" },
+    };
+    store.getState().setComposerContext("session-a", selected);
+    store.getState().setIdentity("user-b");
+    store.getState().setIdentity("user-a");
+    expect(store.getState().composerContextBySession["session-a"]).toEqual(selected);
+  });
+
+  // A member belongs to the workspace it was picked in, so a persisted blob
+  // that lost the workspace — or the member's id — is dropped rather than
+  // replayed into whichever workspace the composer opens on next.
+  it.each([
+    { workspace_id: "ws-1", member: { user_id: "", name: "Dana" } },
+    { workspace_id: "ws-1", member: { user_id: "user-7" } },
+    { workspace_id: null, member: { user_id: "user-7", name: "Dana" } },
+    { workspace_id: null, workspace_pinned: true },
+    { workspace_id: "ws-1", workspace_pinned: "yes" },
+  ])("drops a malformed persisted composer scope (%j)", (bad) => {
+    const storage = memoryStorage({
+      "agora:assistant:composerContext:user-a": JSON.stringify({ "session-a": bad }),
+    });
+    const store = createAssistantStore({ storage });
+    store.getState().setIdentity("user-a");
+    expect(store.getState().composerContextBySession).toEqual({});
   });
 
   it("drops malformed persisted composer attachments", () => {

@@ -9,17 +9,34 @@ import type { Attachment } from "@agora/core/types";
 import { RESOURCES } from "../../locales";
 import { AssistantComposeResources } from "./compose-resources";
 
+interface TestSelection {
+  workspace_id: string | null;
+  workspace_pinned?: boolean;
+  project_id?: string | null;
+  member?: { user_id: string; name: string } | null;
+  attachments?: { id: string; filename: string; size_bytes: number }[];
+}
+
 vi.mock("@agora/core/assistant", async () => {
   const { create } = await import("zustand");
   const useAssistantStore = create<{
-    composerContextBySession: Record<string, { workspace_id: string | null; project_id?: string | null; attachments?: { id: string; filename: string; size_bytes: number }[] }>;
-    setComposerContext: (id: string, value: { workspace_id: string | null; project_id?: string | null; attachments?: { id: string; filename: string; size_bytes: number }[] } | null) => void;
+    composerContextBySession: Record<string, TestSelection>;
+    setComposerContext: (id: string, value: TestSelection | null) => void;
   }>((set) => ({
     composerContextBySession: {},
+    // Mirrors the real store: everything scoped BY the workspace is dropped
+    // when the workspace moves.
     setComposerContext: (id, value) => set((state) => {
       const next = { ...state.composerContextBySession };
-      if (value) next[id] = value;
-      else delete next[id];
+      if (value) {
+        const previous = state.composerContextBySession[id];
+        const workspaceChanged = previous !== undefined && previous.workspace_id !== value.workspace_id;
+        next[id] = workspaceChanged
+          ? { ...value, project_id: null, member: null, attachments: [] }
+          : value;
+      } else {
+        delete next[id];
+      }
       return { composerContextBySession: next };
     }),
   }));
@@ -36,6 +53,25 @@ vi.mock("@agora/core/projects", () => ({
   projectResourcesOptions: (_wsId: string, projectId: string) => ({
     queryKey: ["project-resources", projectId],
     queryFn: async () => [{ id: "resource-1", resource_type: "github_repo", resource_ref: { url: "https://github.com/example/site" }, label: "Site repo" }],
+  }),
+}));
+vi.mock("@agora/core/workspace", () => ({
+  workspaceListOptions: () => ({
+    queryKey: ["workspaces", "list"],
+    queryFn: async () => [
+      { id: "workspace-1", slug: "acme", name: "Acme" },
+      { id: "workspace-2", slug: "beta", name: "Beta" },
+    ],
+  }),
+  memberListOptions: (wsId: string) => ({
+    queryKey: ["workspaces", wsId, "members"],
+    queryFn: async () =>
+      wsId === "workspace-1"
+        ? [
+            { user_id: "user-1", name: "Dana Ruiz", email: "dana@agora.dev" },
+            { user_id: "user-2", name: "Sam Cole", email: "sam@agora.dev" },
+          ]
+        : [{ user_id: "user-9", name: "Beta Person", email: "beta@agora.dev" }],
   }),
 }));
 vi.mock("@agora/core/api", () => ({ api: { uploadFile: vi.fn() } }));
@@ -66,7 +102,7 @@ describe("AssistantComposeResources", () => {
     expect(await screen.findByLabelText("Project resources for Website")).toHaveTextContent("Site repo");
     expect(screen.getByLabelText("Project resources for Website")).toHaveTextContent("repository contents are not loaded automatically");
     await userEvent.click(screen.getByRole("button", { name: "Remove project" }));
-    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.project_id).toBeUndefined();
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.project_id).toBeNull();
   });
 
   it("uploads a small text file in the selected workspace and can remove it", async () => {
@@ -92,5 +128,76 @@ describe("AssistantComposeResources", () => {
     });
     expect(await screen.findByRole("alert")).toHaveTextContent("64 KiB");
     expect(api.uploadFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("AssistantComposeResources — workspace picker", () => {
+  it("sends the next message to the picked workspace instead of the page's", async () => {
+    renderControls();
+    // The chip shows where the message is going right now: the page's own.
+    await screen.findByRole("button", { name: "Acme" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Acme" }));
+    await userEvent.click(await screen.findByText("Beta"));
+
+    const selection = useAssistantStore.getState().composerContextBySession["session-1"];
+    expect(selection).toMatchObject({ workspace_id: "workspace-2", workspace_pinned: true });
+    expect(await screen.findByRole("button", { name: "Beta" })).toBeInTheDocument();
+
+    // Removing the pick falls back to the page's workspace rather than
+    // leaving the composer pointing nowhere.
+    await userEvent.click(screen.getByRole("button", { name: "Use the current workspace" }));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]).toMatchObject({
+      workspace_id: "workspace-1",
+      workspace_pinned: false,
+    });
+    expect(await screen.findByRole("button", { name: "Acme" })).toBeInTheDocument();
+  });
+
+  it("drops a project and files that belonged to the workspace being left", async () => {
+    renderControls();
+    await userEvent.click(screen.getByRole("button", { name: "Project" }));
+    await userEvent.click(await screen.findByText("Website"));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.project_id).toBe("project-1");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Acme" }));
+    await userEvent.click(await screen.findByText("Beta"));
+
+    const selection = useAssistantStore.getState().composerContextBySession["session-1"];
+    expect(selection?.project_id).toBeNull();
+    expect(selection?.attachments).toEqual([]);
+  });
+});
+
+describe("AssistantComposeResources — member picker", () => {
+  it("attaches a teammate from the target workspace and can remove them", async () => {
+    renderControls();
+    await userEvent.click(screen.getByRole("button", { name: "Person" }));
+    await userEvent.click(await screen.findByText("Dana Ruiz"));
+
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.member).toEqual({
+      user_id: "user-1",
+      name: "Dana Ruiz",
+    });
+    // The chip and the hint both name the person, so "assign it to her" is
+    // unambiguous before the message is even sent.
+    expect(await screen.findByRole("button", { name: "Dana Ruiz" })).toBeInTheDocument();
+    expect(screen.getByText(/Dana Ruiz is attached/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove person" }));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.member).toBeNull();
+    expect(screen.getByRole("button", { name: "Person" })).toBeInTheDocument();
+  });
+
+  // The roster follows the workspace picker, not the page: attaching somebody
+  // the target workspace has never heard of is refused by the server.
+  it("lists the picked workspace's roster", async () => {
+    renderControls();
+    await userEvent.click(await screen.findByRole("button", { name: "Acme" }));
+    await userEvent.click(await screen.findByText("Beta"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Person" }));
+    expect(await screen.findByText("Beta Person")).toBeInTheDocument();
+    expect(screen.queryByText("Dana Ruiz")).not.toBeInTheDocument();
   });
 });

@@ -15,7 +15,7 @@ import { useCurrentWorkspace } from "@agora/core/paths";
 import { workspaceListOptions } from "@agora/core/workspace";
 import { ApiError } from "@agora/core/api";
 import { useT } from "../../i18n";
-import { messageContext, type MessageContext } from "../lib/message-context";
+import { messageContext, targetWorkspaceId, type MessageContext } from "../lib/message-context";
 import { isNearBottom } from "../lib/scroll";
 import { followUpsForTranscript } from "../lib/follow-ups";
 import { MessageList } from "./message-list";
@@ -218,12 +218,25 @@ export function ActiveConversation({
     });
   };
 
-  const targetWorkspaceId = draft?.context ? draft.context.workspace_id : workspace?.id ?? null;
-  const targetWorkspace = targetWorkspaceId
-    ? workspaces.find((item) => item.id === targetWorkspaceId)?.name ??
-      (workspace?.id === targetWorkspaceId ? workspace.name : t(($) => $.composer.scope_previous))
+  // A draft that already carries a context is a send waiting to be retried —
+  // it names its own scope. Otherwise the scope is whatever the next send
+  // would use: the composer's pinned workspace if there is one, else the page.
+  const scopeWorkspaceId = draft?.context
+    ? draft.context.workspace_id
+    : targetWorkspaceId(workspace?.id ?? null, composerSelection);
+  const targetWorkspace = scopeWorkspaceId
+    ? workspaces.find((item) => item.id === scopeWorkspaceId)?.name ??
+      (workspace?.id === scopeWorkspaceId ? workspace.name : t(($) => $.composer.scope_previous))
     : t(($) => $.composer.scope_all);
+  const scopeMember = draft?.context
+    ? draft.context.member_id
+      ? t(($) => $.resources.retry_member)
+      : null
+    : composerSelection?.workspace_id === scopeWorkspaceId && composerSelection?.member
+      ? composerSelection.member.name
+      : null;
   const scopeLabel = t(($) => $.composer.scope_workspace, { workspace: targetWorkspace }) +
+    (scopeMember ? ` · ${scopeMember}` : "") +
     (draft?.context?.project_id ? ` · ${t(($) => $.resources.retry_project)}` : "") +
     (draft?.context?.attachment_ids?.length
       ? ` · ${t(($) => $.resources.retry_files, { count: draft.context.attachment_ids.length })}`

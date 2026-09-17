@@ -241,6 +241,19 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 	case assistant.ToolDeleteAutomation:
 		return h.assistantDeleteAutomation(ctx, caller, args)
 
+	// --- the user's own settings ------------------------------------------
+	// Personal preferences, not workspace data: update_sidebar and
+	// update_my_settings touch only the caller's own user row and take no
+	// workspace at all. See assistant_settings.go.
+	case assistant.ToolGetMySettings:
+		return h.assistantGetMySettings(ctx, caller, args)
+	case assistant.ToolUpdateMySettings:
+		return h.assistantUpdateMySettings(ctx, caller, args)
+	case assistant.ToolUpdateSidebar:
+		return h.assistantUpdateSidebar(ctx, caller, args)
+	case assistant.ToolUpdateNotificationPreferences:
+		return h.assistantUpdateNotificationPreferences(ctx, caller, args)
+
 	// --- analytics --------------------------------------------------------
 	case assistant.ToolUsageSummary:
 		return h.assistantUsageSummary(ctx, caller, args)

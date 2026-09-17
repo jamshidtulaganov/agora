@@ -132,6 +132,18 @@ const (
 	ToolPinItem        = "pin_item"
 	ToolSubscribeIssue = "subscribe_issue"
 
+	// The user's OWN settings. Parity with Settings → Preferences and
+	// Settings → Notifications: language, timezone, display name, which
+	// sidebar items they hide, and which notification groups are muted in a
+	// workspace. These are USER-scoped, not workspace-scoped (except the
+	// notification preferences, which are per workspace), and they are
+	// reversible in one further call — so they are neither confirmation-bound
+	// nor role-gated beyond the membership the workspace one already needs.
+	ToolGetMySettings                 = "get_my_settings"
+	ToolUpdateMySettings              = "update_my_settings"
+	ToolUpdateSidebar                 = "update_sidebar"
+	ToolUpdateNotificationPreferences = "update_notification_preferences"
+
 	// Analytics (read).
 	ToolUsageSummary   = "usage_summary"
 	ToolActivityDigest = "activity_digest"
@@ -191,6 +203,13 @@ var MutatingTools = map[string]bool{
 	ToolResolveComment:       true,
 	ToolPinItem:              true,
 	ToolSubscribeIssue:       true,
+	// Personal settings. Writes, but deliberately NOT in DestructiveTools:
+	// every one of them is undone by calling the same tool with the other
+	// value, and binding a confirmation card to "mute comments" is how a
+	// confirmation gate stops meaning anything.
+	ToolUpdateMySettings:              true,
+	ToolUpdateSidebar:                 true,
+	ToolUpdateNotificationPreferences: true,
 }
 
 // IsMutating reports whether a tool writes.
@@ -1349,6 +1368,103 @@ func ToolSpecs() []llm.Tool {
     "automation": {"type": "string", "description": "Automation UUID, or its name from list_automations."}
   },
   "required": ["workspace_id", "automation"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolGetMySettings,
+			Description: "Read the user's OWN settings in one call: display name, email, interface language, " +
+				"pinned timezone, which sidebar items they have hidden, and — for one workspace — their " +
+				"notification preferences. READ-ONLY. Call this before changing a setting so you can tell " +
+				"them what it was before. Notification preferences are per workspace: pass workspace_id to " +
+				"read a specific one, or omit it to read the workspace this message was sent from. " +
+				"A notification group missing from the map is on its default, which is \"all\".",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "UUID of the workspace whose notification preferences to read, from list_workspaces. Omit for the workspace this message was sent from."
+    }
+  },
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateMySettings,
+			Description: "Change the user's own profile settings: interface language, pinned timezone, or " +
+				"display name. WRITE, reversible, and personal — it affects only the calling user, in every " +
+				"workspace. Send only the fields that change; the others are left alone. Say plainly what " +
+				"you changed and what it was before. Passing an empty timezone clears the pin and goes back " +
+				"to following the browser's timezone.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "enum": ["en", "zh-Hans", "uz", "ru"],
+      "description": "Interface language."
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA timezone name, e.g. Asia/Tashkent. Empty string clears the pin and follows the browser again."
+    },
+    "name": {"type": "string", "description": "Display name shown to the rest of the team."}
+  },
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateSidebar,
+			Description: "Hide or restore items in the user's sidebar — the same switches Settings → " +
+				"Preferences offers. WRITE, reversible, personal, and MERGED against what they already " +
+				"hide: naming one item never disturbs the rest. Use the nav keys get_my_settings reports " +
+				"(inbox, issues, projects, autopilots, automations, agents, squads, usage, runtimes, " +
+				"skills, plugins, mcp, artifacts, assistant). Settings itself can never be hidden — it is " +
+				"the only way back to this screen — and asking to hide it comes back as a refusal.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "hide": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Nav keys to hide. Added to whatever the user already hides."
+    },
+    "show": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Nav keys to bring back. Removed from the hidden list; keys that were not hidden are ignored."
+    }
+  },
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateNotificationPreferences,
+			Description: "Mute or unmute a notification group for the user in ONE workspace — the switches " +
+				"Settings → Notifications offers. WRITE, reversible, and personal: it changes only the " +
+				"calling user's own notifications, never anybody else's. MERGED against their current " +
+				"settings, so naming one group leaves the others alone. \"all\" means notify, \"muted\" " +
+				"means do not. system_notifications is the desktop banner toggle rather than an inbox group.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace, from list_workspaces."},
+    "preferences": {
+      "type": "object",
+      "properties": {
+        "assignments": {"type": "string", "enum": ["all", "muted"], "description": "Issues assigned to the user."},
+        "status_changes": {"type": "string", "enum": ["all", "muted"], "description": "Status changes on issues they follow."},
+        "comments": {"type": "string", "enum": ["all", "muted"], "description": "Comments and mentions."},
+        "updates": {"type": "string", "enum": ["all", "muted"], "description": "Other issue updates."},
+        "agent_activity": {"type": "string", "enum": ["all", "muted"], "description": "What the agents did."},
+        "system_notifications": {"type": "string", "enum": ["all", "muted"], "description": "Native desktop notification banners."}
+      },
+      "additionalProperties": false,
+      "description": "The groups to change. Groups you leave out keep their current value."
+    }
+  },
+  "required": ["workspace_id", "preferences"],
   "additionalProperties": false
 }`),
 		},

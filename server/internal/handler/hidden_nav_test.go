@@ -10,11 +10,14 @@ import (
 )
 
 func TestNormalizeHiddenNavAcceptsValidKeys(t *testing.T) {
-	got, errMsg := normalizeHiddenNav([]string{"usage", "my_issues", "ai-accounts"})
+	// camelCase is not decoration: `myIssues` and `aiAccounts` are the literal
+	// keys packages/views/layout/nav-items.ts PATCHes here, so rejecting them
+	// would make those two rows unhideable in the real sidebar.
+	got, errMsg := normalizeHiddenNav([]string{"usage", "my_issues", "ai-accounts", "myIssues", "aiAccounts"})
 	if errMsg != "" {
 		t.Fatalf("unexpected error: %s", errMsg)
 	}
-	want := []string{"usage", "my_issues", "ai-accounts"}
+	want := []string{"usage", "my_issues", "ai-accounts", "myIssues", "aiAccounts"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -53,7 +56,7 @@ func TestNormalizeHiddenNavRejectsMalformedKeys(t *testing.T) {
 		key  string
 	}{
 		{"empty", ""},
-		{"uppercase", "Usage"},
+		{"leading uppercase is fine, punctuation is not", "Usage!"},
 		{"path traversal", "../../etc/passwd"},
 		{"leading digit", "1usage"},
 		{"whitespace inside", "my issues"},

@@ -26,7 +26,7 @@ import { useHealActiveAssistantSession } from "./use-active-session";
 import { useArtifactWorkbench } from "./use-artifact-workbench";
 import { WorkbenchDivider } from "./components/workbench-divider";
 import { useWorkbenchResize } from "./components/use-workbench-resize";
-import { messageContext } from "./lib/message-context";
+import { messageContext, targetWorkspaceId } from "./lib/message-context";
 import type { InitialAssistantMessage } from "./components/active-conversation";
 import { AssistantComposeResources } from "./components/compose-resources";
 
@@ -135,8 +135,13 @@ export function AssistantPage() {
   const handleSendFromDraft = (content: string) => {
     const selection = useAssistantStore.getState().composerContextBySession[NEW_SESSION_COMPOSER];
     const initialMessage = { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null, selection) };
+    // A brand-new session has no focus to override, so it opens on the
+    // workspace this first message is actually going to — a session whose
+    // chip said one workspace while its composer said another would be two
+    // truthful labels contradicting each other.
+    const focusWorkspaceId = targetWorkspaceId(workspace?.id ?? null, selection);
     createSession.mutate(
-      workspace ? { focus_workspace_id: workspace.id } : undefined,
+      focusWorkspaceId ? { focus_workspace_id: focusWorkspaceId } : undefined,
       {
         onSuccess: (session) => {
           if (selection) setComposerContext(session.id, selection);

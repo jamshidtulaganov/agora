@@ -16,8 +16,26 @@ const DRAFT_STORAGE_KEY = "agora:assistant:drafts";
 const COMPOSER_CONTEXT_STORAGE_KEY = "agora:assistant:composerContext";
 
 export interface AssistantComposerContext {
+  /**
+   * The workspace this composer sends to. Normally a mirror of the page's
+   * workspace; when `workspace_pinned` is true it is the one the user PICKED,
+   * and the page no longer overwrites it.
+   */
   workspace_id: string | null;
+  /**
+   * True once the user chose a workspace from the composer's picker. It is the
+   * difference between "this happens to be where you are" and "send this
+   * THERE", and without it the page-follows effect in AssistantComposeResources
+   * would reset an explicit pick on the next render.
+   */
+  workspace_pinned?: boolean;
   project_id?: string | null;
+  /**
+   * A teammate attached as person-context — who "her"/"them" means in the
+   * message. Name is carried beside the id so the chip renders without a
+   * roster fetch, and so a send can label what it is about to do.
+   */
+  member?: { user_id: string; name: string } | null;
   attachments?: { id: string; filename: string; size_bytes: number }[];
 }
 
@@ -31,6 +49,13 @@ function validComposerContext(value: unknown): value is AssistantComposerContext
   if (context.workspace_id !== null && !validId(context.workspace_id)) return false;
   if (context.project_id !== undefined && context.project_id !== null && !validId(context.project_id)) return false;
   if (context.project_id && !context.workspace_id) return false;
+  if (context.workspace_pinned !== undefined && typeof context.workspace_pinned !== "boolean") return false;
+  if (context.workspace_pinned && !context.workspace_id) return false;
+  if (context.member !== undefined && context.member !== null) {
+    if (typeof context.member !== "object" || Array.isArray(context.member)) return false;
+    if (!validId(context.member.user_id) || typeof context.member.name !== "string") return false;
+    if (!context.workspace_id) return false;
+  }
   if (context.attachments !== undefined) {
     if (!context.workspace_id || !Array.isArray(context.attachments) || context.attachments.length > 5) return false;
     if (!context.attachments.every((attachment) =>
@@ -73,6 +98,8 @@ function readDrafts(raw: string | null): Record<string, AssistantDraft> {
         (context.timezone === undefined || typeof context.timezone === "string") &&
         (context.project_id === undefined || context.project_id === null || validId(context.project_id)) &&
         (!context.project_id || !!context.workspace_id) &&
+        (context.member_id === undefined || context.member_id === null || validId(context.member_id)) &&
+        (!context.member_id || !!context.workspace_id) &&
         (context.attachment_ids === undefined ||
           (!!context.workspace_id && Array.isArray(context.attachment_ids) &&
             context.attachment_ids.length <= 5 && context.attachment_ids.every(validId)));
@@ -156,8 +183,12 @@ export function createAssistantStore(options: AssistantStoreOptions) {
       if (context) {
         const workspaceChanged = current[sessionId]?.workspace_id !== undefined &&
           current[sessionId]?.workspace_id !== context.workspace_id;
+        // Everything below the workspace is scoped BY it — a project, a
+        // teammate and an uploaded file all belong to one workspace — so a
+        // workspace switch drops them rather than re-pointing them somewhere
+        // they do not exist.
         next[sessionId] = workspaceChanged
-          ? { ...context, project_id: null, attachments: [] }
+          ? { ...context, project_id: null, member: null, attachments: [] }
           : context;
       } else {
         delete next[sessionId];

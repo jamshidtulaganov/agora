@@ -468,6 +468,11 @@ type SendAssistantMessageRequest struct {
 		Timezone      string          `json:"timezone"`
 		ProjectID     json.RawMessage `json:"project_id"`
 		AttachmentIDs []string        `json:"attachment_ids"`
+		// MemberID is the teammate picked in the composer for this message.
+		// RawMessage rather than *string for the same reason project_id is:
+		// an explicit JSON null is how the client says "cleared", and that has
+		// to be distinguishable from the field being absent.
+		MemberID json.RawMessage `json:"member_id"`
 	} `json:"context"`
 }
 
@@ -577,6 +582,18 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			runContext.ProjectID = &projectID
+		}
+		if req.Context.MemberID != nil && !bytes.Equal(bytes.TrimSpace(req.Context.MemberID), []byte("null")) {
+			var memberID string
+			if err := json.Unmarshal(req.Context.MemberID, &memberID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid member_id")
+				return
+			}
+			if _, err := uuid.Parse(memberID); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid member_id")
+				return
+			}
+			runContext.MemberID = &memberID
 		}
 		runContext.AttachmentIDs = req.Context.AttachmentIDs
 	}

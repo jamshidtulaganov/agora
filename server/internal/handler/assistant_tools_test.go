@@ -995,6 +995,14 @@ func assistantWorkspaceGateArgs(ws, insider string) map[string]string {
 		assistant.ToolCreateAutomation:     `{"workspace_id":"` + ws + `","name":"R","trigger_type":"issue.created","actions":"[{\"type\":\"add_label\",\"config\":{\"name\":\"bug\"}}]"}`,
 		assistant.ToolSetAutomationEnabled: `{"workspace_id":"` + ws + `","automation":"R","enabled":false}`,
 		assistant.ToolDeleteAutomation:     `{"workspace_id":"` + ws + `","automation":"R","confirm":true}`,
+
+		// The settings tools that DO name a workspace. get_my_settings reads
+		// the caller's own profile and would otherwise be user-scoped, but the
+		// half of its answer that is per workspace (notification preferences)
+		// must never be readable from outside — so when it is handed a
+		// workspace it owes an outsider the same refusal as every other tool.
+		assistant.ToolGetMySettings:                 `{"workspace_id":"` + ws + `"}`,
+		assistant.ToolUpdateNotificationPreferences: `{"workspace_id":"` + ws + `","preferences":{"comments":"muted"}}`,
 	}
 }
 
@@ -1008,6 +1016,13 @@ var assistantUnscopedTools = map[string]bool{
 	assistant.ToolCreateArtifact:  true,
 	assistant.ToolUpdateArtifact:  true,
 	assistant.ToolCreateWorkspace: true,
+	// Personal preferences on the caller's own user row. There is no
+	// workspace to gate and no other person's row they can reach — the only
+	// id in play is the caller's, resolved before dispatch. Their own gate
+	// (they change nobody else's settings) is asserted in
+	// assistant_settings_test.go.
+	assistant.ToolUpdateSidebar:    true,
+	assistant.ToolUpdateMySettings: true,
 }
 
 // Every tool in the catalog must be dispatchable and must refuse a caller who

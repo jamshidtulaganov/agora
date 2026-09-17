@@ -188,9 +188,16 @@
     "what_needs_me": "今天有什么需要我处理？"
   },
   "resources": {
+    "choose_workspace": "工作区",
+    "no_workspaces": "没有工作区",
+    "remove_workspace": "使用当前工作区",
     "choose_project": "项目",
     "no_projects": "此工作区没有项目",
     "remove_project": "移除项目",
+    "choose_member": "成员",
+    "no_members": "此工作区没有成员",
+    "remove_member": "移除成员",
+    "member_hint": "已附加成员 {{member}}：消息里的\"他\"\"她\"\"他们\"都指这个人。",
     "remove_file": "移除 {{filename}}",
     "inventory_label": "{{project}} 的项目资源",
     "inventory": "关联资源",
@@ -205,6 +212,7 @@
     "uploading": "上传中...",
     "upload_failed": "无法上传文件，请重试。",
     "retry_project": "重试将使用之前选择的项目",
-    "retry_files": "重试将包含 {{count}} 个附件"
+    "retry_files": "重试将包含 {{count}} 个附件",
+    "retry_member": "重试时保留已附加的成员"
   }
 }

@@ -35,6 +35,15 @@ type RunContext struct {
 	Timezone      string   `json:"timezone,omitempty"`
 	ProjectID     *string  `json:"project_id,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	// MemberID is the teammate the user attached to THIS message — the person
+	// a pronoun in the text refers to. Unlike the four fields above it has no
+	// column of its own: what the model needs is the member's NAME beside the
+	// id, and that pair is already captured in context_snapshot (jsonb), which
+	// the run loads before it builds the prompt. A column would be a migration
+	// for a value no query filters on. It is therefore an ACCEPT-TIME field:
+	// it reaches validation and the snapshot, and scanRun does not read it
+	// back (a retry re-sends it from the composer, which still holds the pick).
+	MemberID *string `json:"member_id,omitempty"`
 }
 
 type RunRecord struct {

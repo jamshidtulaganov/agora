@@ -41,6 +41,33 @@ func TimezoneFrom(ctx context.Context) string {
 	return tz
 }
 
+type runFocusWorkspaceKey struct{}
+
+// WithFocusWorkspace carries the workspace this message was sent from into a
+// tool execution.
+//
+// Same class of value as the timezone above — ambient request context, not a
+// tool input — and it is here for the same reason: a tool that needs "the
+// workspace the user is looking at" should not have to make the model ground a
+// UUID first. Tools that take an explicit workspace_id still prefer the
+// argument; this is only the default when the model named none.
+func WithFocusWorkspace(ctx context.Context, workspaceID string) context.Context {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, runFocusWorkspaceKey{}, workspaceID)
+}
+
+// FocusWorkspaceFrom returns the workspace captured for this run, or "" when
+// the message was sent with no workspace in focus (a cross-workspace question,
+// or a tool executed outside a run). A caller that finds "" must ask rather
+// than pick one.
+func FocusWorkspaceFrom(ctx context.Context) string {
+	id, _ := ctx.Value(runFocusWorkspaceKey{}).(string)
+	return id
+}
+
 // LoadLocation resolves an IANA name, falling back to UTC. A stored timezone
 // the platform does not know (a renamed zone, a typo that predates validation)
 // must degrade to a defined answer rather than fail a read tool.

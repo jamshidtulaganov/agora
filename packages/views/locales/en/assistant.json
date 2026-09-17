@@ -188,9 +188,16 @@
     "what_needs_me": "What needs me today?"
   },
   "resources": {
+    "choose_workspace": "Workspace",
+    "no_workspaces": "No workspaces",
+    "remove_workspace": "Use the current workspace",
     "choose_project": "Project",
     "no_projects": "No projects in this workspace",
     "remove_project": "Remove project",
+    "choose_member": "Person",
+    "no_members": "No members in this workspace",
+    "remove_member": "Remove person",
+    "member_hint": "{{member}} is attached: \"they\" and \"her\" in your message mean this person.",
     "remove_file": "Remove {{filename}}",
     "inventory_label": "Project resources for {{project}}",
     "inventory": "Linked resources",
@@ -205,6 +212,7 @@
     "uploading": "Uploading...",
     "upload_failed": "Could not upload this file. Try again.",
     "retry_project": "Retry uses the selected project",
-    "retry_files": "Retry includes {{count}} attached files"
+    "retry_files": "Retry includes {{count}} attached files",
+    "retry_member": "Retry keeps the attached person"
   }
 }

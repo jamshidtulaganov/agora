@@ -57,13 +57,19 @@ var supportedLanguages = map[string]struct{}{
 // letting /api/me become a general-purpose blob store on the user row.
 const MaxHiddenNavKeys = 64
 
-// hiddenNavKeyPattern matches the nav-key slugs the sidebar uses
-// ("inbox", "my_issues", "ai-accounts"). The key set is frontend-owned, so
-// the server validates shape rather than membership — a key this server
-// doesn't know about is simply ignored by clients that don't render it,
-// which is also what lets an older client keep working after the sidebar
-// gains or renames an entry.
-var hiddenNavKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,39}$`)
+// hiddenNavKeyPattern matches the nav keys the sidebar uses ("inbox",
+// "myIssues", "ai-accounts"). The key set is frontend-owned, so the server
+// validates shape rather than membership — a key this server doesn't know
+// about is simply ignored by clients that don't render it, which is also what
+// lets an older client keep working after the sidebar gains or renames an
+// entry.
+//
+// Letters are accepted in BOTH cases because the sidebar's own keys are
+// camelCase: packages/views/layout/nav-items.ts names them `myIssues` and
+// `aiAccounts`, and those are the exact strings the client PATCHes here. A
+// lowercase-only pattern (which is what this was) rejected them, so "hide My
+// Issues" failed with "invalid hidden_nav key" while every other item worked.
+var hiddenNavKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,39}$`)
 
 // alwaysVisibleNavKeys can never be hidden. Settings is the only route back
 // to the screen where a hidden item is restored, so allowing it to be hidden

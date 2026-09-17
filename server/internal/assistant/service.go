@@ -276,7 +276,7 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 			return RunStatusFailed, "you no longer have access to this message's workspace"
 		}
 	}
-	if runContext.ProjectID != nil || len(runContext.AttachmentIDs) > 0 {
+	if runContext.ProjectID != nil || runContext.MemberID != nil || len(runContext.AttachmentIDs) > 0 {
 		if s.ContextValidator == nil {
 			return RunStatusFailed, "selected project and file access could not be checked"
 		}
@@ -312,6 +312,13 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 	// context every tool executes under. "Today" is the caller's day, not the
 	// server's — see runcontext.go.
 	ctx = WithTimezone(ctx, runTimezone)
+	// …and so does the workspace this message was sent from. get_my_settings
+	// reads notification preferences, which are per workspace, and asking the
+	// model to ground a workspace id first for "am I muted here?" is a
+	// round-trip the run already has the answer to.
+	if focus.Valid {
+		ctx = WithFocusWorkspace(ctx, util.UUIDToString(focus))
+	}
 
 	for round := 0; round < MaxToolRounds; round++ {
 		if status, done := terminalFromContext(ctx); done {

@@ -155,6 +155,7 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	b.WriteString("saying insufficient permissions, that is the real answer: relay it and say who can do it.\n")
 	b.WriteString("- An automation or an autopilot KEEPS FIRING after this conversation ends. Build only the ")
 	b.WriteString("rule the user asked for, then read it back to them: what fires it, what it does, and when.\n")
+	writeSettingsGuidance(&b)
 	writeConfirmationGuidance(&b)
 	writeExcludedCapabilities(&b)
 	b.WriteString("\nLanguage:\n")
@@ -172,6 +173,38 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	}
 
 	return b.String()
+}
+
+// writeSettingsGuidance renders the rules for the user's OWN preferences.
+//
+// Two failure modes this is written against, both of which the surrounding
+// prompt would otherwise produce:
+//
+//   - Over-asking. Everything above trains the model to be careful before it
+//     writes, and the confirmation section trains it to wait for a click. A
+//     language switch is neither: it affects one person, it is undone by
+//     calling the same tool again, and a "are you sure?" round-trip on it is
+//     pure friction. So this section says out loud that these are exempt.
+//   - Under-reporting. A preference change is INVISIBLE in the transcript —
+//     nothing renders, no identifier is quoted — so an answer of "done" leaves
+//     the user unable to tell what moved. Hence the standing requirement to
+//     name the setting, the new value, and what it was before.
+func writeSettingsGuidance(b *strings.Builder) {
+	b.WriteString("\nThe user's own settings:\n")
+	b.WriteString("- get_my_settings reads their language, timezone, display name, hidden sidebar items and ")
+	b.WriteString("notification preferences. Read it BEFORE changing anything, so you can say what the value was.\n")
+	b.WriteString("- update_my_settings, update_sidebar and update_notification_preferences change them. These ")
+	b.WriteString("are REVERSIBLE PERSONAL PREFERENCES: no confirmation card, no asking twice. Do what they ")
+	b.WriteString("asked, then STATE WHAT CHANGED — the setting, its new value, and what it was before — because ")
+	b.WriteString("nothing about a preference change is visible in this conversation otherwise.\n")
+	b.WriteString("- They only ever affect the person you are talking to. There is no tool here for changing ")
+	b.WriteString("somebody else's preferences, and a request to do that is answered by saying so.\n")
+	b.WriteString("- update_sidebar and update_notification_preferences MERGE: naming one item or one group ")
+	b.WriteString("leaves everything else exactly as it was. Never send the whole list back to \"preserve\" it.\n")
+	b.WriteString("- Notification preferences are PER WORKSPACE. \"Mute comments\" means mute them in one ")
+	b.WriteString("workspace; if the user has several and named none, say which one you changed.\n")
+	b.WriteString("- Settings that hold a CREDENTIAL are still not yours: API keys, tokens, an agent's ")
+	b.WriteString("environment and MCP auth go to their own settings pages, exactly as below.\n")
 }
 
 // writeConfirmationGuidance renders the destructive-action protocol.

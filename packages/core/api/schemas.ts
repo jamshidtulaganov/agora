@@ -2055,6 +2055,7 @@ export const AssistantRunSchema = z.object({
     workspace_id: z.string().nullable().catch(null).default(null),
     timezone: z.string().optional(),
     project_id: z.string().nullable().catch(null).optional(),
+    member_id: z.string().nullable().catch(null).optional(),
     attachment_ids: z.array(z.string()).catch([]).optional(),
   }).catch({ workspace_id: null }).default({ workspace_id: null }),
 }).loose();

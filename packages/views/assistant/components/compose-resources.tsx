@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderKanban, Loader2, X } from "lucide-react";
+import { Building2, FolderKanban, Loader2, UserRound, X } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useAssistantStore, type AssistantComposerContext } from "@agora/core/assistant";
 import { projectListOptions } from "@agora/core/projects/queries";
 import { projectResourcesOptions } from "@agora/core/projects";
+import { memberListOptions, workspaceListOptions } from "@agora/core/workspace";
 import type { ProjectResource } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
@@ -50,6 +51,7 @@ export function AssistantComposeResources({
   onUploadingChange,
 }: {
   sessionId: string;
+  /** The workspace the surrounding page is on — the default target. */
   workspaceId: string | null;
   onSelectionChange?: () => void;
   onUploadingChange?: (uploading: boolean) => void;
@@ -59,24 +61,42 @@ export function AssistantComposeResources({
   const setSelection = useAssistantStore((s) => s.setComposerContext);
   const [uploadCount, setUploadCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const effectiveSelection = selection?.workspace_id === workspaceId ? selection : null;
+  // Opening the picker is what fetches the roster: most messages never attach
+  // a person, and a members request on every assistant mount would be a cost
+  // paid by everyone for a feature used by a few.
+  const [rosterRequested, setRosterRequested] = useState(false);
+  // A picked workspace outranks the page; the page is the default, not the law.
+  const pinnedWorkspaceId = selection?.workspace_pinned ? selection.workspace_id : null;
+  const targetWorkspaceId = pinnedWorkspaceId ?? workspaceId;
+  const effectiveSelection = selection?.workspace_id === targetWorkspaceId ? selection : null;
   const projectId = effectiveSelection?.project_id ?? null;
+  const member = effectiveSelection?.member ?? null;
   const attachments = effectiveSelection?.attachments ?? [];
+  const { data: workspaces = [] } = useQuery(workspaceListOptions());
   const { data: projects = [] } = useQuery({
-    ...projectListOptions(workspaceId ?? ""),
-    enabled: !!workspaceId,
+    ...projectListOptions(targetWorkspaceId ?? ""),
+    enabled: !!targetWorkspaceId,
+  });
+  const { data: members = [] } = useQuery({
+    ...memberListOptions(targetWorkspaceId ?? ""),
+    enabled: !!targetWorkspaceId && rosterRequested,
   });
   const { data: resources = [] } = useQuery({
-    ...projectResourcesOptions(workspaceId ?? "", projectId ?? ""),
-    enabled: !!workspaceId && !!projectId,
+    ...projectResourcesOptions(targetWorkspaceId ?? "", projectId ?? ""),
+    enabled: !!targetWorkspaceId && !!projectId,
   });
   const project = projects.find((item) => item.id === projectId);
+  const targetWorkspace = workspaces.find((item) => item.id === targetWorkspaceId);
 
   useEffect(() => {
+    // Follow the page only while the user has not pinned a workspace of their
+    // own. Without the pin check this effect would undo every explicit pick on
+    // the next render.
+    if (selection?.workspace_pinned) return;
     if (selection?.workspace_id !== workspaceId) {
       setSelection(sessionId, { workspace_id: workspaceId });
     }
-  }, [selection?.workspace_id, workspaceId, sessionId, setSelection]);
+  }, [selection?.workspace_id, selection?.workspace_pinned, workspaceId, sessionId, setSelection]);
 
   useEffect(() => {
     onUploadingChange?.(uploadCount > 0);
@@ -88,9 +108,19 @@ export function AssistantComposeResources({
     onSelectionChange?.();
   };
 
+  // The selection as it stands, so changing one chip never drops another.
+  // The store clears project/member/files by itself when the workspace moves.
+  const current = (): AssistantComposerContext => ({
+    workspace_id: targetWorkspaceId,
+    ...(pinnedWorkspaceId ? { workspace_pinned: true } : {}),
+    project_id: projectId,
+    member,
+    attachments,
+  });
+
   const onFile = async (file: File) => {
     setUploadError(null);
-    if (!workspaceId) {
+    if (!targetWorkspaceId) {
       setUploadError(t(($) => $.resources.workspace_required));
       return;
     }
@@ -113,12 +143,12 @@ export function AssistantComposeResources({
     }
     setUploadCount((count) => count + 1);
     try {
-      const uploaded = await api.uploadFile(file, { workspaceId });
-      if (!uploaded.id || uploaded.workspace_id !== workspaceId) throw new Error("Invalid attachment scope");
+      const uploaded = await api.uploadFile(file, { workspaceId: targetWorkspaceId });
+      if (!uploaded.id || uploaded.workspace_id !== targetWorkspaceId) throw new Error("Invalid attachment scope");
       const latest = useAssistantStore.getState().composerContextBySession[sessionId];
       // A workspace switch or removal while upload was pending must not
       // reattach a file to the wrong scope.
-      if (latest?.workspace_id !== workspaceId) return;
+      if (latest?.workspace_id !== targetWorkspaceId) return;
       setSelection(sessionId, {
         ...latest,
         attachments: [
@@ -139,15 +169,42 @@ export function AssistantComposeResources({
       <div className="flex flex-wrap items-center gap-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger
-            disabled={!workspaceId}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-input px-2 hover:bg-accent disabled:opacity-50"
+            className="inline-flex h-7 max-w-48 items-center gap-1 rounded-md border border-input px-2 hover:bg-accent disabled:opacity-50"
           >
-            <FolderKanban className="size-3.5" />
-            {project?.title ?? t(($) => $.resources.choose_project)}
+            <Building2 className="size-3.5 shrink-0" />
+            <span className="truncate">{targetWorkspace?.name ?? t(($) => $.resources.choose_workspace)}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 w-60 overflow-y-auto">
+            {workspaces.map((item) => (
+              <DropdownMenuItem key={item.id} onClick={() => update({ ...current(), workspace_id: item.id, workspace_pinned: true })}>
+                <span className="truncate">{item.name}</span>
+              </DropdownMenuItem>
+            ))}
+            {workspaces.length === 0 && <div className="px-2 py-1.5">{t(($) => $.resources.no_workspaces)}</div>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {pinnedWorkspaceId && (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={t(($) => $.resources.remove_workspace)}
+            onClick={() => update({ ...current(), workspace_id: workspaceId, workspace_pinned: false })}
+          >
+            <X className="size-3.5" />
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={!targetWorkspaceId}
+            className="inline-flex h-7 max-w-48 items-center gap-1 rounded-md border border-input px-2 hover:bg-accent disabled:opacity-50"
+          >
+            <FolderKanban className="size-3.5 shrink-0" />
+            <span className="truncate">{project?.title ?? t(($) => $.resources.choose_project)}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 w-60 overflow-y-auto">
             {projects.map((item) => (
-              <DropdownMenuItem key={item.id} onClick={() => update({ workspace_id: workspaceId, project_id: item.id, attachments })}>
+              <DropdownMenuItem key={item.id} onClick={() => update({ ...current(), project_id: item.id })}>
                 <span className="truncate">{item.title}</span>
               </DropdownMenuItem>
             ))}
@@ -155,16 +212,41 @@ export function AssistantComposeResources({
           </DropdownMenuContent>
         </DropdownMenu>
         {projectId && (
-          <Button type="button" size="icon-sm" variant="ghost" aria-label={t(($) => $.resources.remove_project)} onClick={() => update({ workspace_id: workspaceId, attachments })}>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label={t(($) => $.resources.remove_project)} onClick={() => update({ ...current(), project_id: null })}>
             <X className="size-3.5" />
           </Button>
         )}
-        <FileUploadButton size="sm" disabled={!workspaceId || uploadCount > 0} onSelect={(file) => void onFile(file)} />
+        <DropdownMenu onOpenChange={(open) => { if (open) setRosterRequested(true); }}>
+          <DropdownMenuTrigger
+            disabled={!targetWorkspaceId}
+            className="inline-flex h-7 max-w-48 items-center gap-1 rounded-md border border-input px-2 hover:bg-accent disabled:opacity-50"
+          >
+            <UserRound className="size-3.5 shrink-0" />
+            <span className="truncate">{member?.name ?? t(($) => $.resources.choose_member)}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 w-60 overflow-y-auto">
+            {members.map((item) => (
+              <DropdownMenuItem
+                key={item.user_id}
+                onClick={() => update({ ...current(), member: { user_id: item.user_id, name: item.name } })}
+              >
+                <span className="truncate">{item.name}</span>
+              </DropdownMenuItem>
+            ))}
+            {members.length === 0 && <div className="px-2 py-1.5">{t(($) => $.resources.no_members)}</div>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {member && (
+          <Button type="button" size="icon-sm" variant="ghost" aria-label={t(($) => $.resources.remove_member)} onClick={() => update({ ...current(), member: null })}>
+            <X className="size-3.5" />
+          </Button>
+        )}
+        <FileUploadButton size="sm" disabled={!targetWorkspaceId || uploadCount > 0} onSelect={(file) => void onFile(file)} />
         {uploadCount > 0 && <span role="status" className="inline-flex items-center gap-1"><Loader2 className="size-3 animate-spin" />{t(($) => $.resources.uploading)}</span>}
         {attachments.map((attachment) => (
           <span key={attachment.id} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md bg-muted px-2 text-foreground">
             <span className="max-w-40 truncate">{attachment.filename}</span>
-            <button type="button" aria-label={t(($) => $.resources.remove_file, { filename: attachment.filename })} onClick={() => update({ workspace_id: workspaceId, project_id: projectId, attachments: attachments.filter((item) => item.id !== attachment.id) })}>
+            <button type="button" aria-label={t(($) => $.resources.remove_file, { filename: attachment.filename })} onClick={() => update({ ...current(), attachments: attachments.filter((item) => item.id !== attachment.id) })}>
               <X className="size-3" />
             </button>
           </span>
@@ -176,6 +258,7 @@ export function AssistantComposeResources({
           <span className="ml-1">{t(($) => $.resources.inventory_note)}</span>
         </div>
       )}
+      {member && <p>{t(($) => $.resources.member_hint, { member: member.name })}</p>}
       <p>{t(($) => $.resources.file_hint)}</p>
       {uploadError && <p role="alert" className="text-destructive">{uploadError}</p>}
     </div>

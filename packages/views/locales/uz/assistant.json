@@ -188,9 +188,16 @@
     "what_needs_me": "Bugun mendan nima talab qilinadi?"
   },
   "resources": {
+    "choose_workspace": "Ish maydoni",
+    "no_workspaces": "Ish maydonlari yo'q",
+    "remove_workspace": "Joriy ish maydonidan foydalanish",
     "choose_project": "Loyiha",
     "no_projects": "Bu ish maydonida loyihalar yo‘q",
     "remove_project": "Loyihani olib tashlash",
+    "choose_member": "Ishtirokchi",
+    "no_members": "Bu ish maydonida ishtirokchilar yo'q",
+    "remove_member": "Ishtirokchini olib tashlash",
+    "member_hint": "{{member}} biriktirildi: xabaringizdagi \"u\" va \"ular\" shu odamni bildiradi.",
     "remove_file": "{{filename}} faylini olib tashlash",
     "inventory_label": "{{project}} loyihasi resurslari",
     "inventory": "Bog‘langan resurslar",
@@ -205,6 +212,7 @@
     "uploading": "Yuklanmoqda...",
     "upload_failed": "Fayl yuklanmadi. Qayta urinib ko‘ring.",
     "retry_project": "Qayta urinish tanlangan loyihadan foydalanadi",
-    "retry_files": "Qayta urinishda {{count}} ta fayl bor"
+    "retry_files": "Qayta urinishda {{count}} ta fayl bor",
+    "retry_member": "Qayta yuborishda biriktirilgan ishtirokchi saqlanadi"
   }
 }

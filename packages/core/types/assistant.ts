@@ -16,6 +16,8 @@ export interface AssistantRunContext {
   workspace_id: string | null;
   timezone?: string;
   project_id?: string | null;
+  /** Teammate attached as person-context for this message (a user id). */
+  member_id?: string | null;
   attachment_ids?: string[];
 }
 
