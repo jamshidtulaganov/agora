@@ -34,9 +34,23 @@ const mockCancelMutate = vi.hoisted(() => vi.fn());
 const mockSetActiveSession = vi.hoisted(() => vi.fn());
 const mockSetOpenArtifact = vi.hoisted(() => vi.fn());
 const mockGetArtifact = vi.hoisted(() => vi.fn());
+const mockGetSessionArtifacts = vi.hoisted(() => vi.fn());
+const mockListRevisions = vi.hoisted(() => vi.fn());
+// Divider geometry lives in the panel store (global window chrome), so the
+// page test needs it the same way it needs the assistant store.
+const panelStoreState = vi.hoisted(() => ({
+  workbenchPaneWidth: 520,
+  setWorkbenchPaneWidth: (width: number) => {
+    panelStoreState.workbenchPaneWidth = width;
+  },
+  resetWorkbenchPaneWidth: () => {
+    panelStoreState.workbenchPaneWidth = 520;
+  },
+}));
 const assistantStoreState = vi.hoisted(() => ({
   activeSessionId: null as string | null,
   draftsBySession: {} as Record<string, {content: string; request_id: string; context?: {workspace_id: string | null; timezone?: string}}>,
+  composerContextBySession: {} as Record<string, {workspace_id: string | null; project_id?: string | null; attachments?: {id: string; filename: string; size_bytes: number}[]}>,
   openArtifactId: {} as Record<string, string>,
 }));
 
@@ -50,12 +64,20 @@ vi.mock("@agora/core/assistant", async () => {
       else delete assistantStoreState.draftsBySession[sessionId];
       listeners.forEach((listener) => listener());
   };
+  const setComposerContext = (sessionId: string, value: {workspace_id: string | null; project_id?: string | null; attachments?: {id: string; filename: string; size_bytes: number}[]} | null) => {
+      assistantStoreState.composerContextBySession = {...assistantStoreState.composerContextBySession};
+      if (value) assistantStoreState.composerContextBySession[sessionId] = value;
+      else delete assistantStoreState.composerContextBySession[sessionId];
+      listeners.forEach((listener) => listener());
+    };
   const state = () => ({
     activeSessionId: assistantStoreState.activeSessionId,
     draftsBySession: assistantStoreState.draftsBySession,
+    composerContextBySession: assistantStoreState.composerContextBySession,
     openArtifactId: assistantStoreState.openArtifactId,
     setActiveSession: mockSetActiveSession,
     setDraft,
+    setComposerContext,
     setOpenArtifact: mockSetOpenArtifact,
   });
   // Zustand stores are both callable (with a selector) and expose
@@ -76,6 +98,11 @@ vi.mock("@agora/core/assistant", async () => {
       queryKey: ["assistant", "sessions"],
       queryFn: mockGetSessions,
     }),
+    assistantSessionOptions: (id: string) => ({
+      queryKey: ["assistant", "session", id],
+      queryFn: () => Promise.resolve({ id }),
+      enabled: !!id,
+    }),
     assistantRunsOptions: (sessionId: string) => ({ queryKey: ["assistant", "runs", sessionId], queryFn: () => mockGetRuns(sessionId), enabled: !!sessionId }),
     assistantMessagesOptions: (sessionId: string) => ({
       queryKey: ["assistant", "messages", sessionId],
@@ -91,10 +118,37 @@ vi.mock("@agora/core/assistant", async () => {
       enabled: !!id,
       retry: false,
     }),
+    assistantSessionArtifactListOptions: (sessionId: string) => ({
+      queryKey: ["assistant", "session-artifacts", sessionId],
+      queryFn: () => mockGetSessionArtifacts(sessionId),
+      enabled: !!sessionId,
+      retry: false,
+    }),
+    assistantArtifactRevisionsOptions: (id: string) => ({
+      queryKey: ["assistant", "artifacts", id, "revisions"],
+      queryFn: () => mockListRevisions(id),
+      enabled: !!id,
+      retry: false,
+    }),
+    assistantArtifactRevisionOptions: (id: string, version: number | null) => ({
+      queryKey: ["assistant", "artifacts", id, "revisions", version ?? 0],
+      queryFn: () => Promise.reject(new Error("404")),
+      enabled: !!id && !!version && version > 0,
+      retry: false,
+    }),
+    ASSISTANT_WORKBENCH_PANE_MIN_W: 320,
+    ASSISTANT_WORKBENCH_CHAT_MIN_W: 400,
+    useAssistantPanelStore: Object.assign(
+      (selector?: (s: typeof panelStoreState) => unknown) =>
+        selector ? selector(panelStoreState) : panelStoreState,
+      { getState: () => panelStoreState },
+    ),
     useSendAssistantMessage: () => ({ mutateAsync: mockSendMutate, isPending: false }),
     useCancelAssistantRun: () => ({ mutate: mockCancelMutate }),
   };
 });
+
+vi.mock("./components/compose-resources", () => ({ AssistantComposeResources: () => null }));
 
 import { AssistantPage } from "./assistant-page";
 
@@ -125,11 +179,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   assistantStoreState.activeSessionId = null;
   assistantStoreState.draftsBySession = {};
+  assistantStoreState.composerContextBySession = {};
   assistantStoreState.openArtifactId = {};
   mockWorkspace.id = "ws-1";
   mockWorkspace.name = "Acme";
   mockGetMessages.mockResolvedValue([]);
   mockGetRuns.mockResolvedValue([]);
+  mockGetSessionArtifacts.mockResolvedValue([]);
+  mockListRevisions.mockRejectedValue(new Error("404"));
   mockSendMutate.mockResolvedValue({});
 });
 
@@ -473,5 +530,118 @@ describe("AssistantPage — narrow-width rail", () => {
     // Bare ⌘K stays out of it.
     fireEvent.keyDown(document, { key: "k", code: "KeyK", metaKey: true });
     expect(mockCreateMutate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The workbench: the pane follows the agent to the artifact it is writing,
+// and the divider between transcript and pane is the user's to move.
+describe("AssistantPage — artifact workbench", () => {
+  const userMessage = {
+    id: "u-1",
+    session_id: "session-1",
+    role: "user",
+    content: "chart my agent usage",
+    created_at: "2026-09-16T09:59:00Z",
+  };
+  const artifactToolMessage = {
+    id: "m1",
+    session_id: "session-1",
+    role: "tool",
+    content: "{}",
+    tool_name: "create_artifact",
+    tool_result: { artifact_id: "art-1", title: "Agent usage by day", kind: "chart", version: 1 },
+    created_at: "2026-09-16T10:00:00Z",
+  };
+  const run = {
+    id: "run-1",
+    session_id: "session-1",
+    message_id: "u-1",
+    status: "running",
+    active_tool: "create_artifact",
+    error: null,
+    created_at: "2026-09-16T09:59:00Z",
+    updated_at: "2026-09-16T10:00:00Z",
+    finished_at: null,
+    version: 1,
+    context: { workspace_id: null },
+  };
+
+  beforeEach(() => {
+    mockGetAvailability.mockResolvedValue({ enabled: true, model_label: "Agora" });
+    mockGetSessions.mockResolvedValue([
+      {
+        id: "session-1",
+        title: "Usage",
+        focus_workspace_id: null,
+        created_at: "2026-09-16T10:00:00Z",
+        updated_at: "2026-09-16T10:00:00Z",
+      },
+    ]);
+    assistantStoreState.activeSessionId = "session-1";
+    panelStoreState.workbenchPaneWidth = 520;
+  });
+
+  it("opens the pane by itself on the artifact the run just wrote", async () => {
+    mockGetMessages.mockResolvedValue([userMessage, artifactToolMessage]);
+    mockGetRuns.mockResolvedValue([run]);
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(mockSetOpenArtifact).toHaveBeenCalledWith("session-1", "art-1"),
+    );
+    // Once. Not once per render pass.
+    expect(mockSetOpenArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the pane alone for a run that produced no artifact", async () => {
+    mockGetMessages.mockResolvedValue([userMessage]);
+    mockGetRuns.mockResolvedValue([run]);
+
+    renderPage();
+
+    await screen.findByText("chart my agent usage");
+    expect(mockSetOpenArtifact).not.toHaveBeenCalled();
+  });
+
+  it("does not re-open an artifact produced by an EARLIER run", async () => {
+    // The tool row sits before the current run's user message: a finished
+    // turn's artifact must not reopen when the next turn starts.
+    mockGetMessages.mockResolvedValue([artifactToolMessage, userMessage]);
+    mockGetRuns.mockResolvedValue([run]);
+
+    renderPage();
+
+    await screen.findByText("chart my agent usage");
+    expect(mockSetOpenArtifact).not.toHaveBeenCalled();
+  });
+
+  it("renders the pane at the persisted width and resets it on double-click", async () => {
+    panelStoreState.workbenchPaneWidth = 640;
+    assistantStoreState.openArtifactId = { "session-1": "art-1" };
+    mockGetMessages.mockResolvedValue([userMessage, artifactToolMessage]);
+    mockGetRuns.mockResolvedValue([]);
+    mockGetArtifact.mockResolvedValue({
+      id: "art-1",
+      session_id: "session-1",
+      title: "Agent usage by day",
+      kind: "markdown",
+      content: "Body",
+      version: 1,
+      created_at: "2026-09-16T10:00:00Z",
+      updated_at: "2026-09-16T10:00:00Z",
+    });
+
+    renderPage();
+
+    await screen.findByText("Body");
+    expect(screen.getByRole("complementary")).toHaveStyle({ width: "640px" });
+
+    const divider = screen.getByRole("separator", { name: "Resize artifact pane" });
+    fireEvent.keyDown(divider, { key: "ArrowLeft" });
+    expect(panelStoreState.workbenchPaneWidth).toBe(664);
+
+    fireEvent.doubleClick(divider);
+    expect(panelStoreState.workbenchPaneWidth).toBe(520);
   });
 });

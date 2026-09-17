@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PanelLeft, Sparkles } from "lucide-react";
@@ -23,8 +23,14 @@ import { ArtifactPane } from "./components/artifact-pane";
 import { AssistantLauncher } from "./components/launcher";
 import { AssistantNotConfiguredState } from "./components/not-configured-state";
 import { useHealActiveAssistantSession } from "./use-active-session";
+import { useArtifactWorkbench } from "./use-artifact-workbench";
+import { WorkbenchDivider } from "./components/workbench-divider";
+import { useWorkbenchResize } from "./components/use-workbench-resize";
 import { messageContext } from "./lib/message-context";
 import type { InitialAssistantMessage } from "./components/active-conversation";
+import { AssistantComposeResources } from "./components/compose-resources";
+
+const NEW_SESSION_COMPOSER = "__new__";
 
 export function AssistantPage() {
   const { t } = useT("assistant");
@@ -42,15 +48,18 @@ export function AssistantPage() {
 
   const activeSessionId = useAssistantStore((s) => s.activeSessionId);
   const setActiveSession = useAssistantStore((s) => s.setActiveSession);
+  const setComposerContext = useAssistantStore((s) => s.setComposerContext);
   const runningSessionIds = new Set(sessions.filter((session) =>
     session.latest_run && (session.latest_run.status === "queued" || session.latest_run.status === "running"),
   ).map((session) => session.id));
-  // Selects a primitive, not a derived object — a fresh object here would
-  // re-render the page on every store write (see CLAUDE.md, Zustand footguns).
-  const openArtifactId = useAssistantStore((s) =>
-    activeSessionId ? (s.openArtifactId[activeSessionId] ?? null) : null,
+  // The workbench: which artifact the pane shows, the pane opening itself when
+  // the agent writes one, and the "updating" hint while it is still writing.
+  const { openArtifactId, openArtifact, isUpdating } = useArtifactWorkbench(
+    activeSessionId,
+    enabled,
   );
-  const setOpenArtifact = useAssistantStore((s) => s.setOpenArtifact);
+  const workbenchRef = useRef<HTMLDivElement>(null);
+  const resize = useWorkbenchResize(workbenchRef);
 
   const createSession = useCreateAssistantSession();
   const updateSession = useUpdateAssistantSession();
@@ -124,11 +133,13 @@ export function AssistantPage() {
   };
 
   const handleSendFromDraft = (content: string) => {
-    const initialMessage = { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null) };
+    const selection = useAssistantStore.getState().composerContextBySession[NEW_SESSION_COMPOSER];
+    const initialMessage = { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null, selection) };
     createSession.mutate(
       workspace ? { focus_workspace_id: workspace.id } : undefined,
       {
         onSuccess: (session) => {
+          if (selection) setComposerContext(session.id, selection);
           setActiveSession(session.id);
           setPendingInitialMessage(initialMessage);
         },
@@ -176,26 +187,35 @@ export function AssistantPage() {
             onDelete={handleDeleteSession}
           />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          {activeSessionId ? (
-            <ActiveConversation
-              key={activeSessionId}
-              sessionId={activeSessionId}
-              initialMessage={pendingInitialMessage}
-              onInitialMessageConsumed={() => setPendingInitialMessage(null)}
-              onOpenArtifact={(artifactId) => setOpenArtifact(activeSessionId, artifactId)}
-            />
-          ) : (
-            <DraftConversation onSend={handleSendFromDraft} isCreating={createSession.isPending} scopeLabel={t(($) => $.composer.scope_workspace, { workspace: workspace?.name ?? t(($) => $.composer.scope_all) })} />
+        <div ref={workbenchRef} className="flex min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {activeSessionId ? (
+              <ActiveConversation
+                key={activeSessionId}
+                sessionId={activeSessionId}
+                initialMessage={pendingInitialMessage}
+                onInitialMessageConsumed={() => setPendingInitialMessage(null)}
+                onOpenArtifact={openArtifact}
+              />
+            ) : (
+              <DraftConversation onSend={handleSendFromDraft} isCreating={createSession.isPending} workspaceId={workspace?.id ?? null} scopeLabel={t(($) => $.composer.scope_workspace, { workspace: workspace?.name ?? t(($) => $.composer.scope_all) })} />
+            )}
+          </div>
+          {activeSessionId && openArtifactId && (
+            <>
+              <WorkbenchDivider resize={resize} />
+              <ArtifactPane
+                key={openArtifactId}
+                artifactId={openArtifactId}
+                sessionId={activeSessionId}
+                width={resize.paneWidth}
+                isUpdating={isUpdating}
+                onSwitchArtifact={openArtifact}
+                onClose={() => openArtifact(null)}
+              />
+            </>
           )}
         </div>
-        {activeSessionId && openArtifactId && (
-          <ArtifactPane
-            key={openArtifactId}
-            artifactId={openArtifactId}
-            onClose={() => setOpenArtifact(activeSessionId, null)}
-          />
-        )}
       </div>
     </div>
   );
@@ -207,12 +227,15 @@ function DraftConversation({
   onSend,
   isCreating,
   scopeLabel,
+  workspaceId,
 }: {
   onSend: (content: string) => void;
   isCreating: boolean;
   scopeLabel: string;
+  workspaceId: string | null;
 }) {
   const [value, setValue] = useState("");
+  const [isUploading, setUploading] = useState(false);
 
   return (
     <AssistantLauncher
@@ -220,7 +243,9 @@ function DraftConversation({
       onValueChange={setValue}
       onSend={onSend}
       isSending={isCreating}
+      sendUnavailable={isUploading}
       scopeLabel={scopeLabel}
+      resourceControls={<AssistantComposeResources sessionId={NEW_SESSION_COMPOSER} workspaceId={workspaceId} onUploadingChange={setUploading} />}
     />
   );
 }

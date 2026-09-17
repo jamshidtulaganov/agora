@@ -24,6 +24,7 @@ export type NavKey =
   | "inbox"
   | "myIssues"
   | "assistant"
+  | "artifacts"
   | "policy"
   | "issues"
   | "projects"
@@ -45,6 +46,7 @@ export type NavLabelKey =
   | "inbox"
   | "my_issues"
   | "assistant"
+  | "artifacts"
   | "policy"
   | "issues"
   | "projects"
@@ -71,6 +73,7 @@ export const personalNav: NavItem[] = [
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
   { key: "assistant", labelKey: "assistant", icon: Sparkles },
+  { key: "artifacts", labelKey: "artifacts", icon: Boxes },
   // Release remains reachable from issue review flows and direct URLs. It is
   // not a primary personal destination, so it does not occupy the sidebar.
   // "policy" (fleet cockpit) removed from the nav — the route stays reachable by

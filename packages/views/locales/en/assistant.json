@@ -133,6 +133,13 @@
     "loading": "Opening artifact...",
     "unavailable": "This artifact isn't available.",
     "downgrade_notice": "This build can't render this artifact — showing its raw content.",
+    "switcher": "Artifacts in this chat",
+    "versions": "Version history",
+    "version_latest": "Latest",
+    "viewing_version": "Viewing v{{version}} of v{{latest}} — read-only",
+    "back_to_latest": "Back to latest",
+    "updating": "Updating",
+    "revision_unavailable": "This version isn't available.",
     "kind": {
       "chart": "Chart",
       "table": "Table",
@@ -140,6 +147,10 @@
       "html": "Interactive",
       "unknown": "Artifact"
     }
+  },
+  "workbench": {
+    "resize": "Resize artifact pane",
+    "resize_hint": "Drag to resize, double-click to reset"
   },
   "message_actions": {
     "copy": "Copy",
@@ -175,5 +186,25 @@
     "summarize_results": "Summarize these results",
     "what_is_urgent": "What's most urgent?",
     "what_needs_me": "What needs me today?"
+  },
+  "resources": {
+    "choose_project": "Project",
+    "no_projects": "No projects in this workspace",
+    "remove_project": "Remove project",
+    "remove_file": "Remove {{filename}}",
+    "inventory_label": "Project resources for {{project}}",
+    "inventory": "Linked resources",
+    "no_resources": "None",
+    "inventory_note": "Linked resource names are shown for context; repository contents are not loaded automatically.",
+    "file_hint": "Attach text, code, Markdown, CSV, or JSON files (5 max; 64 KiB each, 128 KiB total).",
+    "workspace_required": "Choose a workspace before attaching a file.",
+    "unsupported_type": "This file type is not supported.",
+    "file_too_large": "Files must be 64 KiB or smaller.",
+    "too_many_files": "You can attach up to 5 files.",
+    "total_too_large": "Attachments may total up to 128 KiB.",
+    "uploading": "Uploading...",
+    "upload_failed": "Could not upload this file. Try again.",
+    "retry_project": "Retry uses the selected project",
+    "retry_files": "Retry includes {{count}} attached files"
   }
 }

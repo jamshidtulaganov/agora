@@ -85,6 +85,8 @@ import type {
   AssistantAvailability,
   AssistantArtifact,
   AssistantArtifactSummary,
+  AssistantArtifactRevision,
+  AssistantArtifactRevisionSummary,
   AssistantOperationDecision,
   SendAssistantMessageResponse,
   CreateAssistantSessionRequest,
@@ -414,7 +416,12 @@ import {
   AssistantArtifactSchema,
   EMPTY_ASSISTANT_ARTIFACT,
   AssistantArtifactListSchema,
+  AssistantArtifactLibraryPageSchema,
   EMPTY_ASSISTANT_ARTIFACT_LIST,
+  AssistantArtifactRevisionSchema,
+  AssistantArtifactRevisionListSchema,
+  EMPTY_ASSISTANT_ARTIFACT_REVISION,
+  EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
   AssistantOperationDecisionSchema,
   EMPTY_ASSISTANT_OPERATION_DECISION,
 } from "./schemas";
@@ -2181,7 +2188,7 @@ export class ApiClient {
   // File Upload & Attachments
   async uploadFile(
     file: File,
-    opts?: { issueId?: string; commentId?: string; chatSessionId?: string },
+    opts?: { issueId?: string; commentId?: string; chatSessionId?: string; workspaceId?: string },
   ): Promise<Attachment> {
     const formData = new FormData();
     formData.append("file", file);
@@ -2193,9 +2200,16 @@ export class ApiClient {
     const start = Date.now();
     this.logger.info("→ POST /api/upload-file", { rid });
 
+    const headers = this.authHeaders();
+    if (opts?.workspaceId) {
+      // The upload route resolves the slug header before the ID header.
+      // A selected assistant workspace may differ from the current page.
+      delete headers["X-Workspace-Slug"];
+      headers["X-Workspace-ID"] = opts.workspaceId;
+    }
     const res = await fetch(`${this.baseUrl}/api/upload-file`, {
       method: "POST",
-      headers: this.authHeaders(),
+      headers,
       body: formData,
       credentials: "include",
     });
@@ -2406,6 +2420,43 @@ export class ApiClient {
   }
 
   /**
+   * Immutable version history behind the pane's version picker, newest first
+   * and without bodies.
+   *
+   * Throws on a 404 rather than swallowing it: an installed build that predates
+   * the revisions endpoints must collapse the picker to a plain version badge,
+   * and an empty array (a brand-new artifact) is a different answer from "this
+   * server has no history at all".
+   */
+  async listAssistantArtifactRevisions(
+    artifactId: string,
+  ): Promise<AssistantArtifactRevisionSummary[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/artifacts/${artifactId}/revisions`);
+    return parseWithFallback(
+      raw,
+      AssistantArtifactRevisionListSchema,
+      EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
+      { endpoint: "GET /api/assistant/artifacts/{id}/revisions" },
+    );
+  }
+
+  /** One historical version, with its body. */
+  async getAssistantArtifactRevision(
+    artifactId: string,
+    version: number,
+  ): Promise<AssistantArtifactRevision> {
+    const raw = await this.fetch<unknown>(
+      `/api/assistant/artifacts/${artifactId}/revisions/${version}`,
+    );
+    return parseWithFallback(
+      raw,
+      AssistantArtifactRevisionSchema,
+      EMPTY_ASSISTANT_ARTIFACT_REVISION,
+      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
+    );
+  }
+
+  /**
    * Records the out-of-band human confirmation for a pending destructive
    * operation and executes it server-side. See docs/agora-assistant-final-plan.md
    * ("Pinned wire contract").
@@ -2468,6 +2519,15 @@ export class ApiClient {
     return parseWithFallback(raw, AssistantArtifactListSchema, EMPTY_ASSISTANT_ARTIFACT_LIST, {
       endpoint: "GET /api/assistant/sessions/{id}/artifacts",
     });
+  }
+
+  async listMyAssistantArtifacts(offset = 0): Promise<AssistantArtifactSummary[]> {
+    const raw = await this.fetch<unknown>(`/api/assistant/artifacts?offset=${offset}`);
+    const page = parseWithFallback<AssistantArtifactSummary[] | null>(raw, AssistantArtifactLibraryPageSchema, null, {
+      endpoint: "GET /api/assistant/artifacts",
+    });
+    if (page === null) throw new Error("Could not load the artifact library page. Try again.");
+    return page;
   }
 
   async cancelTaskById(taskId: string): Promise<CancelTaskResponse> {

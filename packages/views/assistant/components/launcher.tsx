@@ -15,6 +15,7 @@ interface AssistantLauncherProps {
   /** The session's focus workspace — see components/context-chip.tsx. Absent
    *  before a session exists, where there is nothing to re-scope yet. */
   contextChip?: ReactNode;
+  resourceControls?: ReactNode;
   /** Tightened spacing + single-column prompts for the floating panel. */
   compact?: boolean;
 }
@@ -36,6 +37,7 @@ export function AssistantLauncher({
   sendUnavailable,
   scopeLabel,
   contextChip,
+  resourceControls,
   compact,
 }: AssistantLauncherProps) {
   return (
@@ -56,6 +58,7 @@ export function AssistantLauncher({
           sendUnavailable={sendUnavailable}
           scopeLabel={scopeLabel}
           contextChip={contextChip}
+          resourceControls={resourceControls}
         />
         <AssistantPromptRows onPickPrompt={onValueChange} compact={compact} />
       </div>

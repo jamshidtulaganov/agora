@@ -93,6 +93,8 @@ export type {
   AssistantArtifactKind,
   AssistantArtifactSummary,
   AssistantArtifact,
+  AssistantArtifactRevision,
+  AssistantArtifactRevisionSummary,
   CreateAssistantSessionRequest,
   PatchAssistantSessionRequest,
   SendAssistantMessageResponse,

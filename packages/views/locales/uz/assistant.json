@@ -133,6 +133,13 @@
     "loading": "Artefakt ochilmoqda...",
     "unavailable": "Bu artefakt mavjud emas.",
     "downgrade_notice": "Bu versiya ushbu artefaktni ko‘rsata olmaydi — dastlabki mazmuni ko‘rsatilmoqda.",
+    "switcher": "Ushbu suhbatdagi artefaktlar",
+    "versions": "Versiyalar tarixi",
+    "version_latest": "Joriy",
+    "viewing_version": "v{{latest}} dan v{{version}} ko‘rilmoqda — faqat o‘qish",
+    "back_to_latest": "Joriy versiyaga qaytish",
+    "updating": "Yangilanmoqda",
+    "revision_unavailable": "Bu versiya mavjud emas.",
     "kind": {
       "chart": "Diagramma",
       "table": "Jadval",
@@ -140,6 +147,10 @@
       "html": "Interaktiv",
       "unknown": "Artefakt"
     }
+  },
+  "workbench": {
+    "resize": "Artefakt panelining kengligini o‘zgartirish",
+    "resize_hint": "Kenglikni o‘zgartirish uchun torting, qayta tiklash uchun ikki marta bosing"
   },
   "message_actions": {
     "copy": "Nusxalash",
@@ -175,5 +186,25 @@
     "summarize_results": "Natijalarni qisqacha yoz",
     "what_is_urgent": "Eng shoshilinchi nima?",
     "what_needs_me": "Bugun mendan nima talab qilinadi?"
+  },
+  "resources": {
+    "choose_project": "Loyiha",
+    "no_projects": "Bu ish maydonida loyihalar yo‘q",
+    "remove_project": "Loyihani olib tashlash",
+    "remove_file": "{{filename}} faylini olib tashlash",
+    "inventory_label": "{{project}} loyihasi resurslari",
+    "inventory": "Bog‘langan resurslar",
+    "no_resources": "Yo‘q",
+    "inventory_note": "Bog‘langan resurslar nomlari ko‘rsatiladi; repozitoriy tarkibi avtomatik yuklanmaydi.",
+    "file_hint": "Matn, kod, Markdown, CSV yoki JSON fayllarini biriktiring (ko‘pi bilan 5 ta; har biri 64 KiB, jami 128 KiB).",
+    "workspace_required": "Fayl biriktirishdan oldin ish maydonini tanlang.",
+    "unsupported_type": "Bu fayl turi qo‘llanmaydi.",
+    "file_too_large": "Fayl 64 KiB dan oshmasligi kerak.",
+    "too_many_files": "Ko‘pi bilan 5 ta fayl biriktirish mumkin.",
+    "total_too_large": "Fayllar jami 128 KiB dan oshmasligi kerak.",
+    "uploading": "Yuklanmoqda...",
+    "upload_failed": "Fayl yuklanmadi. Qayta urinib ko‘ring.",
+    "retry_project": "Qayta urinish tanlangan loyihadan foydalanadi",
+    "retry_files": "Qayta urinishda {{count}} ta fayl bor"
   }
 }

@@ -36,7 +36,18 @@ vi.mock("@agora/core/assistant", async () => {
     else delete assistantStoreState.drafts[sessionId];
     listeners.forEach((listener) => listener());
   };
-  const state = () => ({ draftsBySession: assistantStoreState.drafts, setDraft });
+  // Composer resource selection (project / files) is a separate surface with
+  // its own test; this conversation only needs the store shape to exist.
+  // Both values are module-stable on purpose: a selector that returns a fresh
+  // object on every call re-renders forever (CLAUDE.md, Zustand footguns).
+  const composerContextBySession = {};
+  const setComposerContext = () => {};
+  const state = () => ({
+    draftsBySession: assistantStoreState.drafts,
+    composerContextBySession,
+    setDraft,
+    setComposerContext,
+  });
   const useAssistantStore = Object.assign(
     (selector?: (s: ReturnType<typeof state>) => unknown) =>
       useSyncExternalStore(
@@ -65,6 +76,8 @@ vi.mock("@agora/core/assistant", async () => {
     useUpdateAssistantSession: () => ({ mutate: mockUpdateMutate, isPending: false }),
   };
 });
+
+vi.mock("./compose-resources", () => ({ AssistantComposeResources: () => null }));
 
 import { ActiveConversation } from "./active-conversation";
 

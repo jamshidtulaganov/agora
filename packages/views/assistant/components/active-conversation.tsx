@@ -24,6 +24,7 @@ import { Composer } from "./composer";
 import { FollowUpChips } from "./follow-up-chips";
 import { AssistantContextChip } from "./context-chip";
 import { AssistantLauncher } from "./launcher";
+import { AssistantComposeResources } from "./compose-resources";
 
 export interface InitialAssistantMessage {
   content: string;
@@ -64,6 +65,9 @@ export function ActiveConversation({
   const isRunning = !!latestRun && activeStatuses.has(latestRun.status);
   const draft = useAssistantStore((s) => s.draftsBySession[sessionId]);
   const setDraft = useAssistantStore((s) => s.setDraft);
+  const composerSelection = useAssistantStore((s) => s.composerContextBySession[sessionId]);
+  const setComposerContext = useAssistantStore((s) => s.setComposerContext);
+  const [isUploading, setUploading] = useState(false);
   const value = draft?.content ?? "";
   const sendMessage = useSendAssistantMessage(sessionId);
   const cancelRun = useCancelAssistantRun(sessionId);
@@ -124,6 +128,11 @@ export function ActiveConversation({
       if (useAssistantStore.getState().draftsBySession[sessionId]?.request_id === entry.request_id) {
         setDraft(sessionId, null);
       }
+      const latestSelection = useAssistantStore.getState().composerContextBySession[sessionId];
+      if (latestSelection?.workspace_id === entry.context.workspace_id &&
+          latestSelection.attachments?.map((item) => item.id).join(",") === (entry.context.attachment_ids ?? []).join(",")) {
+        setComposerContext(sessionId, { ...latestSelection, attachments: [] });
+      }
     } catch (err) {
       handleSendError(err);
     } finally {
@@ -158,11 +167,16 @@ export function ActiveConversation({
     setDraft(sessionId, content ? { content, request_id: crypto.randomUUID() } : null);
   };
 
+  const handleSelectionChange = () => {
+    const current = useAssistantStore.getState().draftsBySession[sessionId];
+    if (current) setDraft(sessionId, { content: current.content, request_id: crypto.randomUUID() });
+  };
+
   const handleSend = (content: string) => {
-    if (!runsQuery.isSuccess) return;
+    if (!runsQuery.isSuccess || isUploading) return;
     const entry = draft?.content === content
-      ? { ...draft, context: draft.context ?? messageContext(workspace?.id ?? null) }
-      : { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null) };
+      ? { ...draft, context: draft.context ?? messageContext(workspace?.id ?? null, composerSelection) }
+      : { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null, composerSelection) };
     void submit(entry);
   };
 
@@ -198,7 +212,9 @@ export function ActiveConversation({
     void submit({
       content,
       request_id: requestId,
-      context: reusableDraft?.context ?? messageContext(workspace?.id ?? null),
+      context: reusableDraft?.context ??
+        (latestRun?.message_id === lastUserMessage.id ? latestRun.context : undefined) ??
+        messageContext(workspace?.id ?? null, composerSelection),
     });
   };
 
@@ -208,6 +224,10 @@ export function ActiveConversation({
       (workspace?.id === targetWorkspaceId ? workspace.name : t(($) => $.composer.scope_previous))
     : t(($) => $.composer.scope_all);
   const scopeLabel = t(($) => $.composer.scope_workspace, { workspace: targetWorkspace }) +
+    (draft?.context?.project_id ? ` · ${t(($) => $.resources.retry_project)}` : "") +
+    (draft?.context?.attachment_ids?.length
+      ? ` · ${t(($) => $.resources.retry_files, { count: draft.context.attachment_ids.length })}`
+      : "") +
     (runsQuery.isPending ? ` · ${t(($) => $.run.checking_status)}` : "");
   const notice = latestRun?.status === "failed"
     ? t(($) => $.run.failed)
@@ -235,6 +255,14 @@ export function ActiveConversation({
   // Rendered in both surfaces so the session's scope is visible before the
   // first message as well as after it — that scope is what tools default to.
   const contextChip = <AssistantContextChip sessionId={sessionId} />;
+  const resourceControls = (
+    <AssistantComposeResources
+      sessionId={sessionId}
+      workspaceId={workspace?.id ?? null}
+      onSelectionChange={handleSelectionChange}
+      onUploadingChange={setUploading}
+    />
+  );
 
   if (showEmptyState) {
     return (
@@ -243,9 +271,10 @@ export function ActiveConversation({
         onValueChange={handleValueChange}
         onSend={handleSend}
         isSending={sendMessage.isPending}
-        sendUnavailable={!runsQuery.isSuccess}
+        sendUnavailable={!runsQuery.isSuccess || isUploading}
         scopeLabel={scopeLabel}
         contextChip={contextChip}
+        resourceControls={resourceControls}
         compact={compact}
       />
     );
@@ -313,9 +342,10 @@ export function ActiveConversation({
         onStop={handleStop}
         isRunning={isRunning}
         isSending={sendMessage.isPending}
-        sendUnavailable={!runsQuery.isSuccess}
+        sendUnavailable={!runsQuery.isSuccess || isUploading}
         scopeLabel={scopeLabel}
         contextChip={contextChip}
+        resourceControls={resourceControls}
         // ActiveConversation is keyed by session id, so this remounts — and
         // lands the caret in the composer — on every session switch.
         autoFocus

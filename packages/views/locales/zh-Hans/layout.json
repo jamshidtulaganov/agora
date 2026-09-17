@@ -18,7 +18,8 @@
     "mcp": "MCP 服务器",
     "bitrix": "Bitrix",
     "settings": "设置",
-    "automations": "自动化"
+    "automations": "自动化",
+    "artifacts": "作品"
   },
   "help": {
     "trigger": "帮助",
@@ -56,5 +57,26 @@
     "header": "正在运行",
     "queued": "{{count}} 个排队",
     "empty": "当前没有正在运行的任务"
+  },
+  "artifacts_library": {
+    "title": "作品",
+    "description": "查看各段对话中保存的作品，检查内容并继续创作。",
+    "create": "新建作品",
+    "search": "搜索已加载的作品",
+    "filter": "按类型筛选",
+    "all": "全部",
+    "loading": "正在加载作品…",
+    "error": "无法加载作品。",
+    "retry": "重试",
+    "no_results": "没有匹配的作品。请加载更多或修改搜索条件。",
+    "empty": "请助手创建报告、表格、图表或交互式作品。",
+    "version": "v{{version}}",
+    "untitled": "未命名作品",
+    "edit": "在对话中修改",
+    "more": "加载更多",
+    "download": "下载",
+    "view": "作品视图",
+    "preview": "预览",
+    "code": "代码"
   }
 }

@@ -10,6 +10,9 @@ export {
   useAssistantOperation,
   assistantAvailabilityOptions,
   assistantArtifactOptions,
+  assistantArtifactLibraryOptions,
+  assistantArtifactRevisionsOptions,
+  assistantArtifactRevisionOptions,
   assistantSessionArtifactListOptions,
 } from "./queries";
 export {
@@ -37,7 +40,7 @@ export {
   registerAssistantStore,
   useAssistantStore,
 } from "./store";
-export type { AssistantDraft, AssistantStoreOptions, AssistantState, AssistantStoreInstance } from "./store";
+export type { AssistantDraft, AssistantComposerContext, AssistantStoreOptions, AssistantState, AssistantStoreInstance } from "./store";
 export {
   createAssistantPanelStore,
   registerAssistantPanelStore,
@@ -46,6 +49,9 @@ export {
   ASSISTANT_PANEL_MIN_H,
   ASSISTANT_PANEL_DEFAULT_W,
   ASSISTANT_PANEL_DEFAULT_H,
+  ASSISTANT_WORKBENCH_PANE_MIN_W,
+  ASSISTANT_WORKBENCH_CHAT_MIN_W,
+  ASSISTANT_WORKBENCH_PANE_DEFAULT_W,
 } from "./panel-store";
 export type {
   AssistantPanelState,

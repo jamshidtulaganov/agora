@@ -32,6 +32,9 @@ import { PanelResizeHandles } from "./panel-resize-handles";
 import { usePanelResize } from "./use-panel-resize";
 import { messageContext } from "../lib/message-context";
 import type { InitialAssistantMessage } from "./active-conversation";
+import { AssistantComposeResources } from "./compose-resources";
+
+const NEW_SESSION_COMPOSER = "__new__";
 
 /** How many recent sessions the header picker lists before it stops. */
 const RECENT_SESSION_LIMIT = 10;
@@ -67,6 +70,7 @@ function AssistantPanelWindow() {
   const activeSessionId = useAssistantStore((s) => s.activeSessionId);
   const setActiveSession = useAssistantStore((s) => s.setActiveSession);
   const setOpenArtifact = useAssistantStore((s) => s.setOpenArtifact);
+  const setComposerContext = useAssistantStore((s) => s.setComposerContext);
   useHealActiveAssistantSession(sessions, true);
 
   const createSession = useCreateAssistantSession();
@@ -75,6 +79,7 @@ function AssistantPanelWindow() {
   // then this is delivered once ActiveConversation mounts bound to the real id.
   const [pendingInitialMessage, setPendingInitialMessage] = useState<InitialAssistantMessage | null>(null);
   const [draftValue, setDraftValue] = useState("");
+  const [isUploading, setUploading] = useState(false);
 
   // Escape closes the panel — the same gesture every other dismissible
   // surface in the app answers to. Two deliberate exemptions: a keystroke
@@ -104,9 +109,11 @@ function AssistantPanelWindow() {
   };
 
   const handleSendFromDraft = (content: string) => {
-    const initialMessage = { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null) };
+    const selection = useAssistantStore.getState().composerContextBySession[NEW_SESSION_COMPOSER];
+    const initialMessage = { content, request_id: crypto.randomUUID(), context: messageContext(workspace?.id ?? null, selection) };
     createSession.mutate(workspace ? { focus_workspace_id: workspace.id } : undefined, {
       onSuccess: (session) => {
+        if (selection) setComposerContext(session.id, selection);
         setActiveSession(session.id);
         setPendingInitialMessage(initialMessage);
       },
@@ -203,7 +210,9 @@ function AssistantPanelWindow() {
           onValueChange={setDraftValue}
           onSend={handleSendFromDraft}
           isSending={createSession.isPending}
+          sendUnavailable={isUploading}
           scopeLabel={t(($) => $.composer.scope_workspace, { workspace: workspace?.name ?? t(($) => $.composer.scope_all) })}
+          resourceControls={<AssistantComposeResources sessionId={NEW_SESSION_COMPOSER} workspaceId={workspace?.id ?? null} onUploadingChange={setUploading} />}
           compact
         />
       )}

@@ -40,6 +40,7 @@ function workspaceScoped(slug: string) {
     // per-tab memory router and web's [workspaceSlug] layout both already
     // expect every sidebar destination to live under /{slug}/*.
     assistant: () => `${ws}/assistant`,
+    artifacts: () => `${ws}/artifacts`,
     qa: () => `${ws}/qa`,
     policy: () => `${ws}/policy`,
     runtimes: () => `${ws}/runtimes`,

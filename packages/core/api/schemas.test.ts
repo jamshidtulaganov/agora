@@ -69,6 +69,10 @@ import {
   AssistantArtifactSchema,
   AssistantArtifactSummarySchema,
   AssistantArtifactListSchema,
+  AssistantArtifactRevisionSchema,
+  AssistantArtifactRevisionListSchema,
+  EMPTY_ASSISTANT_ARTIFACT_REVISION,
+  EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
   EMPTY_ASSISTANT_ARTIFACT,
   EMPTY_ASSISTANT_ARTIFACT_LIST,
 } from "./schemas";
@@ -1692,6 +1696,15 @@ describe("AssistantRunSchema drift", () => {
   it("degrades malformed optional run fields", () => {
     expect(AssistantRunSchema.parse({ ...run, active_tool: 42, context: null }).context).toEqual({ workspace_id: null });
   });
+
+  it("preserves project and file IDs while safely dropping malformed optional fields", () => {
+    expect(AssistantRunSchema.parse({ ...run, context: {
+      workspace_id: "ws-1", project_id: "project-1", attachment_ids: ["file-1", "file-2"],
+    } }).context).toEqual({ workspace_id: "ws-1", project_id: "project-1", attachment_ids: ["file-1", "file-2"] });
+    expect(AssistantRunSchema.parse({ ...run, context: {
+      workspace_id: "ws-1", project_id: 7, attachment_ids: "bad",
+    } }).context).toEqual({ workspace_id: "ws-1", project_id: null, attachment_ids: [] });
+  });
 });
 
 // See docs/agora-assistant-plan.md and server/internal/handler/assistant.go.
@@ -2004,5 +2017,73 @@ describe("AssistantArtifactListSchema drift", () => {
   it("degrades to an empty list when a row is malformed", () => {
     const parsed = AssistantArtifactListSchema.parse([row, { id: 7 }]);
     expect(parsed).toEqual([]);
+  });
+});
+
+describe("AssistantArtifactRevision schemas drift", () => {
+  const row = {
+    id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+    artifact_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    version: 3,
+    title: "Sprint report",
+    created_at: "2026-09-16T10:00:00Z",
+  };
+
+  it("parses a history row and a full revision", () => {
+    expect(AssistantArtifactRevisionListSchema.parse([row])).toEqual([row]);
+    expect(AssistantArtifactRevisionSchema.parse({ ...row, content: "# body" })).toMatchObject({
+      ...row,
+      content: "# body",
+    });
+  });
+
+  it("marks a row with no usable version as v0 so the picker can drop it", () => {
+    // The picker filters `version > 0`: a row it can't address is better
+    // hidden than rendered as a version that can't be fetched.
+    expect(AssistantArtifactRevisionListSchema.parse([{ ...row, version: "3" }])[0]?.version).toBe(0);
+    const { version: _omit, ...without } = row;
+    expect(AssistantArtifactRevisionSchema.parse(without).version).toBe(0);
+  });
+
+  it("degrades a non-array history (or a malformed row) to an empty list", () => {
+    expect(
+      parseWithFallback(
+        { revisions: [row] },
+        AssistantArtifactRevisionListSchema,
+        EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
+        { endpoint: "GET /api/assistant/artifacts/{id}/revisions" },
+      ),
+    ).toEqual([]);
+    expect(AssistantArtifactRevisionListSchema.parse([row, { id: 7 }])).toEqual([]);
+  });
+
+  it("degrades a revision whose content has the wrong type to the empty revision", () => {
+    const parsed = parseWithFallback(
+      { ...row, content: { body: "x" } },
+      AssistantArtifactRevisionSchema,
+      EMPTY_ASSISTANT_ARTIFACT_REVISION,
+      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
+    );
+    // version 0 is what the pane checks before it swaps in a historical body.
+    expect(parsed.version).toBe(0);
+  });
+
+  it("degrades a null response (endpoint not deployed yet) to the empty revision", () => {
+    const parsed = parseWithFallback(
+      null,
+      AssistantArtifactRevisionSchema,
+      EMPTY_ASSISTANT_ARTIFACT_REVISION,
+      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
+    );
+    expect(parsed).toBe(EMPTY_ASSISTANT_ARTIFACT_REVISION);
+  });
+
+  it("keeps a revision that carries extra fields a newer server added", () => {
+    const parsed = AssistantArtifactRevisionSchema.parse({
+      ...row,
+      content: "# body",
+      author: "assistant",
+    });
+    expect(parsed.content).toBe("# body");
   });
 });

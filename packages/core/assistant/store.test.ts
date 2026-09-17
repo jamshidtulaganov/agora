@@ -66,7 +66,7 @@ describe("createAssistantStore drafts and artifact state", () => {
     const storage = memoryStorage();
     const store = createAssistantStore({ storage });
     store.getState().setIdentity("user-a");
-    const draft = { content: "hello", request_id: "request-1", context: { workspace_id: "ws-1", timezone: "Asia/Tashkent" } };
+    const draft = { content: "hello", request_id: "request-1", context: { workspace_id: "ws-1", timezone: "Asia/Tashkent", project_id: "project-1", attachment_ids: ["file-1"] } };
     store.getState().setDraft("session-a", draft);
     expect(store.getState().draftsBySession["session-a"]).toEqual(draft);
 
@@ -93,6 +93,47 @@ describe("createAssistantStore drafts and artifact state", () => {
     const store = createAssistantStore({ storage });
     store.getState().setIdentity("user-a");
     expect(store.getState().draftsBySession).toEqual({});
+  });
+
+  it.each([
+    { project_id: 5 },
+    { attachment_ids: ["file-1", 7] },
+    { attachment_ids: "file-1" },
+    { project_id: "project-1", workspace_id: null },
+  ])("drops a draft with malformed project or file context", (bad) => {
+    const storage = memoryStorage({
+      "agora:assistant:drafts:user-a": JSON.stringify({
+        "session-a": { content: "retry", request_id: "request-1", context: { workspace_id: "ws-1", ...bad } },
+      }),
+    });
+    const store = createAssistantStore({ storage });
+    store.getState().setIdentity("user-a");
+    expect(store.getState().draftsBySession).toEqual({});
+  });
+
+  it("persists composer selection and clears project/files on workspace change", () => {
+    const storage = memoryStorage();
+    const store = createAssistantStore({ storage });
+    store.getState().setIdentity("user-a");
+    const selected = { workspace_id: "ws-1", project_id: "project-1", attachments: [{ id: "file-1", filename: "report.md", size_bytes: 42 }] };
+    store.getState().setComposerContext("session-a", selected);
+    store.getState().setIdentity("user-b");
+    expect(store.getState().composerContextBySession).toEqual({});
+    store.getState().setIdentity("user-a");
+    expect(store.getState().composerContextBySession["session-a"]).toEqual(selected);
+
+    store.getState().setComposerContext("session-a", { workspace_id: "ws-2", project_id: "wrong-project", attachments: selected.attachments });
+    expect(store.getState().composerContextBySession["session-a"]).toEqual({ workspace_id: "ws-2", project_id: null, attachments: [] });
+    expect(store.getState().draftsBySession).toEqual({});
+  });
+
+  it("drops malformed persisted composer attachments", () => {
+    const storage = memoryStorage({
+      "agora:assistant:composerContext:user-a": JSON.stringify({ "session-a": { workspace_id: "ws-1", attachments: [{ id: 7, filename: "bad", size_bytes: 1 }] } }),
+    });
+    const store = createAssistantStore({ storage });
+    store.getState().setIdentity("user-a");
+    expect(store.getState().composerContextBySession).toEqual({});
   });
 
   it("tracks open artifacts without persisting them", () => {

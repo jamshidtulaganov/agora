@@ -51,6 +51,7 @@ const mockSetOpenArtifact = vi.hoisted(() => vi.fn());
 const assistantStoreState = vi.hoisted(() => ({
   activeSessionId: null as string | null,
   draftsBySession: {} as Record<string, {content: string; request_id: string; context?: {workspace_id: string | null; timezone?: string}}>,
+  composerContextBySession: {} as Record<string, {workspace_id: string | null; project_id?: string | null; attachments?: {id: string; filename: string; size_bytes: number}[]}>,
   openArtifactId: {} as Record<string, string>,
 }));
 
@@ -74,12 +75,20 @@ vi.mock("@agora/core/assistant", async () => {
       else delete assistantStoreState.draftsBySession[sessionId];
       listeners.forEach((listener) => listener());
   };
+  const setComposerContext = (sessionId: string, value: {workspace_id: string | null; project_id?: string | null; attachments?: {id: string; filename: string; size_bytes: number}[]} | null) => {
+      assistantStoreState.composerContextBySession = {...assistantStoreState.composerContextBySession};
+      if (value) assistantStoreState.composerContextBySession[sessionId] = value;
+      else delete assistantStoreState.composerContextBySession[sessionId];
+      listeners.forEach((listener) => listener());
+    };
   const state = () => ({
     activeSessionId: assistantStoreState.activeSessionId,
     draftsBySession: assistantStoreState.draftsBySession,
+    composerContextBySession: assistantStoreState.composerContextBySession,
     openArtifactId: assistantStoreState.openArtifactId,
     setActiveSession: mockSetActiveSession,
     setDraft,
+    setComposerContext,
     setOpenArtifact: mockSetOpenArtifact,
   });
   const useAssistantStore = Object.assign(
@@ -122,6 +131,11 @@ vi.mock("@agora/core/assistant", async () => {
       queryKey: ["assistant", "sessions"],
       queryFn: mockGetSessions,
     }),
+    assistantSessionOptions: (id: string) => ({
+      queryKey: ["assistant", "session", id],
+      queryFn: () => Promise.resolve({ id }),
+      enabled: !!id,
+    }),
     assistantRunsOptions: (sessionId: string) => ({ queryKey: ["assistant", "runs", sessionId], queryFn: () => mockGetRuns(sessionId), enabled: !!sessionId }),
     assistantMessagesOptions: (sessionId: string) => ({
       queryKey: ["assistant", "messages", sessionId],
@@ -135,6 +149,8 @@ vi.mock("@agora/core/assistant", async () => {
     useUpdateAssistantSession: () => ({ mutate: mockUpdateMutate, isPending: false }),
   };
 });
+
+vi.mock("./compose-resources", () => ({ AssistantComposeResources: () => null }));
 
 import { AssistantPanel } from "./assistant-panel";
 import { AssistantFab } from "./assistant-fab";
@@ -168,6 +184,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   assistantStoreState.activeSessionId = null;
   assistantStoreState.draftsBySession = {};
+  assistantStoreState.composerContextBySession = {};
   assistantStoreState.openArtifactId = {};
   panelStoreState.isOpen = false;
   panelStoreState.isExpanded = false;

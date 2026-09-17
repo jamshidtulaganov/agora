@@ -30,6 +30,7 @@ interface ComposerProps {
    * free of query/mutation wiring — see components/context-chip.tsx.
    */
   contextChip?: ReactNode;
+  resourceControls?: ReactNode;
   /**
    * Put the caret in the field on mount. The docked composer asks for this so
    * a session switch (which remounts the conversation) lands ready to type;
@@ -57,6 +58,7 @@ export function Composer({
   onValueChange,
   scopeLabel,
   contextChip,
+  resourceControls,
   autoFocus,
   variant = "docked",
 }: ComposerProps) {
@@ -219,6 +221,7 @@ export function Composer({
       <div className="w-full">
         {context}
         {field}
+        {resourceControls}
         {scopeLabel && <div className="mx-auto mt-2 w-full max-w-2xl text-xs text-muted-foreground">{scopeLabel}</div>}
         {counter}
       </div>
@@ -229,6 +232,7 @@ export function Composer({
     <div className="border-t bg-background px-4 py-3">
       {context}
       {field}
+      {resourceControls}
       {scopeLabel && <div className="mx-auto mt-2 w-full max-w-2xl text-xs text-muted-foreground">{scopeLabel}</div>}
       {counter}
     </div>

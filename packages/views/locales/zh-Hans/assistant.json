@@ -133,6 +133,13 @@
     "loading": "正在打开产物...",
     "unavailable": "这个产物暂时打不开。",
     "downgrade_notice": "当前版本无法渲染这个产物，先显示原始内容。",
+    "switcher": "本次对话的产物",
+    "versions": "版本历史",
+    "version_latest": "最新",
+    "viewing_version": "正在查看 v{{version}}（共 v{{latest}}）— 只读",
+    "back_to_latest": "回到最新版",
+    "updating": "更新中",
+    "revision_unavailable": "这个版本打不开。",
     "kind": {
       "chart": "图表",
       "table": "表格",
@@ -140,6 +147,10 @@
       "html": "交互页面",
       "unknown": "产物"
     }
+  },
+  "workbench": {
+    "resize": "调整产物面板宽度",
+    "resize_hint": "拖动调整宽度，双击恢复默认"
   },
   "message_actions": {
     "copy": "复制",
@@ -175,5 +186,25 @@
     "summarize_results": "把这些结果总结一下",
     "what_is_urgent": "最紧急的是什么？",
     "what_needs_me": "今天有什么需要我处理？"
+  },
+  "resources": {
+    "choose_project": "项目",
+    "no_projects": "此工作区没有项目",
+    "remove_project": "移除项目",
+    "remove_file": "移除 {{filename}}",
+    "inventory_label": "{{project}} 的项目资源",
+    "inventory": "关联资源",
+    "no_resources": "无",
+    "inventory_note": "这里只显示关联资源名称；不会自动加载仓库内容。",
+    "file_hint": "可附加文本、代码、Markdown、CSV 或 JSON 文件（最多 5 个，每个不超过 64 KiB，总计不超过 128 KiB）。",
+    "workspace_required": "请先选择工作区再附加文件。",
+    "unsupported_type": "不支持此文件类型。",
+    "file_too_large": "文件不能超过 64 KiB。",
+    "too_many_files": "最多可附加 5 个文件。",
+    "total_too_large": "附件总大小不能超过 128 KiB。",
+    "uploading": "上传中...",
+    "upload_failed": "无法上传文件，请重试。",
+    "retry_project": "重试将使用之前选择的项目",
+    "retry_files": "重试将包含 {{count}} 个附件"
   }
 }

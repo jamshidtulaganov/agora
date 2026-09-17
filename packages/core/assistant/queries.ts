@@ -1,4 +1,4 @@
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 
 // The Agora Assistant is USER-scoped, not workspace-scoped (see
@@ -18,8 +18,15 @@ export const assistantKeys = {
   availability: () => [...assistantKeys.all, "availability"] as const,
   /** Prefix for every single-artifact query — lets a WS event invalidate
    *  "whatever artifact is on screen" without knowing its id. */
-  artifacts: () => [...assistantKeys.all, "artifact"] as const,
+  artifacts: () => [...assistantKeys.all, "artifacts"] as const,
   artifact: (id: string) => [...assistantKeys.artifacts(), id] as const,
+  /** Nested under the artifact key on purpose: the same WS invalidation that
+   *  refreshes an artifact's body refreshes its history, so a version the
+   *  agent just wrote appears in the picker without its own event. */
+  artifactRevisions: (id: string) => [...assistantKeys.artifact(id), "revisions"] as const,
+  artifactRevision: (id: string, version: number) =>
+    [...assistantKeys.artifactRevisions(id), version] as const,
+  artifactLibrary: () => [...assistantKeys.artifacts(), "library"] as const,
   sessionArtifacts: (sessionId: string) =>
     [...assistantKeys.all, "session-artifacts", sessionId] as const,
 };
@@ -129,6 +136,48 @@ export function assistantArtifactOptions(id: string) {
     // yet, or deleted with its session) — retrying can't change that, and
     // the pane has a quiet unavailable state for it.
     retry: false,
+  });
+}
+
+export function assistantArtifactLibraryOptions() {
+  return infiniteQueryOptions({
+    queryKey: assistantKeys.artifactLibrary(),
+    queryFn: ({ pageParam }) => api.listMyAssistantArtifacts(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === 40 ? allPages.length * 40 : undefined,
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Version history for the pane's version picker.
+ *
+ * `retry: false` for the same reason the artifact read has it: until the
+ * revisions endpoints are deployed this is a hard 404, and the picker's job
+ * on error is to collapse to the plain version badge, not to hammer.
+ */
+export function assistantArtifactRevisionsOptions(artifactId: string) {
+  return queryOptions({
+    queryKey: assistantKeys.artifactRevisions(artifactId),
+    queryFn: () => api.listAssistantArtifactRevisions(artifactId),
+    enabled: !!artifactId,
+    retry: false,
+  });
+}
+
+/**
+ * One historical version, fetched only while the user is actually looking at
+ * it. A revision row is immutable once written, so this never goes stale.
+ */
+export function assistantArtifactRevisionOptions(artifactId: string, version: number | null) {
+  return queryOptions({
+    queryKey: assistantKeys.artifactRevision(artifactId, version ?? 0),
+    queryFn: () => api.getAssistantArtifactRevision(artifactId, version ?? 0),
+    enabled: !!artifactId && !!version && version > 0,
+    retry: false,
+    staleTime: Infinity,
   });
 }
 
