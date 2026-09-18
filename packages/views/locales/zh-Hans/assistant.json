@@ -1,7 +1,7 @@
 {
   "not_configured": {
-    "title": "助手暂未启用",
-    "description": "请工作区管理员为该实例启用 Agora 助手。"
+    "title": "助手尚未配置",
+    "description": "该实例未配置 AI 服务商 API 密钥。请联系运维该服务器的人员添加。"
   },
   "panel": {
     "title": "助手",
@@ -132,6 +132,7 @@
     "close": "关闭产物",
     "loading": "正在打开产物...",
     "unavailable": "这个产物暂时打不开。",
+    "retry": "重试",
     "downgrade_notice": "当前版本无法渲染这个产物，先显示原始内容。",
     "switcher": "本次对话的产物",
     "versions": "版本历史",

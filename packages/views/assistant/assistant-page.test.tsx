@@ -201,7 +201,7 @@ describe("AssistantPage — availability gate", () => {
 
     renderPage();
 
-    await screen.findByText("The Assistant isn't available yet");
+    await screen.findByText("The Assistant isn't set up");
     expect(
       screen.queryByPlaceholderText("Message the Assistant..."),
     ).not.toBeInTheDocument();

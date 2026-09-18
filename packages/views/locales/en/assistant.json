@@ -1,7 +1,7 @@
 {
   "not_configured": {
-    "title": "The Assistant isn't available yet",
-    "description": "Ask a workspace admin to turn on the Agora Assistant for this instance."
+    "title": "The Assistant isn't set up",
+    "description": "This instance has no AI provider API key configured. Ask whoever operates the server to add one."
   },
   "panel": {
     "title": "Assistant",
@@ -132,6 +132,7 @@
     "close": "Close artifact",
     "loading": "Opening artifact...",
     "unavailable": "This artifact isn't available.",
+    "retry": "Try again",
     "downgrade_notice": "This build can't render this artifact — showing its raw content.",
     "switcher": "Artifacts in this chat",
     "versions": "Version history",

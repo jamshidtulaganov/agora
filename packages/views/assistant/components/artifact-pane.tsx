@@ -77,7 +77,7 @@ export function ArtifactPane({
     setViewVersion(null);
   }, [artifactId]);
   const kindLabel = useArtifactKindLabel();
-  const { data, isLoading, isError } = useQuery(assistantArtifactOptions(artifactId));
+  const { data, isLoading, isError, refetch } = useQuery(assistantArtifactOptions(artifactId));
 
   // `id === ""` is the EMPTY_ASSISTANT_ARTIFACT fallback — a 200 whose body
   // failed schema validation. Same user-visible outcome as a 404.
@@ -206,7 +206,22 @@ export function ArtifactPane({
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {isLoading && <PaneNotice>{t(($) => $.artifact.loading)}</PaneNotice>}
-        {unavailable && <PaneNotice>{t(($) => $.artifact.unavailable)}</PaneNotice>}
+        {unavailable && (
+          <PaneNotice>
+            {t(($) => $.artifact.unavailable)}
+            {/* A retry only makes sense for a failed fetch. The other arm of
+                `unavailable` — a 200 that fell back to the empty artifact — is
+                the server's answer, and refetching would return it again. */}
+            {isError && (
+              <>
+                {" "}
+                <button type="button" className="cursor-pointer underline" onClick={() => void refetch()}>
+                  {t(($) => $.artifact.retry)}
+                </button>
+              </>
+            )}
+          </PaneNotice>
+        )}
         {isHistorical && !shown && (
           <PaneNotice>
             {revisionQuery.isPending

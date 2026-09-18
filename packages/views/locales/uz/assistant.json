@@ -1,7 +1,7 @@
 {
   "not_configured": {
-    "title": "Yordamchi hali mavjud emas",
-    "description": "Ish maydoni adminidan shu instansiya uchun Agora Yordamchisini yoqishni so‘rang."
+    "title": "Yordamchi sozlanmagan",
+    "description": "Bu instansiyada AI provayder API kaliti sozlanmagan. Serverni boshqaradigan shaxsdan uni qo‘shishni so‘rang."
   },
   "panel": {
     "title": "Yordamchi",
@@ -132,6 +132,7 @@
     "close": "Artefaktni yopish",
     "loading": "Artefakt ochilmoqda...",
     "unavailable": "Bu artefakt mavjud emas.",
+    "retry": "Qayta urinish",
     "downgrade_notice": "Bu versiya ushbu artefaktni ko‘rsata olmaydi — dastlabki mazmuni ko‘rsatilmoqda.",
     "switcher": "Ushbu suhbatdagi artefaktlar",
     "versions": "Versiyalar tarixi",
