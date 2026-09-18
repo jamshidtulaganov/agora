@@ -90,6 +90,23 @@ and nobody currently does.
   trigger); no capability claims ahead of shipping ("they talk like it works
   but it doesn't" is how Linear is losing credibility).
 - No per-agent seat pricing; no AI credit meters.
+- **No agent-throughput dashboards** (issues closed per agent, tasks/day,
+  tokens burned). The corpus's #1 named burnout driver in 2026 is AI as a
+  management speedup instrument ("1 task a day was productive; now 5 and
+  your boss expects more"). Measure verified outcomes, never volume.
+- **Don't market autonomy to senior ICs.** The highest-scoring comment in
+  the whole 3,204-comment corpus flatly disbelieves that agent-built code
+  ships. "Agents write code" reads as a claim about code quality and dies
+  there; lead with "the tracker stays true and agent work arrives
+  reviewable" and let users dial autonomy up themselves.
+
+## Segment counterweight
+
+Pro-agent voices are almost entirely solo devs and small teams (r/Linear);
+hostile voices are ICs inside larger orgs who inherit other people's agent
+output. That maps exactly onto Agora's 2–10 target — the segment where agent
+enthusiasm is real is the one being sold to. The hostility is a positioning
+constraint, not a market disqualifier.
 
 ## Competitive frame
 
