@@ -169,9 +169,12 @@ services:
     runtime: docker
     branch: master
     region: frankfurt
-    # The landing/download site can sleep when idle; keep the paid instance on
-    # the stateful backend where it matters.
-    plan: free
+    # NOT just the landing/download site: this service also proxies /api and
+    # /ws for the desktop app (FRONTEND_ORIGIN, AGORA_APP_URL and the desktop
+    # client's baked-in apiUrl all point here). A sleeping instance therefore
+    # cold-starts on the first request of every desktop session, and whatever
+    # query lands in that window fails. Keep it warm.
+    plan: starter
     autoDeployTrigger: checksPass
     dockerfilePath: ./Dockerfile.web
     dockerContext: .
