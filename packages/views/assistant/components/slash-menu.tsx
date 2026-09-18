@@ -1,6 +1,17 @@
 "use client";
 
-import { Activity, BarChart3, FolderPlus, ListTodo, Plus, Search } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  FolderPlus,
+  Gauge,
+  ListTodo,
+  Plus,
+  Rocket,
+  Search,
+  ShieldCheck,
+  Sunrise,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
@@ -25,11 +36,15 @@ const ICONS: Record<SlashCommandId, LucideIcon> = {
   usage: BarChart3,
   digest: Activity,
   project: FolderPlus,
+  sprint_report: Gauge,
+  standup: Sunrise,
+  qa_health: ShieldCheck,
+  release_notes: Rocket,
 };
 
 /**
- * Resolves the command catalog against the active locale. The three "send"
- * commands deliberately reuse the launcher's example prompts — the same
+ * Resolves the command catalog against the active locale. Every "send"
+ * command deliberately reuses the launcher's example prompts — the same
  * request should read identically whether the user clicked a prompt row or
  * typed `/usage`.
  */
@@ -66,6 +81,26 @@ export function useSlashCommands(): SlashCommandItem[] {
       label: t(($) => $.composer.slash.project.label),
       description: t(($) => $.composer.slash.project.description),
       payload: t(($) => $.composer.slash.project.template),
+    },
+    sprint_report: {
+      label: t(($) => $.composer.slash.sprint_report.label),
+      description: t(($) => $.composer.slash.sprint_report.description),
+      payload: t(($) => $.empty_state.prompts.sprint_report),
+    },
+    standup: {
+      label: t(($) => $.composer.slash.standup.label),
+      description: t(($) => $.composer.slash.standup.description),
+      payload: t(($) => $.empty_state.prompts.standup),
+    },
+    qa_health: {
+      label: t(($) => $.composer.slash.qa_health.label),
+      description: t(($) => $.composer.slash.qa_health.description),
+      payload: t(($) => $.empty_state.prompts.qa_health),
+    },
+    release_notes: {
+      label: t(($) => $.composer.slash.release_notes.label),
+      description: t(($) => $.composer.slash.release_notes.description),
+      payload: t(($) => $.empty_state.prompts.release_notes),
     },
   };
 

@@ -24,7 +24,11 @@
       "create_issue": "Create an issue to update the pricing page copy",
       "my_plate": "What's on my plate across all my workspaces?",
       "usage_this_week": "How much have I used this week?",
-      "today_digest": "What happened across my workspaces today?"
+      "today_digest": "What happened across my workspaces today?",
+      "sprint_report": "How is the current sprint going? Give me a sprint report.",
+      "standup": "What did everyone do since yesterday?",
+      "qa_health": "How healthy is the QA queue right now?",
+      "release_notes": "Write release notes for what we shipped this week"
     }
   },
   "session_rail": {
@@ -75,6 +79,22 @@
         "label": "New project",
         "description": "Describe a project and the Assistant creates it",
         "template": "Create a project called "
+      },
+      "sprint_report": {
+        "label": "Sprint report",
+        "description": "How the active sprint is going"
+      },
+      "standup": {
+        "label": "Standup",
+        "description": "What everyone did since yesterday"
+      },
+      "qa_health": {
+        "label": "QA health",
+        "description": "The state of the QA queue right now"
+      },
+      "release_notes": {
+        "label": "Release notes",
+        "description": "What shipped, written for humans"
       }
     },
     "scope_workspace": "Sending to {{workspace}}",

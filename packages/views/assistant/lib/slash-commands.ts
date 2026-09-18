@@ -5,7 +5,17 @@
 // copy); labels, descriptions and the text a command inserts or sends are
 // i18n keys resolved in slash-menu.tsx.
 
-export type SlashCommandId = "add_task" | "my_tasks" | "find" | "usage" | "digest" | "project";
+export type SlashCommandId =
+  | "add_task"
+  | "my_tasks"
+  | "find"
+  | "usage"
+  | "digest"
+  | "project"
+  | "sprint_report"
+  | "standup"
+  | "qa_health"
+  | "release_notes";
 
 /**
  * "template" prefills the composer and leaves the cursor at the end for the
@@ -27,6 +37,13 @@ export const SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { id: "usage", trigger: "/usage", action: "send" },
   { id: "digest", trigger: "/digest", action: "send" },
   { id: "project", trigger: "/project", action: "template" },
+  // Domain recipes: one command -> one well-shaped report. The backend
+  // prompt recognises these requests by phrase, so the payloads are the
+  // launcher's own prompts rather than a second wording of the same ask.
+  { id: "sprint_report", trigger: "/sprint-report", action: "send" },
+  { id: "standup", trigger: "/standup", action: "send" },
+  { id: "qa_health", trigger: "/qa-health", action: "send" },
+  { id: "release_notes", trigger: "/release-notes", action: "send" },
 ];
 
 /**

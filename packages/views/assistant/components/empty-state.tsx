@@ -1,6 +1,15 @@
 "use client";
 
-import { BarChart3, ListTodo, Plus, Activity } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  Gauge,
+  ListTodo,
+  Plus,
+  Rocket,
+  ShieldCheck,
+  Sunrise,
+} from "lucide-react";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
@@ -56,7 +65,12 @@ interface PromptRowsProps {
 /**
  * Example prompts below the hero composer — quiet, left-aligned rows a user
  * scans like a menu. Each is a real task with the glyph of the surface it
- * touches, not a uniform pill.
+ * touches, not a uniform pill. The last four are the domain report recipes,
+ * mirroring their slash commands so both entry points send the same request.
+ *
+ * One flat list, same rows in both forms — no persona grouping, no compact
+ * subset. The launcher already scrolls, which is cheaper than the chrome any
+ * segmentation would cost.
  */
 export function AssistantPromptRows({ onPickPrompt, compact }: PromptRowsProps) {
   const { t } = useT("assistant");
@@ -66,6 +80,10 @@ export function AssistantPromptRows({ onPickPrompt, compact }: PromptRowsProps) 
     { icon: ListTodo, text: t(($) => $.empty_state.prompts.my_plate) },
     { icon: BarChart3, text: t(($) => $.empty_state.prompts.usage_this_week) },
     { icon: Activity, text: t(($) => $.empty_state.prompts.today_digest) },
+    { icon: Gauge, text: t(($) => $.empty_state.prompts.sprint_report) },
+    { icon: Sunrise, text: t(($) => $.empty_state.prompts.standup) },
+    { icon: ShieldCheck, text: t(($) => $.empty_state.prompts.qa_health) },
+    { icon: Rocket, text: t(($) => $.empty_state.prompts.release_notes) },
   ];
 
   return (

@@ -150,6 +150,28 @@ func TestPromptCarriesTheConfiguredModelLabel(t *testing.T) {
 	}
 }
 
+// The standing-report recipes are the domain layer: without them every
+// "sprint report" is improvised from scratch with a different shape and a
+// different (often wrong) tool choreography. This pins the five recipe names
+// and the two rules that keep recipes safe — reuse the artifact instead of
+// minting duplicates, and never write.
+func TestPromptCarriesTheReportRecipes(t *testing.T) {
+	prompt := buildSystemPrompt(UserContext{Name: "Ann"}, "")
+	for _, want := range []string{
+		"SPRINT REPORT",
+		"STANDUP",
+		"QA HEALTH",
+		"RELEASE NOTES",
+		"MY DAY",
+		"never a second create_artifact of the same report",
+		"Recipes READ.",
+	} {
+		if !containsFold(prompt, want) {
+			t.Fatalf("the prompt never mentions %q — the recipe layer is missing", want)
+		}
+	}
+}
+
 // The timezone line has to say what it is FOR, or the model converts the
 // windows the tools already computed.
 func TestPromptExplainsTheTimezone(t *testing.T) {

@@ -24,7 +24,11 @@
       "create_issue": "创建一个 issue，更新定价页文案",
       "my_plate": "我在所有工作区里手头都有什么？",
       "usage_this_week": "我这周用了多少？",
-      "today_digest": "我的工作区今天发生了什么？"
+      "today_digest": "我的工作区今天发生了什么？",
+      "sprint_report": "当前 Sprint 进行得怎么样？给我一份 Sprint 报告",
+      "standup": "从昨天到现在，大家都做了什么？",
+      "qa_health": "现在 QA 队列的状况怎么样？",
+      "release_notes": "把我们这周上线的内容写成发布说明"
     }
   },
   "session_rail": {
@@ -75,6 +79,22 @@
         "label": "新建项目",
         "description": "说清楚是什么项目，助手帮你建",
         "template": "创建一个项目，名字叫："
+      },
+      "sprint_report": {
+        "label": "Sprint 报告",
+        "description": "当前 Sprint 进行得怎么样"
+      },
+      "standup": {
+        "label": "站会",
+        "description": "从昨天到现在大家做了什么"
+      },
+      "qa_health": {
+        "label": "QA 状况",
+        "description": "QA 队列现在顺不顺"
+      },
+      "release_notes": {
+        "label": "发布说明",
+        "description": "上线了什么，用人话讲清楚"
       }
     },
     "scope_workspace": "发送至{{workspace}}",

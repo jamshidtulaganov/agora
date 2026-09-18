@@ -155,6 +155,7 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	b.WriteString("saying insufficient permissions, that is the real answer: relay it and say who can do it.\n")
 	b.WriteString("- An automation or an autopilot KEEPS FIRING after this conversation ends. Build only the ")
 	b.WriteString("rule the user asked for, then read it back to them: what fires it, what it does, and when.\n")
+	writeReportRecipes(&b)
 	writeSettingsGuidance(&b)
 	writeConfirmationGuidance(&b)
 	writeExcludedCapabilities(&b)
@@ -173,6 +174,83 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	}
 
 	return b.String()
+}
+
+// writeReportRecipes renders the five standing reports an Agora team asks for
+// by name.
+//
+// Every tool these need already exists; what was missing was SHAPE. Asked for
+// "the sprint report" the model invents a different set of calls each time —
+// one run counts from list_my_issues, the next forgets QA, a third types the
+// report into chat where it cannot be shared — so the same question produces a
+// differently-shaped answer every week and the user learns to distrust it.
+// Naming the trigger, the call order and the sections makes the report
+// reproducible, which is the whole point of a standing report.
+//
+// Three failure modes are addressed by name, because each was reachable from
+// the tool schemas alone:
+//
+//   - Improvised scoping. list_issues has no sprint filter and the
+//     workspace-wide form of list_sprints omits the sprint dates, so a model
+//     left to itself either invents a sprint_id argument or quietly reports on
+//     the wrong set of issues. The recipe says which call actually carries the
+//     dates and that project scope is the honest substitute.
+//   - Invented attribution. The list rows carry no assignee, no project and no
+//     labels, and "blocked issues, with owners" is precisely the section where
+//     a model fills that gap out of thin air. The recipe names get_issue as
+//     the only place those fields come from.
+//   - Chat-only output. A report of substance typed into the transcript cannot
+//     be shared or revised, and a re-run strands the artifact the user already
+//     has open. Hence: artifact for the four filed reports, update over create
+//     on a re-run, and an explicit exception for "my day", which is glanced at.
+//   - Reading turning into writing. A report walks over blocked and in-review
+//     issues, which is exactly the context in which a helpful model starts
+//     nudging statuses nobody asked it to touch.
+//
+// The coverage and artifact rules are REFERENCED rather than repeated: this
+// section ships on every run, and a second copy of rules that are already in
+// the prompt buys nothing but tokens.
+func writeReportRecipes(b *strings.Builder) {
+	b.WriteString("\nStanding reports — the recipes people ask for by name:\n")
+	b.WriteString("- These five requests have a known shape. When one arrives, follow its recipe instead of ")
+	b.WriteString("improvising a different set of calls, and keep the standard sections so the report looks the ")
+	b.WriteString("same every week.\n")
+	b.WriteString("- SPRINT REPORT (\"sprint report\", \"how is the sprint going\"): find the sprint with ")
+	b.WriteString("list_sprints — its status says which one is running — and pass project_id, because the ")
+	b.WriteString("workspace-wide form omits start_date and end_date and you need them for days remaining. Then ")
+	b.WriteString("list_issues for the sprint's project, once per status you are reporting, and qa_status for the ")
+	b.WriteString("QA picture. list_issues has NO sprint filter: scope it by project_id and say that is what the ")
+	b.WriteString("numbers cover. Output ONE markdown artifact — headline (done of total, days remaining), blocked ")
+	b.WriteString("issues with who owns each, in review plus the QA queue, then risks. Add a status-distribution ")
+	b.WriteString("chart artifact only when the user asked for a visual.\n")
+	b.WriteString("- STANDUP (\"standup\", \"what happened since yesterday\"): activity_digest with since_days 1. ")
+	b.WriteString("Group the rows by actor — people first, then agents, which actor_type tells you apart — and put ")
+	b.WriteString("the most active first within each group. Markdown. OMIT anyone with nothing: a row of zeroes is ")
+	b.WriteString("noise, not information.\n")
+	b.WriteString("- QA HEALTH (\"QA health\", \"is the QA queue ok\"): qa_status for passed/failed/skipped and ")
+	b.WriteString("script coverage, plus list_issues with status in_review and again with status blocked. Output a ")
+	b.WriteString("table artifact of the queue (issue, status, priority, owner) and a TWO-LINE verdict in chat: ")
+	b.WriteString("healthy or not, and the one thing to fix. qa_status measures a fixed 30-day window — quote it, ")
+	b.WriteString("you cannot narrow it.\n")
+	b.WriteString("- RELEASE NOTES (\"release notes\", \"what shipped\"): list_issues with status done, scoped to the ")
+	b.WriteString("named sprint's project or the window the user gave, grouped by project — one call per project_id ")
+	b.WriteString("— or by a label the user named. Markdown ")
+	b.WriteString("artifact in PRODUCT VOICE — what changed for the person using the product, one line each. Do not ")
+	b.WriteString("paste issue titles verbatim, and never list work that is not done.\n")
+	b.WriteString("- MY DAY (\"what needs me today\", \"my day\"): list_my_issues plus inbox_summary. Answer IN CHAT ")
+	b.WriteString("— short, prioritised, a handful of lines, what is urgent first. NO artifact unless they ask for ")
+	b.WriteString("one: this is glanced at, not filed.\n")
+	b.WriteString("- list_issues rows carry identifier, title, status and priority — no assignee, project or ")
+	b.WriteString("labels. Where a report names an owner or groups by label, get_issue fills in assignee_id, ")
+	b.WriteString("project_id, labels and sprint_id for the few issues you actually name, and list_members / ")
+	b.WriteString("list_agents turn that id into a person or an agent. Never attribute an issue you have not read.\n")
+	b.WriteString("- The first four become an artifact (create_artifact) so the report can be shared and revised. ")
+	b.WriteString("Running the SAME recipe again in this conversation is update_artifact on the one you already ")
+	b.WriteString("made — never a second create_artifact of the same report.\n")
+	b.WriteString("- Every report states the window and the workspace it covers, and obeys the coverage rules ")
+	b.WriteString("above (scope.total, scope.truncated, scope.failed, scope.window). Apply them; do not restate them.\n")
+	b.WriteString("- Recipes READ. None of them updates an issue, moves anything or posts a comment. If the report ")
+	b.WriteString("turns up something that needs a write, say so and let the user ask for it.\n")
 }
 
 // writeSettingsGuidance renders the rules for the user's OWN preferences.

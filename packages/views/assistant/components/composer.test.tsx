@@ -40,7 +40,7 @@ describe("Composer slash menu — opening", () => {
     await openMenu();
 
     expect(screen.getByRole("listbox")).toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(6);
+    expect(screen.getAllByRole("option")).toHaveLength(10);
   });
 
   it('does NOT open for a "/" typed mid-sentence', async () => {
@@ -137,6 +137,34 @@ describe("Composer slash menu — picking", () => {
 
     expect(onSend).toHaveBeenCalledWith("How much have I used this week?");
     expect(textarea).toHaveValue("How much have I used this week?");
+  });
+
+  it("sends the launcher's own prompt for a report recipe", async () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    const { user } = await openMenu();
+
+    await user.keyboard("sprint{Enter}");
+
+    // Same string the empty-state row sends — one wording per request.
+    expect(onSend).toHaveBeenCalledWith(
+      "How is the current sprint going? Give me a sprint report.",
+    );
+  });
+
+  it("keeps the two s-triggers apart", async () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    const { user } = await openMenu();
+
+    // "/standup" and "/sprint-report" share a first letter; neither is a
+    // prefix of the other, so the typed word resolves to exactly one.
+    await user.keyboard("stand");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+
+    await user.keyboard("{Enter}");
+
+    expect(onSend).toHaveBeenCalledWith("What did everyone do since yesterday?");
   });
 
   it("picks with the mouse without stealing focus from the textarea", async () => {

@@ -24,7 +24,11 @@
       "create_issue": "Narxlar sahifasi matnini yangilash uchun vazifa yarat",
       "my_plate": "Barcha ish maydonlarimda mening zimmamda nima bor?",
       "usage_this_week": "Bu hafta qancha sarfladim?",
-      "today_digest": "Bugun ish maydonlarimda nima bo‘ldi?"
+      "today_digest": "Bugun ish maydonlarimda nima bo‘ldi?",
+      "sprint_report": "Joriy sprint qanday ketyapti? Sprint hisobotini ber",
+      "standup": "Kechadan beri kim nima qildi?",
+      "qa_health": "Hozir QA navbatining holati qanday?",
+      "release_notes": "Bu hafta chiqargan narsalarimiz uchun reliz eslatmalarini yoz"
     }
   },
   "session_rail": {
@@ -75,6 +79,22 @@
         "label": "Yangi loyiha",
         "description": "Loyihani tasvirlang — Yordamchi uni yaratadi",
         "template": "Shunday nomli loyiha yarat: "
+      },
+      "sprint_report": {
+        "label": "Sprint hisoboti",
+        "description": "Joriy sprint qanday ketyapti"
+      },
+      "standup": {
+        "label": "Standup",
+        "description": "Kechadan beri kim nima qildi"
+      },
+      "qa_health": {
+        "label": "QA holati",
+        "description": "QA navbati hozir qanday"
+      },
+      "release_notes": {
+        "label": "Reliz eslatmalari",
+        "description": "Nima chiqdi — odam tilida"
       }
     },
     "scope_workspace": "{{workspace}}ga yuboriladi",
