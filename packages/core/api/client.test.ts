@@ -1020,3 +1020,88 @@ describe("Assistant artifact revisions", () => {
     await expect(client.listAssistantArtifactRevisions("art-1")).resolves.toEqual([]);
   });
 });
+
+// Pinned reports — docs/assistant-domain-plan.md Phase 2a.
+describe("pinned reports API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(status === 204 ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("posts the project and normalizes an `id`-spelled pin", async () => {
+    const fetchMock = jsonFetch(
+      { id: "pin-1", artifact_id: "art-1", project_id: "proj-1", created_at: "now" },
+      201,
+    );
+    const client = new ApiClient("https://api.example.test");
+    const pin = await client.pinArtifact("art-1", "proj-1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/artifacts/art-1/pins",
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      project_id: "proj-1",
+    });
+    expect(pin).toMatchObject({ id: "pin-1", project_id: "proj-1" });
+  });
+
+  it("normalizes a `pin_id`-spelled pin (the list endpoint's spelling)", async () => {
+    jsonFetch({ pin_id: "pin-2" });
+    const client = new ApiClient("https://api.example.test");
+    const pin = await client.pinArtifact("art-1", "proj-1");
+    // Ids the body omitted are filled from the request, so the Unpin action
+    // has everything it needs without a second read.
+    expect(pin).toMatchObject({ id: "pin-2", artifact_id: "art-1", project_id: "proj-1" });
+  });
+
+  it("returns the empty pin when the create response has no usable id", async () => {
+    jsonFetch({ id: 7 });
+    const client = new ApiClient("https://api.example.test");
+    expect((await client.pinArtifact("art-1", "proj-1")).id).toBe("");
+  });
+
+  it("unwraps the reports envelope and degrades a malformed one to an empty list", async () => {
+    jsonFetch({
+      reports: [
+        {
+          pin_id: "pin-1",
+          artifact_id: "art-1",
+          title: "Sprint report",
+          kind: "markdown",
+          version: 2,
+          updated_at: "now",
+          created_at: "then",
+          pinned_by: { id: "u-1", name: "Jamshid" },
+          owner: { id: "u-1", name: "Jamshid" },
+        },
+      ],
+    });
+    const client = new ApiClient("https://api.example.test");
+    expect(await client.listProjectReports("proj-1")).toHaveLength(1);
+
+    jsonFetch({ reports: "nope" });
+    expect(await client.listProjectReports("proj-1")).toEqual([]);
+  });
+
+  it("degrades an unreadable report body to the empty report rather than throwing", async () => {
+    jsonFetch({ pin_id: "pin-1", content: { body: "x" } });
+    const client = new ApiClient("https://api.example.test");
+    expect((await client.getReport("pin-1")).pin_id).toBe("");
+  });
+
+  it("deletes a pin through the artifact-scoped route", async () => {
+    const fetchMock = jsonFetch(null, 204);
+    const client = new ApiClient("https://api.example.test");
+    await client.unpinArtifact("art-1", "pin-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/artifacts/art-1/pins/pin-1",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+});

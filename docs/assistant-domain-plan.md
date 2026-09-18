@@ -78,16 +78,59 @@ subtraction over configuration.
 **4. Locales** — en / zh-Hans / ru / uz, keeping `parity.test.ts` green and
 following the conventions glossary (docs page is the source of truth).
 
-## Phase 2 — living reports (not this PR)
+## Phase 2a — pinned reports (in progress)
 
-- **Pin an artifact beyond its session**: attach a report artifact to a
-  project or sprint so the team sees it without opening the author's chat.
-  Needs an ownership/visibility model — artifacts are currently user-scoped.
-- **Scheduled refresh**: automations THEN-action (or autopilot cron) re-runs a
-  recipe and updates the pinned artifact — Monday 9:00 sprint report without a
-  human in the loop.
-- **Role-aware launcher**: order the prompt rows by the caller's role
-  (workspace roster already carries it).
+An artifact is user-scoped by design (it may aggregate every workspace the
+owner belongs to). Pinning is therefore a deliberate **publish act**: the
+owner attaches a report to a project, and from then on every member of that
+project's workspace can read it — like pasting a report into a comment, but
+live: the pane always shows the artifact's current version, so re-running the
+recipe IS the refresh.
+
+Model — a separate pin table, the artifact stays user-owned:
+
+    assistant_artifact_pin(id, artifact_id → assistant_artifact CASCADE,
+        workspace_id, project_id, pinned_by, created_at,
+        UNIQUE(artifact_id, project_id))
+
+Pin targets a **project** (one obvious behavior; workspace_id is derived and
+stored for scoping). Only the artifact's owner can pin; owner or a workspace
+admin/owner can unpin. A pin grants members READ of the current content only
+— revision browsing stays with the owner.
+
+API (workspace rules as everywhere: membership gate, X-Workspace-ID):
+
+- `POST /api/assistant/artifacts/{id}/pins` `{project_id}` → 201, owner-only,
+  owner must be a member of the project's workspace.
+- `DELETE /api/assistant/artifacts/{id}/pins/{pinId}` → 204, owner or
+  workspace admin/owner.
+- `GET /api/projects/{id}/reports` → pin metadata list (no content):
+  pin_id, artifact_id, title, kind, version, updated_at, pinned_by, owner.
+- `GET /api/reports/{pinId}` → metadata + current content, members only.
+
+Frontend: a Pin action in the artifact pane header (owner side, with a plain
+"everyone in this workspace can read it" line in the dialog); a quiet Reports
+section on the project page listing pinned reports, opening in a read-only
+viewer that reuses the artifact renderers. No new routes. WS event on
+pin/unpin/update invalidates the project's reports query.
+
+Non-goals for 2a: no assistant `pin_artifact` tool (UI-only publish keeps the
+disclosure decision a human click), no sprint-level pins, no workspace-level
+pins without a project.
+
+## Phase 2b — scheduled refresh (next)
+
+Autopilots are cron-scheduled **agent tasks** (runtime-backed) — the wrong
+plane for this. 2b needs a small scheduler path of its own: cron → server-side
+assistant run under the owner's identity with the recipe's fixed prompt,
+updating the bound artifact. Open questions: provider spend without a human in
+the loop, failure/retry policy, and where the run transcript lands. Design
+after 2a ships.
+
+## Phase 2c — role-aware launcher (cheap, anytime)
+
+Order the launcher prompt rows by the caller's role (the workspace roster in
+the prompt already carries it).
 
 ## Phase 3 — closing the loop (sketch)
 

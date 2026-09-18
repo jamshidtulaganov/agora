@@ -86,6 +86,7 @@
     "./autopilots/mutations": "./autopilots/mutations.ts",
     "./sidebar": "./sidebar/index.ts",
     "./pins": "./pins/index.ts",
+    "./reports": "./reports/index.ts",
     "./pins/queries": "./pins/queries.ts",
     "./pins/mutations": "./pins/mutations.ts",
     "./billing": "./billing/index.ts",

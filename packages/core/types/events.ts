@@ -74,6 +74,9 @@ export type WSEventType =
   | "issue_metadata:changed"
   | "qa_evidence:ready"
   | "test_cases:changed"
+  | "report:pinned"
+  | "report:unpinned"
+  | "report:updated"
   | "pin:created"
   | "pin:deleted"
   | "pin:reordered"
@@ -371,6 +374,18 @@ export interface ChatSessionDeletedPayload {
  * payload carries `user_id` directly — see server/pkg/protocol/messages.go
  * AssistantMessagePayload.
  */
+/**
+ * Pinned reports (docs/assistant-domain-plan.md Phase 2a). Workspace-scoped,
+ * unlike the assistant's own user-scoped events: `report:pinned` /
+ * `report:unpinned` fire on publish and withdrawal, `report:updated` when the
+ * owner re-runs a recipe and the pinned artifact's body moves behind an
+ * unchanged pin.
+ */
+export interface ReportPinEventPayload {
+  project_id: string;
+  pin_id: string;
+}
+
 export interface AssistantMessageEventPayload {
   user_id: string;
   session_id: string;
@@ -518,6 +533,9 @@ export interface WSEventPayloadMap {
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;
+  "report:pinned": ReportPinEventPayload;
+  "report:unpinned": ReportPinEventPayload;
+  "report:updated": ReportPinEventPayload;
   "pin:created": unknown;
   "pin:deleted": unknown;
   "pin:reordered": unknown;

@@ -48,6 +48,7 @@ import type { Workspace } from "../types/workspace";
 import { chatKeys } from "../chat/queries";
 import { useChatStore } from "../chat";
 import { onAssistantMessage, onAssistantToolActivity, onAssistantRunFinished, invalidateAssistantQueries } from "../assistant";
+import { onReportChanged, reportKeys } from "../reports";
 import { resolvePostAuthDestination, useHasOnboarded } from "../paths";
 import type {
   MemberAddedPayload,
@@ -91,6 +92,7 @@ import type {
   AssistantMessageEventPayload,
   AssistantToolActivityEventPayload,
   AssistantRunFinishedPayload,
+  ReportPinEventPayload,
 } from "../types";
 
 const chatWsLogger = createLogger("chat.ws");
@@ -348,6 +350,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: agentRunCountsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: reportKeys.all(wsId) });
   }
   // Per-issue caches are keyed without wsId, so the issueKeys.all(wsId)
   // prefix above does not reach them. They rely entirely on WS events for
@@ -631,6 +634,9 @@ export function useRealtimeSync(
       // user-scoped, not workspace-scoped, so the generic "assistant" prefix
       // has no entry in refreshMap anyway — listed here for clarity).
       "assistant:message", "assistant:tool_activity", "assistant:run_finished",
+      // Pinned reports need the payload's project_id to hit the right cache
+      // entry, which the prefix path can't see — handled explicitly below.
+      "report:pinned", "report:unpinned", "report:updated",
       // task:message stays out of the prefix path because it fires per
       // streamed message during a long run — invalidating the snapshot on
       // every message would flood the network. Specific chat handlers below
@@ -1182,6 +1188,19 @@ export function useRealtimeSync(
       onAssistantRunFinished(qc, p as AssistantRunFinishedPayload);
     });
 
+    // --- Pinned reports (workspace-scoped) --------------------------------
+    //
+    // A pin publishes an owner's artifact to a project, so unlike the
+    // assistant events above these DO read getCurrentWsId(). All three move
+    // the same caches — see packages/core/reports/ws-updaters.ts.
+    const onReport = (p: unknown) => {
+      const wsId = getCurrentWsId();
+      if (wsId) onReportChanged(qc, wsId, p as ReportPinEventPayload);
+    };
+    const unsubReportPinned = ws.on("report:pinned", onReport);
+    const unsubReportUnpinned = ws.on("report:unpinned", onReport);
+    const unsubReportUpdated = ws.on("report:updated", onReport);
+
     return () => {
       unsubAny();
       unsubIssueUpdated();
@@ -1229,6 +1248,9 @@ export function useRealtimeSync(
       unsubAssistantMessage();
       unsubAssistantToolActivity();
       unsubAssistantRunFinished();
+      unsubReportPinned();
+      unsubReportUnpinned();
+      unsubReportUpdated();
       timers.forEach(clearTimeout);
       timers.clear();
     };

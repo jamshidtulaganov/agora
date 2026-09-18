@@ -142,6 +142,15 @@ type AssistantArtifact struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AssistantArtifactPin struct {
+	ID          pgtype.UUID        `json:"id"`
+	ArtifactID  pgtype.UUID        `json:"artifact_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	PinnedBy    pgtype.UUID        `json:"pinned_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type AssistantArtifactRevision struct {
 	ID         pgtype.UUID        `json:"id"`
 	ArtifactID pgtype.UUID        `json:"artifact_id"`

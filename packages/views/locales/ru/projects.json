@@ -244,5 +244,14 @@
     "no_squad": "Нет Squad",
     "assign_placeholder": "Привязать Squad...",
     "no_results": "Нет результатов"
+  },
+  "reports": {
+    "section_header": "Отчёты",
+    "untitled": "Отчёт без названия",
+    "open_aria": "Открыть отчёт: {{title}}",
+    "meta": "v{{version}} · обновлён {{time}}",
+    "owner": "от {{name}}",
+    "loading": "Открываем отчёт...",
+    "unavailable": "Этот отчёт недоступен."
   }
 }

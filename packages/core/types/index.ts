@@ -102,6 +102,12 @@ export type {
   AssistantOperation,
 } from "./assistant";
 export type {
+  ReportActorRef,
+  PinnedReportSummary,
+  PinnedReport,
+  ReportPin,
+} from "./report";
+export type {
   OrchestrationRun,
   OrchestrationRunStatus,
   ExecutionStrategy,

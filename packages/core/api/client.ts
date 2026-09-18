@@ -87,6 +87,9 @@ import type {
   AssistantArtifactSummary,
   AssistantArtifactRevision,
   AssistantArtifactRevisionSummary,
+  PinnedReport,
+  PinnedReportSummary,
+  ReportPin,
   AssistantOperationDecision,
   SendAssistantMessageResponse,
   CreateAssistantSessionRequest,
@@ -424,6 +427,12 @@ import {
   EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
   AssistantOperationDecisionSchema,
   EMPTY_ASSISTANT_OPERATION_DECISION,
+  ProjectReportsResponseSchema,
+  EMPTY_PINNED_REPORT_LIST,
+  PinnedReportSchema,
+  EMPTY_PINNED_REPORT,
+  ReportPinSchema,
+  EMPTY_REPORT_PIN,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2528,6 +2537,71 @@ export class ApiClient {
     });
     if (page === null) throw new Error("Could not load the artifact library page. Try again.");
     return page;
+  }
+
+  // --- Pinned reports ---------------------------------------------------
+  // docs/assistant-domain-plan.md Phase 2a. Pinning publishes an owner-scoped
+  // artifact to a project so the whole workspace can read its current body.
+
+  /**
+   * Pins an artifact to a project. Owner-only server-side.
+   *
+   * Idempotent by contract: pinning an artifact that is already pinned to the
+   * same project returns the EXISTING pin (200) instead of erroring, which is
+   * what lets the UI offer a single "Pin" affordance without first having to
+   * ask whether a pin exists (there is no read-pins-for-artifact endpoint in
+   * 2a). The response is normalized because the identifier arrives as `id`
+   * here but as `pin_id` on the list endpoint.
+   */
+  async pinArtifact(artifactId: string, projectId: string): Promise<ReportPin> {
+    const raw = await this.fetch<unknown>(`/api/assistant/artifacts/${artifactId}/pins`, {
+      method: "POST",
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    // The fallback carries both spellings so the normalization below is
+    // total; an unreadable body yields EMPTY_REPORT_PIN (id "") and the UI
+    // treats the pin as "created, but we can't address it" — no Unpin offer.
+    const parsed = parseWithFallback(
+      raw,
+      ReportPinSchema,
+      { id: "", pin_id: "", artifact_id: "", project_id: "", created_at: "" },
+      { endpoint: "POST /api/assistant/artifacts/{id}/pins" },
+    );
+    const id = parsed.id || parsed.pin_id;
+    if (!id) return EMPTY_REPORT_PIN;
+    return {
+      id,
+      artifact_id: parsed.artifact_id || artifactId,
+      project_id: parsed.project_id || projectId,
+      created_at: parsed.created_at,
+    };
+  }
+
+  /** Removes a pin. 204; owner or a workspace admin/owner. */
+  async unpinArtifact(artifactId: string, pinId: string): Promise<void> {
+    await this.fetch(`/api/assistant/artifacts/${artifactId}/pins/${pinId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /** Reports pinned to a project — metadata only, no bodies. */
+  async listProjectReports(projectId: string): Promise<PinnedReportSummary[]> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/reports`);
+    const parsed = parseWithFallback(
+      raw,
+      ProjectReportsResponseSchema,
+      { reports: EMPTY_PINNED_REPORT_LIST },
+      { endpoint: "GET /api/projects/{id}/reports" },
+    );
+    return parsed.reports;
+  }
+
+  /** One pinned report with its CURRENT body — members of the workspace. */
+  async getReport(pinId: string): Promise<PinnedReport> {
+    const raw = await this.fetch<unknown>(`/api/reports/${pinId}`);
+    return parseWithFallback(raw, PinnedReportSchema, EMPTY_PINNED_REPORT, {
+      endpoint: "GET /api/reports/{pinId}",
+    });
   }
 
   async cancelTaskById(taskId: string): Promise<CancelTaskResponse> {

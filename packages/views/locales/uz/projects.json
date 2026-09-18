@@ -244,5 +244,14 @@
     "no_squad": "Squad yo‘q",
     "assign_placeholder": "Squad biriktirish...",
     "no_results": "Natija yo‘q"
+  },
+  "reports": {
+    "section_header": "Hisobotlar",
+    "untitled": "Nomsiz hisobot",
+    "open_aria": "Hisobotni ochish: {{title}}",
+    "meta": "v{{version}} · {{time}} yangilandi",
+    "owner": "{{name}} tomonidan",
+    "loading": "Hisobot ochilmoqda...",
+    "unavailable": "Bu hisobot mavjud emas."
   }
 }

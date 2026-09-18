@@ -167,6 +167,23 @@
       "markdown": "Hujjat",
       "html": "Interaktiv",
       "unknown": "Artefakt"
+    },
+    "pin": {
+      "action": "Loyihaga mahkamlash",
+      "unpin_action": "Ushbu hisobotni yechish",
+      "dialog_title": "Ushbu hisobotni mahkamlash",
+      "project_label": "Loyiha",
+      "visibility_note": "Hisobotni bu ish maydonidagi hamma o‘qiy oladi va doim eng so‘nggi versiyasini ko‘radi.",
+      "pinned_to": "{{project}} ga mahkamlandi. Bu ish maydonidagi hamma o‘qiy oladi.",
+      "unknown_project": "loyiha",
+      "confirm": "Mahkamlash",
+      "cancel": "Bekor qilish",
+      "unpin": "Yechish",
+      "close": "Yopish",
+      "toast_pinned": "{{project}} ga mahkamlandi",
+      "toast_unpinned": "Hisobot yechildi",
+      "toast_failed": "Hisobotni mahkamlab bo‘lmadi",
+      "toast_unpin_failed": "Hisobotni yechib bo‘lmadi"
     }
   },
   "workbench": {

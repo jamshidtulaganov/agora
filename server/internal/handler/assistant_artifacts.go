@@ -368,6 +368,13 @@ func (h *Handler) assistantUpdateArtifact(ctx context.Context, caller assistantC
 		slog.Warn("assistant: update artifact commit failed", "session_id", sessionID, "error", err)
 		return nil, errors.New("could not save the artifact")
 	}
+
+	// A refreshed report is the one change a project page cannot learn about
+	// from its own surface — the pin row did not move, only the body behind it.
+	// Emitted at the write site and only after the commit, so no workspace is
+	// ever told about a version that was rolled back. See assistant_pins.go.
+	h.notifyPinnedReportUpdated(ctx, updated.ID, caller.ID)
+
 	return json.Marshal(assistantArtifactResult{
 		ArtifactID: uuidToString(updated.ID),
 		Title:      updated.Title,

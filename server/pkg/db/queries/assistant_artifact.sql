@@ -111,3 +111,85 @@ WHERE doomed.artifact_id = sqlc.arg('artifact_id')
       ORDER BY kept.version DESC
       LIMIT sqlc.arg('keep_newest')
   );
+
+-- ---------------------------------------------------------------------------
+-- Pins (published reports) — migration 203
+-- ---------------------------------------------------------------------------
+
+-- name: CreateAssistantArtifactPin :one
+-- workspace_id is written by the caller from the PROJECT it resolved, never
+-- from a workspace the request named: the pin's tenant and its target must
+-- agree by construction, or a report could be published into a workspace the
+-- project does not belong to.
+INSERT INTO assistant_artifact_pin (artifact_id, workspace_id, project_id, pinned_by)
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
+-- name: GetAssistantArtifactPin :one
+-- By id alone, like GetAssistantArtifact: the two authorization paths a pin
+-- has (its artifact's owner, or an admin of its workspace) are decided at the
+-- boundary from the columns this returns. A query that pre-filtered by one of
+-- them would make the other unrepresentable.
+SELECT * FROM assistant_artifact_pin
+WHERE id = $1;
+
+-- name: GetAssistantArtifactPinForArtifactAndProject :one
+-- The idempotency read: what the UNIQUE (artifact_id, project_id) conflict
+-- already holds, so a repeated pin answers with the pin that exists.
+SELECT * FROM assistant_artifact_pin
+WHERE artifact_id = $1 AND project_id = $2;
+
+-- name: DeleteAssistantArtifactPin :exec
+-- Keyed on the pin id the boundary already resolved and authorized. Deleting
+-- a pin revokes the read grant and touches no artifact.
+DELETE FROM assistant_artifact_pin
+WHERE id = $1;
+
+-- name: ListAssistantArtifactPinsByProject :many
+-- The project page's Reports section. Joined to the artifact for what the row
+-- displays (title / kind / version / last change) and to "user" twice for the
+-- two people a reader needs named: who WROTE the report (its owner, the only
+-- one who can revise it) and who PUBLISHED it here.
+--
+-- Deliberately WITHOUT content, for the same reason the artifact list is: a
+-- body is up to 256 KB and this draws a list of cards. The content is the
+-- single-report read's job.
+--
+-- workspace_id is in the predicate as well as project_id — a project id is
+-- enough to find the rows, but scoping every read by tenant is what keeps a
+-- mis-scoped project id from ever returning another workspace's reports.
+SELECT p.id, p.artifact_id, p.workspace_id, p.project_id, p.pinned_by, p.created_at,
+       a.title, a.kind, a.version, a.updated_at,
+       a.user_id                AS owner_id,
+       owner_u.name             AS owner_name,
+       pinner_u.name            AS pinned_by_name
+FROM assistant_artifact_pin p
+JOIN assistant_artifact a ON a.id = p.artifact_id
+JOIN "user" owner_u ON owner_u.id = a.user_id
+JOIN "user" pinner_u ON pinner_u.id = p.pinned_by
+WHERE p.workspace_id = $1 AND p.project_id = $2
+ORDER BY p.created_at DESC, p.id DESC;
+
+-- name: GetAssistantArtifactPinWithArtifact :one
+-- The single-report read: the list row plus the CURRENT body. session_id is
+-- not selected — a reader reached through a pin is not entitled to the
+-- conversation that produced the report, and a column that is never selected
+-- cannot be leaked by a later change to the response struct.
+SELECT p.id, p.artifact_id, p.workspace_id, p.project_id, p.pinned_by, p.created_at,
+       a.title, a.kind, a.version, a.updated_at, a.content,
+       a.user_id                AS owner_id,
+       owner_u.name             AS owner_name,
+       pinner_u.name            AS pinned_by_name
+FROM assistant_artifact_pin p
+JOIN assistant_artifact a ON a.id = p.artifact_id
+JOIN "user" owner_u ON owner_u.id = a.user_id
+JOIN "user" pinner_u ON pinner_u.id = p.pinned_by
+WHERE p.id = $1;
+
+-- name: ListAssistantArtifactPinsByArtifact :many
+-- "Which workspaces must hear that this report changed?" — read on the update
+-- path so a refreshed artifact invalidates every project page that publishes
+-- it. Covered by the UNIQUE index's leading artifact_id column.
+SELECT * FROM assistant_artifact_pin
+WHERE artifact_id = $1
+ORDER BY created_at ASC;

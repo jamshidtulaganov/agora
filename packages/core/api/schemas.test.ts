@@ -73,6 +73,12 @@ import {
   AssistantArtifactRevisionListSchema,
   EMPTY_ASSISTANT_ARTIFACT_REVISION,
   EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
+  PinnedReportSummarySchema,
+  PinnedReportSchema,
+  ProjectReportsResponseSchema,
+  EMPTY_PINNED_REPORT_LIST,
+  EMPTY_PINNED_REPORT,
+  ReportPinSchema,
   EMPTY_ASSISTANT_ARTIFACT,
   EMPTY_ASSISTANT_ARTIFACT_LIST,
 } from "./schemas";
@@ -2085,5 +2091,118 @@ describe("AssistantArtifactRevision schemas drift", () => {
       author: "assistant",
     });
     expect(parsed.content).toBe("# body");
+  });
+});
+
+// Pinned reports — docs/assistant-domain-plan.md Phase 2a. Same posture as the
+// artifact schemas above: these routes ship after (or beside) this frontend,
+// so a 404, a drifted row and a re-shaped envelope are all real production
+// shapes for some window of time.
+describe("pinned report schemas drift", () => {
+  const row = {
+    pin_id: "11111111-1111-1111-1111-111111111111",
+    artifact_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    title: "Sprint report",
+    kind: "markdown",
+    version: 3,
+    updated_at: "2026-09-18T10:00:00Z",
+    created_at: "2026-09-17T10:00:00Z",
+    pinned_by: { id: "u-1", name: "Jamshid" },
+    owner: { id: "u-1", name: "Jamshid" },
+  };
+
+  it("parses a well-formed row and a full report", () => {
+    expect(PinnedReportSummarySchema.parse(row)).toMatchObject(row);
+    expect(PinnedReportSchema.parse({ ...row, content: "# body" })).toMatchObject({
+      ...row,
+      content: "# body",
+    });
+  });
+
+  it("unwraps the {reports: [...]} envelope", () => {
+    const parsed = parseWithFallback(
+      { reports: [row] },
+      ProjectReportsResponseSchema,
+      { reports: EMPTY_PINNED_REPORT_LIST },
+      { endpoint: "GET /api/projects/{id}/reports" },
+    );
+    expect(parsed.reports).toHaveLength(1);
+    expect(parsed.reports[0]?.pin_id).toBe(row.pin_id);
+  });
+
+  it("degrades a missing field to the row's fallback rather than dropping the report", () => {
+    // version is cosmetic ("v{n}" in the subtitle); the row is still openable.
+    const { version: _omit, ...without } = row;
+    expect(PinnedReportSummarySchema.parse(without).version).toBe(1);
+  });
+
+  it("degrades a wrong-typed cosmetic field without losing the body", () => {
+    const parsed = PinnedReportSchema.parse({ ...row, version: "3", title: 7, content: "# body" });
+    expect(parsed.version).toBe(1);
+    expect(parsed.title).toBe("");
+    expect(parsed.content).toBe("# body");
+  });
+
+  it("degrades a malformed actor to an empty byline", () => {
+    const parsed = PinnedReportSummarySchema.parse({ ...row, owner: "Jamshid" });
+    expect(parsed.owner).toEqual({ id: "", name: "" });
+    expect(parsed.pin_id).toBe(row.pin_id);
+  });
+
+  it("degrades a null reports array to an empty list (section then renders nothing)", () => {
+    const parsed = parseWithFallback(
+      { reports: null },
+      ProjectReportsResponseSchema,
+      { reports: EMPTY_PINNED_REPORT_LIST },
+      { endpoint: "GET /api/projects/{id}/reports" },
+    );
+    expect(parsed.reports).toEqual([]);
+  });
+
+  it("degrades one malformed row to an empty list", () => {
+    expect(ProjectReportsResponseSchema.parse({ reports: [row, { pin_id: 7 }] }).reports).toEqual([]);
+  });
+
+  it("degrades a bare array (envelope dropped) to an empty list", () => {
+    const parsed = parseWithFallback(
+      [row],
+      ProjectReportsResponseSchema,
+      { reports: EMPTY_PINNED_REPORT_LIST },
+      { endpoint: "GET /api/projects/{id}/reports" },
+    );
+    expect(parsed.reports).toEqual([]);
+  });
+
+  it("degrades a null response (endpoint not deployed yet) to the empty report", () => {
+    const parsed = parseWithFallback(null, PinnedReportSchema, EMPTY_PINNED_REPORT, {
+      endpoint: "GET /api/reports/{pinId}",
+    });
+    // pin_id "" is what the viewer checks before it renders a body.
+    expect(parsed).toBe(EMPTY_PINNED_REPORT);
+    expect(parsed.pin_id).toBe("");
+  });
+
+  it("falls back to the empty report when content has the wrong type", () => {
+    const parsed = parseWithFallback(
+      { ...row, content: { body: "x" } },
+      PinnedReportSchema,
+      EMPTY_PINNED_REPORT,
+      { endpoint: "GET /api/reports/{pinId}" },
+    );
+    expect(parsed.pin_id).toBe("");
+  });
+
+  it("keeps an unknown future kind as-is (enum drift downgrades, not crashes)", () => {
+    expect(PinnedReportSummarySchema.parse({ ...row, kind: "mermaid" }).kind).toBe("mermaid");
+  });
+
+  it("accepts either spelling of the pin identifier on the create response", () => {
+    // The create route names it `id`; the list route names the same value
+    // `pin_id`. Both parse, and the client normalizes to one field.
+    expect(ReportPinSchema.parse({ id: "p-1", project_id: "proj-1" }).id).toBe("p-1");
+    expect(ReportPinSchema.parse({ pin_id: "p-1", project_id: "proj-1" }).pin_id).toBe("p-1");
+    // A drifted (non-string) id degrades to "" instead of throwing — the UI
+    // then treats the pin as created but unaddressable, offering no Unpin.
+    expect(ReportPinSchema.parse({ id: 7, project_id: "proj-1" }).id).toBe("");
   });
 });

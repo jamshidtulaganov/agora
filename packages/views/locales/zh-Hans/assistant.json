@@ -167,6 +167,23 @@
       "markdown": "文档",
       "html": "交互页面",
       "unknown": "产物"
+    },
+    "pin": {
+      "action": "固定到项目",
+      "unpin_action": "取消固定这份报告",
+      "dialog_title": "固定这份报告",
+      "project_label": "项目",
+      "visibility_note": "这个工作区的所有人都能查看报告，并且看到的始终是最新版本。",
+      "pinned_to": "已固定到 {{project}}。这个工作区的所有人都能查看。",
+      "unknown_project": "该项目",
+      "confirm": "固定",
+      "cancel": "取消",
+      "unpin": "取消固定",
+      "close": "关闭",
+      "toast_pinned": "已固定到 {{project}}",
+      "toast_unpinned": "已取消固定",
+      "toast_failed": "无法固定这份报告",
+      "toast_unpin_failed": "无法取消固定这份报告"
     }
   },
   "workbench": {

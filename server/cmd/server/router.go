@@ -621,6 +621,22 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// only by someone who may read the artifact it belongs to.
 		r.Get("/api/assistant/artifacts/{id}/revisions", h.ListAssistantArtifactRevisions)
 		r.Get("/api/assistant/artifacts/{id}/revisions/{version}", h.GetAssistantArtifactRevision)
+		// Pinned reports (docs/assistant-domain-plan.md §Phase 2a). Pinning
+		// PUBLISHES a user-owned artifact to a project, so these two stay on
+		// the user-scoped side: the workspace is derived from the target
+		// project inside the handler, never from the caller's active
+		// workspace header. RequireHumanActor because the publish decision —
+		// "everyone in that workspace may now read this" — is the one gesture
+		// the assistant deliberately has no tool for; an agent token must not
+		// be able to disclose its owner's report.
+		r.With(handler.RequireHumanActor).Post("/api/assistant/artifacts/{id}/pins", h.PinAssistantArtifact)
+		r.With(handler.RequireHumanActor).Delete("/api/assistant/artifacts/{id}/pins/{pinId}", h.UnpinAssistantArtifact)
+		// Reading a published report is gated on membership of the PIN's
+		// workspace, resolved from the pin itself — same reasoning as
+		// /api/issues/{id}/locate below: a link to a report must open from
+		// wherever the reader happens to be, not only from the workspace
+		// their last request named.
+		r.Get("/api/reports/{pinId}", h.GetReport)
 
 		// Resolve an issue UUID to its workspace across the caller's memberships,
 		// WITHOUT the X-Workspace header needing to match first — lets a deep
@@ -1119,6 +1135,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/", h.GetProject)
 					r.Put("/", h.UpdateProject)
 					r.Delete("/", h.DeleteProject)
+					// Reports published to this project (pinned assistant
+					// artifacts). Member read, workspace-scoped like the
+					// project detail above; bodies come from
+					// /api/reports/{pinId}.
+					r.Get("/reports", h.ListProjectReports)
 					r.Get("/resources", h.ListProjectResources)
 					r.Post("/resources", h.CreateProjectResource)
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)

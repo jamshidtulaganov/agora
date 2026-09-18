@@ -76,6 +76,46 @@ func (q *Queries) CreateAssistantArtifact(ctx context.Context, arg CreateAssista
 	return i, err
 }
 
+const createAssistantArtifactPin = `-- name: CreateAssistantArtifactPin :one
+
+INSERT INTO assistant_artifact_pin (artifact_id, workspace_id, project_id, pinned_by)
+VALUES ($1, $2, $3, $4)
+RETURNING id, artifact_id, workspace_id, project_id, pinned_by, created_at
+`
+
+type CreateAssistantArtifactPinParams struct {
+	ArtifactID  pgtype.UUID `json:"artifact_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	PinnedBy    pgtype.UUID `json:"pinned_by"`
+}
+
+// ---------------------------------------------------------------------------
+// Pins (published reports) — migration 203
+// ---------------------------------------------------------------------------
+// workspace_id is written by the caller from the PROJECT it resolved, never
+// from a workspace the request named: the pin's tenant and its target must
+// agree by construction, or a report could be published into a workspace the
+// project does not belong to.
+func (q *Queries) CreateAssistantArtifactPin(ctx context.Context, arg CreateAssistantArtifactPinParams) (AssistantArtifactPin, error) {
+	row := q.db.QueryRow(ctx, createAssistantArtifactPin,
+		arg.ArtifactID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.PinnedBy,
+	)
+	var i AssistantArtifactPin
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.PinnedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createAssistantArtifactRevision = `-- name: CreateAssistantArtifactRevision :one
 INSERT INTO assistant_artifact_revision (artifact_id, version, title, content)
 VALUES ($1, $2, $3, $4)
@@ -113,6 +153,18 @@ func (q *Queries) CreateAssistantArtifactRevision(ctx context.Context, arg Creat
 	return i, err
 }
 
+const deleteAssistantArtifactPin = `-- name: DeleteAssistantArtifactPin :exec
+DELETE FROM assistant_artifact_pin
+WHERE id = $1
+`
+
+// Keyed on the pin id the boundary already resolved and authorized. Deleting
+// a pin revokes the read grant and touches no artifact.
+func (q *Queries) DeleteAssistantArtifactPin(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAssistantArtifactPin, id)
+	return err
+}
+
 const getAssistantArtifact = `-- name: GetAssistantArtifact :one
 SELECT id, session_id, user_id, title, kind, content, version, created_at, updated_at FROM assistant_artifact
 WHERE id = $1
@@ -135,6 +187,111 @@ func (q *Queries) GetAssistantArtifact(ctx context.Context, id pgtype.UUID) (Ass
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAssistantArtifactPin = `-- name: GetAssistantArtifactPin :one
+SELECT id, artifact_id, workspace_id, project_id, pinned_by, created_at FROM assistant_artifact_pin
+WHERE id = $1
+`
+
+// By id alone, like GetAssistantArtifact: the two authorization paths a pin
+// has (its artifact's owner, or an admin of its workspace) are decided at the
+// boundary from the columns this returns. A query that pre-filtered by one of
+// them would make the other unrepresentable.
+func (q *Queries) GetAssistantArtifactPin(ctx context.Context, id pgtype.UUID) (AssistantArtifactPin, error) {
+	row := q.db.QueryRow(ctx, getAssistantArtifactPin, id)
+	var i AssistantArtifactPin
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.PinnedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAssistantArtifactPinForArtifactAndProject = `-- name: GetAssistantArtifactPinForArtifactAndProject :one
+SELECT id, artifact_id, workspace_id, project_id, pinned_by, created_at FROM assistant_artifact_pin
+WHERE artifact_id = $1 AND project_id = $2
+`
+
+type GetAssistantArtifactPinForArtifactAndProjectParams struct {
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+	ProjectID  pgtype.UUID `json:"project_id"`
+}
+
+// The idempotency read: what the UNIQUE (artifact_id, project_id) conflict
+// already holds, so a repeated pin answers with the pin that exists.
+func (q *Queries) GetAssistantArtifactPinForArtifactAndProject(ctx context.Context, arg GetAssistantArtifactPinForArtifactAndProjectParams) (AssistantArtifactPin, error) {
+	row := q.db.QueryRow(ctx, getAssistantArtifactPinForArtifactAndProject, arg.ArtifactID, arg.ProjectID)
+	var i AssistantArtifactPin
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.PinnedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAssistantArtifactPinWithArtifact = `-- name: GetAssistantArtifactPinWithArtifact :one
+SELECT p.id, p.artifact_id, p.workspace_id, p.project_id, p.pinned_by, p.created_at,
+       a.title, a.kind, a.version, a.updated_at, a.content,
+       a.user_id                AS owner_id,
+       owner_u.name             AS owner_name,
+       pinner_u.name            AS pinned_by_name
+FROM assistant_artifact_pin p
+JOIN assistant_artifact a ON a.id = p.artifact_id
+JOIN "user" owner_u ON owner_u.id = a.user_id
+JOIN "user" pinner_u ON pinner_u.id = p.pinned_by
+WHERE p.id = $1
+`
+
+type GetAssistantArtifactPinWithArtifactRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	ArtifactID   pgtype.UUID        `json:"artifact_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	ProjectID    pgtype.UUID        `json:"project_id"`
+	PinnedBy     pgtype.UUID        `json:"pinned_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Title        string             `json:"title"`
+	Kind         string             `json:"kind"`
+	Version      int32              `json:"version"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Content      string             `json:"content"`
+	OwnerID      pgtype.UUID        `json:"owner_id"`
+	OwnerName    string             `json:"owner_name"`
+	PinnedByName string             `json:"pinned_by_name"`
+}
+
+// The single-report read: the list row plus the CURRENT body. session_id is
+// not selected — a reader reached through a pin is not entitled to the
+// conversation that produced the report, and a column that is never selected
+// cannot be leaked by a later change to the response struct.
+func (q *Queries) GetAssistantArtifactPinWithArtifact(ctx context.Context, id pgtype.UUID) (GetAssistantArtifactPinWithArtifactRow, error) {
+	row := q.db.QueryRow(ctx, getAssistantArtifactPinWithArtifact, id)
+	var i GetAssistantArtifactPinWithArtifactRow
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.PinnedBy,
+		&i.CreatedAt,
+		&i.Title,
+		&i.Kind,
+		&i.Version,
+		&i.UpdatedAt,
+		&i.Content,
+		&i.OwnerID,
+		&i.OwnerName,
+		&i.PinnedByName,
 	)
 	return i, err
 }
@@ -165,6 +322,123 @@ func (q *Queries) GetAssistantArtifactRevision(ctx context.Context, arg GetAssis
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listAssistantArtifactPinsByArtifact = `-- name: ListAssistantArtifactPinsByArtifact :many
+SELECT id, artifact_id, workspace_id, project_id, pinned_by, created_at FROM assistant_artifact_pin
+WHERE artifact_id = $1
+ORDER BY created_at ASC
+`
+
+// "Which workspaces must hear that this report changed?" — read on the update
+// path so a refreshed artifact invalidates every project page that publishes
+// it. Covered by the UNIQUE index's leading artifact_id column.
+func (q *Queries) ListAssistantArtifactPinsByArtifact(ctx context.Context, artifactID pgtype.UUID) ([]AssistantArtifactPin, error) {
+	rows, err := q.db.Query(ctx, listAssistantArtifactPinsByArtifact, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantArtifactPin{}
+	for rows.Next() {
+		var i AssistantArtifactPin
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArtifactID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.PinnedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssistantArtifactPinsByProject = `-- name: ListAssistantArtifactPinsByProject :many
+SELECT p.id, p.artifact_id, p.workspace_id, p.project_id, p.pinned_by, p.created_at,
+       a.title, a.kind, a.version, a.updated_at,
+       a.user_id                AS owner_id,
+       owner_u.name             AS owner_name,
+       pinner_u.name            AS pinned_by_name
+FROM assistant_artifact_pin p
+JOIN assistant_artifact a ON a.id = p.artifact_id
+JOIN "user" owner_u ON owner_u.id = a.user_id
+JOIN "user" pinner_u ON pinner_u.id = p.pinned_by
+WHERE p.workspace_id = $1 AND p.project_id = $2
+ORDER BY p.created_at DESC, p.id DESC
+`
+
+type ListAssistantArtifactPinsByProjectParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+type ListAssistantArtifactPinsByProjectRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	ArtifactID   pgtype.UUID        `json:"artifact_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	ProjectID    pgtype.UUID        `json:"project_id"`
+	PinnedBy     pgtype.UUID        `json:"pinned_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Title        string             `json:"title"`
+	Kind         string             `json:"kind"`
+	Version      int32              `json:"version"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	OwnerID      pgtype.UUID        `json:"owner_id"`
+	OwnerName    string             `json:"owner_name"`
+	PinnedByName string             `json:"pinned_by_name"`
+}
+
+// The project page's Reports section. Joined to the artifact for what the row
+// displays (title / kind / version / last change) and to "user" twice for the
+// two people a reader needs named: who WROTE the report (its owner, the only
+// one who can revise it) and who PUBLISHED it here.
+//
+// Deliberately WITHOUT content, for the same reason the artifact list is: a
+// body is up to 256 KB and this draws a list of cards. The content is the
+// single-report read's job.
+//
+// workspace_id is in the predicate as well as project_id — a project id is
+// enough to find the rows, but scoping every read by tenant is what keeps a
+// mis-scoped project id from ever returning another workspace's reports.
+func (q *Queries) ListAssistantArtifactPinsByProject(ctx context.Context, arg ListAssistantArtifactPinsByProjectParams) ([]ListAssistantArtifactPinsByProjectRow, error) {
+	rows, err := q.db.Query(ctx, listAssistantArtifactPinsByProject, arg.WorkspaceID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssistantArtifactPinsByProjectRow{}
+	for rows.Next() {
+		var i ListAssistantArtifactPinsByProjectRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArtifactID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.PinnedBy,
+			&i.CreatedAt,
+			&i.Title,
+			&i.Kind,
+			&i.Version,
+			&i.UpdatedAt,
+			&i.OwnerID,
+			&i.OwnerName,
+			&i.PinnedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAssistantArtifactRevisions = `-- name: ListAssistantArtifactRevisions :many

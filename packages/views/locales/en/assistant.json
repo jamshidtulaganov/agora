@@ -167,6 +167,23 @@
       "markdown": "Document",
       "html": "Interactive",
       "unknown": "Artifact"
+    },
+    "pin": {
+      "action": "Pin to a project",
+      "unpin_action": "Unpin this report",
+      "dialog_title": "Pin this report",
+      "project_label": "Project",
+      "visibility_note": "Everyone in this workspace can read the report, and always sees its latest version.",
+      "pinned_to": "Pinned to {{project}}. Everyone in this workspace can read it.",
+      "unknown_project": "the project",
+      "confirm": "Pin",
+      "cancel": "Cancel",
+      "unpin": "Unpin",
+      "close": "Close",
+      "toast_pinned": "Pinned to {{project}}",
+      "toast_unpinned": "Report unpinned",
+      "toast_failed": "Couldn't pin this report",
+      "toast_unpin_failed": "Couldn't unpin this report"
     }
   },
   "workbench": {

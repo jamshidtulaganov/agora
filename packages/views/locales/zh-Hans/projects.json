@@ -244,5 +244,14 @@
     "no_squad": "无小队",
     "assign_placeholder": "绑定小队...",
     "no_results": "无结果"
+  },
+  "reports": {
+    "section_header": "报告",
+    "untitled": "未命名报告",
+    "open_aria": "打开报告：{{title}}",
+    "meta": "v{{version}} · 更新于 {{time}}",
+    "owner": "来自 {{name}}",
+    "loading": "正在打开报告...",
+    "unavailable": "这份报告暂时打不开。"
   }
 }

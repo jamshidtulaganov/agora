@@ -244,5 +244,14 @@
   "agent_setup": {
     "title": "Agent setup",
     "description": "Optional workflow defaults for agent-run work. Most projects can use the workspace defaults."
+  },
+  "reports": {
+    "section_header": "Reports",
+    "untitled": "Untitled report",
+    "open_aria": "Open report: {{title}}",
+    "meta": "v{{version}} · updated {{time}}",
+    "owner": "by {{name}}",
+    "loading": "Opening report...",
+    "unavailable": "This report isn't available."
   }
 }

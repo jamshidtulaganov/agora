@@ -95,6 +95,20 @@ const (
 	EventAssistantToolActivity = "assistant:tool_activity"
 	EventAssistantRunFinished  = "assistant:run_finished"
 
+	// Pinned report events (docs/assistant-domain-plan.md §Phase 2a). A pin
+	// publishes one user-owned assistant artifact into a project, so unlike
+	// the assistant events above these are WORKSPACE-scoped: everyone who can
+	// see the project sees the report. Payloads carry ids only — the reader
+	// refetches through the membership-gated endpoints, so a fanout can never
+	// become the thing that leaks a report's contents.
+	//
+	// report:updated fires from the artifact write path, once per workspace
+	// the artifact is pinned into, because a refreshed report is the ONLY
+	// change a project page cannot learn about from its own surface.
+	EventReportPinned   = "report:pinned"
+	EventReportUnpinned = "report:unpinned"
+	EventReportUpdated  = "report:updated"
+
 	// Project events
 	EventProjectCreated         = "project:created"
 	EventProjectUpdated         = "project:updated"

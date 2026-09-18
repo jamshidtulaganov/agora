@@ -40,6 +40,9 @@ import type {
   AssistantArtifactSummary,
   AssistantArtifactRevision,
   AssistantArtifactRevisionSummary,
+  PinnedReport,
+  PinnedReportSummary,
+  ReportPin,
   AssistantOperation,
   AssistantOperationDecision,
 } from "../types";
@@ -2318,5 +2321,92 @@ export const EMPTY_ASSISTANT_ARTIFACT_REVISION: AssistantArtifactRevision = {
   version: 0,
   title: "",
   content: "",
+  created_at: "",
+};
+
+// --- Pinned reports (assistant artifacts published to a project) ---------
+// See docs/assistant-domain-plan.md Phase 2a. These endpoints ship on their
+// own schedule, so every fallback below is a shape an installed build will
+// really meet: a 404 while the routes are undeployed, a row whose cosmetic
+// fields drifted, or an envelope that changed key.
+
+const ReportActorSchema = z
+  .object({
+    id: z.string().catch(""),
+    name: z.string().catch(""),
+  })
+  .loose()
+  // An actor we can't read is a missing byline, never a dropped report.
+  .catch({ id: "", name: "" })
+  .default({ id: "", name: "" });
+
+// `pin_id` / `artifact_id` / `kind` stay strict-ish (a `.default("")` that the
+// caller filters on) because they address the row; everything else is
+// cosmetic and `.catch()`es so one drifted field can't hide a readable report.
+const PinnedReportSummaryShape = {
+  pin_id: z.string().default(""),
+  artifact_id: z.string().default(""),
+  title: z.string().catch(""),
+  kind: z.string().default(""),
+  version: z.number().catch(1),
+  updated_at: z.string().catch(""),
+  created_at: z.string().catch(""),
+  pinned_by: ReportActorSchema,
+  owner: ReportActorSchema,
+};
+
+export const PinnedReportSummarySchema = z.object(PinnedReportSummaryShape).loose();
+
+export const PinnedReportSchema = z
+  .object({
+    ...PinnedReportSummaryShape,
+    content: z.string().default(""),
+  })
+  .loose();
+
+// The list arrives wrapped: `{reports: [...]}`. A malformed row degrades the
+// whole list to empty, which hides the (deliberately empty-state-free)
+// Reports section rather than rendering rows that can't be opened.
+export const ProjectReportsResponseSchema = z
+  .object({
+    reports: z.array(PinnedReportSummarySchema).catch([]).default([]),
+  })
+  .loose();
+
+export const EMPTY_PINNED_REPORT_LIST: PinnedReportSummary[] = [];
+
+// `pin_id: ""` is the "nothing readable came back" marker the viewer checks
+// before it renders a body.
+export const EMPTY_PINNED_REPORT: PinnedReport = {
+  pin_id: "",
+  artifact_id: "",
+  title: "",
+  kind: "",
+  version: 1,
+  updated_at: "",
+  created_at: "",
+  pinned_by: { id: "", name: "" },
+  owner: { id: "", name: "" },
+  content: "",
+};
+
+// The create response. `id` is the canonical spelling, but the list endpoint
+// names the same identifier `pin_id`, so both are accepted here and the
+// client normalizes — losing the id would strand the Unpin action on a pin
+// that exists. Cosmetic fields `.catch()` as everywhere else.
+export const ReportPinSchema = z
+  .object({
+    id: z.string().catch("").default(""),
+    pin_id: z.string().catch("").default(""),
+    artifact_id: z.string().catch("").default(""),
+    project_id: z.string().catch("").default(""),
+    created_at: z.string().catch("").default(""),
+  })
+  .loose();
+
+export const EMPTY_REPORT_PIN: ReportPin = {
+  id: "",
+  artifact_id: "",
+  project_id: "",
   created_at: "",
 };

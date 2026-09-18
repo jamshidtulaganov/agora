@@ -50,6 +50,7 @@ import { ProjectSquadPicker } from "./project-squad-picker";
 import { ProjectAgentSetupSection } from "./project-agent-setup-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
 import { ProjectSprintsSection } from "./project-sprints-section";
+import { ProjectReportsSection } from "./project-reports-section";
 import { IssuesHeader } from "../../issues/components/issues-header";
 import { BoardView } from "../../issues/components/board-view";
 import { ListView } from "../../issues/components/list-view";
@@ -876,6 +877,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           onSprintClick={handleSprintClick}
         />
       )}
+
+      {/* Reports the assistant published here. Renders nothing until one
+          is pinned, so it never sits in the sidebar as an empty shell. */}
+      <ProjectReportsSection projectId={projectId} />
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
