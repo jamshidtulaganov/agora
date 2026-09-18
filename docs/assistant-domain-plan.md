@@ -118,19 +118,121 @@ Non-goals for 2a: no assistant `pin_artifact` tool (UI-only publish keeps the
 disclosure decision a human click), no sprint-level pins, no workspace-level
 pins without a project.
 
-## Phase 2b — scheduled refresh (next)
+## Phase 2b — scheduled refresh (in progress)
 
 Autopilots are cron-scheduled **agent tasks** (runtime-backed) — the wrong
-plane for this. 2b needs a small scheduler path of its own: cron → server-side
-assistant run under the owner's identity with the recipe's fixed prompt,
-updating the bound artifact. Open questions: provider spend without a human in
-the loop, failure/retry policy, and where the run transcript lands. Design
-after 2a ships.
+plane for this. 2b is a small scheduler of its own: a due schedule starts an
+ordinary assistant run under the owner's identity, in the session that owns
+the artifact, with a synthetic refresh message — so the owner sees exactly
+what the robot did in their own chat history, and the pinned view refreshes
+through the same `update_artifact` → `report:updated` path 2a already built.
+
+Decisions (made, not open):
+
+- **Presets, not cron.** `frequency` ∈ daily | weekdays | weekly, plus an
+  HH:MM time, an IANA timezone, and a weekday (0=Sunday…6=Saturday,
+  JS `getDay()` numbering) when weekly. No way to express "every minute";
+  the tightest possible schedule is once a day.
+- **Spend guardrails**: registry kill switch `AGORA_ASSISTANT_SCHEDULES_ENABLED`
+  (KindBool, default true, Settings → Configs turns it off with no redeploy);
+  the ticker also skips everything while `assistantEnabled()` is false; a due
+  slot is claimed by advancing `next_run_at` BEFORE the run (at-most-once per
+  slot — a failed run waits for the next slot, no retry storm).
+- **Busy session = skipped**, recorded as `last_status: "skipped"`, never a
+  second concurrent run (Service.HasActiveRun is the check).
+- **One schedule per pin**; unpinning cascades the schedule away. Owner-only,
+  human-actor-gated like pin/unpin (a schedule is standing spend and standing
+  disclosure).
+
+Model — migration 204, `assistant_report_schedule`:
+
+    id, pin_id UNIQUE NOT NULL → assistant_artifact_pin CASCADE,
+    frequency TEXT, at_time TEXT ("HH:MM"), weekday INT NULL,
+    timezone TEXT, enabled BOOL DEFAULT true,
+    created_by → "user", created_at,
+    last_run_at NULL, last_status TEXT DEFAULT '', last_error TEXT DEFAULT '',
+    next_run_at TIMESTAMPTZ; index (enabled, next_run_at)
+
+The synthetic message is composed at run time (nothing stored): "Scheduled
+refresh: re-run the standing report that produced artifact <id> titled
+'<title>' (kind <kind>) with fresh data and save it with update_artifact on
+that same artifact — never create_artifact. If the title matches no standing
+recipe, rebuild from the structure visible in this conversation's history."
+
+API (all owner-only + RequireHumanActor except reads):
+
+- `PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule`
+  `{frequency, time, weekday?, timezone}` → 200 `{schedule}` (create or
+  replace; validation: known frequency, HH:MM, weekly ⇒ weekday present,
+  loadable timezone).
+- `DELETE /api/assistant/artifacts/{id}/pins/{pinId}/schedule` → 204.
+- The rows of `GET /api/projects/{id}/reports` and `GET /api/reports/{pinId}`
+  gain an optional `schedule` object: `{frequency, time, weekday, timezone,
+  enabled, last_run_at, last_status, next_run_at}` — members see the cadence
+  and freshness, only the owner can change it.
+
+Scheduler: a cmd/server ticker in the autopilot_scheduler.go idiom, 60s
+interval, claims due rows (`next_run_at <= now()` and enabled) by computing
+and writing the following `next_run_at` in the same UPDATE … RETURNING, then
+runs each claim. `next_run_at` math uses time.LoadLocation in the schedule's
+timezone (DST falls out of the stdlib). WS `report:schedule_changed`
+(workspace scope, same `{pin_id, project_id, artifact_id}` payload) on
+PUT/DELETE so open project pages refresh the badge.
+
+Frontend: a schedule block in the pin dialog's pinned state (Off / Daily /
+Weekdays / Weekly + time + weekday, timezone auto-detected from the browser
+and shown, not asked); a quiet cadence badge on the project Reports rows with
+a failed-last-run indicator. Locales ×4.
 
 ## Phase 2c — role-aware launcher (cheap, anytime)
 
 Order the launcher prompt rows by the caller's role (the workspace roster in
 the prompt already carries it).
+
+## Phase 3 — management at conversation speed (designed 2026-09-19)
+
+The remaining friction in daily PM work is not any single feature — it is
+that every management job is N separate writes: bulk status moves, sprint
+planning, inbox triage, project setup. The assistant enforces "one request,
+one write" for good reason, so today it is *safer* but not *faster* than
+clicking. The unlock is one primitive:
+
+**3a — the plan operation (batch propose → review → one confirm).**
+A new `propose_plan` tool lets the model submit an ordered list of tool calls
+as a single pending operation (the confirm-binding tables from migrations
+198/199 generalize from one call to a list). The UI renders the plan as a
+checklist card in the transcript — each row a human-readable line with the
+underlying call — where the user can UNCHECK rows before pressing one Confirm.
+Execution is sequential, per-row outcomes recorded and rendered as a receipt
+(ok / failed / skipped-by-user); a mid-plan failure stops by default and says
+where it stopped. Safety rails: plans accept only an allowlisted subset of
+tools (issue/label/sprint/project writes — never member removal, never
+workspace/project deletion, never settings), a hard cap (25 rows), the same
+expiry as single confirmations, and RequireHumanActor on the confirm exactly
+as today.
+
+**3b — management recipes on the primitive** (prompt-level, like Phase 1):
+- SPRINT PLANNING ("plan the next sprint"): backlog by priority via
+  list_issues, propose sprint + the issues to pull, as one plan (create_sprint
+  + N move_issue_to_sprint).
+- BULK CHANGE ("move everything stuck in review for over a week back to
+  todo"): compute the set with list_issues, show it, one plan of
+  update_issue calls — never apply a bulk change without the plan card.
+- INBOX TRIAGE ("triage my inbox"): inbox_summary → a disposition table
+  (assign / label / comment / mark read), applied as a plan.
+- PROJECT BOOTSTRAP ("set up a project for X"): create_project + standard
+  labels + first sprint (+ optional automation), one plan, one confirm.
+
+**3c — agent-creation interview** (no new machinery): a recipe that asks the
+three questions that matter (what should it do, which runtime — list_runtimes
+first, which skills from the library), then create_agent + attach_skill (+
+squad add), and proposes a first test issue in the user's human-quick-ticket
+voice. The existing single-write confirms suffice here.
+
+Sequencing: 3a is the engine and ships first (backend operation kind +
+executor loop + plan card UI); 3b is a prompt.go section plus launcher/slash
+entries; 3c is prompt-only and can ship with 3b. Build after Phase 2b lands —
+3a touches the same service/operation code paths 2b's runner calls into.
 
 ## Phase 3 — closing the loop (sketch)
 

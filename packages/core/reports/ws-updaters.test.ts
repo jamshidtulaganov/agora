@@ -27,6 +27,20 @@ describe("pinned report WS invalidation", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: reportKeys.all("ws-1") });
   });
 
+  it("handles the 2b schedule event's extra artifact_id without special-casing it", () => {
+    // `report:schedule_changed` carries one more field than the 2a events and
+    // shares this updater — the cadence badge lives on the same list query.
+    const { qc, invalidate } = queryClient();
+    onReportChanged(qc, "ws-1", {
+      project_id: "proj-1",
+      pin_id: "pin-1",
+      artifact_id: "art-1",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: reportKeys.project("ws-1", "proj-1"),
+    });
+  });
+
   it("does nothing without a workspace (no wsId, no key to invalidate)", () => {
     const { qc, invalidate } = queryClient();
     onReportChanged(qc, "", { project_id: "proj-1", pin_id: "pin-1" });

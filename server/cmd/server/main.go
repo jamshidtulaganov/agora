@@ -394,6 +394,7 @@ func main() {
 	// Config watchdog: risk-mapped projects with silently-missing knowledge/QA
 	// artifacts (KB skill, qa_manifest, base suite) get escalated to their lead.
 	go runConfigWatchdogScheduler(autopilotCtx, h)
+	go runReportRefreshScheduler(autopilotCtx, h)
 	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
 	go runBitrixSyncPoll(sweepCtx, h)
 	go runBitrixUserPoll(sweepCtx, h)

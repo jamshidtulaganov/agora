@@ -6,7 +6,13 @@ import { Pin, PinOff } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrentWorkspace } from "@agora/core/paths";
 import { projectListOptions } from "@agora/core/projects/queries";
-import { usePinArtifact, useUnpinArtifact } from "@agora/core/reports";
+import {
+  usePinArtifact,
+  useUnpinArtifact,
+  useSetReportSchedule,
+  useDeleteReportSchedule,
+} from "@agora/core/reports";
+import type { ReportScheduleFrequency } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
@@ -16,9 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@agora/ui/components/ui/dialog";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@agora/ui/components/ui/native-select";
+import { TimeInput } from "@agora/ui/components/ui/time-input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { ProjectPicker } from "../../projects/components/project-picker";
-import { useT } from "../../i18n";
+import { useT, useWeekdayNames } from "../../i18n";
 
 /**
  * Publish action in the artifact pane header — pins the artifact to a project
@@ -148,6 +159,18 @@ export function ArtifactPinAction({ artifactId }: { artifactId: string }) {
             </div>
           )}
 
+          {pin && (
+            <ScheduleBlock
+              // A new pin is a new schedule surface — keyed so the row never
+              // shows the previous pin's saved cadence.
+              key={pin.id}
+              wsId={wsId}
+              artifactId={artifactId}
+              pinId={pin.id}
+              projectId={pin.projectId}
+            />
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               {pin ? t(($) => $.artifact.pin.close) : t(($) => $.artifact.pin.cancel)}
@@ -169,5 +192,172 @@ export function ArtifactPinAction({ artifactId }: { artifactId: string }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// --- Refresh schedule ----------------------------------------------------
+// docs/assistant-domain-plan.md Phase 2b. Presets only, no cron: the tightest
+// cadence this can express is once a day, which is the guardrail that keeps a
+// standing report from becoming standing spend.
+
+/** The contract's presets plus the local "off" sentinel (= delete / none). */
+const SCHEDULE_OPTIONS = ["off", "daily", "weekdays", "weekly"] as const;
+type ScheduleOption = (typeof SCHEDULE_OPTIONS)[number];
+
+/** Nine in the morning — the hour a standing report is actually read. */
+const DEFAULT_TIME = "09:00";
+/** Monday, in the 0=Sunday numbering the contract uses. */
+const DEFAULT_WEEKDAY = 1;
+
+/**
+ * The viewer's own zone, detected and SHOWN — never asked. A schedule set at
+ * 09:00 means 09:00 where the owner sits; making them pick that from a list of
+ * ~600 IANA zones would be a question with one right answer.
+ */
+function detectTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+interface SavedSchedule {
+  option: ScheduleOption;
+  time: string;
+  weekday: number;
+}
+
+/**
+ * One row inside the pinned state of the dialog: cadence, time, and (weekly
+ * only) a day. No card, no second dialog — a schedule is a property of the pin
+ * the user is already looking at.
+ *
+ * It renders only for a pin this session created, because that is the only pin
+ * id the 2a flow knows (there is no read-pins-for-artifact endpoint). That
+ * also means it starts from "Off" rather than from a schedule it can't read:
+ * the saved baseline below tracks only what THIS dialog wrote.
+ */
+function ScheduleBlock({
+  wsId,
+  artifactId,
+  pinId,
+  projectId,
+}: {
+  wsId: string;
+  artifactId: string;
+  pinId: string;
+  projectId: string;
+}) {
+  const { t } = useT("assistant");
+  const dayNames = useWeekdayNames("long");
+  const [option, setOption] = useState<ScheduleOption>("off");
+  const [time, setTime] = useState(DEFAULT_TIME);
+  const [weekday, setWeekday] = useState(DEFAULT_WEEKDAY);
+  const [saved, setSaved] = useState<SavedSchedule>({
+    option: "off",
+    time: DEFAULT_TIME,
+    weekday: DEFAULT_WEEKDAY,
+  });
+
+  const setSchedule = useSetReportSchedule(wsId);
+  const deleteSchedule = useDeleteReportSchedule(wsId);
+  const timezone = detectTimezone();
+
+  const dirty =
+    option !== saved.option ||
+    (option !== "off" && time !== saved.time) ||
+    (option === "weekly" && weekday !== saved.weekday);
+  const pending = setSchedule.isPending || deleteSchedule.isPending;
+
+  const handleSave = () => {
+    const next: SavedSchedule = { option, time, weekday };
+    if (option === "off") {
+      deleteSchedule.mutate(
+        { artifactId, pinId, projectId },
+        {
+          onSuccess: () => {
+            setSaved(next);
+            toast.success(t(($) => $.artifact.pin.schedule.toast_removed));
+          },
+          onError: () => toast.error(t(($) => $.artifact.pin.schedule.toast_failed)),
+        },
+      );
+      return;
+    }
+    setSchedule.mutate(
+      {
+        artifactId,
+        pinId,
+        projectId,
+        schedule: {
+          frequency: option as ReportScheduleFrequency,
+          time,
+          // Weekday only travels for weekly — the other presets have no day.
+          ...(option === "weekly" ? { weekday } : {}),
+          timezone,
+        },
+      },
+      {
+        onSuccess: () => {
+          setSaved(next);
+          toast.success(t(($) => $.artifact.pin.schedule.toast_saved));
+        },
+        onError: () => toast.error(t(($) => $.artifact.pin.schedule.toast_failed)),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {t(($) => $.artifact.pin.schedule.label)}
+        </span>
+        <NativeSelect
+          size="sm"
+          aria-label={t(($) => $.artifact.pin.schedule.frequency_label)}
+          value={option}
+          onChange={(e) => setOption(e.target.value as ScheduleOption)}
+        >
+          {SCHEDULE_OPTIONS.map((value) => (
+            <NativeSelectOption key={value} value={value}>
+              {t(($) => $.artifact.pin.schedule.option[value])}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+
+        {option !== "off" && (
+          <TimeInput value={time} onChange={setTime} className="h-7" />
+        )}
+
+        {option === "weekly" && (
+          <NativeSelect
+            size="sm"
+            aria-label={t(($) => $.artifact.pin.schedule.weekday_label)}
+            value={String(weekday)}
+            onChange={(e) => setWeekday(parseInt(e.target.value, 10))}
+          >
+            {dayNames.map((name, day) => (
+              <NativeSelectOption key={name} value={String(day)}>
+                {name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        )}
+
+        {dirty && (
+          <Button size="sm" variant="secondary" onClick={handleSave} disabled={pending}>
+            {t(($) => $.artifact.pin.schedule.save)}
+          </Button>
+        )}
+      </div>
+
+      {option !== "off" && (
+        <p className="text-[11px] text-muted-foreground">
+          {t(($) => $.artifact.pin.schedule.timezone_note, { timezone })}
+        </p>
+      )}
+    </div>
   );
 }

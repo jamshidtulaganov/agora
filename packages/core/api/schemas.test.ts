@@ -76,6 +76,9 @@ import {
   PinnedReportSummarySchema,
   PinnedReportSchema,
   ProjectReportsResponseSchema,
+  ReportScheduleSchema,
+  ReportScheduleResponseSchema,
+  EMPTY_REPORT_SCHEDULE_RESPONSE,
   EMPTY_PINNED_REPORT_LIST,
   EMPTY_PINNED_REPORT,
   ReportPinSchema,
@@ -2204,5 +2207,132 @@ describe("pinned report schemas drift", () => {
     // A drifted (non-string) id degrades to "" instead of throwing — the UI
     // then treats the pin as created but unaddressable, offering no Unpin.
     expect(ReportPinSchema.parse({ id: 7, project_id: "proj-1" }).id).toBe("");
+  });
+});
+
+// Scheduled refresh — docs/assistant-domain-plan.md Phase 2b. The rule these
+// tests pin down: a schedule is decoration on a report row, so no schedule
+// shape may cost the row. Every case below asserts the ROW survives.
+describe("report schedule schema drift", () => {
+  const row = {
+    pin_id: "11111111-1111-1111-1111-111111111111",
+    artifact_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    title: "Sprint report",
+    kind: "markdown",
+    version: 3,
+    updated_at: "2026-09-18T10:00:00Z",
+    created_at: "2026-09-17T10:00:00Z",
+    pinned_by: { id: "u-1", name: "Jamshid" },
+    owner: { id: "u-1", name: "Jamshid" },
+  };
+  const schedule = {
+    frequency: "weekly",
+    time: "09:00",
+    weekday: 1,
+    timezone: "Asia/Tashkent",
+    enabled: true,
+    last_run_at: "2026-09-18T04:00:00Z",
+    last_status: "ok",
+    next_run_at: "2026-09-25T04:00:00Z",
+  };
+
+  it("parses a full schedule on a row", () => {
+    const parsed = PinnedReportSummarySchema.parse({ ...row, schedule });
+    expect(parsed.schedule).toMatchObject(schedule);
+  });
+
+  it("leaves the row untouched when the backend predates 2b (no schedule key)", () => {
+    const parsed = PinnedReportSummarySchema.parse(row);
+    // Not null, not a synthetic object: simply absent, which reads as "no
+    // cadence badge" everywhere downstream.
+    expect(parsed.schedule).toBeUndefined();
+    expect(parsed.pin_id).toBe(row.pin_id);
+  });
+
+  it("keeps an explicit null schedule (pinned, never scheduled)", () => {
+    expect(PinnedReportSummarySchema.parse({ ...row, schedule: null }).schedule).toBeNull();
+  });
+
+  it("drops the schedule — never the report — on an unknown frequency", () => {
+    // "hourly" is exactly the drift 2b's preset list forbids. The badge has no
+    // honest rendering for it, so the schedule goes and the row stays.
+    const parsed = PinnedReportSummarySchema.parse({
+      ...row,
+      schedule: { ...schedule, frequency: "hourly" },
+    });
+    expect(parsed.schedule).toBeNull();
+    expect(parsed.title).toBe("Sprint report");
+  });
+
+  it("drops a wholly wrong-typed schedule without failing the row", () => {
+    const parsed = PinnedReportSummarySchema.parse({ ...row, schedule: "daily at 9" });
+    expect(parsed.schedule).toBeNull();
+    expect(parsed.pin_id).toBe(row.pin_id);
+  });
+
+  it("keeps a list readable when one row's schedule drifted", () => {
+    const parsed = ProjectReportsResponseSchema.parse({
+      reports: [{ ...row, schedule: { ...schedule, frequency: 7 } }],
+    });
+    expect(parsed.reports).toHaveLength(1);
+    expect(parsed.reports[0]?.schedule).toBeNull();
+  });
+
+  it("degrades wrong-typed schedule fields in place", () => {
+    const parsed = PinnedReportSummarySchema.parse({
+      ...row,
+      schedule: { ...schedule, time: 900, timezone: null, enabled: "yes" },
+    });
+    expect(parsed.schedule).toMatchObject({
+      frequency: "weekly",
+      time: "",
+      timezone: "",
+      // A schedule the server sent is live until it says otherwise.
+      enabled: true,
+    });
+  });
+
+  it("tolerates a null weekday (the daily / weekdays presets send one)", () => {
+    const parsed = ReportScheduleSchema.parse({ ...schedule, frequency: "daily", weekday: null });
+    expect(parsed.weekday).toBeNull();
+    // A missing key degrades to the same null rather than failing the object.
+    const { weekday: _omit, ...withoutWeekday } = schedule;
+    expect(ReportScheduleSchema.parse({ ...withoutWeekday, frequency: "daily" }).weekday).toBeNull();
+  });
+
+  it("downgrades an unknown last_status to \"\" (no indicator, no crash)", () => {
+    expect(ReportScheduleSchema.parse({ ...schedule, last_status: "throttled" }).last_status).toBe("");
+    expect(ReportScheduleSchema.parse({ ...schedule, last_status: null }).last_status).toBe("");
+    // "failed" is the one value that renders something, so it must survive.
+    expect(ReportScheduleSchema.parse({ ...schedule, last_status: "failed" }).last_status).toBe("failed");
+    // "running" is a real transient value (written when the scheduler claims
+    // the slot), so it parses as itself rather than degrading to "".
+    expect(ReportScheduleSchema.parse({ ...schedule, last_status: "running" }).last_status).toBe("running");
+  });
+
+  it("unwraps the PUT envelope and falls back to null on a drifted body", () => {
+    const ok = parseWithFallback(
+      { schedule },
+      ReportScheduleResponseSchema,
+      EMPTY_REPORT_SCHEDULE_RESPONSE,
+      { endpoint: "PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule" },
+    );
+    expect(ok.schedule).toMatchObject({ frequency: "weekly", time: "09:00" });
+
+    const drifted = parseWithFallback(
+      { schedule: { frequency: "never" } },
+      ReportScheduleResponseSchema,
+      EMPTY_REPORT_SCHEDULE_RESPONSE,
+      { endpoint: "PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule" },
+    );
+    expect(drifted.schedule).toBeNull();
+
+    const missing = parseWithFallback(
+      null,
+      ReportScheduleResponseSchema,
+      EMPTY_REPORT_SCHEDULE_RESPONSE,
+      { endpoint: "PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule" },
+    );
+    expect(missing.schedule).toBeNull();
   });
 });

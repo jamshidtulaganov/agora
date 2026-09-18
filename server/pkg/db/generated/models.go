@@ -205,6 +205,22 @@ type AssistantPendingOperation struct {
 	Outcome     pgtype.Text        `json:"outcome"`
 }
 
+type AssistantReportSchedule struct {
+	ID         pgtype.UUID        `json:"id"`
+	PinID      pgtype.UUID        `json:"pin_id"`
+	Frequency  string             `json:"frequency"`
+	AtTime     string             `json:"at_time"`
+	Weekday    pgtype.Int4        `json:"weekday"`
+	Timezone   string             `json:"timezone"`
+	Enabled    bool               `json:"enabled"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	LastRunAt  pgtype.Timestamptz `json:"last_run_at"`
+	LastStatus string             `json:"last_status"`
+	LastError  string             `json:"last_error"`
+	NextRunAt  pgtype.Timestamptz `json:"next_run_at"`
+}
+
 type AssistantRun struct {
 	ID                   pgtype.UUID        `json:"id"`
 	SessionID            pgtype.UUID        `json:"session_id"`

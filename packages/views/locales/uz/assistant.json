@@ -183,7 +183,23 @@
       "toast_pinned": "{{project}} ga mahkamlandi",
       "toast_unpinned": "Hisobot yechildi",
       "toast_failed": "Hisobotni mahkamlab bo‘lmadi",
-      "toast_unpin_failed": "Hisobotni yechib bo‘lmadi"
+      "toast_unpin_failed": "Hisobotni yechib bo‘lmadi",
+      "schedule": {
+        "label": "Yangilash jadvali",
+        "frequency_label": "Yangilash chastotasi",
+        "weekday_label": "Hafta kuni",
+        "option": {
+          "off": "O‘chirilgan",
+          "daily": "Har kuni",
+          "weekdays": "Ish kunlari",
+          "weekly": "Har hafta"
+        },
+        "save": "Saqlash",
+        "timezone_note": "Vaqtlar {{timezone}} bo‘yicha",
+        "toast_saved": "Yangilash jadvali saqlandi",
+        "toast_removed": "Yangilash jadvali olib tashlandi",
+        "toast_failed": "Yangilash jadvalini saqlab bo‘lmadi"
+      }
     }
   },
   "workbench": {

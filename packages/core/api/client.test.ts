@@ -1105,3 +1105,131 @@ describe("pinned reports API", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
   });
 });
+
+// Scheduled refresh — docs/assistant-domain-plan.md Phase 2b.
+describe("report schedule API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(status === 204 ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const schedule = {
+    frequency: "weekly",
+    time: "09:00",
+    weekday: 1,
+    timezone: "Asia/Tashkent",
+    enabled: true,
+    last_run_at: null,
+    last_status: "",
+    next_run_at: "2026-09-21T04:00:00Z",
+  };
+
+  it("PUTs the schedule on the pin-scoped route and returns the saved cadence", async () => {
+    const fetchMock = jsonFetch({ schedule });
+    const client = new ApiClient("https://api.example.test");
+    const saved = await client.setReportSchedule("art-1", "pin-1", {
+      frequency: "weekly",
+      time: "09:00",
+      weekday: 1,
+      timezone: "Asia/Tashkent",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/artifacts/art-1/pins/pin-1/schedule",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PUT");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      frequency: "weekly",
+      time: "09:00",
+      weekday: 1,
+      timezone: "Asia/Tashkent",
+    });
+    expect(saved).toMatchObject({ frequency: "weekly", time: "09:00", weekday: 1 });
+  });
+
+  it("returns null instead of throwing when the echo is unreadable", async () => {
+    // A 200 whose schedule drifted (unknown preset). The save happened; only
+    // the echo is unusable, and the invalidated reports query is the authority.
+    jsonFetch({ schedule: { frequency: "fortnightly" } });
+    const client = new ApiClient("https://api.example.test");
+    await expect(
+      client.setReportSchedule("art-1", "pin-1", {
+        frequency: "daily",
+        time: "09:00",
+        timezone: "UTC",
+      }),
+    ).resolves.toBeNull();
+
+    // Same for an envelope that never arrived at all.
+    jsonFetch(null);
+    await expect(
+      client.setReportSchedule("art-1", "pin-1", {
+        frequency: "daily",
+        time: "09:00",
+        timezone: "UTC",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("omits weekday from the body for the non-weekly presets", async () => {
+    const fetchMock = jsonFetch({ schedule: { ...schedule, frequency: "weekdays", weekday: null } });
+    const client = new ApiClient("https://api.example.test");
+    await client.setReportSchedule("art-1", "pin-1", {
+      frequency: "weekdays",
+      time: "18:30",
+      timezone: "Europe/Berlin",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      frequency: "weekdays",
+      time: "18:30",
+      timezone: "Europe/Berlin",
+    });
+  });
+
+  it("deletes a schedule through the same route", async () => {
+    const fetchMock = jsonFetch(null, 204);
+    const client = new ApiClient("https://api.example.test");
+    await client.deleteReportSchedule("art-1", "pin-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/assistant/artifacts/art-1/pins/pin-1/schedule",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+
+  it("carries a row's schedule through the reports list, and survives a drifted one", async () => {
+    const row = {
+      pin_id: "pin-1",
+      artifact_id: "art-1",
+      title: "Sprint report",
+      kind: "markdown",
+      version: 2,
+      updated_at: "now",
+      created_at: "then",
+      pinned_by: { id: "u-1", name: "Jamshid" },
+      owner: { id: "u-1", name: "Jamshid" },
+    };
+    jsonFetch({ reports: [{ ...row, schedule }] });
+    const client = new ApiClient("https://api.example.test");
+    expect((await client.listProjectReports("proj-1"))[0]?.schedule).toMatchObject({
+      frequency: "weekly",
+    });
+
+    // An older backend omits the key entirely — the row still lists.
+    jsonFetch({ reports: [row] });
+    const older = await client.listProjectReports("proj-1");
+    expect(older).toHaveLength(1);
+    expect(older[0]?.schedule).toBeUndefined();
+
+    // A drifted schedule costs the badge, not the row.
+    jsonFetch({ reports: [{ ...row, schedule: { frequency: "hourly" } }] });
+    const drifted = await client.listProjectReports("proj-1");
+    expect(drifted).toHaveLength(1);
+    expect(drifted[0]?.schedule).toBeNull();
+  });
+});

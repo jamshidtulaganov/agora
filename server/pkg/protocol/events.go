@@ -109,6 +109,16 @@ const (
 	EventReportUnpinned = "report:unpinned"
 	EventReportUpdated  = "report:updated"
 
+	// report:schedule_changed fires when a report's standing refresh cadence is
+	// set, replaced or cleared (docs/assistant-domain-plan.md §Phase 2b). Same
+	// workspace scope and same ids-only payload as the three above: the cadence
+	// badge on the project page is the only thing that moves, and it refetches
+	// through the membership-gated list. The scheduler itself is silent — a run
+	// it starts already announces itself through report:updated when the
+	// artifact is rewritten, so a second event would only tell listeners the
+	// same thing twice.
+	EventReportScheduleChanged = "report:schedule_changed"
+
 	// Project events
 	EventProjectCreated         = "project:created"
 	EventProjectUpdated         = "project:updated"

@@ -193,3 +193,115 @@ WHERE p.id = $1;
 SELECT * FROM assistant_artifact_pin
 WHERE artifact_id = $1
 ORDER BY created_at ASC;
+
+-- ---------------------------------------------------------------------------
+-- Report schedules (scheduled refresh) — migration 204
+-- ---------------------------------------------------------------------------
+
+-- name: UpsertAssistantReportSchedule :one
+-- Create-or-replace, expressible only because UNIQUE (pin_id) says a published
+-- report has exactly one cadence. The endpoint is a PUT and behaves like one:
+-- sending a new cadence for a pin that already has one REPLACES it in place
+-- rather than opening a second unattended run against the same artifact.
+--
+-- created_by and created_at are deliberately NOT touched on conflict: they
+-- record who first put this report on a standing schedule, which is the
+-- accountability question a workspace asks about unattended spend. next_run_at
+-- is always rewritten, because the new cadence's next slot has nothing to do
+-- with the old one's.
+INSERT INTO assistant_report_schedule (
+    pin_id, frequency, at_time, weekday, timezone, created_by, next_run_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (pin_id) DO UPDATE
+SET frequency   = EXCLUDED.frequency,
+    at_time     = EXCLUDED.at_time,
+    weekday     = EXCLUDED.weekday,
+    timezone    = EXCLUDED.timezone,
+    enabled     = true,
+    next_run_at = EXCLUDED.next_run_at,
+    -- The outcome of the PREVIOUS cadence describes a schedule that no longer
+    -- exists, so it is cleared rather than left to be read as this one's.
+    last_status = '',
+    last_error  = ''
+RETURNING *;
+
+-- name: DeleteAssistantReportSchedule :execrows
+-- Keyed on the PIN, not the schedule id: the endpoint addresses the pin
+-- (.../pins/{pinId}/schedule) and the boundary has already authorized it.
+-- :execrows so the caller can tell "there was a schedule and it is gone" from
+-- "there was nothing to delete" — a DELETE of a missing schedule is a 204
+-- either way, but only the first is a change worth telling the workspace about.
+DELETE FROM assistant_report_schedule
+WHERE pin_id = $1;
+
+-- name: GetAssistantReportScheduleByPin :one
+-- The single-report read's one extra query. By pin id, because that is what
+-- every authorization path here already holds.
+SELECT * FROM assistant_report_schedule
+WHERE pin_id = $1;
+
+-- name: ListAssistantReportSchedulesByProject :many
+-- The project page's schedules, in ONE query rather than one per row: the list
+-- endpoint fetches its pins and then this, and joins the two in Go. A LEFT JOIN
+-- on the pin list would have been the other option, but it would turn every
+-- column of that list into a nullable one for the sake of a table most
+-- installs have no rows in.
+--
+-- workspace_id is in the predicate beside project_id for the same reason it is
+-- in the pin list: every read here is scoped by tenant, so a mis-scoped
+-- project id can never surface another workspace's cadence.
+SELECT s.* FROM assistant_report_schedule s
+JOIN assistant_artifact_pin p ON p.id = s.pin_id
+WHERE p.workspace_id = $1 AND p.project_id = $2;
+
+-- name: ListDueAssistantReportSchedules :many
+-- The ticker's candidates. Deliberately a plain read that CLAIMS NOTHING —
+-- the claim is the next query, one row at a time.
+--
+-- Why not one UPDATE ... RETURNING for the whole batch: the value each row
+-- must be advanced TO is different per row and is computed from presets, a
+-- wall-clock time and an IANA timezone. Expressing that in SQL would mean a
+-- second implementation of the schedule math living next to the Go one, and
+-- the two would drift on exactly the cases that are hard to get right (DST,
+-- weekend skipping). One implementation, in Go, table-tested — and SQL does
+-- the part it is actually better at: an atomic compare-and-swap per row.
+--
+-- LIMIT bounds one tick's work: schedules are few by construction (one per
+-- published report, at most one run a day each), and a tick that tried to
+-- start a thousand assistant runs would be the bug, not the fix.
+SELECT * FROM assistant_report_schedule
+WHERE enabled AND next_run_at <= now()
+ORDER BY next_run_at ASC
+LIMIT $1;
+
+-- name: ClaimDueAssistantReportSchedule :one
+-- The claim: advance the slot BEFORE the run, and only if this row is still
+-- sitting on the slot the caller read. That `next_run_at = claimed_slot`
+-- predicate is the whole concurrency story — it is a compare-and-swap, so two
+-- server processes that both listed the same due row have exactly one winner
+-- (the loser matches no rows and skips), and a run is at-most-once per slot.
+--
+-- No transaction and no FOR UPDATE SKIP LOCKED is needed for that: a single
+-- UPDATE is already atomic, and the CAS predicate carries the same guarantee
+-- with none of the lock-holding-across-a-model-call that the locking shape
+-- would invite.
+--
+-- last_status = 'running' is written here rather than after the run starts, so
+-- a row that was claimed and then lost to a crash reads as what it is.
+UPDATE assistant_report_schedule
+SET next_run_at = sqlc.arg('next_run_at'),
+    last_status = 'running'
+WHERE id = sqlc.arg('id')
+  AND enabled
+  AND next_run_at = sqlc.arg('claimed_slot')
+RETURNING *;
+
+-- name: UpdateAssistantReportScheduleOutcome :exec
+-- What the project page's freshness badge reads. last_run_at moves on every
+-- attempt, including a skipped one: "we looked at this slot and chose not to
+-- run" is a fact about freshness the reader needs as much as a failure is.
+UPDATE assistant_report_schedule
+SET last_run_at = now(),
+    last_status = sqlc.arg('last_status'),
+    last_error  = sqlc.arg('last_error')
+WHERE id = sqlc.arg('id');

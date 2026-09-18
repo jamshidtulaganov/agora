@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -609,7 +610,7 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := uuidToString(session.ID)
 
-	accepted, err := h.Assistant.AcceptRun(r.Context(), session, userID, content, requestID, requestContext, runContext, snapshot)
+	accepted, err := h.startAssistantRun(r.Context(), session, userID, content, requestID, requestContext, runContext, snapshot)
 	if errors.Is(err, assistant.ErrRunInProgress) {
 		writeError(w, http.StatusConflict, "the assistant is still answering your previous message")
 		return
@@ -624,20 +625,47 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeJSON(w, http.StatusAccepted, SendAssistantMessageResponse{
+		MessageID: uuidToString(accepted.Message.ID),
+		RunID:     accepted.Run.ID,
+		CreatedAt: timestampToString(accepted.Message.CreatedAt),
+	})
+}
+
+// startAssistantRun is the ONE path that adds a user turn to a session and
+// starts the reply loop. Everything that must happen exactly once per accepted
+// turn lives here — the row insert, the session's auto-title, and the echo that
+// puts the turn on the user's other devices — so a second caller cannot
+// accidentally produce a half-started run.
+//
+// It exists because the scheduled-refresh ticker is such a caller
+// (docs/assistant-domain-plan.md §Phase 2b): a due schedule sends a synthetic
+// user message into the artifact owner's own session, and the whole point is
+// that the owner sees an ORDINARY turn in their history — same message row,
+// same run row, same websocket echo. Reimplementing those inserts beside this
+// one is how the two paths would drift.
+//
+// AcceptRun both persists and LAUNCHES the run (it locks the session row,
+// writes the message and run, then hands the run to a worker goroutine), so
+// there is deliberately no Run call here: a caller that also called Run would
+// execute the same run twice.
+func (h *Handler) startAssistantRun(ctx context.Context, session db.AssistantSession, userID, content string, requestID *string, requestContext string, runContext assistant.RunContext, snapshot []byte) (assistant.AcceptedRun, error) {
+	sessionID := uuidToString(session.ID)
+	accepted, err := h.Assistant.AcceptRun(ctx, session, userID, content, requestID, requestContext, runContext, snapshot)
+	if err != nil {
+		return assistant.AcceptedRun{}, err
+	}
+
 	// First message names the session, so the switcher is never a list of
 	// "Untitled".
 	if session.Title == "" && !accepted.Duplicate {
-		if _, err := h.Queries.UpdateAssistantSession(r.Context(), db.UpdateAssistantSessionParams{
+		if _, err := h.Queries.UpdateAssistantSession(ctx, db.UpdateAssistantSessionParams{
 			ID:    session.ID,
 			Title: strToText(assistant.DeriveSessionTitle(content)),
 		}); err != nil {
 			slog.Warn("assistant: auto-title failed", "session_id", sessionID, "error", err)
 		}
 	}
-
-	messageID := uuidToString(accepted.Message.ID)
-	createdAt := timestampToString(accepted.Message.CreatedAt)
-	runID := accepted.Run.ID
 
 	// Echo the user's own turn so other devices on the same account see it.
 	if h.Bus != nil && !accepted.Duplicate {
@@ -648,20 +676,15 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 			Payload: protocol.AssistantMessagePayload{
 				UserID:    userID,
 				SessionID: sessionID,
-				RunID:     runID,
-				MessageID: messageID,
+				RunID:     accepted.Run.ID,
+				MessageID: uuidToString(accepted.Message.ID),
 				Role:      "user",
 				Content:   content,
-				CreatedAt: createdAt,
+				CreatedAt: timestampToString(accepted.Message.CreatedAt),
 			},
 		})
 	}
-
-	writeJSON(w, http.StatusAccepted, SendAssistantMessageResponse{
-		MessageID: messageID,
-		RunID:     runID,
-		CreatedAt: createdAt,
-	})
+	return accepted, nil
 }
 
 func (h *Handler) ListAssistantMessages(w http.ResponseWriter, r *http.Request) {

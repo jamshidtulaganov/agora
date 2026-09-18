@@ -77,6 +77,7 @@ export type WSEventType =
   | "report:pinned"
   | "report:unpinned"
   | "report:updated"
+  | "report:schedule_changed"
   | "pin:created"
   | "pin:deleted"
   | "pin:reordered"
@@ -375,15 +376,19 @@ export interface ChatSessionDeletedPayload {
  * AssistantMessagePayload.
  */
 /**
- * Pinned reports (docs/assistant-domain-plan.md Phase 2a). Workspace-scoped,
- * unlike the assistant's own user-scoped events: `report:pinned` /
- * `report:unpinned` fire on publish and withdrawal, `report:updated` when the
- * owner re-runs a recipe and the pinned artifact's body moves behind an
- * unchanged pin.
+ * Pinned reports (docs/assistant-domain-plan.md Phase 2a + 2b).
+ * Workspace-scoped, unlike the assistant's own user-scoped events:
+ * `report:pinned` / `report:unpinned` fire on publish and withdrawal,
+ * `report:updated` when the owner re-runs a recipe and the pinned artifact's
+ * body moves behind an unchanged pin, and `report:schedule_changed` when the
+ * owner sets or clears the pin's refresh cadence (2b) — all four move the same
+ * caches, so they share one payload and one updater.
  */
 export interface ReportPinEventPayload {
   project_id: string;
   pin_id: string;
+  /** Present on the 2b schedule event; the older three omit it. */
+  artifact_id?: string;
 }
 
 export interface AssistantMessageEventPayload {
@@ -536,6 +541,7 @@ export interface WSEventPayloadMap {
   "report:pinned": ReportPinEventPayload;
   "report:unpinned": ReportPinEventPayload;
   "report:updated": ReportPinEventPayload;
+  "report:schedule_changed": ReportPinEventPayload;
   "pin:created": unknown;
   "pin:deleted": unknown;
   "pin:reordered": unknown;

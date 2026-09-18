@@ -3,7 +3,7 @@ import { api } from "../api";
 import { reportKeys } from "./queries";
 import { assistantKeys } from "../assistant/queries";
 import { createLogger } from "../logger";
-import type { ReportPin } from "../types";
+import type { ReportPin, ReportScheduleInput } from "../types";
 
 const logger = createLogger("reports.mut");
 
@@ -63,6 +63,71 @@ export function useUnpinArtifact(wsId: string) {
       qc.invalidateQueries({ queryKey: reportKeys.project(wsId, vars.projectId) });
       qc.removeQueries({ queryKey: reportKeys.detail(wsId, vars.pinId) });
       qc.invalidateQueries({ queryKey: assistantKeys.artifact(vars.artifactId) });
+    },
+  });
+}
+
+/**
+ * Creates or replaces a pin's refresh schedule (Phase 2b).
+ *
+ * Same settle-then-invalidate posture as the pin mutations above, and for the
+ * same reason: this is a rare, deliberate act inside a dialog, and what it
+ * changes is a cadence badge on a DIFFERENT surface (the project's Reports
+ * rows), not the control the user is touching. There is also nothing
+ * trustworthy to render optimistically — `next_run_at` is computed server-side
+ * in the schedule's timezone, so a local guess would be a lie the badge shows.
+ */
+export function useSetReportSchedule(wsId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      artifactId,
+      pinId,
+      schedule,
+    }: {
+      artifactId: string;
+      pinId: string;
+      schedule: ReportScheduleInput;
+      /** Only used to target the invalidation — not sent to the server. */
+      projectId: string;
+    }) => {
+      logger.info("setReportSchedule.start", { artifactId, pinId, frequency: schedule.frequency });
+      return api.setReportSchedule(artifactId, pinId, schedule);
+    },
+    onError: (err, vars) => {
+      logger.warn("setReportSchedule.error", { artifactId: vars.artifactId, pinId: vars.pinId, err });
+    },
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: reportKeys.project(wsId, vars.projectId) });
+      qc.invalidateQueries({ queryKey: reportKeys.detail(wsId, vars.pinId) });
+    },
+  });
+}
+
+/** Removes a pin's schedule — the "Off" branch of the same control. */
+export function useDeleteReportSchedule(wsId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      artifactId,
+      pinId,
+    }: {
+      artifactId: string;
+      pinId: string;
+      /** Only used to target the invalidation — not sent to the server. */
+      projectId: string;
+    }) => {
+      logger.info("deleteReportSchedule.start", { artifactId, pinId });
+      return api.deleteReportSchedule(artifactId, pinId);
+    },
+    onError: (err, vars) => {
+      logger.warn("deleteReportSchedule.error", { artifactId: vars.artifactId, pinId: vars.pinId, err });
+    },
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: reportKeys.project(wsId, vars.projectId) });
+      qc.invalidateQueries({ queryKey: reportKeys.detail(wsId, vars.pinId) });
     },
   });
 }

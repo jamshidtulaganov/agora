@@ -252,6 +252,12 @@
     "meta": "v{{version}} · updated {{time}}",
     "owner": "by {{name}}",
     "loading": "Opening report...",
-    "unavailable": "This report isn't available."
+    "unavailable": "This report isn't available.",
+    "schedule": {
+      "daily": "Daily {{time}}",
+      "weekdays": "Weekdays {{time}}",
+      "weekly": "{{day}} {{time}}",
+      "failed": "Last scheduled refresh failed"
+    }
   }
 }

@@ -252,6 +252,12 @@
     "meta": "v{{version}} · {{time}} yangilandi",
     "owner": "{{name}} tomonidan",
     "loading": "Hisobot ochilmoqda...",
-    "unavailable": "Bu hisobot mavjud emas."
+    "unavailable": "Bu hisobot mavjud emas.",
+    "schedule": {
+      "daily": "Har kuni {{time}}",
+      "weekdays": "Ish kunlari {{time}}",
+      "weekly": "{{day}} {{time}}",
+      "failed": "Oxirgi jadval bo‘yicha yangilash muvaffaqiyatsiz tugadi"
+    }
   }
 }

@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
@@ -76,6 +78,12 @@ type ReportSummaryResponse struct {
 	CreatedAt  string        `json:"created_at"`
 	PinnedBy   ReportUserRef `json:"pinned_by"`
 	Owner      ReportUserRef `json:"owner"`
+	// Schedule is the standing refresh cadence, present only when the owner set
+	// one (docs/assistant-domain-plan.md §Phase 2b). Omitted rather than null so
+	// "this report refreshes itself" is a presence check, not a shape check —
+	// and so the 2a response is byte-identical for every report that has no
+	// cadence.
+	Schedule *ReportScheduleResponse `json:"schedule,omitempty"`
 }
 
 // ReportResponse is the single-report read: the same metadata plus the body a
@@ -330,9 +338,34 @@ func (h *Handler) ListProjectReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One extra query for the whole page, not one per row: the cadences are
+	// fetched in a batch and joined in Go. A read that grew a query per report
+	// would make a project page's cost depend on how many reports it publishes.
+	schedules := map[string]ReportScheduleResponse{}
+	if len(rows) > 0 {
+		found, err := h.Queries.ListAssistantReportSchedulesByProject(r.Context(),
+			db.ListAssistantReportSchedulesByProjectParams{
+				WorkspaceID: project.WorkspaceID,
+				ProjectID:   project.ID,
+			})
+		if err != nil {
+			// A missing cadence badge is not worth failing the page the reader
+			// actually came for.
+			slog.Warn("reports: list schedules failed",
+				"project_id", uuidToString(project.ID), "error", err)
+		}
+		for _, schedule := range found {
+			schedules[uuidToString(schedule.PinID)] = reportScheduleToResponse(schedule)
+		}
+	}
+
 	reports := make([]ReportSummaryResponse, 0, len(rows))
 	for _, row := range rows {
-		reports = append(reports, reportSummaryFromListRow(row))
+		report := reportSummaryFromListRow(row)
+		if schedule, ok := schedules[uuidToString(row.ID)]; ok {
+			report.Schedule = &schedule
+		}
+		reports = append(reports, report)
 	}
 	writeJSON(w, http.StatusOK, ListProjectReportsResponse{Reports: reports})
 }
@@ -367,6 +400,17 @@ func (h *Handler) GetReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The reader's freshness question ("when does this refresh next?") is
+	// answered beside the body, so the viewer needs no second request. A pin
+	// with no cadence simply has no key — the read is not an error path.
+	var schedule *ReportScheduleResponse
+	if found, err := h.Queries.GetAssistantReportScheduleByPin(r.Context(), row.ID); err == nil {
+		resp := reportScheduleToResponse(found)
+		schedule = &resp
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("reports: load schedule failed", "pin_id", uuidToString(row.ID), "error", err)
+	}
+
 	writeJSON(w, http.StatusOK, ReportResponse{
 		ReportSummaryResponse: ReportSummaryResponse{
 			PinID:      uuidToString(row.ID),
@@ -378,6 +422,7 @@ func (h *Handler) GetReport(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:  timestampToString(row.CreatedAt),
 			PinnedBy:   ReportUserRef{ID: uuidToString(row.PinnedBy), Name: row.PinnedByName},
 			Owner:      ReportUserRef{ID: uuidToString(row.OwnerID), Name: row.OwnerName},
+			Schedule:   schedule,
 		},
 		Content: row.Content,
 	})

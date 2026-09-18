@@ -26,6 +26,13 @@ export interface PinnedReportSummary {
   created_at: string;
   pinned_by: ReportActorRef;
   owner: ReportActorRef;
+  /**
+   * Scheduled refresh (Phase 2b), when the pin has one. Optional in both
+   * directions: a backend older than 2b omits the key entirely, a pin with no
+   * schedule sends null, and a schedule this build can't read degrades to
+   * null too — the cadence badge is decoration, never a reason to lose a row.
+   */
+  schedule?: ReportSchedule | null;
 }
 
 /** GET /api/reports/{pinId} — the same metadata plus the current body. */
@@ -39,4 +46,45 @@ export interface ReportPin {
   artifact_id: string;
   project_id: string;
   created_at: string;
+}
+
+// --- Scheduled refresh ---------------------------------------------------
+// Phase 2b of docs/assistant-domain-plan.md. A pin can carry ONE schedule:
+// when it comes due the server starts an ordinary assistant run under the
+// owner's identity that re-runs the recipe and saves over the same artifact,
+// so the pinned view refreshes through the 2a `report:updated` path. Presets
+// only — no cron — so the tightest possible cadence is once a day.
+
+/** The cadence presets the contract accepts. */
+export type ReportScheduleFrequency = "daily" | "weekdays" | "weekly";
+
+/**
+ * Outcome of the last scheduled refresh. `""` means "never ran yet";
+ * `"skipped"` means the owner's session was busy at the slot (the scheduler
+ * never runs two concurrent refreshes); `"running"` is the transient value the
+ * scheduler writes when it claims a slot, before the run is accepted. Only
+ * `"failed"` is worth surfacing — a refresh in flight is not news to a reader.
+ */
+export type ReportScheduleStatus = "ok" | "failed" | "skipped" | "running" | "";
+
+export interface ReportSchedule {
+  frequency: ReportScheduleFrequency;
+  /** Wall-clock "HH:MM" in `timezone`. */
+  time: string;
+  /** 0=Sunday … 6=Saturday (JS `getDay()` numbering). Only set for weekly. */
+  weekday: number | null;
+  /** IANA zone the owner's browser reported when the schedule was saved. */
+  timezone: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_status: ReportScheduleStatus;
+  next_run_at: string | null;
+}
+
+/** Body of PUT .../pins/{pinId}/schedule. `weekday` only travels for weekly. */
+export interface ReportScheduleInput {
+  frequency: ReportScheduleFrequency;
+  time: string;
+  weekday?: number;
+  timezone: string;
 }

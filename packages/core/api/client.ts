@@ -90,6 +90,8 @@ import type {
   PinnedReport,
   PinnedReportSummary,
   ReportPin,
+  ReportSchedule,
+  ReportScheduleInput,
   AssistantOperationDecision,
   SendAssistantMessageResponse,
   CreateAssistantSessionRequest,
@@ -433,6 +435,8 @@ import {
   EMPTY_PINNED_REPORT,
   ReportPinSchema,
   EMPTY_REPORT_PIN,
+  ReportScheduleResponseSchema,
+  EMPTY_REPORT_SCHEDULE_RESPONSE,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2601,6 +2605,40 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/reports/${pinId}`);
     return parseWithFallback(raw, PinnedReportSchema, EMPTY_PINNED_REPORT, {
       endpoint: "GET /api/reports/{pinId}",
+    });
+  }
+
+  /**
+   * Creates or replaces the pin's refresh schedule (Phase 2b). Owner-only and
+   * human-actor-gated server-side: a standing schedule is standing spend.
+   *
+   * `weekday` only travels for the weekly preset — the caller composes the
+   * body, so daily/weekdays never send a day the server would have to ignore.
+   */
+  async setReportSchedule(
+    artifactId: string,
+    pinId: string,
+    body: ReportScheduleInput,
+  ): Promise<ReportSchedule | null> {
+    const raw = await this.fetch<unknown>(
+      `/api/assistant/artifacts/${artifactId}/pins/${pinId}/schedule`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    const parsed = parseWithFallback(
+      raw,
+      ReportScheduleResponseSchema,
+      EMPTY_REPORT_SCHEDULE_RESPONSE,
+      { endpoint: "PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule" },
+    );
+    // null here means "saved, but this build couldn't read the echo" — the
+    // authoritative cadence comes back with the invalidated reports query.
+    return parsed.schedule ?? null;
+  }
+
+  /** Removes the pin's schedule. 204; owner-only. */
+  async deleteReportSchedule(artifactId: string, pinId: string): Promise<void> {
+    await this.fetch(`/api/assistant/artifacts/${artifactId}/pins/${pinId}/schedule`, {
+      method: "DELETE",
     });
   }
 

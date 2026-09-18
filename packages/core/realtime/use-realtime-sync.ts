@@ -637,6 +637,7 @@ export function useRealtimeSync(
       // Pinned reports need the payload's project_id to hit the right cache
       // entry, which the prefix path can't see — handled explicitly below.
       "report:pinned", "report:unpinned", "report:updated",
+      "report:schedule_changed",
       // task:message stays out of the prefix path because it fires per
       // streamed message during a long run — invalidating the snapshot on
       // every message would flood the network. Specific chat handlers below
@@ -1191,7 +1192,7 @@ export function useRealtimeSync(
     // --- Pinned reports (workspace-scoped) --------------------------------
     //
     // A pin publishes an owner's artifact to a project, so unlike the
-    // assistant events above these DO read getCurrentWsId(). All three move
+    // assistant events above these DO read getCurrentWsId(). All four move
     // the same caches — see packages/core/reports/ws-updaters.ts.
     const onReport = (p: unknown) => {
       const wsId = getCurrentWsId();
@@ -1200,6 +1201,7 @@ export function useRealtimeSync(
     const unsubReportPinned = ws.on("report:pinned", onReport);
     const unsubReportUnpinned = ws.on("report:unpinned", onReport);
     const unsubReportUpdated = ws.on("report:updated", onReport);
+    const unsubReportScheduleChanged = ws.on("report:schedule_changed", onReport);
 
     return () => {
       unsubAny();
@@ -1251,6 +1253,7 @@ export function useRealtimeSync(
       unsubReportPinned();
       unsubReportUnpinned();
       unsubReportUpdated();
+      unsubReportScheduleChanged();
       timers.forEach(clearTimeout);
       timers.clear();
     };

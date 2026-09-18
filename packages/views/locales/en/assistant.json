@@ -183,7 +183,23 @@
       "toast_pinned": "Pinned to {{project}}",
       "toast_unpinned": "Report unpinned",
       "toast_failed": "Couldn't pin this report",
-      "toast_unpin_failed": "Couldn't unpin this report"
+      "toast_unpin_failed": "Couldn't unpin this report",
+      "schedule": {
+        "label": "Refresh schedule",
+        "frequency_label": "Refresh frequency",
+        "weekday_label": "Day of the week",
+        "option": {
+          "off": "Off",
+          "daily": "Daily",
+          "weekdays": "Weekdays",
+          "weekly": "Weekly"
+        },
+        "save": "Save",
+        "timezone_note": "Times in {{timezone}}",
+        "toast_saved": "Refresh schedule saved",
+        "toast_removed": "Refresh schedule removed",
+        "toast_failed": "Couldn't save the refresh schedule"
+      }
     }
   },
   "workbench": {

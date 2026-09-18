@@ -106,6 +106,10 @@ export type {
   PinnedReportSummary,
   PinnedReport,
   ReportPin,
+  ReportSchedule,
+  ReportScheduleFrequency,
+  ReportScheduleStatus,
+  ReportScheduleInput,
 } from "./report";
 export type {
   OrchestrationRun,

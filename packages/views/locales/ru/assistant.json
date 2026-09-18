@@ -183,7 +183,23 @@
       "toast_pinned": "Закреплён в {{project}}",
       "toast_unpinned": "Отчёт откреплён",
       "toast_failed": "Не удалось закрепить отчёт",
-      "toast_unpin_failed": "Не удалось открепить отчёт"
+      "toast_unpin_failed": "Не удалось открепить отчёт",
+      "schedule": {
+        "label": "Расписание обновления",
+        "frequency_label": "Частота обновления",
+        "weekday_label": "День недели",
+        "option": {
+          "off": "Выключено",
+          "daily": "Каждый день",
+          "weekdays": "По будням",
+          "weekly": "Каждую неделю"
+        },
+        "save": "Сохранить",
+        "timezone_note": "Время по {{timezone}}",
+        "toast_saved": "Расписание обновления сохранено",
+        "toast_removed": "Расписание обновления удалено",
+        "toast_failed": "Не удалось сохранить расписание"
+      }
     }
   },
   "workbench": {

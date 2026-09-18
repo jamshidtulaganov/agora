@@ -11,6 +11,56 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimDueAssistantReportSchedule = `-- name: ClaimDueAssistantReportSchedule :one
+UPDATE assistant_report_schedule
+SET next_run_at = $1,
+    last_status = 'running'
+WHERE id = $2
+  AND enabled
+  AND next_run_at = $3
+RETURNING id, pin_id, frequency, at_time, weekday, timezone, enabled, created_by, created_at, last_run_at, last_status, last_error, next_run_at
+`
+
+type ClaimDueAssistantReportScheduleParams struct {
+	NextRunAt   pgtype.Timestamptz `json:"next_run_at"`
+	ID          pgtype.UUID        `json:"id"`
+	ClaimedSlot pgtype.Timestamptz `json:"claimed_slot"`
+}
+
+// The claim: advance the slot BEFORE the run, and only if this row is still
+// sitting on the slot the caller read. That `next_run_at = claimed_slot`
+// predicate is the whole concurrency story — it is a compare-and-swap, so two
+// server processes that both listed the same due row have exactly one winner
+// (the loser matches no rows and skips), and a run is at-most-once per slot.
+//
+// No transaction and no FOR UPDATE SKIP LOCKED is needed for that: a single
+// UPDATE is already atomic, and the CAS predicate carries the same guarantee
+// with none of the lock-holding-across-a-model-call that the locking shape
+// would invite.
+//
+// last_status = 'running' is written here rather than after the run starts, so
+// a row that was claimed and then lost to a crash reads as what it is.
+func (q *Queries) ClaimDueAssistantReportSchedule(ctx context.Context, arg ClaimDueAssistantReportScheduleParams) (AssistantReportSchedule, error) {
+	row := q.db.QueryRow(ctx, claimDueAssistantReportSchedule, arg.NextRunAt, arg.ID, arg.ClaimedSlot)
+	var i AssistantReportSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.PinID,
+		&i.Frequency,
+		&i.AtTime,
+		&i.Weekday,
+		&i.Timezone,
+		&i.Enabled,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.LastRunAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.NextRunAt,
+	)
+	return i, err
+}
+
 const countAssistantArtifactRevisions = `-- name: CountAssistantArtifactRevisions :one
 SELECT COUNT(*) FROM assistant_artifact_revision
 WHERE artifact_id = $1
@@ -163,6 +213,24 @@ WHERE id = $1
 func (q *Queries) DeleteAssistantArtifactPin(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAssistantArtifactPin, id)
 	return err
+}
+
+const deleteAssistantReportSchedule = `-- name: DeleteAssistantReportSchedule :execrows
+DELETE FROM assistant_report_schedule
+WHERE pin_id = $1
+`
+
+// Keyed on the PIN, not the schedule id: the endpoint addresses the pin
+// (.../pins/{pinId}/schedule) and the boundary has already authorized it.
+// :execrows so the caller can tell "there was a schedule and it is gone" from
+// "there was nothing to delete" — a DELETE of a missing schedule is a 204
+// either way, but only the first is a change worth telling the workspace about.
+func (q *Queries) DeleteAssistantReportSchedule(ctx context.Context, pinID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAssistantReportSchedule, pinID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getAssistantArtifact = `-- name: GetAssistantArtifact :one
@@ -320,6 +388,34 @@ func (q *Queries) GetAssistantArtifactRevision(ctx context.Context, arg GetAssis
 		&i.Title,
 		&i.Content,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAssistantReportScheduleByPin = `-- name: GetAssistantReportScheduleByPin :one
+SELECT id, pin_id, frequency, at_time, weekday, timezone, enabled, created_by, created_at, last_run_at, last_status, last_error, next_run_at FROM assistant_report_schedule
+WHERE pin_id = $1
+`
+
+// The single-report read's one extra query. By pin id, because that is what
+// every authorization path here already holds.
+func (q *Queries) GetAssistantReportScheduleByPin(ctx context.Context, pinID pgtype.UUID) (AssistantReportSchedule, error) {
+	row := q.db.QueryRow(ctx, getAssistantReportScheduleByPin, pinID)
+	var i AssistantReportSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.PinID,
+		&i.Frequency,
+		&i.AtTime,
+		&i.Weekday,
+		&i.Timezone,
+		&i.Enabled,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.LastRunAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.NextRunAt,
 	)
 	return i, err
 }
@@ -535,6 +631,115 @@ func (q *Queries) ListAssistantArtifactsBySession(ctx context.Context, sessionID
 	return items, nil
 }
 
+const listAssistantReportSchedulesByProject = `-- name: ListAssistantReportSchedulesByProject :many
+SELECT s.id, s.pin_id, s.frequency, s.at_time, s.weekday, s.timezone, s.enabled, s.created_by, s.created_at, s.last_run_at, s.last_status, s.last_error, s.next_run_at FROM assistant_report_schedule s
+JOIN assistant_artifact_pin p ON p.id = s.pin_id
+WHERE p.workspace_id = $1 AND p.project_id = $2
+`
+
+type ListAssistantReportSchedulesByProjectParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+// The project page's schedules, in ONE query rather than one per row: the list
+// endpoint fetches its pins and then this, and joins the two in Go. A LEFT JOIN
+// on the pin list would have been the other option, but it would turn every
+// column of that list into a nullable one for the sake of a table most
+// installs have no rows in.
+//
+// workspace_id is in the predicate beside project_id for the same reason it is
+// in the pin list: every read here is scoped by tenant, so a mis-scoped
+// project id can never surface another workspace's cadence.
+func (q *Queries) ListAssistantReportSchedulesByProject(ctx context.Context, arg ListAssistantReportSchedulesByProjectParams) ([]AssistantReportSchedule, error) {
+	rows, err := q.db.Query(ctx, listAssistantReportSchedulesByProject, arg.WorkspaceID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantReportSchedule{}
+	for rows.Next() {
+		var i AssistantReportSchedule
+		if err := rows.Scan(
+			&i.ID,
+			&i.PinID,
+			&i.Frequency,
+			&i.AtTime,
+			&i.Weekday,
+			&i.Timezone,
+			&i.Enabled,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.LastRunAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.NextRunAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueAssistantReportSchedules = `-- name: ListDueAssistantReportSchedules :many
+SELECT id, pin_id, frequency, at_time, weekday, timezone, enabled, created_by, created_at, last_run_at, last_status, last_error, next_run_at FROM assistant_report_schedule
+WHERE enabled AND next_run_at <= now()
+ORDER BY next_run_at ASC
+LIMIT $1
+`
+
+// The ticker's candidates. Deliberately a plain read that CLAIMS NOTHING —
+// the claim is the next query, one row at a time.
+//
+// Why not one UPDATE ... RETURNING for the whole batch: the value each row
+// must be advanced TO is different per row and is computed from presets, a
+// wall-clock time and an IANA timezone. Expressing that in SQL would mean a
+// second implementation of the schedule math living next to the Go one, and
+// the two would drift on exactly the cases that are hard to get right (DST,
+// weekend skipping). One implementation, in Go, table-tested — and SQL does
+// the part it is actually better at: an atomic compare-and-swap per row.
+//
+// LIMIT bounds one tick's work: schedules are few by construction (one per
+// published report, at most one run a day each), and a tick that tried to
+// start a thousand assistant runs would be the bug, not the fix.
+func (q *Queries) ListDueAssistantReportSchedules(ctx context.Context, limit int32) ([]AssistantReportSchedule, error) {
+	rows, err := q.db.Query(ctx, listDueAssistantReportSchedules, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantReportSchedule{}
+	for rows.Next() {
+		var i AssistantReportSchedule
+		if err := rows.Scan(
+			&i.ID,
+			&i.PinID,
+			&i.Frequency,
+			&i.AtTime,
+			&i.Weekday,
+			&i.Timezone,
+			&i.Enabled,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.LastRunAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.NextRunAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const trimAssistantArtifactRevisions = `-- name: TrimAssistantArtifactRevisions :exec
 DELETE FROM assistant_artifact_revision AS doomed
 WHERE doomed.artifact_id = $1
@@ -623,6 +828,99 @@ func (q *Queries) UpdateAssistantArtifact(ctx context.Context, arg UpdateAssista
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateAssistantReportScheduleOutcome = `-- name: UpdateAssistantReportScheduleOutcome :exec
+UPDATE assistant_report_schedule
+SET last_run_at = now(),
+    last_status = $1,
+    last_error  = $2
+WHERE id = $3
+`
+
+type UpdateAssistantReportScheduleOutcomeParams struct {
+	LastStatus string      `json:"last_status"`
+	LastError  string      `json:"last_error"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// What the project page's freshness badge reads. last_run_at moves on every
+// attempt, including a skipped one: "we looked at this slot and chose not to
+// run" is a fact about freshness the reader needs as much as a failure is.
+func (q *Queries) UpdateAssistantReportScheduleOutcome(ctx context.Context, arg UpdateAssistantReportScheduleOutcomeParams) error {
+	_, err := q.db.Exec(ctx, updateAssistantReportScheduleOutcome, arg.LastStatus, arg.LastError, arg.ID)
+	return err
+}
+
+const upsertAssistantReportSchedule = `-- name: UpsertAssistantReportSchedule :one
+
+INSERT INTO assistant_report_schedule (
+    pin_id, frequency, at_time, weekday, timezone, created_by, next_run_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (pin_id) DO UPDATE
+SET frequency   = EXCLUDED.frequency,
+    at_time     = EXCLUDED.at_time,
+    weekday     = EXCLUDED.weekday,
+    timezone    = EXCLUDED.timezone,
+    enabled     = true,
+    next_run_at = EXCLUDED.next_run_at,
+    -- The outcome of the PREVIOUS cadence describes a schedule that no longer
+    -- exists, so it is cleared rather than left to be read as this one's.
+    last_status = '',
+    last_error  = ''
+RETURNING id, pin_id, frequency, at_time, weekday, timezone, enabled, created_by, created_at, last_run_at, last_status, last_error, next_run_at
+`
+
+type UpsertAssistantReportScheduleParams struct {
+	PinID     pgtype.UUID        `json:"pin_id"`
+	Frequency string             `json:"frequency"`
+	AtTime    string             `json:"at_time"`
+	Weekday   pgtype.Int4        `json:"weekday"`
+	Timezone  string             `json:"timezone"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	NextRunAt pgtype.Timestamptz `json:"next_run_at"`
+}
+
+// ---------------------------------------------------------------------------
+// Report schedules (scheduled refresh) — migration 204
+// ---------------------------------------------------------------------------
+// Create-or-replace, expressible only because UNIQUE (pin_id) says a published
+// report has exactly one cadence. The endpoint is a PUT and behaves like one:
+// sending a new cadence for a pin that already has one REPLACES it in place
+// rather than opening a second unattended run against the same artifact.
+//
+// created_by and created_at are deliberately NOT touched on conflict: they
+// record who first put this report on a standing schedule, which is the
+// accountability question a workspace asks about unattended spend. next_run_at
+// is always rewritten, because the new cadence's next slot has nothing to do
+// with the old one's.
+func (q *Queries) UpsertAssistantReportSchedule(ctx context.Context, arg UpsertAssistantReportScheduleParams) (AssistantReportSchedule, error) {
+	row := q.db.QueryRow(ctx, upsertAssistantReportSchedule,
+		arg.PinID,
+		arg.Frequency,
+		arg.AtTime,
+		arg.Weekday,
+		arg.Timezone,
+		arg.CreatedBy,
+		arg.NextRunAt,
+	)
+	var i AssistantReportSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.PinID,
+		&i.Frequency,
+		&i.AtTime,
+		&i.Weekday,
+		&i.Timezone,
+		&i.Enabled,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.LastRunAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.NextRunAt,
 	)
 	return i, err
 }

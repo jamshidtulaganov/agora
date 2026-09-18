@@ -631,6 +631,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// be able to disclose its owner's report.
 		r.With(handler.RequireHumanActor).Post("/api/assistant/artifacts/{id}/pins", h.PinAssistantArtifact)
 		r.With(handler.RequireHumanActor).Delete("/api/assistant/artifacts/{id}/pins/{pinId}", h.UnpinAssistantArtifact)
+		// The published report's standing refresh cadence (Phase 2b). Owner-only
+		// — stricter than unpin, which a workspace admin may also do: a cadence
+		// spends the OWNER's model budget and rewrites the OWNER's artifact.
+		// RequireHumanActor for the same reason the pin has it, doubled: a
+		// schedule is standing spend as well as standing disclosure, so it is
+		// exactly the kind of thing a machine credential must not be able to
+		// leave behind.
+		r.With(handler.RequireHumanActor).Put("/api/assistant/artifacts/{id}/pins/{pinId}/schedule", h.PutAssistantReportSchedule)
+		r.With(handler.RequireHumanActor).Delete("/api/assistant/artifacts/{id}/pins/{pinId}/schedule", h.DeleteAssistantReportSchedule)
 		// Reading a published report is gated on membership of the PIN's
 		// workspace, resolved from the pin itself — same reasoning as
 		// /api/issues/{id}/locate below: a link to a report must open from

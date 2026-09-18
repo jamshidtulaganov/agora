@@ -3,8 +3,9 @@ import { reportKeys } from "./queries";
 import type { ReportPinEventPayload } from "../types";
 
 /**
- * `report:pinned` / `report:unpinned` / `report:updated` — all three move the
- * same two caches, so they share one updater.
+ * `report:pinned` / `report:unpinned` / `report:updated` /
+ * `report:schedule_changed` — all four move the same two caches, so they share
+ * one updater.
  *
  * Workspace-scoped (unlike the assistant's own events, which are user-scoped),
  * so the caller supplies the current wsId. Per the WS rule in CLAUDE.md this
@@ -13,6 +14,9 @@ import type { ReportPinEventPayload } from "../types";
  * `report:updated` fires when the owner re-runs a recipe and the artifact's
  * body changes behind an unchanged pin — the list moves (version /
  * updated_at) and so does any open viewer, hence both keys.
+ * `report:schedule_changed` (Phase 2b) fires on PUT/DELETE of a pin's
+ * schedule: nothing about the body moved, but the cadence badge on the row
+ * did, and that badge is rendered from the same list query.
  */
 export function onReportChanged(
   qc: QueryClient,

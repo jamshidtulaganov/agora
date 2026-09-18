@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@agora/core/i18n/react";
-import type { PinnedReport, PinnedReportSummary } from "@agora/core/types";
+import type { PinnedReport, PinnedReportSummary, ReportSchedule } from "@agora/core/types";
 import { RESOURCES } from "../../locales";
 
 const mockListReports = vi.hoisted(() => vi.fn());
@@ -114,5 +114,97 @@ describe("ProjectReportsSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open report: Sprint report" }));
 
     expect(await screen.findByText("This report isn't available.")).toBeInTheDocument();
+  });
+});
+
+// --- Cadence badge (Phase 2b) --------------------------------------------
+describe("ProjectReportsSection — schedule badge", () => {
+  function schedule(overrides: Partial<ReportSchedule> = {}): ReportSchedule {
+    return {
+      frequency: "daily",
+      time: "09:00",
+      weekday: null,
+      timezone: "Asia/Tashkent",
+      enabled: true,
+      last_run_at: "2026-09-18T04:00:00Z",
+      last_status: "ok",
+      next_run_at: "2026-09-19T04:00:00Z",
+      ...overrides,
+    };
+  }
+
+  it("badges a daily cadence next to the title", async () => {
+    mockListReports.mockResolvedValue([report({ schedule: schedule() })]);
+    renderSection();
+    expect(await screen.findByText("Daily 09:00")).toBeInTheDocument();
+  });
+
+  it("badges weekdays and a weekly day by its short localized name", async () => {
+    mockListReports.mockResolvedValue([
+      report({ schedule: schedule({ frequency: "weekdays", time: "18:30" }) }),
+      report({
+        pin_id: "pin-2",
+        title: "QA health",
+        // 1 = Monday in the contract's 0=Sunday numbering.
+        schedule: schedule({ frequency: "weekly", weekday: 1, time: "09:00" }),
+      }),
+    ]);
+    renderSection();
+    expect(await screen.findByText("Weekdays 18:30")).toBeInTheDocument();
+    expect(screen.getByText("Mon 09:00")).toBeInTheDocument();
+  });
+
+  it("shows nothing for a row with no schedule (the pre-2b and unscheduled case)", async () => {
+    mockListReports.mockResolvedValue([report()]);
+    renderSection();
+    expect(await screen.findByText("Sprint report")).toBeInTheDocument();
+    expect(screen.queryByText(/09:00/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Last scheduled refresh failed")).not.toBeInTheDocument();
+  });
+
+  it("flags a failed last run, and only that status", async () => {
+    mockListReports.mockResolvedValue([
+      report({ schedule: schedule({ last_status: "failed" }) }),
+      report({ pin_id: "pin-2", title: "QA health", schedule: schedule({ last_status: "skipped" }) }),
+      report({ pin_id: "pin-3", title: "Standup", schedule: schedule({ last_status: "" }) }),
+      report({
+        pin_id: "pin-4",
+        title: "Release notes",
+        // Claimed and in flight — the row shows its cadence and nothing else.
+        schedule: schedule({ last_status: "running" }),
+      }),
+    ]);
+    renderSection();
+    await screen.findByText("Release notes");
+    // Skipped (busy session), never-run and in-flight are not the reader's
+    // problem — only a finished failure is.
+    expect(screen.getAllByLabelText("Last scheduled refresh failed")).toHaveLength(1);
+    expect(screen.getAllByText("Daily 09:00")).toHaveLength(4);
+  });
+
+  it("renders no badge for a drifted or disabled schedule, keeping the row", async () => {
+    mockListReports.mockResolvedValue([
+      // A frequency this build doesn't know — enum drift downgrades.
+      report({ schedule: { ...schedule(), frequency: "hourly" as ReportSchedule["frequency"] } }),
+      report({
+        pin_id: "pin-2",
+        title: "QA health",
+        // Paused, and its last run failed: history, not a live warning.
+        schedule: schedule({ enabled: false, last_status: "failed" }),
+      }),
+      // Weekly with no day has no honest badge text.
+      report({
+        pin_id: "pin-3",
+        title: "Standup",
+        schedule: schedule({ frequency: "weekly", weekday: null }),
+      }),
+    ]);
+    renderSection();
+
+    expect(await screen.findByText("Sprint report")).toBeInTheDocument();
+    expect(screen.getByText("QA health")).toBeInTheDocument();
+    expect(screen.getByText("Standup")).toBeInTheDocument();
+    expect(screen.queryByText(/09:00/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Last scheduled refresh failed")).not.toBeInTheDocument();
   });
 });

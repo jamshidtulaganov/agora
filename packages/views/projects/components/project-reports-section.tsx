@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronRight } from "lucide-react";
 import { projectReportsOptions, reportOptions } from "@agora/core/reports";
 import { useWorkspaceId } from "@agora/core/hooks";
+import type { ReportSchedule } from "@agora/core/types";
 import { cn } from "@agora/ui/lib/utils";
 import {
   Dialog,
@@ -12,9 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@agora/ui/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { ArtifactBody } from "../../assistant/components/artifact-body";
 import { artifactKindIcon } from "../../assistant/components/artifact-card";
-import { useT, useTimeAgo } from "../../i18n";
+import { useT, useTimeAgo, useWeekdayNames } from "../../i18n";
 
 /**
  * Reports pinned to this project (docs/assistant-domain-plan.md Phase 2a).
@@ -32,6 +34,7 @@ export function ProjectReportsSection({ projectId }: { projectId: string }) {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
   const timeAgo = useTimeAgo();
+  const cadenceLabel = useCadenceLabel();
   const [open, setOpen] = useState(true);
   const [openPinId, setOpenPinId] = useState<string | null>(null);
 
@@ -68,6 +71,13 @@ export function ProjectReportsSection({ projectId }: { projectId: string }) {
           {reports.map((report) => {
             const Icon = artifactKindIcon(report.kind);
             const title = report.title.trim() || t(($) => $.reports.untitled);
+            const cadence = cadenceLabel(report.schedule);
+            // Only a failed run on a live schedule is worth a pixel:
+            // "skipped" (the owner's session was busy) and an unknown future
+            // status are not something a reader of the report can act on, and
+            // a paused schedule's old failure is history, not a warning.
+            const failed =
+              report.schedule?.last_status === "failed" && report.schedule.enabled !== false;
             return (
               <button
                 key={report.pin_id}
@@ -78,7 +88,31 @@ export function ProjectReportsSection({ projectId }: { projectId: string }) {
               >
                 <Icon className="size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium">{title}</div>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-xs font-medium">{title}</span>
+                    {cadence && (
+                      <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        {cadence}
+                      </span>
+                    )}
+                    {failed && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span
+                              className="inline-flex shrink-0 items-center text-destructive"
+                              aria-label={t(($) => $.reports.schedule.failed)}
+                            />
+                          }
+                        >
+                          <AlertCircle className="size-3" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {t(($) => $.reports.schedule.failed)}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                   <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                     {t(($) => $.reports.meta, {
                       version: report.version,
@@ -151,4 +185,39 @@ function ReportViewer({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Cadence badge text for a pinned report's schedule (Phase 2b) — "Daily
+ * 09:00", "Weekdays 09:00", "Mon 09:00".
+ *
+ * Returns null for every shape that has no honest rendering: no schedule at
+ * all (the common case, and every pre-2b backend), a disabled one, a missing
+ * time, a weekly schedule with no day, or a frequency this build doesn't know.
+ * The badge is quiet decoration; a report row never depends on it.
+ */
+function useCadenceLabel(): (schedule: ReportSchedule | null | undefined) => string | null {
+  const { t } = useT("projects");
+  const dayNames = useWeekdayNames("short");
+
+  return (schedule) => {
+    if (!schedule || schedule.enabled === false) return null;
+    const time = schedule.time;
+    if (!time) return null;
+    switch (schedule.frequency) {
+      case "daily":
+        return t(($) => $.reports.schedule.daily, { time });
+      case "weekdays":
+        return t(($) => $.reports.schedule.weekdays, { time });
+      case "weekly": {
+        const day = typeof schedule.weekday === "number" ? dayNames[schedule.weekday] : undefined;
+        if (!day) return null;
+        return t(($) => $.reports.schedule.weekly, { day, time });
+      }
+      default:
+        // Enum drift downgrades: a preset added server-side renders no badge
+        // rather than an invented sentence or a crash.
+        return null;
+    }
+  };
 }

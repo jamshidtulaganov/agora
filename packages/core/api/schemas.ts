@@ -43,6 +43,7 @@ import type {
   PinnedReport,
   PinnedReportSummary,
   ReportPin,
+  ReportSchedule,
   AssistantOperation,
   AssistantOperationDecision,
 } from "../types";
@@ -2340,6 +2341,36 @@ const ReportActorSchema = z
   .catch({ id: "", name: "" })
   .default({ id: "", name: "" });
 
+// Scheduled refresh (Phase 2b). A schedule is DECORATION on a report row —
+// the cadence badge and a failed-run dot — so every failure mode here has to
+// resolve to "no badge" while the ROW still parses. A schedule shape must
+// never take down the reports list.
+//
+// `frequency` is the one field with no honest generic rendering ("every ???
+// at 09:00"), so an unknown value fails this object and the `.catch(null)` on
+// the row's field drops the schedule — the report itself is untouched. Every
+// other field degrades in place: an unreadable `last_status` downgrades to
+// "" (no indicator) rather than inventing a failure the user can't act on.
+export const ReportScheduleSchema = z
+  .object({
+    frequency: z.enum(["daily", "weekdays", "weekly"]),
+    time: z.string().catch(""),
+    weekday: z.number().int().nullable().catch(null).default(null),
+    timezone: z.string().catch(""),
+    enabled: z.boolean().catch(true),
+    last_run_at: z.string().nullable().catch(null).default(null),
+    // "running" is written at claim time, before the run is accepted — a real
+    // value on the wire, so it parses rather than degrading to "".
+    last_status: z.enum(["ok", "failed", "skipped", "running", ""]).catch(""),
+    next_run_at: z.string().nullable().catch(null).default(null),
+  })
+  .loose();
+
+// How a schedule rides on a row. `.optional()` first so an older backend that
+// omits the key parses untouched (undefined, no badge); `.catch(null)` last so
+// a present-but-drifted schedule lands on null instead of failing the row.
+const ReportScheduleField = ReportScheduleSchema.nullable().optional().catch(null);
+
 // `pin_id` / `artifact_id` / `kind` stay strict-ish (a `.default("")` that the
 // caller filters on) because they address the row; everything else is
 // cosmetic and `.catch()`es so one drifted field can't hide a readable report.
@@ -2353,6 +2384,7 @@ const PinnedReportSummaryShape = {
   created_at: z.string().catch(""),
   pinned_by: ReportActorSchema,
   owner: ReportActorSchema,
+  schedule: ReportScheduleField,
 };
 
 export const PinnedReportSummarySchema = z.object(PinnedReportSummaryShape).loose();
@@ -2409,4 +2441,18 @@ export const EMPTY_REPORT_PIN: ReportPin = {
   artifact_id: "",
   project_id: "",
   created_at: "",
+};
+
+// PUT .../pins/{pinId}/schedule answers `{schedule}`. The envelope is what the
+// contract promises, but the mutation invalidates the reports queries either
+// way, so an unreadable body costs nothing beyond this return value — hence a
+// plain null fallback rather than a synthetic schedule.
+export const ReportScheduleResponseSchema = z
+  .object({
+    schedule: ReportScheduleField,
+  })
+  .loose();
+
+export const EMPTY_REPORT_SCHEDULE_RESPONSE: { schedule: ReportSchedule | null } = {
+  schedule: null,
 };
