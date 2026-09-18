@@ -8,6 +8,10 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/llm"
 )
@@ -157,6 +161,16 @@ const (
 	// aggregate numbers from every workspace the user belongs to.
 	ToolCreateArtifact = "create_artifact"
 	ToolUpdateArtifact = "update_artifact"
+
+	// Plans — several related writes proposed as ONE thing to authorize.
+	// Everyday management work (planning a sprint, triaging an inbox, moving a
+	// dozen stale issues back to todo) is N writes, and the product's "one
+	// request, one write" rule makes the assistant safer than clicking but
+	// slower than it. A plan keeps the safety and removes the slowness: the
+	// model proposes the whole ordered list, the human reads it as one card,
+	// unchecks what they do not want, and presses Confirm once. See
+	// PlanAllowedTools for what may ride in one.
+	ToolProposePlan = "propose_plan"
 )
 
 // MutatingTools is the set of tools that write. Kept explicit so the run loop
@@ -210,6 +224,12 @@ var MutatingTools = map[string]bool{
 	ToolUpdateMySettings:              true,
 	ToolUpdateSidebar:                 true,
 	ToolUpdateNotificationPreferences: true,
+	// A plan mutates NOTHING when it is called — it persists a proposal and
+	// waits for a click, exactly as a destructive tool does. It counts as a
+	// write here for the same reason those do: the run loop files an execution
+	// receipt for every mutating call, and a proposal that later moves a dozen
+	// issues must be in that record from the moment it was made.
+	ToolProposePlan: true,
 }
 
 // IsMutating reports whether a tool writes.
@@ -252,6 +272,153 @@ var DestructiveTools = map[string]bool{
 // RequiresConfirmation reports whether a tool must be bound to a human
 // confirmation before it may execute.
 func RequiresConfirmation(name string) bool { return DestructiveTools[name] }
+
+// ---------------------------------------------------------------------------
+// Plans
+// ---------------------------------------------------------------------------
+
+// MaxPlanItems is the hard cap on one plan.
+//
+// It is a READABILITY limit before it is a safety limit: the card is a list a
+// person has to read before pressing one button, and nobody audits forty rows.
+// A bigger job is proposed in slices, which also gives the user a place to stop.
+const MaxPlanItems = 25
+
+// MaxPlanTitleLength bounds the plan's headline — it is the summary of the
+// pending row and the heading of the card, not a description.
+const MaxPlanTitleLength = 200
+
+// PlanAllowedTools is what may ride inside a plan, and it is deliberately a
+// SHORTER list than the catalog.
+//
+// One confirmation authorizing N calls is a weaker gesture than N
+// confirmations: the user reads a list, not a sentence, and the failure mode of
+// a list is skimming it. So a plan may only carry the everyday, recoverable
+// work — issue / label / sprint / project writes and the inbox read flag. What
+// is NOT here is as much of the design as what is:
+//
+//   - no deletes (they are DestructiveTools and each one owes the user its own
+//     card, naming the one thing it destroys),
+//   - no member, workspace, agent, skill, automation or autopilot writes —
+//     access changes and standing machinery are not bulk work,
+//   - no settings, no artifacts.
+//
+// The list is enforced at PROPOSE time and re-checked at CONFIRM time, so an
+// allowlist that shrinks between the two invalidates the stale items rather
+// than executing them.
+var PlanAllowedTools = map[string]bool{
+	ToolCreateIssue:       true,
+	ToolUpdateIssue:       true,
+	ToolArchiveIssue:      true,
+	ToolAddIssueLabel:     true,
+	ToolRemoveIssueLabel:  true,
+	ToolCommentIssue:      true,
+	ToolMoveIssueToSprint: true,
+	ToolCreateLabel:       true,
+	ToolCreateSprint:      true,
+	ToolCreateProject:     true,
+	ToolUpdateProject:     true,
+	ToolSubscribeIssue:    true,
+	ToolMarkInboxRead:     true,
+	ToolResolveComment:    true,
+}
+
+// PlanAllows reports whether a tool may appear as a plan item.
+func PlanAllows(name string) bool { return PlanAllowedTools[name] }
+
+// IsCatalogTool reports whether a name is a tool the executor can actually run.
+//
+// The allowlist alone is not enough: it is a hand-written map, and a plan item
+// naming a tool that is in it but no longer in the catalog would pass propose
+// and fail at execution, after the user had authorized it.
+func IsCatalogTool(name string) bool {
+	for _, spec := range ToolSpecs() {
+		if spec.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// PlanItem is one call inside a plan: the tool, the arguments it would run
+// with, and the line the human reads before authorizing the whole list.
+type PlanItem struct {
+	Tool      string          `json:"tool"`
+	Arguments json.RawMessage `json:"arguments"`
+	Summary   string          `json:"summary"`
+}
+
+// Plan is a propose_plan argument blob after validation. It is what gets
+// persisted as the pending operation's arguments, so the confirmed execution
+// replays THESE items and never anything said afterwards.
+type Plan struct {
+	Title string     `json:"title"`
+	Items []PlanItem `json:"items"`
+}
+
+// ParsePlan validates a propose_plan argument blob.
+//
+// Every failure here is returned to the MODEL as a tool error, which is the
+// correction it needs: a plan that names a tool plans may not carry is a plan
+// the model can rewrite, and telling it exactly which item and which tool is
+// what makes the retry cheap.
+func ParsePlan(raw json.RawMessage) (Plan, error) {
+	var plan Plan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		return Plan{}, errors.New("could not read the plan as JSON: " + err.Error())
+	}
+	plan.Title = strings.TrimSpace(plan.Title)
+	if plan.Title == "" {
+		return Plan{}, errors.New("a plan needs a title — one line naming what the whole plan does")
+	}
+	if len(plan.Title) > MaxPlanTitleLength {
+		return Plan{}, fmt.Errorf("the plan title is %d characters; keep it under %d", len(plan.Title), MaxPlanTitleLength)
+	}
+	if len(plan.Items) == 0 {
+		return Plan{}, errors.New("a plan needs at least one item")
+	}
+	if len(plan.Items) > MaxPlanItems {
+		return Plan{}, fmt.Errorf("a plan carries at most %d items; this one has %d — propose the first %d and say what is left",
+			MaxPlanItems, len(plan.Items), MaxPlanItems)
+	}
+	for i := range plan.Items {
+		item := &plan.Items[i]
+		item.Tool = strings.TrimSpace(item.Tool)
+		item.Summary = strings.TrimSpace(item.Summary)
+		if item.Tool == "" {
+			return Plan{}, fmt.Errorf("item %d names no tool", i)
+		}
+		if !PlanAllows(item.Tool) {
+			return Plan{}, fmt.Errorf("item %d uses %s, which cannot go in a plan — plans carry only %s. Ask for that one on its own",
+				i, item.Tool, strings.Join(PlanAllowedToolNames(), ", "))
+		}
+		if !IsCatalogTool(item.Tool) {
+			return Plan{}, fmt.Errorf("item %d uses %s, which is not a tool", i, item.Tool)
+		}
+		if item.Summary == "" {
+			return Plan{}, fmt.Errorf("item %d has no summary — that line is what the user reads before authorizing it", i)
+		}
+		// A JSON OBJECT, not a string of JSON and not a list: the arguments are
+		// replayed verbatim into the executor, which decodes them exactly as it
+		// decodes a direct call's.
+		var args map[string]json.RawMessage
+		if len(item.Arguments) == 0 || json.Unmarshal(item.Arguments, &args) != nil {
+			return Plan{}, fmt.Errorf("item %d must carry an arguments object for %s", i, item.Tool)
+		}
+	}
+	return plan, nil
+}
+
+// PlanAllowedToolNames is the allowlist in a stable order, for the messages
+// and the system prompt.
+func PlanAllowedToolNames() []string {
+	names := make([]string, 0, len(PlanAllowedTools))
+	for name := range PlanAllowedTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // Tool-result statuses in the confirmation/receipt wire contract
 // (docs/agora-assistant-final-plan.md, "Pinned wire contract"). They are
@@ -1580,6 +1747,58 @@ func ToolSpecs() []llm.Tool {
     }
   },
   "required": ["artifact_id", "content"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolProposePlan,
+			Description: "Propose SEVERAL related writes as ONE thing the user authorizes. Use it whenever a " +
+				"request implies more than one write — planning a sprint, moving a set of issues, triaging an " +
+				"inbox, setting a project up: do the reads first, then send ONE plan instead of a chain of " +
+				"single calls. Calling this changes NOTHING: it returns a confirmation card listing the items, " +
+				"the user unchecks any they do not want and presses Confirm once, and only then do the items " +
+				"run, in order, stopping at the first failure. " +
+				"Each item's summary is the line the human reads before authorizing it, so name the real target " +
+				"— the identifier and title you got from a read, never a placeholder. " +
+				"Only these tools may go in a plan: " + strings.Join(PlanAllowedToolNames(), ", ") + ". " +
+				"Anything else (deletes, members, workspaces, agents, automations, settings) is asked for on " +
+				"its own. At most " + fmt.Sprint(MaxPlanItems) + " items — for a bigger job, propose the first " +
+				"slice and say what is left.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "One line naming what the whole plan does, e.g. \"Plan sprint 12: 6 issues from the backlog\"."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 25,
+      "description": "The calls to run, in the order they should run.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "Name of an allowlisted tool, e.g. update_issue."
+          },
+          "arguments": {
+            "type": "object",
+            "description": "The exact arguments that tool would be called with, as an object — the same shape as calling it directly."
+          },
+          "summary": {
+            "type": "string",
+            "description": "The human-readable line for this row, naming the real target, e.g. \"Move MUL-142 “Login loops” back to todo\"."
+          }
+        },
+        "required": ["tool", "arguments", "summary"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["title", "items"],
   "additionalProperties": false
 }`),
 		},

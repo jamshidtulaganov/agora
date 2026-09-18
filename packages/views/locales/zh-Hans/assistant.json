@@ -95,6 +95,21 @@
       "release_notes": {
         "label": "发布说明",
         "description": "上线了什么，用人话讲清楚"
+      },
+      "plan_sprint": {
+        "label": "规划 Sprint",
+        "description": "从 backlog 里挑出下个 Sprint",
+        "prompt": "从 backlog 规划下一个 Sprint，并作为一个计划提给我"
+      },
+      "triage_inbox": {
+        "label": "整理收件箱",
+        "description": "收件箱里每一条该怎么处理",
+        "prompt": "帮我整理收件箱，每一条都提一下怎么处理"
+      },
+      "new_agent": {
+        "label": "新建智能体",
+        "description": "一问一答，帮你配好一个智能体",
+        "prompt": "帮我配置一个新的智能体"
       }
     },
     "scope_workspace": "发送至{{workspace}}",
@@ -131,6 +146,18 @@
     "uncertain": "结果不确定。重试前请检查受影响的内容。",
     "unavailable": "无法核实这个操作。请重新打开对话。",
     "toast_changed": "这个操作已经变了，重新问一次。"
+  },
+  "plan": {
+    "fallback_title": "确认这个计划",
+    "selected_count": "已选 {{selected}} / {{total}}",
+    "stopped_note": "失败后已停止，剩下的步骤没有执行。",
+    "tool_fallback": "操作",
+    "outcome": {
+      "ok": "已完成",
+      "failed": "失败",
+      "skipped": "已跳过",
+      "not_run": "未执行"
+    }
   },
   "receipt": {
     "effects_toggle": "看看还改了什么",

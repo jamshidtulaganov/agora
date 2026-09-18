@@ -95,6 +95,21 @@
       "release_notes": {
         "label": "Reliz eslatmalari",
         "description": "Nima chiqdi — odam tilida"
+      },
+      "plan_sprint": {
+        "label": "Sprintni rejalash",
+        "description": "Backlogdan keyingi sprintni taklif qilish",
+        "prompt": "Backlogdan keyingi sprintni rejalashtir va uni bitta reja qilib taklif qil."
+      },
+      "triage_inbox": {
+        "label": "Kiruvchilarni saralash",
+        "description": "Kiruvchilardagi har bir element bilan nima qilish kerak",
+        "prompt": "Kiruvchilarimni sarala va har bir element bilan nima qilishni taklif qil."
+      },
+      "new_agent": {
+        "label": "Yangi agent",
+        "description": "Agentni bosqichma-bosqich sozlash",
+        "prompt": "Yangi agent sozlashga yordam ber."
       }
     },
     "scope_workspace": "{{workspace}}ga yuboriladi",
@@ -131,6 +146,18 @@
     "uncertain": "Natija aniq emas. Qayta urinishdan oldin ta’sirlangan elementni tekshiring.",
     "unavailable": "Amal holatini tekshirib bo‘lmadi. Suhbatni qayta oching.",
     "toast_changed": "Bu amal o‘zgardi — qaytadan so‘rang."
+  },
+  "plan": {
+    "fallback_title": "Bu rejani tasdiqlang",
+    "selected_count": "{{total}} tadan {{selected}} tasi tanlandi",
+    "stopped_note": "Xatolikdan keyin to‘xtadi — qolgan qadamlar bajarilmadi.",
+    "tool_fallback": "amal",
+    "outcome": {
+      "ok": "Bajarildi",
+      "failed": "Xatolik",
+      "skipped": "O‘tkazib yuborildi",
+      "not_run": "Bajarilmadi"
+    }
   },
   "receipt": {
     "effects_toggle": "Yana nima o‘zgarganini ko‘rsatish",

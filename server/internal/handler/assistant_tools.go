@@ -271,6 +271,13 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 	case assistant.ToolUpdateArtifact:
 		return h.assistantUpdateArtifact(ctx, caller, sessionID, args)
 
+	// --- plans ------------------------------------------------------------
+	// Several related writes proposed as ONE thing to authorize. Like the
+	// deletes above it parks a pending operation and mutates nothing; unlike
+	// them, what the confirm click replays is a LIST. See assistant_plans.go.
+	case assistant.ToolProposePlan:
+		return h.assistantProposePlan(ctx, caller, args)
+
 	default:
 		// Hard allowlist: an unknown name is either model hallucination or a
 		// stale catalog. Both are the model's problem to correct, not ours.

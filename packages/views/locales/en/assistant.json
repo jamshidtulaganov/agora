@@ -95,6 +95,21 @@
       "release_notes": {
         "label": "Release notes",
         "description": "What shipped, written for humans"
+      },
+      "plan_sprint": {
+        "label": "Plan sprint",
+        "description": "Propose the next sprint from the backlog",
+        "prompt": "Plan the next sprint from the backlog and propose it as a plan."
+      },
+      "triage_inbox": {
+        "label": "Triage inbox",
+        "description": "Decide what to do with every inbox item",
+        "prompt": "Triage my inbox and propose what to do with each item."
+      },
+      "new_agent": {
+        "label": "New agent",
+        "description": "Set up an agent, one question at a time",
+        "prompt": "Help me set up a new agent."
       }
     },
     "scope_workspace": "Sending to {{workspace}}",
@@ -131,6 +146,18 @@
     "uncertain": "The outcome is unclear. Check the affected item before trying again.",
     "unavailable": "Could not check this action. Reopen the conversation to try again.",
     "toast_changed": "This action changed — ask again."
+  },
+  "plan": {
+    "fallback_title": "Confirm this plan",
+    "selected_count": "{{selected}} of {{total}} selected",
+    "stopped_note": "Stopped after a failure — the remaining steps didn't run.",
+    "tool_fallback": "action",
+    "outcome": {
+      "ok": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "not_run": "Not run"
+    }
   },
   "receipt": {
     "effects_toggle": "Show what else changed",

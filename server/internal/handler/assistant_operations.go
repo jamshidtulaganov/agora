@@ -96,16 +96,23 @@ type assistantOperationTarget struct {
 
 // assistantOperationPayload is the `operation` object of the needs_confirmation
 // tool result, and the body of the confirm/reject/read endpoints.
+//
+// Kind and Items are the PLAN extension (see assistant_plans.go) and are
+// present only on a plan operation: a single operation's payload is byte-for-
+// byte what it always was, so nothing built against it has to learn about
+// plans to keep working.
 type assistantOperationPayload struct {
-	ID            string                   `json:"id"`
-	ToolName      string                   `json:"tool_name"`
-	Summary       string                   `json:"summary"`
-	WorkspaceSlug string                   `json:"workspace_slug"`
-	Target        assistantOperationTarget `json:"target"`
-	Status        string                   `json:"status,omitempty"`
-	Outcome       *string                  `json:"outcome,omitempty"`
-	CreatedAt     string                   `json:"created_at,omitempty"`
-	ExpiresAt     string                   `json:"expires_at,omitempty"`
+	ID            string                     `json:"id"`
+	ToolName      string                     `json:"tool_name"`
+	Summary       string                     `json:"summary"`
+	WorkspaceSlug string                     `json:"workspace_slug"`
+	Target        assistantOperationTarget   `json:"target"`
+	Kind          string                     `json:"kind,omitempty"`
+	Items         []assistantPlanItemPayload `json:"items,omitempty"`
+	Status        string                     `json:"status,omitempty"`
+	Outcome       *string                    `json:"outcome,omitempty"`
+	CreatedAt     string                     `json:"created_at,omitempty"`
+	ExpiresAt     string                     `json:"expires_at,omitempty"`
 }
 
 // assistantOperationPlan is what a destructive tool hands the seam once it has
@@ -285,6 +292,17 @@ func assistantTargetLabel(t assistantOperationTarget) string {
 // reported as uncertain. Past that, the only honest answer is "inspect it".
 const assistantOperationOutcomeTTL = assistant.ToolCallTimeout + 45*time.Second
 
+// assistantOperationOutcomeWindow is the same ceiling, widened for a PLAN: a
+// plan is a sequence of up to MaxPlanItems tool calls, so the single-call
+// budget above would report a plan that is merely still running as uncertain —
+// a lie in the other direction.
+func assistantOperationOutcomeWindow(op db.AssistantPendingOperation) time.Duration {
+	if op.ToolName == assistant.ToolProposePlan {
+		return assistantPlanTotalTimeout + 45*time.Second
+	}
+	return assistantOperationOutcomeTTL
+}
+
 // assistantOperationDisplayStatus is the status a READER is entitled to, which
 // is not always the one in the status column.
 //
@@ -314,7 +332,7 @@ func assistantOperationDisplayStatus(op db.AssistantPendingOperation, now time.T
 		}
 		return op.Status
 	}
-	if op.ExecutingAt.Valid && now.Sub(op.ExecutingAt.Time) > assistantOperationOutcomeTTL {
+	if op.ExecutingAt.Valid && now.Sub(op.ExecutingAt.Time) > assistantOperationOutcomeWindow(op) {
 		return "uncertain"
 	}
 	return op.Status
@@ -336,6 +354,12 @@ func assistantOperationPayloadFor(op db.AssistantPendingOperation, workspaceSlug
 	// A target that no longer parses renders as an empty one rather than
 	// failing the read: the summary still says what the operation was.
 	_ = json.Unmarshal(op.Target, &payload.Target)
+	// A plan carries its rows, so a transcript reloaded hours later renders the
+	// same checklist the user was looking at when they walked away.
+	if op.ToolName == assistant.ToolProposePlan {
+		payload.Kind = assistantPlanKind
+		payload.Items = assistantPlanCardItems(op)
+	}
 	return payload
 }
 
@@ -455,9 +479,15 @@ func (h *Handler) ListAssistantSessionOperations(w http.ResponseWriter, r *http.
 
 // AssistantOperationResponse is what confirm answers with: the operation in its
 // new state plus the receipt message that landed on the transcript.
+//
+// Status and Items are the PLAN half of the contract — the per-row outcomes, in
+// the order they were proposed. They are absent for a single operation, whose
+// answer is unchanged.
 type AssistantOperationResponse struct {
 	Operation assistantOperationPayload `json:"operation"`
 	Message   AssistantMessageResponse  `json:"message"`
+	Status    string                    `json:"status,omitempty"`
+	Items     []assistantPlanItemResult `json:"items,omitempty"`
 }
 
 // ConfirmAssistantOperation is the human authorization, and the only path that
@@ -484,6 +514,22 @@ func (h *Handler) ConfirmAssistantOperation(w http.ResponseWriter, r *http.Reque
 		// answer says so instead of a flat "already confirmed" — the user has
 		// to be told to inspect, not told it is done.
 		writeError(w, http.StatusConflict, assistantOperationStateMessage(assistantOperationDisplayStatus(op, time.Now())))
+		return
+	}
+
+	// STEP 0 — the OPTIONAL body, read before the claim so a request the server
+	// cannot make sense of never spends the authorization. An absent or empty
+	// body is what every existing client sends and means "run everything".
+	body, ok := assistantConfirmBody(w, r)
+	if !ok {
+		return
+	}
+	if op.ToolName == assistant.ToolProposePlan {
+		h.confirmAssistantPlan(w, r, userID, op, body)
+		return
+	}
+	if len(body.SkippedItems) > 0 {
+		writeError(w, http.StatusBadRequest, "skipped_items applies to a plan; this operation is a single action")
 		return
 	}
 

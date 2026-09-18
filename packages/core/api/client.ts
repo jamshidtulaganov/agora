@@ -2479,10 +2479,23 @@ export class ApiClient {
    * runtime that predates confirmation binding is still deployed — the card
    * degrades to a toast in both cases rather than crashing the transcript.
    */
-  async confirmAssistantOperation(operationId: string): Promise<AssistantOperationDecision> {
+  async confirmAssistantOperation(
+    operationId: string,
+    /**
+     * 0-based rows the user unchecked on a plan card. The body is sent ONLY
+     * when something is actually skipped — an empty or omitted list produces
+     * byte-for-byte the bodiless POST single-operation confirms have always
+     * sent, so a runtime that predates plans sees no change at all.
+     */
+    skippedItems?: readonly number[],
+  ): Promise<AssistantOperationDecision> {
+    const skipped = (skippedItems ?? []).filter((index) => Number.isInteger(index) && index >= 0);
     const raw = await this.fetch<unknown>(
       `/api/assistant/operations/${operationId}/confirm`,
-      { method: "POST" },
+      {
+        method: "POST",
+        ...(skipped.length > 0 ? { body: JSON.stringify({ skipped_items: skipped }) } : {}),
+      },
     );
     return this.assistantOperationDecision(raw, "POST /api/assistant/operations/{id}/confirm");
   }
@@ -2517,13 +2530,19 @@ export class ApiClient {
     const parsed = parseWithFallback(
       raw,
       AssistantOperationDecisionSchema,
-      { operation: { id: "", status: "" }, message: { id: "" } },
+      { status: "", items: [], operation: { id: "", status: "" }, message: { id: "" } },
       { endpoint },
     );
     return {
-      status: parsed.operation.status,
+      // A plan confirm reports its status at the top level; a single confirm
+      // nests it under `operation`. Prefer the nested one so nothing about
+      // the existing shape changes.
+      status: parsed.operation.status || parsed.status,
       operation_id: parsed.operation.id,
       message_id: parsed.message.id,
+      // Omitted entirely when there are no per-item outcomes, which keeps the
+      // single-operation decision object exactly the shape it has always had.
+      ...(parsed.items.length > 0 ? { items: parsed.items } : {}),
     };
   }
 

@@ -117,15 +117,25 @@ export function ConfirmCard({ sessionId, request, outcome }: ConfirmCardProps) {
   );
 }
 
-function ConfirmFooter({
+/**
+ * The state-dependent footer of a confirmation: two buttons while pending,
+ * one status line once settled. Shared with the PLAN card (plan-card.tsx) so
+ * both cards speak with exactly the same words and the same button
+ * semantics — a plan is a confirmation with rows, not a second dialect.
+ */
+export function ConfirmFooter({
   state,
   isBusy,
+  confirmDisabled,
   onConfirm,
   onReject,
   onCheck,
 }: {
   state: OperationOutcome | null;
   isBusy: boolean;
+  /** Blocks Confirm only (Cancel stays live) — the plan card uses it when the
+   *  user has unchecked every row, where confirming would do nothing. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onReject: () => void;
   onCheck: () => void;
@@ -179,7 +189,7 @@ function ConfirmFooter({
 
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" onClick={onConfirm} disabled={isBusy}>
+      <Button size="sm" onClick={onConfirm} disabled={isBusy || confirmDisabled === true}>
         {t(($) => $.confirm.confirm)}
       </Button>
       <Button size="sm" variant="ghost" onClick={onReject} disabled={isBusy}>

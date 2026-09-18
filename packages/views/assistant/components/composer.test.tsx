@@ -40,7 +40,7 @@ describe("Composer slash menu — opening", () => {
     await openMenu();
 
     expect(screen.getByRole("listbox")).toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(10);
+    expect(screen.getAllByRole("option")).toHaveLength(13);
   });
 
   it('does NOT open for a "/" typed mid-sentence', async () => {
@@ -165,6 +165,23 @@ describe("Composer slash menu — picking", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith("What did everyone do since yesterday?");
+  });
+
+  it("sends a management recipe's own prompt, which has no launcher row", async () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    const { user } = await openMenu();
+
+    // "/plan-sprint" and "/project" share a first letter; the full word
+    // resolves to exactly one.
+    await user.keyboard("plan");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+
+    await user.keyboard("{Enter}");
+
+    expect(onSend).toHaveBeenCalledWith(
+      "Plan the next sprint from the backlog and propose it as a plan.",
+    );
   });
 
   it("picks with the mouse without stealing focus from the textarea", async () => {

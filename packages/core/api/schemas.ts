@@ -2169,6 +2169,37 @@ export const EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE: SendAssistantMessageResponse
   created_at: "",
 };
 
+// Plan operations — docs/assistant-domain-plan.md, "3a wire contract". A plan
+// is ONE operation whose rows live in `items`; `kind`/`items` are absent on
+// every single-call operation (and on every response an older runtime sends),
+// so absence means "single op" and the ConfirmCard keeps rendering.
+//
+// One schema covers both stages of a row: the proposal (`{index, tool,
+// summary}`) and the execution result (`{index, outcome, identifier?,
+// error?}`). Every field is defaulted, so a row that dropped half its fields
+// still parses into something renderable instead of failing the whole plan.
+//
+// `outcome` is a lenient string, never z.enum: an outcome this build doesn't
+// know must degrade to a neutral row (enum-drift rule), not throw.
+export const AssistantPlanItemSchema = z
+  .object({
+    index: z.number().catch(-1).default(-1),
+    tool: z.string().catch("").default(""),
+    summary: z.string().catch("").default(""),
+    outcome: z.string().catch("").default(""),
+    identifier: z.string().catch("").default(""),
+    error: z.string().catch("").default(""),
+  })
+  .loose();
+
+// `.catch([])` on the array itself: a null / object / string where a list was
+// promised yields an EMPTY plan rather than a broken checklist — the card then
+// falls back to the single-operation rendering.
+export const AssistantPlanItemListSchema = z
+  .array(AssistantPlanItemSchema)
+  .catch([])
+  .default([]);
+
 // Confirmation binding — POST /api/assistant/operations/{id}/confirm|reject.
 export const AssistantOperationSchema = z.object({
   id: z.string().min(1),
@@ -2184,6 +2215,8 @@ export const AssistantOperationSchema = z.object({
   outcome: z.string().nullable().catch(null).optional(),
   created_at: z.string().optional(),
   expires_at: z.string().optional(),
+  kind: z.string().catch("").default(""),
+  items: AssistantPlanItemListSchema,
 }).loose();
 
 export const EMPTY_ASSISTANT_OPERATION: AssistantOperation = {
@@ -2204,6 +2237,12 @@ export const EMPTY_ASSISTANT_OPERATION_LIST: AssistantOperation[] = [];
 // transcript" rather than surface as an error on a click that already ran.
 export const AssistantOperationDecisionSchema = z
   .object({
+    // A PLAN confirm answers `{status, items:[…]}` — a flat status beside the
+    // nested `{operation, message}` a single confirm returns. Both shapes are
+    // optional here so either one parses, and a plan's per-item outcomes are
+    // still only ADVISORY: the stored receipt is what survives a reload.
+    status: z.string().catch("").default(""),
+    items: AssistantPlanItemListSchema,
     operation: z
       .object({
         id: z.string().catch("").default(""),

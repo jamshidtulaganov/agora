@@ -65,6 +65,8 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		ToolUsageSummary, ToolActivityDigest, ToolInboxSummary, ToolQAStatus,
 		// Artifacts — session-scoped, not workspace-scoped.
 		ToolCreateArtifact, ToolUpdateArtifact,
+		// Plans — one confirmation for several related writes.
+		ToolProposePlan,
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("catalog = %v, want %v", got, want)
@@ -313,6 +315,10 @@ func TestMutatingToolsMatchTheCatalog(t *testing.T) {
 		ToolUpdateMySettings:              true,
 		ToolUpdateSidebar:                 true,
 		ToolUpdateNotificationPreferences: true,
+		// A plan writes nothing when it is called — it persists a proposal —
+		// but the run loop owes it an execution receipt for exactly the same
+		// reason it owes one to a parked delete.
+		ToolProposePlan: true,
 	}
 	for _, spec := range ToolSpecs() {
 		if IsMutating(spec.Name) != writes[spec.Name] {
@@ -321,6 +327,81 @@ func TestMutatingToolsMatchTheCatalog(t *testing.T) {
 	}
 	if IsMutating("no_such_tool") {
 		t.Fatal("an unknown tool must not report as mutating")
+	}
+}
+
+// The plan allowlist is a SAFETY boundary, not a convenience list.
+//
+// One confirmation authorizing N calls is a weaker gesture than N
+// confirmations — the user reads a list, and the failure mode of a list is
+// skimming it. So the boundary is pinned in both directions: every allowlisted
+// tool must be a real, non-destructive catalog tool, and the categories that
+// must never be batched must stay out. A tool quietly added to
+// PlanAllowedTools fails here rather than in production.
+func TestPlanAllowlistStaysNarrow(t *testing.T) {
+	for _, name := range PlanAllowedToolNames() {
+		if !IsCatalogTool(name) {
+			t.Fatalf("%q is allowlisted for plans but is not a tool", name)
+		}
+		if RequiresConfirmation(name) {
+			t.Fatalf("%q is destructive — it owes the user its own card, naming the one thing it destroys", name)
+		}
+		if !IsMutating(name) {
+			t.Fatalf("%q is a read; a plan is a list of WRITES to authorize", name)
+		}
+	}
+	for _, banned := range []string{
+		ToolDeleteIssue, ToolDeleteProject, ToolDeleteSprint, ToolDeleteLabel, ToolDeleteComment,
+		ToolInviteMember, ToolUpdateMemberRole, ToolRemoveMember,
+		ToolCreateWorkspace, ToolUpdateWorkspace, ToolLeaveWorkspace, ToolDeleteWorkspace,
+		ToolCreateAgent, ToolUpdateAgent, ToolAddSkill, ToolAttachSkillToAgent,
+		ToolCreateAutomation, ToolSetAutomationEnabled, ToolDeleteAutomation,
+		ToolCreateAutopilot, ToolUpdateAutopilot, ToolRunAutopilotNow,
+		ToolUpdateMySettings, ToolUpdateSidebar, ToolUpdateNotificationPreferences,
+		ToolCreateArtifact, ToolUpdateArtifact,
+		ToolProposePlan,
+	} {
+		if PlanAllows(banned) {
+			t.Fatalf("%q can be batched inside a plan — access changes, standing machinery and deletes are asked for on their own", banned)
+		}
+	}
+	// A plan of plans is the one recursion that would turn the cap into a
+	// suggestion.
+	if PlanAllows(ToolProposePlan) {
+		t.Fatal("a plan may contain a plan")
+	}
+}
+
+// ParsePlan is what the model's proposal has to survive. Each refusal below is
+// a correction it can act on, so the message matters as much as the rejection.
+func TestParsePlanRefusesWhatCannotBeAuthorized(t *testing.T) {
+	good := `{"tool":"update_issue","arguments":{"workspace_id":"w","ref":"X-1","status":"todo"},"summary":"Move X-1 to todo"}`
+	plan, err := ParsePlan([]byte(`{"title":"One change","items":[` + good + `]}`))
+	if err != nil {
+		t.Fatalf("a well-formed plan was refused: %v", err)
+	}
+	if plan.Title != "One change" || len(plan.Items) != 1 || plan.Items[0].Tool != ToolUpdateIssue {
+		t.Fatalf("parsed plan = %+v", plan)
+	}
+
+	big := make([]string, 0, MaxPlanItems+1)
+	for i := 0; i <= MaxPlanItems; i++ {
+		big = append(big, good)
+	}
+	for name, blob := range map[string]string{
+		"no title":            `{"title":"  ","items":[` + good + `]}`,
+		"no items":            `{"title":"Nothing","items":[]}`,
+		"over the cap":        `{"title":"Too much","items":[` + strings.Join(big, ",") + `]}`,
+		"unknown tool":        `{"title":"x","items":[{"tool":"no_such_tool","arguments":{},"summary":"s"}]}`,
+		"destructive tool":    `{"title":"x","items":[{"tool":"delete_issue","arguments":{},"summary":"s"}]}`,
+		"no summary":          `{"title":"x","items":[{"tool":"update_issue","arguments":{},"summary":""}]}`,
+		"arguments as string": `{"title":"x","items":[{"tool":"update_issue","arguments":"{}","summary":"s"}]}`,
+		"arguments as list":   `{"title":"x","items":[{"tool":"update_issue","arguments":[],"summary":"s"}]}`,
+		"not an object":       `"a string"`,
+	} {
+		if _, err := ParsePlan([]byte(blob)); err == nil {
+			t.Fatalf("ParsePlan accepted %s", name)
+		}
 	}
 }
 

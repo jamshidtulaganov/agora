@@ -87,6 +87,24 @@ export interface ConfirmationRequest {
   /** Workspace the operation runs in — shown so scope is never implicit. */
   workspaceSlug: string;
   target: OperationTarget | null;
+  /**
+   * "plan" for a batch operation (docs/assistant-domain-plan.md, "3a wire
+   * contract"). ABSENT — hence "" — on every single-call operation, including
+   * everything a runtime that predates plans sends, which is what makes the
+   * ConfirmCard the default rendering.
+   */
+  kind: string;
+  /** Plan rows. Empty for a single operation AND for a malformed list: the
+   *  caller then renders the single-op card instead of a broken checklist. */
+  items: PlanItem[];
+}
+
+/** One proposed row of a plan: what it will do, and with which tool. */
+export interface PlanItem {
+  /** 0-based position — the index `skipped_items` refers to. */
+  index: number;
+  tool: string;
+  summary: string;
 }
 
 /**
@@ -111,7 +129,83 @@ export function parseConfirmationRequest(result: unknown): ConfirmationRequest |
     summary: pick(operation, ["summary", "description"]),
     workspaceSlug: pick(operation, ["workspace_slug", "workspace"]),
     target: parseOperationTarget(operation.target),
+    kind: pick(operation, ["kind"]),
+    items: parsePlanItems(operation.items),
   };
+}
+
+// --- plan rows ----------------------------------------------------------
+
+/**
+ * Decode the proposal rows of a plan operation.
+ *
+ * Anything that is not a list of recognisable rows decodes to `[]` — a plan
+ * card with no rows is worse than the single-operation card, so the caller
+ * treats an empty list as "render the ConfirmCard". A row keeps its SERVER
+ * index (falling back to its position) because that index is what
+ * `skipped_items` names; a row with neither a summary nor a tool is dropped
+ * rather than rendered as an empty checkbox.
+ */
+export function parsePlanItems(value: unknown): PlanItem[] {
+  if (!Array.isArray(value)) return [];
+  const items: PlanItem[] = [];
+  value.forEach((entry, position) => {
+    const obj = asRecord(entry);
+    if (!obj) return;
+    const tool = pick(obj, ["tool", "tool_name"]);
+    const summary = pick(obj, ["summary", "description", "title"]);
+    if (!tool && !summary) return;
+    items.push({ index: intOr(obj.index, position), tool, summary });
+  });
+  return items;
+}
+
+/** Outcome of one executed plan row. Anything the server sends that this
+ *  build doesn't know becomes "unknown" and renders neutrally. */
+export type PlanItemOutcome = "ok" | "failed" | "skipped" | "not_run" | "unknown";
+
+export interface PlanItemResult {
+  index: number;
+  outcome: PlanItemOutcome;
+  /** Identifier the row produced or touched, e.g. `MUL-123`. May be empty. */
+  identifier: string;
+  error: string;
+}
+
+const KNOWN_OUTCOMES = new Set<PlanItemOutcome>(["ok", "failed", "skipped", "not_run"]);
+
+/**
+ * Decode the per-row execution outcomes of a confirmed plan (the confirm
+ * response body and, after a reload, the stored receipt — same shape).
+ *
+ * A row with no `outcome` at all is a PROPOSAL, not a result (the same
+ * `items` field carries both), so it is skipped: the card keeps that row
+ * pending instead of inventing a verdict for it. A row with an outcome this
+ * build doesn't recognise is kept as "unknown" — enum drift downgrades to a
+ * neutral glyph, it never crashes the receipt.
+ */
+export function parsePlanItemResults(value: unknown): PlanItemResult[] {
+  if (!Array.isArray(value)) return [];
+  const results: PlanItemResult[] = [];
+  value.forEach((entry, position) => {
+    const obj = asRecord(entry);
+    if (!obj) return;
+    const outcome = str(obj.outcome).toLowerCase();
+    if (!outcome) return;
+    results.push({
+      index: intOr(obj.index, position),
+      outcome: KNOWN_OUTCOMES.has(outcome as PlanItemOutcome) ? (outcome as PlanItemOutcome) : "unknown",
+      identifier: pick(obj, ["identifier", "key", "id"]),
+      error: pick(obj, ["error", "message", "detail"]),
+    });
+  });
+  return results;
+}
+
+/** A finite integer field, or the fallback when the server sent something
+ *  else (a string index, a float, nothing at all). */
+function intOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
 // --- receipts -----------------------------------------------------------
@@ -268,6 +362,46 @@ export function operationOutcomeAfter(
   index: number,
   operationId: string,
 ): OperationOutcome | null {
+  const result = outcomeRowAfter(messages, index, operationId);
+  if (!result) return null;
+  const status = str(result.status).toLowerCase();
+  if (REJECTED_STATUSES.has(status)) return "rejected";
+  if (EXPIRED_STATUSES.has(status)) return "expired";
+  if (status === "uncertain") return "uncertain";
+  if (status === "failed" || status === "error") return "failed";
+  if (asRecord(result.receipt)) return "confirmed";
+  return "processing";
+}
+
+/**
+ * Per-row outcomes of a confirmed PLAN, read from the very same later row
+ * `operationOutcomeAfter` uses. That is what makes a plan receipt survive a
+ * reload — and a confirmation clicked on another device — with no extra
+ * channel: the server persists the execution receipt as a normal tool
+ * message, and the card re-renders its per-row glyphs from it.
+ *
+ * Returns `[]` when nothing references the operation yet, and when the row
+ * references it but carries no recognisable items (the card then shows the
+ * settled state without glyphs, rather than a half-decoded checklist).
+ */
+export function planItemResultsAfter(
+  messages: AssistantMessage[],
+  index: number,
+  operationId: string,
+): PlanItemResult[] {
+  const result = outcomeRowAfter(messages, index, operationId);
+  if (!result) return [];
+  const receipt = asRecord(result.receipt);
+  const items = Array.isArray(result.items) ? result.items : receipt?.items;
+  return parsePlanItemResults(items);
+}
+
+/** The first LATER tool row that reports this operation's outcome, if any. */
+function outcomeRowAfter(
+  messages: AssistantMessage[],
+  index: number,
+  operationId: string,
+): Record<string, unknown> | null {
   if (!operationId) return null;
   for (let i = index + 1; i < messages.length; i++) {
     const message = messages[i];
@@ -282,14 +416,8 @@ export function operationOutcomeAfter(
     }
     // A repeat of the same pending card (a re-render of the tool row) is not
     // an outcome — it is the very thing being waited on.
-    const status = str(result.status).toLowerCase();
-    if (status === "needs_confirmation") continue;
-    if (REJECTED_STATUSES.has(status)) return "rejected";
-    if (EXPIRED_STATUSES.has(status)) return "expired";
-    if (status === "uncertain") return "uncertain";
-    if (status === "failed" || status === "error") return "failed";
-    if (asRecord(result.receipt)) return "confirmed";
-    return "processing";
+    if (str(result.status).toLowerCase() === "needs_confirmation") continue;
+    return result;
   }
   return null;
 }

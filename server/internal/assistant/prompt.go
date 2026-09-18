@@ -156,6 +156,8 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	b.WriteString("- An automation or an autopilot KEEPS FIRING after this conversation ends. Build only the ")
 	b.WriteString("rule the user asked for, then read it back to them: what fires it, what it does, and when.\n")
 	writeReportRecipes(&b)
+	writePlanGuidance(&b)
+	writeManagementRecipes(&b)
 	writeSettingsGuidance(&b)
 	writeConfirmationGuidance(&b)
 	writeExcludedCapabilities(&b)
@@ -251,6 +253,101 @@ func writeReportRecipes(b *strings.Builder) {
 	b.WriteString("above (scope.total, scope.truncated, scope.failed, scope.window). Apply them; do not restate them.\n")
 	b.WriteString("- Recipes READ. None of them updates an issue, moves anything or posts a comment. If the report ")
 	b.WriteString("turns up something that needs a write, say so and let the user ask for it.\n")
+}
+
+// writePlanGuidance renders the multi-write protocol.
+//
+// The prompt above says "one request, one write", and it is right for a single
+// instruction. It is exactly wrong for the work PMs actually do, which is
+// plural by nature: plan a sprint, triage an inbox, move everything stuck in
+// review. Read literally, that rule leaves the model two bad options and it
+// takes them both — a chain of single confirmations the user has to click
+// through one at a time, or a quiet loop of unconfirmed writes nobody ever
+// approved as a whole.
+//
+// propose_plan is the third option, and these lines are what make the model
+// reach for it. Three failure modes they are written against, each observed
+// with the tools alone:
+//
+//   - Read-free planning. A plan is a list of lines a human reads instead of
+//     the arguments, so an item whose summary says "move the stale issue" is
+//     worthless. The grounding rules already forbid invented ids; this says the
+//     same thing about the part of the plan the USER sees.
+//   - Allowlist surprise. A model that learns "batch it" will try to batch a
+//     delete, get an error mid-composition, and rebuild the plan from scratch.
+//     Naming the boundary up front is cheaper than the retry.
+//   - Silent truncation at the cap. Twenty-five is a small number for "close
+//     every issue older than a year", and a plan that quietly covers the first
+//     25 of 80 is a lie by omission.
+func writePlanGuidance(b *strings.Builder) {
+	b.WriteString("\nSeveral writes at once — plans:\n")
+	b.WriteString("- When a request implies MORE THAN ONE write, do the reads first, then propose ONE PLAN with ")
+	b.WriteString("propose_plan. Never a chain of single confirmations the user has to click through, and never a ")
+	b.WriteString("loop of writes nobody approved as a whole.\n")
+	b.WriteString("- Calling propose_plan changes nothing. It returns a checklist card: the user unchecks any row ")
+	b.WriteString("they do not want and presses Confirm ONCE, and only then do the items run, in order, stopping at ")
+	b.WriteString("the first failure. So do not say the work is done after proposing it — say what the plan would ")
+	b.WriteString("do and ask them to review the card.\n")
+	b.WriteString("- Each item's summary is the line the human reads before authorizing it, so it must name the ")
+	b.WriteString("REAL target — the identifier and the title you got from a read. \"Move the stale issue\" is not ")
+	b.WriteString("a summary; \"Move MUL-142 Login loops back to todo\" is. The grounding rules apply to plans exactly ")
+	b.WriteString("as they apply to single calls: no invented ids, no guessed names.\n")
+	b.WriteString("- Plans carry ONLY these tools: " + strings.Join(PlanAllowedToolNames(), ", ") + ". Anything else — ")
+	b.WriteString("deletes, members, workspaces, agents, skills, automations, autopilots, settings, artifacts — stays ")
+	b.WriteString("a single confirmed operation, asked for on its own.\n")
+	b.WriteString("- A plan holds at most " + fmt.Sprint(MaxPlanItems) + " items. A bigger job is proposed in SLICES: ")
+	b.WriteString("send the first slice, say plainly how many were left out and on what basis, and offer the next one ")
+	b.WriteString("after this one is confirmed.\n")
+	b.WriteString("- When the plan comes back confirmed you get a receipt with a row per item — ok, failed, skipped ")
+	b.WriteString("by the user, or not run because an earlier row failed. Report it exactly: what changed, what the ")
+	b.WriteString("user unchecked, and where it stopped. Do not silently retry a failed row.\n")
+}
+
+// writeManagementRecipes renders the standing MANAGEMENT jobs, in the voice of
+// writeReportRecipes above: trigger, call order, output shape.
+//
+// The report recipes made the assistant's ANSWERS reproducible. These make its
+// WRITES reproducible, which matters more, because an improvised report wastes
+// a minute and an improvised bulk change moves fifty issues. Each recipe is a
+// pairing of "how to compute the set" with "how to propose it", because the
+// failure is never the tool — it is a model that computes the set from
+// list_my_issues, or applies it one call at a time, or invents a capacity for
+// a sprint nobody sized.
+//
+// The agent interview is here rather than with the plans on purpose: agent
+// writes are NOT allowlisted for plans, and a recipe that implied otherwise
+// would produce a plan the executor refuses at propose time.
+func writeManagementRecipes(b *strings.Builder) {
+	b.WriteString("\nStanding management jobs — the recipes that end in a plan:\n")
+	b.WriteString("- SPRINT PLANNING (\"plan the next sprint\", \"what should we pull in\"): read the backlog with ")
+	b.WriteString("list_issues (status todo, ordered by what priority tells you) and the existing sprints with ")
+	b.WriteString("list_sprints so you do not create a second one with the same name. Then ONE plan: create_sprint ")
+	b.WriteString("plus a move_issue_to_sprint per issue, up to a SENSIBLE CAPACITY — what the last sprint actually ")
+	b.WriteString("finished, not everything that is open. Say in your reply what you left out and why, so the user ")
+	b.WriteString("can ask for more.\n")
+	b.WriteString("- BULK CHANGE (\"move everything stuck in review for over a week back to todo\", \"close all the ")
+	b.WriteString("done ones\"): compute the SET first with list_issues — never from list_my_issues, which only sees ")
+	b.WriteString("this person's — and show it. Then ONE plan of update_issue items, one row per issue, each summary ")
+	b.WriteString("naming the identifier and the title. NEVER apply a bulk change without the plan card, however ")
+	b.WriteString("clearly the user asked: the card is where they see the fifty-first issue they did not mean.\n")
+	b.WriteString("- INBOX TRIAGE (\"triage my inbox\", \"deal with my notifications\"): inbox_summary first, then ")
+	b.WriteString("propose the DISPOSITIONS as one plan — update_issue to assign or reprioritise, add_issue_label to ")
+	b.WriteString("classify, comment_issue where a person is waiting on an answer, mark_inbox_read for what needs ")
+	b.WriteString("nothing. One row per item, in the order you would work through them, and leave anything you are ")
+	b.WriteString("unsure about out of the plan and in your reply as a question.\n")
+	b.WriteString("- PROJECT BOOTSTRAP (\"set up a project for X\"): list_projects and list_labels first so you ")
+	b.WriteString("neither duplicate a project nor re-create labels that exist. Then ONE plan: create_project, ")
+	b.WriteString("create_label for the standard set the workspace is missing (bug, feature, chore — match the ")
+	b.WriteString("names already in use), and create_sprint for the first sprint. One plan, one confirm.\n")
+	b.WriteString("- AGENT INTERVIEW (\"help me set up an agent\", \"/new-agent\"): ask the three questions that ")
+	b.WriteString("matter, one message, not an interrogation — what should it do, which runtime, which skills. Call ")
+	b.WriteString("list_runtimes BEFORE asking about the runtime, and if it comes back empty say plainly that nobody ")
+	b.WriteString("has connected one yet and that this one step happens in Settings → Runtimes. Offer the skills from ")
+	b.WriteString("list_skills rather than asking them to name one. Then create_agent and attach_skill_to_agent as ")
+	b.WriteString("NORMAL single calls — agent writes cannot go in a plan — and finish by offering a first test ")
+	b.WriteString("issue, phrased the way a person files a quick ticket, not as a specification.\n")
+	b.WriteString("- All of these READ before they propose, and none of them writes outside the plan card. If the ")
+	b.WriteString("reads turn up something the recipe did not expect, say so and ask, instead of proposing around it.\n")
 }
 
 // writeSettingsGuidance renders the rules for the user's OWN preferences.

@@ -24,6 +24,7 @@ export {
   useConfirmAssistantOperation,
   useRejectAssistantOperation,
 } from "./mutations";
+export type { ConfirmAssistantOperationInput } from "./mutations";
 export {
   deriveSessionTitle,
   autoTitleAssistantSession,

@@ -3,8 +3,11 @@
 import {
   Activity,
   BarChart3,
+  Bot,
+  CalendarRange,
   FolderPlus,
   Gauge,
+  Inbox,
   ListTodo,
   Plus,
   Rocket,
@@ -40,13 +43,17 @@ const ICONS: Record<SlashCommandId, LucideIcon> = {
   standup: Sunrise,
   qa_health: ShieldCheck,
   release_notes: Rocket,
+  plan_sprint: CalendarRange,
+  triage_inbox: Inbox,
+  new_agent: Bot,
 };
 
 /**
- * Resolves the command catalog against the active locale. Every "send"
- * command deliberately reuses the launcher's example prompts — the same
- * request should read identically whether the user clicked a prompt row or
- * typed `/usage`.
+ * Resolves the command catalog against the active locale. A "send" command
+ * whose request also exists as a launcher row reuses that row's prompt — the
+ * same request should read identically whether the user clicked the row or
+ * typed `/usage`. The management recipes have no row (the launcher stays at
+ * 8), so they carry their own `prompt` key next to their label.
  */
 export function useSlashCommands(): SlashCommandItem[] {
   const { t } = useT("assistant");
@@ -101,6 +108,21 @@ export function useSlashCommands(): SlashCommandItem[] {
       label: t(($) => $.composer.slash.release_notes.label),
       description: t(($) => $.composer.slash.release_notes.description),
       payload: t(($) => $.empty_state.prompts.release_notes),
+    },
+    plan_sprint: {
+      label: t(($) => $.composer.slash.plan_sprint.label),
+      description: t(($) => $.composer.slash.plan_sprint.description),
+      payload: t(($) => $.composer.slash.plan_sprint.prompt),
+    },
+    triage_inbox: {
+      label: t(($) => $.composer.slash.triage_inbox.label),
+      description: t(($) => $.composer.slash.triage_inbox.description),
+      payload: t(($) => $.composer.slash.triage_inbox.prompt),
+    },
+    new_agent: {
+      label: t(($) => $.composer.slash.new_agent.label),
+      description: t(($) => $.composer.slash.new_agent.description),
+      payload: t(($) => $.composer.slash.new_agent.prompt),
     },
   };
 

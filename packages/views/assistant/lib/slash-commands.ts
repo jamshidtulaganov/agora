@@ -15,7 +15,10 @@ export type SlashCommandId =
   | "sprint_report"
   | "standup"
   | "qa_health"
-  | "release_notes";
+  | "release_notes"
+  | "plan_sprint"
+  | "triage_inbox"
+  | "new_agent";
 
 /**
  * "template" prefills the composer and leaves the cursor at the end for the
@@ -44,6 +47,13 @@ export const SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { id: "standup", trigger: "/standup", action: "send" },
   { id: "qa_health", trigger: "/qa-health", action: "send" },
   { id: "release_notes", trigger: "/release-notes", action: "send" },
+  // Management recipes (docs/assistant-domain-plan.md §3b). Unlike the report
+  // recipes above, these have no launcher row to borrow a prompt from — the
+  // launcher deliberately stays at 8 rows — so their payload lives beside
+  // their own label under `composer.slash.<id>.prompt`.
+  { id: "plan_sprint", trigger: "/plan-sprint", action: "send" },
+  { id: "triage_inbox", trigger: "/triage-inbox", action: "send" },
+  { id: "new_agent", trigger: "/new-agent", action: "send" },
 ];
 
 /**

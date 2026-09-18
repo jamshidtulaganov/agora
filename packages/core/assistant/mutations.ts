@@ -196,15 +196,40 @@ export function useSendAssistantMessage(sessionId: string) {
 export function useConfirmAssistantOperation(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (operationId: string) => {
-      logger.info("confirmOperation.start", { sessionId, operationId });
-      return api.confirmAssistantOperation(operationId);
+    mutationFn: (input: ConfirmAssistantOperationInput) => {
+      const { operationId, skippedItems } = normalizeConfirmInput(input);
+      logger.info("confirmOperation.start", { sessionId, operationId, skipped: skippedItems.length });
+      return api.confirmAssistantOperation(operationId, skippedItems);
     },
-    onError: (err, operationId) => {
-      logger.warn("confirmOperation.error", { sessionId, operationId, err });
+    onError: (err, input) => {
+      logger.warn("confirmOperation.error", { sessionId, operationId: operationIdOf(input), err });
     },
-    onSettled: (_data, _error, operationId) => invalidateAfterDecision(qc, sessionId, operationId),
+    onSettled: (_data, _error, input) =>
+      invalidateAfterDecision(qc, sessionId, operationIdOf(input)),
   });
+}
+
+/**
+ * A bare operation id confirms the whole operation — what every single-op
+ * ConfirmCard sends, and the request the server has always received. The
+ * object form is the PLAN card's: `skippedItems` are the 0-based rows the
+ * user unchecked, and an empty list is indistinguishable from the bare form
+ * on the wire.
+ */
+export type ConfirmAssistantOperationInput =
+  | string
+  | { operationId: string; skippedItems?: readonly number[] };
+
+function normalizeConfirmInput(
+  input: ConfirmAssistantOperationInput,
+): { operationId: string; skippedItems: readonly number[] } {
+  return typeof input === "string"
+    ? { operationId: input, skippedItems: [] }
+    : { operationId: input.operationId, skippedItems: input.skippedItems ?? [] };
+}
+
+function operationIdOf(input: ConfirmAssistantOperationInput): string {
+  return typeof input === "string" ? input : input.operationId;
 }
 
 /** Declines a pending destructive operation. Same contract as confirm. */

@@ -1892,6 +1892,41 @@ describe("AssistantOperationSchema drift", () => {
     expect(parseWithFallback({ ...operation, status: 42 }, AssistantOperationSchema, EMPTY_ASSISTANT_OPERATION, { endpoint: "operation" })).toBe(EMPTY_ASSISTANT_OPERATION);
     expect(AssistantOperationListSchema.parse(null)).toEqual([]);
   });
+
+  // Plan operations — docs/assistant-domain-plan.md, "3a wire contract".
+  it("reads a single operation as kind-less with no rows", () => {
+    const parsed = AssistantOperationSchema.parse(operation);
+    expect(parsed.kind).toBe("");
+    expect(parsed.items).toEqual([]);
+  });
+
+  it("keeps the plan rows and every per-item outcome, known or not", () => {
+    const parsed = AssistantOperationSchema.parse({
+      ...operation,
+      kind: "plan",
+      items: [
+        { index: 0, tool: "create_sprint", summary: "Create sprint 12", outcome: "ok", identifier: "Sprint 12" },
+        { index: 1, outcome: "deferred_to_agent" },
+      ],
+    });
+    expect(parsed.kind).toBe("plan");
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items[0]).toMatchObject({ index: 0, tool: "create_sprint", outcome: "ok" });
+    // An outcome this build doesn't know must survive the parse — the card
+    // downgrades it to a neutral row (enum-drift rule).
+    expect(parsed.items[1]?.outcome).toBe("deferred_to_agent");
+  });
+
+  it("empties a null or non-list items field instead of failing the operation", () => {
+    expect(AssistantOperationSchema.parse({ ...operation, kind: "plan", items: null }).items).toEqual([]);
+    expect(AssistantOperationSchema.parse({ ...operation, kind: "plan", items: "two" }).items).toEqual([]);
+    expect(AssistantOperationSchema.parse({ ...operation, kind: 7 }).kind).toBe("");
+  });
+
+  it("defaults the fields a single plan row dropped", () => {
+    const parsed = AssistantOperationSchema.parse({ ...operation, kind: "plan", items: [{ index: "1" }] });
+    expect(parsed.items[0]).toMatchObject({ index: -1, tool: "", summary: "", outcome: "", error: "" });
+  });
 });
 
 describe("AssistantOperationDecisionSchema drift", () => {
@@ -1933,6 +1968,25 @@ describe("AssistantOperationDecisionSchema drift", () => {
       { endpoint: "POST /api/assistant/operations/{id}/reject" },
     );
     expect(parsed).toBe(EMPTY_ASSISTANT_OPERATION_DECISION);
+  });
+
+  it("parses the flat `{status, items}` body a PLAN confirm answers", () => {
+    const parsed = AssistantOperationDecisionSchema.parse({
+      status: "confirmed",
+      items: [
+        { index: 0, outcome: "ok", identifier: "MUL-9" },
+        { index: 1, outcome: "failed", error: "Issue archived" },
+        { index: 2, outcome: "not_run" },
+      ],
+    });
+    expect(parsed.status).toBe("confirmed");
+    expect(parsed.items.map((item) => item.outcome)).toEqual(["ok", "failed", "not_run"]);
+  });
+
+  it("keeps a plan decision usable when items are missing, null or wrongly typed", () => {
+    expect(AssistantOperationDecisionSchema.parse({ status: "confirmed" }).items).toEqual([]);
+    expect(AssistantOperationDecisionSchema.parse({ status: "confirmed", items: null }).items).toEqual([]);
+    expect(AssistantOperationDecisionSchema.parse({ status: "confirmed", items: 3 }).items).toEqual([]);
   });
 });
 

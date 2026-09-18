@@ -20,8 +20,10 @@ import {
   parseConfirmationRequest,
   parseReceipt,
   parseUncertainOutcome,
+  planItemResultsAfter,
 } from "../lib/operation";
 import { ConfirmCard } from "./confirm-card";
+import { PlanCard } from "./plan-card";
 import { ReceiptChip, UncertainChip } from "./outcome-chips";
 
 interface MessageListProps {
@@ -177,6 +179,20 @@ function MessageRow({
 
     const confirmation = parseConfirmationRequest(message.tool_result);
     if (confirmation) {
+      // A plan is the same pending operation with rows. An ABSENT kind is a
+      // single operation (every runtime that predates plans), and a plan whose
+      // rows didn't decode falls through to the single-operation card rather
+      // than rendering an empty checklist.
+      if (confirmation.kind === "plan" && confirmation.items.length > 0) {
+        return (
+          <PlanCard
+            sessionId={message.session_id}
+            request={confirmation}
+            outcome={operationOutcomeAfter(messages, index, confirmation.operationId)}
+            itemResults={planItemResultsAfter(messages, index, confirmation.operationId)}
+          />
+        );
+      }
       return (
         <ConfirmCard
           sessionId={message.session_id}

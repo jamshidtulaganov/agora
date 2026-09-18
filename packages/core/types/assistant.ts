@@ -115,6 +115,35 @@ export interface AssistantOperationDecision {
   operation_id: string;
   /** Receipt message the decision produced, when the server reports one. */
   message_id: string;
+  /**
+   * Per-item execution outcomes of a PLAN confirm (see AssistantPlanItem).
+   * Absent for every single-operation confirm — including the ones an older
+   * runtime answers — so its absence is the normal case, not drift.
+   */
+  items?: AssistantPlanItem[];
+}
+
+/**
+ * One row of a plan operation (docs/assistant-domain-plan.md, "3a wire
+ * contract"). The wire carries a SUBSET of these fields depending on the
+ * stage: a parked plan sends `{index, tool, summary}`, the confirm answer and
+ * the stored receipt send `{index, outcome, identifier?, error?}`. One type
+ * covers both because the card renders them as one list — the proposal rows
+ * with their outcome glyph attached.
+ *
+ * `outcome` stays a plain string, never a union: a value this build doesn't
+ * know must render neutrally instead of failing the whole receipt.
+ */
+export interface AssistantPlanItem {
+  /** 0-based position in the plan — what `skipped_items` refers to. */
+  index: number;
+  tool: string;
+  summary: string;
+  /** "ok" | "failed" | "skipped" | "not_run" once executed; "" before. */
+  outcome: string;
+  /** Human-readable id the item produced or touched, e.g. `MUL-123`. */
+  identifier: string;
+  error: string;
 }
 
 /** Persisted confirmation state; outcome is the execution result, not the click. */
@@ -128,6 +157,15 @@ export interface AssistantOperation {
   outcome?: string | null;
   created_at?: string;
   expires_at?: string;
+  /**
+   * "plan" for a batch operation. ABSENT on every single-call operation,
+   * which is precisely what makes absence mean "single op" — an older
+   * runtime that never heard of plans keeps rendering the ConfirmCard.
+   */
+  kind?: string;
+  /** Plan rows. Empty for a single operation, and empty when the server sent
+   *  a malformed list — the card then falls back to single-op rendering. */
+  items?: AssistantPlanItem[];
 }
 
 // --- Assistant artifacts -----------------------------------------------

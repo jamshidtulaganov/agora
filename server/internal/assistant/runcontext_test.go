@@ -172,6 +172,32 @@ func TestPromptCarriesTheReportRecipes(t *testing.T) {
 	}
 }
 
+// The management layer is the WRITE half of the domain layer, and it only works
+// if the model reaches for propose_plan instead of a chain of single writes.
+// This pins the primitive, the four recipes that end in a plan, the rule that
+// stops a bulk change being applied without the card, and the cap — the four
+// things whose absence silently reverts the assistant to one-write-at-a-time.
+func TestPromptCarriesThePlanGuidanceAndManagementRecipes(t *testing.T) {
+	prompt := buildSystemPrompt(UserContext{Name: "Ann"}, "")
+	for _, want := range []string{
+		"propose_plan",
+		"SPRINT PLANNING",
+		"BULK CHANGE",
+		"INBOX TRIAGE",
+		"PROJECT BOOTSTRAP",
+		"AGENT INTERVIEW",
+		"NEVER apply a bulk change without the plan card",
+		"A plan holds at most 25 items",
+		// The allowlist is rendered from the map, so a tool added to or removed
+		// from PlanAllowedTools cannot go unmentioned in the instructions.
+		"Plans carry ONLY these tools: " + strings.Join(PlanAllowedToolNames(), ", "),
+	} {
+		if !containsFold(prompt, want) {
+			t.Fatalf("the prompt never mentions %q — the management layer is missing", want)
+		}
+	}
+}
+
 // The timezone line has to say what it is FOR, or the model converts the
 // windows the tools already computed.
 func TestPromptExplainsTheTimezone(t *testing.T) {

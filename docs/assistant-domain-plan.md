@@ -230,9 +230,45 @@ squad add), and proposes a first test issue in the user's human-quick-ticket
 voice. The existing single-write confirms suffice here.
 
 Sequencing: 3a is the engine and ships first (backend operation kind +
-executor loop + plan card UI); 3b is a prompt.go section plus launcher/slash
-entries; 3c is prompt-only and can ship with 3b. Build after Phase 2b lands —
-3a touches the same service/operation code paths 2b's runner calls into.
+executor loop + plan card UI); 3b is a prompt.go section plus slash entries;
+3c is prompt-only and ships with 3b. Built after Phase 2b landed.
+
+### 3a wire contract (fixed)
+
+No new table: a plan is one `assistant_pending_operation` row with
+`tool_name = "propose_plan"` and the items inside `arguments` — the same
+pre-authorization / receipt split as migration 198, generalized from one call
+to a list.
+
+- Tool `propose_plan` args:
+  `{title, items: [{tool, arguments, summary}]}`, 1–25 items, every `tool`
+  in the PLAN ALLOWLIST: create_issue, update_issue, archive_issue,
+  add_issue_label, remove_issue_label, comment_issue, move_issue_to_sprint,
+  create_label, create_sprint, create_project, update_project,
+  subscribe_issue, mark_inbox_read, resolve_comment. Nothing else — no
+  deletes, no member/workspace/agent/automation/settings writes. The
+  allowlist is enforced at propose AND re-checked at confirm.
+- Parked payload (same shape family as needs_confirmation):
+  `{"status":"needs_confirmation","operation":{id, kind:"plan",
+  summary: title, items:[{index, tool, summary}], expires_at}}`.
+- `POST /api/assistant/operations/{id}/confirm` gains an OPTIONAL body
+  `{"skipped_items":[<0-based index>...]}` (absent body = run everything —
+  existing single-op confirms unchanged). Execution is sequential through
+  the same per-tool executors as direct calls; stop-on-error, remaining rows
+  `not_run`. Response for a plan:
+  `{status, items:[{index, outcome:"ok"|"failed"|"skipped"|"not_run",
+  identifier?, error?}]}`; the per-item outcomes are also stored on the
+  execution receipt so the transcript re-renders them after reload.
+- Reject rejects the whole plan; expiry as today; confirm stays
+  RequireHumanActor.
+
+### 3b/3c surface
+
+Slash commands (send): `/plan-sprint`, `/triage-inbox`, `/new-agent` — the
+launcher stays at 8 rows (subtraction rule). Prompt sections: plan guidance
+(when several writes are implied, propose ONE plan; read-then-propose; never
+loop single writes past the user) and the management recipes (sprint
+planning, bulk change, inbox triage, project bootstrap, agent interview).
 
 ## Phase 3 — closing the loop (sketch)
 

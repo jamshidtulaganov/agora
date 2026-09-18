@@ -1023,6 +1023,10 @@ var assistantUnscopedTools = map[string]bool{
 	// assistant_settings_test.go.
 	assistant.ToolUpdateSidebar:    true,
 	assistant.ToolUpdateMySettings: true,
+	// A plan takes no workspace of its own — its ITEMS name theirs, and each
+	// item's membership check is what gates it. The per-item gate is asserted
+	// in TestAssistantPlanItemStillHitsWorkspaceGates.
+	assistant.ToolProposePlan: true,
 }
 
 // Every tool in the catalog must be dispatchable and must refuse a caller who

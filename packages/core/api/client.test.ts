@@ -910,6 +910,70 @@ describe("Assistant operation confirm / reject", () => {
     });
   });
 
+  it("sends NO body when nothing is skipped — the request plans never changed", async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ operation: { id: "op-1", status: "confirmed" }, message: { id: "m1" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    await client.confirmAssistantOperation("op-1");
+    await client.confirmAssistantOperation("op-1", []);
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBeUndefined();
+  });
+
+  it("confirms a plan with skipped_items and flattens the per-item outcomes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "confirmed",
+          items: [
+            { index: 0, outcome: "ok", identifier: "MUL-9" },
+            { index: 1, outcome: "skipped" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    const decision = await client.confirmAssistantOperation("op-1", [1, -2, 1.5]);
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ skipped_items: [1] }));
+    expect(decision.status).toBe("confirmed");
+    expect(decision.items).toEqual([
+      { index: 0, outcome: "ok", identifier: "MUL-9", tool: "", summary: "", error: "" },
+      { index: 1, outcome: "skipped", identifier: "", tool: "", summary: "", error: "" },
+    ]);
+  });
+
+  it("degrades a plan confirm whose items came back malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: "confirmed", items: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const client = new ApiClient("https://api.example.test");
+    // No `items` key at all: the card falls back to the persisted receipt.
+    await expect(client.confirmAssistantOperation("op-1", [0])).resolves.toEqual({
+      status: "confirmed",
+      operation_id: "",
+      message_id: "",
+    });
+  });
+
   it("propagates a 404 from a runtime without confirmation binding", async () => {
     vi.stubGlobal(
       "fetch",

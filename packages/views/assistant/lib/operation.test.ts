@@ -4,8 +4,11 @@ import {
   operationOutcomeAfter,
   parseConfirmationRequest,
   parseOperationTarget,
+  parsePlanItemResults,
+  parsePlanItems,
   parseReceipt,
   parseUncertainOutcome,
+  planItemResultsAfter,
   targetLabel,
 } from "./operation";
 
@@ -45,6 +48,8 @@ describe("parseConfirmationRequest", () => {
       summary: "Delete MUL-123",
       workspaceSlug: "acme",
       target: { type: "issue", identifier: "MUL-123", title: "Fix the login redirect" },
+      kind: "",
+      items: [],
     });
   });
 
@@ -57,6 +62,8 @@ describe("parseConfirmationRequest", () => {
         summary: "",
         workspaceSlug: "",
         target: null,
+        kind: "",
+        items: [],
       });
   });
 
@@ -285,5 +292,142 @@ describe("operationOutcomeAfter", () => {
 
   it("returns null for an empty operation id rather than matching everything", () => {
     expect(operationOutcomeAfter([toolRow("m1", { operation_id: "" })], -1, "")).toBeNull();
+  });
+});
+
+// --- plans --------------------------------------------------------------
+// A plan is the same needs_confirmation payload with `kind:"plan"` and rows
+// (docs/assistant-domain-plan.md, "3a wire contract"). Everything below is a
+// shape some deployed server can send: one that predates plans (no kind, no
+// items), one mid-execution, one that renamed a field.
+
+const PLAN = {
+  status: "needs_confirmation",
+  operation: {
+    id: "op-2",
+    kind: "plan",
+    summary: "Plan sprint 12",
+    workspace_slug: "acme",
+    expires_at: "2026-09-19T18:00:00Z",
+    items: [
+      { index: 0, tool: "create_sprint", summary: "Create sprint 12" },
+      { index: 1, tool: "move_issue_to_sprint", summary: "Move MUL-1 into sprint 12" },
+    ],
+  },
+};
+
+describe("parseConfirmationRequest — plan", () => {
+  it("decodes the kind and the rows", () => {
+    const request = parseConfirmationRequest(PLAN);
+    expect(request?.kind).toBe("plan");
+    expect(request?.items).toEqual([
+      { index: 0, tool: "create_sprint", summary: "Create sprint 12" },
+      { index: 1, tool: "move_issue_to_sprint", summary: "Move MUL-1 into sprint 12" },
+    ]);
+  });
+
+  it("reports an ABSENT kind as a single operation — an older runtime's shape", () => {
+    const request = parseConfirmationRequest(PENDING);
+    expect(request?.kind).toBe("");
+    expect(request?.items).toEqual([]);
+  });
+});
+
+describe("parsePlanItems", () => {
+  it("returns [] for a malformed list so the card falls back to the single-op rendering", () => {
+    expect(parsePlanItems(null)).toEqual([]);
+    expect(parsePlanItems({ items: [] })).toEqual([]);
+    expect(parsePlanItems("create_issue")).toEqual([]);
+    expect(parsePlanItems([1, "x", null])).toEqual([]);
+  });
+
+  it("falls back to the array position when a row lost its index", () => {
+    expect(parsePlanItems([{ tool: "create_issue", summary: "Add the issue" }])).toEqual([
+      { index: 0, tool: "create_issue", summary: "Add the issue" },
+    ]);
+  });
+
+  it("drops a row with nothing to show and keeps the rest at their server index", () => {
+    expect(parsePlanItems([{ index: 0 }, { index: 1, summary: "Move MUL-1" }])).toEqual([
+      { index: 1, tool: "", summary: "Move MUL-1" },
+    ]);
+  });
+});
+
+describe("parsePlanItemResults", () => {
+  it("decodes the four known outcomes", () => {
+    expect(
+      parsePlanItemResults([
+        { index: 0, outcome: "ok", identifier: "MUL-9" },
+        { index: 1, outcome: "failed", error: "Sprint is closed" },
+        { index: 2, outcome: "skipped" },
+        { index: 3, outcome: "not_run" },
+      ]),
+    ).toEqual([
+      { index: 0, outcome: "ok", identifier: "MUL-9", error: "" },
+      { index: 1, outcome: "failed", identifier: "", error: "Sprint is closed" },
+      { index: 2, outcome: "skipped", identifier: "", error: "" },
+      { index: 3, outcome: "not_run", identifier: "", error: "" },
+    ]);
+  });
+
+  it("downgrades an outcome this build doesn't know instead of crashing", () => {
+    expect(parsePlanItemResults([{ index: 0, outcome: "deferred_to_agent" }])).toEqual([
+      { index: 0, outcome: "unknown", identifier: "", error: "" },
+    ]);
+  });
+
+  it("skips proposal rows — an item with no outcome is not a result", () => {
+    expect(parsePlanItemResults([{ index: 0, tool: "create_issue", summary: "Add it" }])).toEqual([]);
+  });
+
+  it("returns [] for null / non-list items", () => {
+    expect(parsePlanItemResults(null)).toEqual([]);
+    expect(parsePlanItemResults({ 0: { outcome: "ok" } })).toEqual([]);
+  });
+});
+
+describe("planItemResultsAfter", () => {
+  it("reads the per-row outcomes off the persisted receipt row", () => {
+    const messages = [
+      toolRow("m1", PLAN),
+      toolRow("m2", {
+        operation_id: "op-2",
+        receipt: {
+          action: "propose_plan",
+          items: [
+            { index: 0, outcome: "ok", identifier: "Sprint 12" },
+            { index: 1, outcome: "failed", error: "Issue archived" },
+          ],
+        },
+      }),
+    ];
+    expect(planItemResultsAfter(messages, 0, "op-2")).toEqual([
+      { index: 0, outcome: "ok", identifier: "Sprint 12", error: "" },
+      { index: 1, outcome: "failed", identifier: "", error: "Issue archived" },
+    ]);
+    // The overall state still comes from the same row.
+    expect(operationOutcomeAfter(messages, 0, "op-2")).toBe("confirmed");
+  });
+
+  it("reads a top-level items array too", () => {
+    const messages = [
+      toolRow("m1", PLAN),
+      toolRow("m2", { operation_id: "op-2", status: "confirmed", items: [{ index: 0, outcome: "ok" }] }),
+    ];
+    expect(planItemResultsAfter(messages, 0, "op-2")).toEqual([
+      { index: 0, outcome: "ok", identifier: "", error: "" },
+    ]);
+  });
+
+  it("returns [] while the plan is still pending, and for a receipt without items", () => {
+    expect(planItemResultsAfter([toolRow("m1", PLAN)], 0, "op-2")).toEqual([]);
+    expect(
+      planItemResultsAfter(
+        [toolRow("m1", PLAN), toolRow("m2", { operation_id: "op-2", receipt: { action: "propose_plan" } })],
+        0,
+        "op-2",
+      ),
+    ).toEqual([]);
   });
 });

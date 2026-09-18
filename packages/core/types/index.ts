@@ -100,6 +100,7 @@ export type {
   SendAssistantMessageResponse,
   AssistantOperationDecision,
   AssistantOperation,
+  AssistantPlanItem,
 } from "./assistant";
 export type {
   ReportActorRef,
