@@ -444,6 +444,7 @@
   },
   "integrations": {
     "intro": "Connect the tools your team and agents already use.",
+    "assistant_hint": "Ask the Assistant to walk you through connecting a tool",
     "status_connected": "Connected",
     "status_not_connected": "Not connected",
     "mcp": {

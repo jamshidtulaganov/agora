@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
@@ -12,6 +13,12 @@ const configRef = vi.hoisted(() => ({
 }));
 const queryCalls = vi.hoisted(() => [] as { queryKey?: unknown; enabled?: boolean }[]);
 const navigationRef = vi.hoisted(() => ({ search: "" }));
+// The assistant hint is gated on the SAME availability query the FAB uses, so
+// the mock has to be able to answer both ways within one file.
+const assistantRef = vi.hoisted(() => ({
+  availability: undefined as { enabled: boolean } | undefined,
+  setOpen: vi.fn(),
+}));
 
 vi.mock("@agora/core/config", () => ({
   useConfigStore: (selector: (state: typeof configRef) => unknown) => selector(configRef),
@@ -26,9 +33,16 @@ vi.mock("../../navigation", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey?: unknown; enabled?: boolean }) => {
     queryCalls.push(options);
+    const key = Array.isArray(options.queryKey) ? options.queryKey[0] : undefined;
+    if (key === "assistant") return { data: assistantRef.availability };
     return { data: undefined };
   },
   queryOptions: <T,>(options: T) => options,
+}));
+vi.mock("@agora/core/assistant", () => ({
+  assistantAvailabilityOptions: () => ({ queryKey: ["assistant", "availability"] }),
+  useAssistantPanelStore: (selector: (state: { setOpen: (open: boolean) => void }) => unknown) =>
+    selector({ setOpen: assistantRef.setOpen }),
 }));
 vi.mock("@agora/core/api", () => ({
   api: {
@@ -60,6 +74,8 @@ describe("IntegrationsTab", () => {
     queryCalls.length = 0;
     navigationRef.search = "";
     configRef.telegramBotsEnabled = false;
+    assistantRef.availability = undefined;
+    assistantRef.setOpen.mockClear();
   });
 
   it("shows Telegram setup and probes configuration even before the server secret exists", () => {
@@ -88,5 +104,39 @@ describe("IntegrationsTab", () => {
       "aria-expanded",
       "true",
     );
+  });
+
+  // The hint is the discoverability half of list_integrations: the assistant
+  // can read this roster and walk someone through a connector, and nothing
+  // else on the page says so.
+  it("offers the assistant walkthrough when the assistant is available", async () => {
+    assistantRef.availability = { enabled: true };
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab />
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    const hint = screen.getByRole("button", {
+      name: enSettings.integrations.assistant_hint,
+    });
+    await user.click(hint);
+    expect(assistantRef.setOpen).toHaveBeenCalledWith(true);
+  });
+
+  // An instance with the assistant switched off must not advertise it —
+  // the same gate the FAB applies.
+  it("hides the hint when the instance has no assistant", () => {
+    assistantRef.availability = { enabled: false };
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab />
+      </I18nProvider>,
+    );
+
+    expect(
+      screen.queryByText(enSettings.integrations.assistant_hint),
+    ).not.toBeInTheDocument();
   });
 });

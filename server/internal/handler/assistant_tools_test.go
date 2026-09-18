@@ -973,6 +973,7 @@ func assistantWorkspaceGateArgs(ws, insider string) map[string]string {
 		assistant.ToolListIssues:           `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolListAutopilots:       `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolListAutomations:      `{"workspace_id":"` + ws + `"}`,
+		assistant.ToolListIntegrations:     `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolDeleteIssue:          `{"workspace_id":"` + ws + `","ref":"ALG-1","confirm":true}`,
 		assistant.ToolDeleteProject:        `{"workspace_id":"` + ws + `","project":"x","confirm":true}`,
 		assistant.ToolDeleteSprint:         `{"workspace_id":"` + ws + `","sprint":"Sprint 1","confirm":true}`,

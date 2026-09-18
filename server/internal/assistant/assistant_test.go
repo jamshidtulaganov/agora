@@ -43,6 +43,9 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		ToolListProjects, ToolGetProject, ToolListSprints, ToolListLabels,
 		ToolListAgents, ToolListSquads, ToolListMembers,
 		ToolListRuntimes, ToolListSkills, ToolListAutopilots, ToolListAutomations,
+		// The integration roster — read-only on purpose: sight without hands,
+		// because every connector is finished by pasting a credential.
+		ToolListIntegrations,
 		// Writes: the everyday work.
 		ToolCreateIssue, ToolUpdateIssue, ToolCommentIssue, ToolArchiveIssue,
 		ToolAddIssueLabel, ToolRemoveIssueLabel, ToolMoveIssueToSprint,
@@ -523,6 +526,44 @@ func TestBuildSystemPromptCarriesRosterAndFocus(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "ws-2 | sd | SalesDoctor | member   <- currently open") {
 		t.Fatalf("focus marker on the wrong workspace:\n%s", prompt)
+	}
+}
+
+// The integration protocol has to travel with every run, because the request
+// that triggers it ("connect Figma") arrives with no other context.
+//
+// Three pins, and each one is a different failure:
+//
+//   - the TOOL. Without the instruction to call list_integrations the model
+//     answers "GitHub isn't connected" from nothing at all.
+//   - the REVOKE rule. The interesting case is not "don't ask for a token", it
+//     is what to say once one is already in the transcript — the value is
+//     burned, and the only correct advice is to rotate it and use Settings.
+//   - the NO-FORWARDING rule. A model that has apologised for receiving a
+//     secret will still helpfully pass it into the next tool call unless it is
+//     told, in those words, not to.
+func TestBuildSystemPromptCarriesIntegrationGuidance(t *testing.T) {
+	prompt := buildSystemPrompt(UserContext{Name: "Ann"}, "")
+	for _, want := range []string{
+		"Connecting tools",
+		"list_integrations",
+		"CALL list_integrations FIRST",
+		// Never take it…
+		"NEVER ask for, accept, repeat or forward a token",
+		"no tool that takes one",
+		// …and what to do when it arrives anyway.
+		"REVOKE AND",
+		"Settings → Integrations",
+		"do NOT put it in a tool argument",
+		// A dead end is worse than a refusal.
+		"unavailable",
+		"Settings → Configs",
+		// The only honest confirmation.
+		"call list_integrations AGAIN",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing integration guidance %q:\n%s", want, prompt)
+		}
 	}
 }
 

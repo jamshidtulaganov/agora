@@ -3,6 +3,10 @@
 import { DatabaseZap, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
+import {
+  assistantAvailabilityOptions,
+  useAssistantPanelStore,
+} from "@agora/core/assistant";
 import { useConfigStore } from "@agora/core/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { zohoConnectionOptions } from "@agora/core/zoho";
@@ -66,12 +70,31 @@ export function IntegrationsTab() {
     enabled: !!wsId,
   });
 
+  // The assistant can read this exact roster (list_integrations) and talk a
+  // person through connecting any of these, so the gallery points at it. Same
+  // availability gate the FAB uses — an instance with the assistant off must
+  // not advertise it. Opening the panel rather than navigating keeps the
+  // person on the page they are being walked through.
+  const { data: assistantAvailability } = useQuery(assistantAvailabilityOptions());
+  const openAssistant = useAssistantPanelStore((s) => s.setOpen);
+  const assistantEnabled = assistantAvailability?.enabled === true;
+
   const status = (connected: boolean): "connected" | "not_connected" =>
     connected ? "connected" : "not_connected";
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t(($) => $.integrations.intro)}</p>
+
+      {assistantEnabled ? (
+        <button
+          type="button"
+          onClick={() => openAssistant(true)}
+          className="text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        >
+          {t(($) => $.integrations.assistant_hint)}
+        </button>
+      ) : null}
 
       <div className="space-y-3">
         <IntegrationCard

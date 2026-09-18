@@ -128,6 +128,19 @@ const (
 	ToolSetAutomationEnabled = "set_automation_enabled"
 	ToolDeleteAutomation     = "delete_automation"
 
+	// Integrations (read). What this workspace is actually wired to — GitHub,
+	// git accounts, MCP servers, Figma, Release, Bitrix, Zoho, Telegram, Lark
+	// — with each connector's status and the page that owns it.
+	//
+	// Read-ONLY, and that is the whole design. Every one of those connectors is
+	// completed by pasting a credential, and the one thing this assistant never
+	// touches is a secret value (see ExcludedCapabilities). So the catalog gives
+	// it perfect sight and no hands: it can say what is connected, what is not,
+	// and what to do next — and the last step happens in Settings, where the
+	// value goes straight into an owner-gated endpoint instead of into a
+	// transcript that is stored forever.
+	ToolListIntegrations = "list_integrations"
+
 	// The small parity items: the things a user does with one click that the
 	// assistant previously had to describe instead of doing.
 	ToolMarkInboxRead  = "mark_inbox_read"
@@ -770,6 +783,19 @@ func ToolSpecs() []llm.Tool {
 				"(status changed, label attached, comment posted). The result also carries the CATALOG of valid " +
 				"trigger types, step types and operators, so read it before calling create_automation rather " +
 				"than guessing a trigger name.",
+			Parameters: workspaceOnlySchema("UUID of the workspace, from list_workspaces."),
+		},
+		{
+			Name: ToolListIntegrations,
+			Description: "List every third-party connector for a workspace with its real status: GitHub, git " +
+				"accounts, MCP servers, Release, Figma, Bitrix24, Zoho, Telegram and Lark. READ-ONLY. " +
+				"Call this FIRST whenever the user asks whether something is connected, asks you to connect " +
+				"or set up a tool, or reports an integration not working — never answer that from memory. " +
+				"Each row carries status (connected / not_connected / unavailable / unknown), a short " +
+				"non-secret detail, and `where`: the exact place in the app that owns it. " +
+				"\"unavailable\" means the instance operator has not enabled that connector, so no amount of " +
+				"clicking in Settings will help — say who can fix it. It returns NO tokens, auth headers or " +
+				"URLs, and there is no tool for setting one: the user pastes credentials at `where`.",
 			Parameters: workspaceOnlySchema("UUID of the workspace, from list_workspaces."),
 		},
 		{

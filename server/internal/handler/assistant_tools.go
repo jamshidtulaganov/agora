@@ -155,6 +155,13 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 	case assistant.ToolListAutomations:
 		return h.assistantListAutomations(ctx, caller, args)
 
+	// --- integrations -----------------------------------------------------
+	// Read-only by design: the roster exists so the assistant can SEE what a
+	// workspace is wired to, while every credential still travels through the
+	// settings page that owns it. See assistant_integrations.go.
+	case assistant.ToolListIntegrations:
+		return h.assistantListIntegrations(ctx, caller, args)
+
 	// --- mutations --------------------------------------------------------
 	case assistant.ToolCreateIssue:
 		return h.assistantCreateIssue(ctx, caller, args)

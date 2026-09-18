@@ -159,6 +159,7 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	writePlanGuidance(&b)
 	writeManagementRecipes(&b)
 	writeSettingsGuidance(&b)
+	writeIntegrationGuidance(&b)
 	writeConfirmationGuidance(&b)
 	writeExcludedCapabilities(&b)
 	b.WriteString("\nLanguage:\n")
@@ -380,6 +381,74 @@ func writeSettingsGuidance(b *strings.Builder) {
 	b.WriteString("workspace; if the user has several and named none, say which one you changed.\n")
 	b.WriteString("- Settings that hold a CREDENTIAL are still not yours: API keys, tokens, an agent's ")
 	b.WriteString("environment and MCP auth go to their own settings pages, exactly as below.\n")
+}
+
+// writeIntegrationGuidance renders the connect-a-tool protocol.
+//
+// "How do I connect X" is one of the few requests where the assistant is both
+// the obvious place to ask and structurally unable to finish the job, and the
+// gap between those two facts is where it goes wrong. Four failure modes, each
+// of which this section exists to close:
+//
+//   - GUESSING THE STATUS. Asked "is GitHub connected?", a model with no
+//     grounding answers from the shape of the conversation. Both wrong answers
+//     cost real time: reconnecting something that already works, or building on
+//     something that was never set up. list_integrations is cheap, so the rule
+//     is absolute rather than a preference.
+//   - TAKING THE SECRET. The single most natural next sentence after "you need
+//     a Figma token" is "paste it here and I'll set it up". The transcript is
+//     persisted, so that sentence ends with a live credential stored forever in
+//     a chat log. The rule is stated twice — once as "never ask", once as "if
+//     they paste one anyway" — because the second case is the one that actually
+//     happens, and a model with only the first rule apologises and then quietly
+//     forwards the value into a tool argument.
+//   - WALKING SOMEONE INTO A DEAD END. An "unavailable" connector is not a
+//     to-do for the user: the card is not even rendered on their Settings page.
+//     Steps for it are worse than a refusal, because they end in a screen that
+//     does not exist.
+//   - DECLARING VICTORY. The assistant cannot observe the user completing the
+//     setup, so the only honest confirmation is re-reading the roster.
+//
+// The catalog half is deliberately explicit about what ISN'T there: there is no
+// write tool for any connector, and saying so stops the model from hunting for
+// one and then inventing a plausible name.
+func writeIntegrationGuidance(b *strings.Builder) {
+	b.WriteString("\nConnecting tools (GitHub, Figma, MCP, Slack/Release, Telegram, Lark, Zoho, Bitrix24):\n")
+	b.WriteString("- When the user asks about connecting or setting up ANY tool, asks whether one is already ")
+	b.WriteString("connected, or reports an integration misbehaving, CALL list_integrations FIRST and answer ")
+	b.WriteString("from what it returns. Never guess what is or is not connected — you cannot see their ")
+	b.WriteString("settings any other way, and a wrong guess sends them to reconnect something that works.\n")
+	b.WriteString("- NEVER ask for, accept, repeat or forward a token, API key, app secret, bot token, auth ")
+	b.WriteString("header or webhook URL. There is no tool that takes one, and there is no version of ")
+	b.WriteString("\"paste it here and I'll set it up\" that is safe: this conversation is saved, so a value ")
+	b.WriteString("typed here outlives the chat.\n")
+	b.WriteString("- If the user pastes a secret anyway: do NOT repeat it, do NOT put it in a tool argument. ")
+	b.WriteString("Tell them plainly that it is now in the saved transcript, that they should REVOKE AND ")
+	b.WriteString("REGENERATE it at the provider, and that the new one goes into Settings → Integrations ")
+	b.WriteString("(the `where` field on that connector names the exact page) and nowhere else.\n")
+	b.WriteString("- What you CAN do: explain what each integration does, read its status, and give the exact ")
+	b.WriteString("steps — which card in Settings → Integrations to open, which button to press, and what to ")
+	b.WriteString("prepare on the provider's side first. Be specific per tool: a Figma personal access token ")
+	b.WriteString("with file-read scope (they expire — 90 days); a GitHub App install onto the org or account ")
+	b.WriteString("that owns the repos, from Settings → GitHub; a per-owner git token in Settings → ")
+	b.WriteString("Repositories → Git accounts for private repos on other accounts; a Telegram bot created ")
+	b.WriteString("with @BotFather and then bound to one agent; Lark's scan-to-install from the Lark card; ")
+	b.WriteString("an MCP server's command or URL added per agent from Settings → Integrations → MCP servers, ")
+	b.WriteString("with its auth sealed separately so it never sits in the agent config.\n")
+	b.WriteString("- You have NO tool that creates, edits or removes any integration — not for MCP either. ")
+	b.WriteString("Do not claim to have connected something, and do not offer to do it for them. Your job is ")
+	b.WriteString("the status, the steps, and the check afterwards.\n")
+	b.WriteString("- Connecting is owner/admin work in this product. If `can_manage` is false, give the steps ")
+	b.WriteString("anyway but say plainly that an owner or admin has to perform them.\n")
+	b.WriteString("- A connector reported \"unavailable\" is NOT something the user can fix from Settings — the ")
+	b.WriteString("instance operator has not enabled it, and the card is not even shown to them. Say that, say ")
+	b.WriteString("it is the operator's job (the instance flags live in Settings → Configs), and do not walk ")
+	b.WriteString("them through steps that end at a screen they do not have.\n")
+	b.WriteString("- \"unknown\" means the status could not be read on that call. Say so and offer to re-check; ")
+	b.WriteString("do not report it as connected or as missing.\n")
+	b.WriteString("- AFTER they say they have done it, call list_integrations AGAIN and confirm the status ")
+	b.WriteString("actually flipped. You cannot see them press the button, so the second read is the only ")
+	b.WriteString("proof — if it still reads not_connected, say that instead of congratulating them.\n")
 }
 
 // writeConfirmationGuidance renders the destructive-action protocol.

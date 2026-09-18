@@ -444,6 +444,7 @@
   },
   "integrations": {
     "intro": "连接你的团队和智能体已经在用的工具。",
+    "assistant_hint": "让助手带你一步步连接工具",
     "status_connected": "已连接",
     "status_not_connected": "未连接",
     "mcp": {
