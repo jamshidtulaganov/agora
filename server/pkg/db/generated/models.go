@@ -399,6 +399,8 @@ type Comment struct {
 	ResolvedByType  pgtype.Text        `json:"resolved_by_type"`
 	ResolvedByID    pgtype.UUID        `json:"resolved_by_id"`
 	BitrixCommentID pgtype.Text        `json:"bitrix_comment_id"`
+	ExternalSource  pgtype.Text        `json:"external_source"`
+	ExternalID      pgtype.Text        `json:"external_id"`
 }
 
 type CommentReaction struct {
@@ -588,6 +590,41 @@ type GithubPullRequestCheckSuite struct {
 	Conclusion pgtype.Text        `json:"conclusion"`
 	Status     string             `json:"status"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ImportConnection struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	Source          string             `json:"source"`
+	Label           string             `json:"label"`
+	BaseUrl         string             `json:"base_url"`
+	AccountEmail    string             `json:"account_email"`
+	SecretEncrypted []byte             `json:"secret_encrypted"`
+	Scopes          string             `json:"scopes"`
+	ProbeStatus     string             `json:"probe_status"`
+	ProbedAt        pgtype.Timestamptz `json:"probed_at"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ImportJob struct {
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	ConnectionID pgtype.UUID        `json:"connection_id"`
+	Source       string             `json:"source"`
+	Status       string             `json:"status"`
+	Scope        []byte             `json:"scope"`
+	Plan         []byte             `json:"plan"`
+	Mapping      []byte             `json:"mapping"`
+	Totals       []byte             `json:"totals"`
+	Failures     []byte             `json:"failures"`
+	ArtifactID   pgtype.UUID        `json:"artifact_id"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	FinishedAt   pgtype.Timestamptz `json:"finished_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type InboxItem struct {

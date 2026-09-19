@@ -45,7 +45,7 @@ UPDATE comment SET
 WHERE comment.id IN (SELECT id FROM descendants)
   AND comment.id <> $1
   AND comment.resolved_at IS NOT NULL
-RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id
+RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id
 `
 
 type ClearOtherThreadResolutionsParams struct {
@@ -88,6 +88,8 @@ func (q *Queries) ClearOtherThreadResolutions(ctx context.Context, arg ClearOthe
 			&i.ResolvedByType,
 			&i.ResolvedByID,
 			&i.BitrixCommentID,
+			&i.ExternalSource,
+			&i.ExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -157,7 +159,7 @@ func (q *Queries) CountNewCommentsSince(ctx context.Context, arg CountNewComment
 const createComment = `-- name: CreateComment :one
 INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type, parent_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id
+RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id
 `
 
 type CreateCommentParams struct {
@@ -196,6 +198,8 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -216,7 +220,7 @@ func (q *Queries) DeleteComment(ctx context.Context, arg DeleteCommentParams) er
 }
 
 const getComment = `-- name: GetComment :one
-SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id FROM comment
 WHERE id = $1
 `
 
@@ -238,12 +242,14 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (Comment, erro
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
 
 const getCommentInWorkspace = `-- name: GetCommentInWorkspace :one
-SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id FROM comment
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -270,6 +276,8 @@ func (q *Queries) GetCommentInWorkspace(ctx context.Context, arg GetCommentInWor
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -284,7 +292,7 @@ WITH RECURSIVE root_of AS (
     FROM comment p
     JOIN root_of r ON p.id = r.parent_id
 )
-SELECT c.id, c.issue_id, c.author_type, c.author_id, c.content, c.type, c.created_at, c.updated_at, c.parent_id, c.workspace_id, c.resolved_at, c.resolved_by_type, c.resolved_by_id, c.bitrix_comment_id FROM comment c
+SELECT c.id, c.issue_id, c.author_type, c.author_id, c.content, c.type, c.created_at, c.updated_at, c.parent_id, c.workspace_id, c.resolved_at, c.resolved_by_type, c.resolved_by_id, c.bitrix_comment_id, c.external_source, c.external_id FROM comment c
 WHERE c.id = (SELECT id FROM root_of WHERE parent_id IS NULL LIMIT 1)
 `
 
@@ -316,6 +324,8 @@ func (q *Queries) GetThreadRoot(ctx context.Context, arg GetThreadRootParams) (C
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -364,7 +374,7 @@ func (q *Queries) HasAgentRepliedInThread(ctx context.Context, arg HasAgentRepli
 }
 
 const listCommentsForIssue = `-- name: ListCommentsForIssue :many
-SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id FROM comment
 WHERE issue_id = $1 AND workspace_id = $2
 ORDER BY created_at ASC, id ASC
 LIMIT $3
@@ -403,6 +413,8 @@ func (q *Queries) ListCommentsForIssue(ctx context.Context, arg ListCommentsForI
 			&i.ResolvedByType,
 			&i.ResolvedByID,
 			&i.BitrixCommentID,
+			&i.ExternalSource,
+			&i.ExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -415,7 +427,7 @@ func (q *Queries) ListCommentsForIssue(ctx context.Context, arg ListCommentsForI
 }
 
 const listCommentsSinceForIssue = `-- name: ListCommentsSinceForIssue :many
-SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id FROM comment
 WHERE issue_id = $1 AND workspace_id = $2 AND created_at > $3
 ORDER BY created_at ASC, id ASC
 LIMIT $4
@@ -459,6 +471,8 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 			&i.ResolvedByType,
 			&i.ResolvedByID,
 			&i.BitrixCommentID,
+			&i.ExternalSource,
+			&i.ExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -471,7 +485,7 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 }
 
 const listRecentCommentsForIssue = `-- name: ListRecentCommentsForIssue :many
-SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id FROM comment
 WHERE issue_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC, id DESC
 LIMIT $3
@@ -511,6 +525,8 @@ func (q *Queries) ListRecentCommentsForIssue(ctx context.Context, arg ListRecent
 			&i.ResolvedByType,
 			&i.ResolvedByID,
 			&i.BitrixCommentID,
+			&i.ExternalSource,
+			&i.ExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -1139,7 +1155,7 @@ UPDATE comment SET
     resolved_by_id = COALESCE(resolved_by_id, $3),
     updated_at = CASE WHEN resolved_at IS NULL THEN now() ELSE updated_at END
 WHERE id = $1
-RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id
+RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id
 `
 
 type ResolveCommentParams struct {
@@ -1168,6 +1184,8 @@ func (q *Queries) ResolveComment(ctx context.Context, arg ResolveCommentParams) 
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -1196,7 +1214,7 @@ UPDATE comment SET
     resolved_by_id = NULL,
     updated_at = CASE WHEN resolved_at IS NOT NULL THEN now() ELSE updated_at END
 WHERE id = $1
-RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id
+RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id
 `
 
 // Idempotent: a no-op clear (already unresolved) just returns the row.
@@ -1218,6 +1236,8 @@ func (q *Queries) UnresolveComment(ctx context.Context, id pgtype.UUID) (Comment
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -1227,7 +1247,7 @@ UPDATE comment SET
     content = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id
+RETURNING id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id, external_source, external_id
 `
 
 type UpdateCommentParams struct {
@@ -1253,6 +1273,8 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.ResolvedByType,
 		&i.ResolvedByID,
 		&i.BitrixCommentID,
+		&i.ExternalSource,
+		&i.ExternalID,
 	)
 	return i, err
 }
