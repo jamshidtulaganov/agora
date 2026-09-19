@@ -53,6 +53,9 @@ vi.mock("@agora/core/api", () => ({
 vi.mock("@agora/core/zoho", () => ({
   zohoConnectionOptions: () => ({ queryKey: ["zoho"] }),
 }));
+vi.mock("@agora/core/imports", () => ({
+  importConnectionsOptions: () => ({ queryKey: ["imports", "connections", "workspace-1"] }),
+}));
 vi.mock("@agora/core/lark", () => ({
   larkInstallationsOptions: () => ({ queryKey: ["lark"] }),
 }));
@@ -64,6 +67,7 @@ vi.mock("./release-integrations-section", () => ({ ReleaseIntegrationsSection: (
 vi.mock("./figma-integration-section", () => ({ FigmaIntegrationSection: () => null }));
 vi.mock("./bitrix-tab", () => ({ BitrixTab: () => null }));
 vi.mock("./zoho-tab", () => ({ ZohoTab: () => null }));
+vi.mock("./import-section", () => ({ ImportSection: () => null }));
 vi.mock("./lark-tab", () => ({ LarkTab: () => null }));
 vi.mock("./telegram-tab", () => ({ TelegramTab: () => null }));
 

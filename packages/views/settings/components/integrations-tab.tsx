@@ -1,6 +1,6 @@
 "use client";
 
-import { DatabaseZap, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
+import { DatabaseZap, Import, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@agora/core/assistant";
 import { useConfigStore } from "@agora/core/config";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { importConnectionsOptions } from "@agora/core/imports";
 import { zohoConnectionOptions } from "@agora/core/zoho";
 import { larkInstallationsOptions } from "@agora/core/lark";
 import { telegramInstallationsOptions } from "@agora/core/telegram";
@@ -16,6 +17,7 @@ import { LarkTab } from "./lark-tab";
 import { TelegramTab } from "./telegram-tab";
 import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
+import { ImportSection } from "./import-section";
 import { McpServersTab } from "./mcp-servers-tab";
 import { FigmaIntegrationSection } from "./figma-integration-section";
 import { ReleaseIntegrationsSection } from "./release-integrations-section";
@@ -44,6 +46,13 @@ export function IntegrationsTab() {
   const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const zohoEnabled = useConfigStore((s) => s.zohoEnabled);
   const larkEnabled = useConfigStore((s) => s.larkEnabled);
+
+  // The Import card's badge is driven by the same query its body spreads, so
+  // TanStack dedupes and the header costs no extra request.
+  const { data: importConnections } = useQuery({
+    ...importConnectionsOptions(wsId),
+    enabled: !!wsId,
+  });
 
   const { data: figmaStatus } = useQuery({
     queryKey: ["figma-credential", wsId],
@@ -122,6 +131,15 @@ export function IntegrationsTab() {
           defaultOpen={navigation.searchParams.get("integration") === "figma"}
         >
           <FigmaIntegrationSection />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={<Import className="h-4 w-4" />}
+          name={t(($) => $.integrations.import.name)}
+          description={t(($) => $.integrations.import.description)}
+          status={status((importConnections?.length ?? 0) > 0)}
+        >
+          <ImportSection />
         </IntegrationCard>
 
         {bitrixEnabled ? (

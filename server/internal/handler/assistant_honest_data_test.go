@@ -449,6 +449,9 @@ func TestEveryListToolCarriesAScopeEnvelope(t *testing.T) {
 		assistant.ToolUsageSummary:    `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolQAStatus:        `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolListStaleIssues: `{"workspace_id":"` + ws + `"}`,
+		// The import connection roster is a list like any other: an empty one
+		// must read as "nothing is connected", never as "I could not look".
+		assistant.ToolListImportConnections: `{"workspace_id":"` + ws + `"}`,
 	}
 	for tool, args := range cases {
 		t.Run(tool, func(t *testing.T) {

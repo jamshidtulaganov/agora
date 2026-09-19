@@ -46,6 +46,10 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		// The integration roster — read-only on purpose: sight without hands,
 		// because every connector is finished by pasting a credential.
 		ToolListIntegrations,
+		// The migration concierge — five tools, one write, none of them able to
+		// take a key (docs/importers-plan.md §4.3).
+		ToolListImportConnections, ToolDryRunImport, ToolUpdateImportMapping,
+		ToolConfirmImport, ToolImportStatus,
 		// Writes: the everyday work.
 		ToolCreateIssue, ToolUpdateIssue, ToolCommentIssue, ToolArchiveIssue,
 		ToolAddIssueLabel, ToolRemoveIssueLabel, ToolMoveIssueToSprint,
@@ -320,6 +324,11 @@ func TestMutatingToolsMatchTheCatalog(t *testing.T) {
 		ToolUpdateMySettings:              true,
 		ToolUpdateSidebar:                 true,
 		ToolUpdateNotificationPreferences: true,
+		// Imports. update_import_mapping writes workspace settings;
+		// confirm_import parks a card and then starts a job that writes
+		// thousands of rows, so it is a write here AND in DestructiveTools.
+		ToolUpdateImportMapping: true,
+		ToolConfirmImport:       true,
 		// A plan writes nothing when it is called — it persists a proposal —
 		// but the run loop owes it an execution receipt for exactly the same
 		// reason it owes one to a parked delete.
@@ -364,6 +373,9 @@ func TestPlanAllowlistStaysNarrow(t *testing.T) {
 		ToolCreateAutopilot, ToolUpdateAutopilot, ToolRunAutopilotNow,
 		ToolUpdateMySettings, ToolUpdateSidebar, ToolUpdateNotificationPreferences,
 		ToolCreateArtifact, ToolUpdateArtifact,
+		// An import is never a row inside somebody else's plan: it is one job,
+		// authorized on its own card.
+		ToolConfirmImport, ToolUpdateImportMapping,
 		ToolProposePlan,
 	} {
 		if PlanAllows(banned) {

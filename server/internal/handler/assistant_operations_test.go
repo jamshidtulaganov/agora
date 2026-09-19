@@ -186,6 +186,13 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 	sprintID := newAssistantTestSprint(t, ws, projectID, "Keep sprint")
 	commentID := newAssistantTestComment(t, ws, issueID, user, "keep this comment")
 	automationID := newAssistantTestAutomation(t, ws, user, "Keep rule")
+	// An import needs a sealed connection and a job with a plan on it before
+	// confirm_import has anything to bind to — the card names the plan's own
+	// counts, so there has to be a plan.
+	assistantImportSealKey(t)
+	importConnectionID := newAssistantTestImportConnection(t, ws, "https://example.invalid", assistantImportTestKey)
+	importJobID := newAssistantTestImportJob(t, ws, importConnectionID,
+		`{"source":{"kind":"linear"},"issues":{"total":12,"create":12,"update":0},"exact":true}`)
 
 	bodies := map[string]struct {
 		args         string
@@ -200,6 +207,10 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 		assistant.ToolLeaveWorkspace:   {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
 		assistant.ToolDeleteWorkspace:  {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
 		assistant.ToolDeleteAutomation: {`{"workspace_id":"` + ws + `","automation":"Keep rule"}`, "automation", automationID},
+		// An import destroys nothing, but it writes thousands of rows on one
+		// click — so it parks a card exactly like the deletes above, and the
+		// job must still be waiting when the card is raised.
+		assistant.ToolConfirmImport: {`{"workspace_id":"` + ws + `","job_id":"` + importJobID + `"}`, "import_job", importJobID},
 	}
 
 	for name := range assistant.DestructiveTools {

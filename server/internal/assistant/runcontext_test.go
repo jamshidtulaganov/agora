@@ -203,6 +203,43 @@ func TestPromptCarriesThePlanGuidanceAndManagementRecipes(t *testing.T) {
 	}
 }
 
+// The migration concierge is a WRITE path with a very large blast radius, and
+// every line of its guidance is load-bearing: the survey-before-confirm rule,
+// the bad-news-first rule, the estimate rule, the revoke rule, and the
+// after-the-click silence. This pins them, because a section that drifts out
+// of the prompt leaves a model that can start a 10k-row import on a sentence.
+func TestPromptCarriesTheImportGuidance(t *testing.T) {
+	prompt := buildSystemPrompt(UserContext{Name: "Ann"}, "")
+	for _, want := range []string{
+		"CONNECT, SURVEY, ARGUE, CONFIRM, REPORT",
+		"list_import_connections",
+		"dry_run_import",
+		"update_import_mapping",
+		"confirm_import",
+		"import_status",
+		// The token rule, in the same words writeIntegrationGuidance uses.
+		"REVOKE AND REGENERATE",
+		// Honesty about what the survey could not see.
+		"LEAD WITH THE BAD NEWS",
+		"about 4,800 issues",
+		// Attribution: never the operator.
+		"NEVER to the user running the import",
+		// The two sequencing rules that keep a confirmation meaningful.
+		"Never call confirm_import in the same turn as dry_run_import",
+		"never start an import the user did not ask for",
+		// After the click: no invented progress.
+		"do not poll import_status in a loop",
+		// The receipt, failures included.
+		"REPORT THE RECEIPT HONESTLY",
+		// Re-running is the supported answer, not a clean-up.
+		"created 0, updated N",
+	} {
+		if !containsFold(prompt, want) {
+			t.Fatalf("the prompt never mentions %q — the import concierge guidance is missing", want)
+		}
+	}
+}
+
 // The timezone line has to say what it is FOR, or the model converts the
 // windows the tools already computed.
 func TestPromptExplainsTheTimezone(t *testing.T) {

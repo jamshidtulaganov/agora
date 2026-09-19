@@ -141,6 +141,25 @@ const (
 	// transcript that is stored forever.
 	ToolListIntegrations = "list_integrations"
 
+	// Imports — the migration concierge (docs/importers-plan.md §4.3).
+	//
+	// Five tools, one of them a write, NONE of them touching a secret. The
+	// source API key is pasted into Settings → Integrations → Import, sealed
+	// there, and referred to here only by connection_id: the transcript is
+	// persisted, so a key typed into it outlives the conversation — the same
+	// standing rule ExcludedCapabilities carries.
+	//
+	// The shape is propose → render → one human gesture → execute → receipt,
+	// which is propose_plan's shape one level up. It is NOT propose_plan: a
+	// 240-issue import is not 240 plan rows (MaxPlanItems is 25 and that cap
+	// is a readability limit, not a budget). The rows live in import_job.plan
+	// and the confirmation binds the JOB.
+	ToolListImportConnections = "list_import_connections"
+	ToolDryRunImport          = "dry_run_import"
+	ToolUpdateImportMapping   = "update_import_mapping"
+	ToolConfirmImport         = "confirm_import"
+	ToolImportStatus          = "import_status"
+
 	// The small parity items: the things a user does with one click that the
 	// assistant previously had to describe instead of doing.
 	ToolMarkInboxRead  = "mark_inbox_read"
@@ -244,6 +263,13 @@ var MutatingTools = map[string]bool{
 	ToolUpdateMySettings:              true,
 	ToolUpdateSidebar:                 true,
 	ToolUpdateNotificationPreferences: true,
+	// Import writes. update_import_mapping edits workspace.settings through
+	// the key-scoped merge; confirm_import starts a job that writes thousands
+	// of rows — it mutates nothing when CALLED (it parks a card), and counts
+	// as a write here for the same reason propose_plan does: the run loop owes
+	// an execution receipt to anything that can later change the workspace.
+	ToolUpdateImportMapping: true,
+	ToolConfirmImport:       true,
 	// A plan mutates NOTHING when it is called — it persists a proposal and
 	// waits for a click, exactly as a destructive tool does. It counts as a
 	// write here for the same reason those do: the run loop files an execution
@@ -287,6 +313,12 @@ var DestructiveTools = map[string]bool{
 	ToolLeaveWorkspace:   true,
 	ToolDeleteWorkspace:  true,
 	ToolDeleteAutomation: true,
+	// An import destroys nothing. It is here because the confirmation-binding
+	// path is this product's ONE mechanism for "a human read this and pressed
+	// a button", and a job that writes thousands of rows into a workspace
+	// deserves it (docs/importers-plan.md §4.3). It is deliberately NOT in
+	// PlanAllowedTools: an import is never a row inside somebody else's plan.
+	ToolConfirmImport: true,
 }
 
 // RequiresConfirmation reports whether a tool must be bound to a human
@@ -804,6 +836,127 @@ func ToolSpecs() []llm.Tool {
 				"clicking in Settings will help — say who can fix it. It returns NO tokens, auth headers or " +
 				"URLs, and there is no tool for setting one: the user pastes credentials at `where`.",
 			Parameters: workspaceOnlySchema("UUID of the workspace, from list_workspaces."),
+		},
+		{
+			Name: ToolListImportConnections,
+			Description: "List the migration sources this workspace has connected (Linear today) with the verdict " +
+				"of the last credential check. READ-ONLY. Call it FIRST whenever the user talks about moving off " +
+				"another tracker, and use the connection_id it returns for every other import tool. " +
+				"It returns NO API key and there is no tool that takes one: a source key is pasted into " +
+				"Settings \u2192 Integrations \u2192 Import. An EMPTY list means nothing is connected yet, so say " +
+				"that and name the page rather than guessing.",
+			Parameters: workspaceOnlySchema("UUID of the workspace, from list_workspaces."),
+		},
+		{
+			Name: ToolDryRunImport,
+			Description: "Survey a connected source and return the migration plan: how many issues, comments, " +
+				"projects and people would come across, which of them are UPDATES of rows already imported, the " +
+				"proposed status mapping, the people who could not be matched to a member, anything the key " +
+				"cannot reach, and the attachment budget. WRITES NOTHING \u2014 not one issue, not one user. " +
+				"Owner/admin only. Report the unreachable rows, the unmatched people and the skipped files FIRST, " +
+				"and treat any count as an estimate when the result says exact is false. " +
+				"The job_id it returns is what confirm_import and import_status take.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace to import INTO, from list_workspaces."},
+    "connection_id": {"type": "string", "description": "UUID of the source connection, from list_import_connections."},
+    "scope": {
+      "type": "object",
+      "description": "What to survey. Omit it entirely for everything the credential can see, which is the normal migration.",
+      "properties": {
+        "containers": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Source team/project ids or keys to limit the import to. Empty means everything visible."
+        },
+        "since": {"type": "string", "description": "Only issues updated on or after this date (YYYY-MM-DD or RFC3339). Omit for the full history."},
+        "include_archived": {"type": "boolean", "description": "Include the source's archived issues. Defaults to false."},
+        "include_comments": {"type": "boolean", "description": "Copy the discussion. Defaults to true \u2014 a tracker without its comments is a paste."},
+        "include_attachments": {"type": "boolean", "description": "Account for files. Defaults to true."},
+        "provision_users": {"type": "boolean", "description": "Create an Agora account for a source user who is not a member. Defaults to false; turning it on grows the member roster and the bill."},
+        "max_issues": {"type": "integer", "minimum": 1, "description": "Cap the walk. Anything beyond the cap is reported as not fetched rather than silently missing."}
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["workspace_id", "connection_id"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateImportMapping,
+			Description: "Correct the import mapping the dry run proposed: which source status becomes which Agora " +
+				"status, which source priority becomes which, which source team lands in an existing project, and " +
+				"which source email is which person. WRITE (workspace settings, owner/admin). This is how the user " +
+				"ARGUES with the plan \u2014 apply what they said, then run dry_run_import again so they see the " +
+				"corrected plan before confirming. A value that is not a real Agora status, priority or project is " +
+				"rejected and named in the result rather than stored.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace, from list_workspaces."},
+    "source": {"type": "string", "enum": ["linear"], "description": "Which source this mapping belongs to. Defaults to linear."},
+    "status": {
+      "type": "object",
+      "description": "Source workflow state name -> Agora status (backlog, todo, in_progress, in_review, done, blocked, cancelled). Merges: a state you do not name keeps its current mapping.",
+      "additionalProperties": {"type": "string"}
+    },
+    "priority": {
+      "type": "object",
+      "description": "Source priority name -> Agora priority (urgent, high, medium, low, none). Merges.",
+      "additionalProperties": {"type": "string"}
+    },
+    "containers": {
+      "type": "object",
+      "description": "Source team/project id or key -> an EXISTING Agora project (UUID or title, from list_projects). Unlisted containers get a new project created for them.",
+      "additionalProperties": {"type": "string"}
+    },
+    "users": {
+      "type": "object",
+      "description": "Source email -> the member email it really is, for the \"same person, two addresses\" case. Both sides are addresses, never names.",
+      "additionalProperties": {"type": "string"}
+    }
+  },
+  "required": ["workspace_id"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolConfirmImport,
+			Description: "Start the import the dry run planned. This is the one IRREVERSIBLE step of a migration: " +
+				"it writes thousands of rows into the workspace and there is no undo button, so it is " +
+				"confirmation-bound \u2014 calling it DOES NOT import anything. It returns a confirmation card " +
+				"naming the plan's own counts, and the job starts only when the user presses Confirm. " +
+				"NEVER call it in the same turn as dry_run_import: the plan is what the human authorizes, and a " +
+				"confirm that arrives before they have read it is a card with the box pre-ticked. Owner/admin only. " +
+				"Once started, say what is running and where the receipt appears \u2014 do not poll import_status " +
+				"in a loop and do not invent progress.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace, from list_workspaces."},
+    "job_id": {"type": "string", "description": "The job_id dry_run_import returned. Omit only to confirm this workspace's most recent import, and say which one you mean when you do."}
+  },
+  "required": ["workspace_id"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolImportStatus,
+			Description: "Read one import: its status, the created/updated/skipped/failed totals per entity kind, " +
+				"the failure list, and the plan it was authorized against. READ-ONLY. Call it when the user asks " +
+				"how a migration went \u2014 once, not in a loop. Report the failures as plainly as the successes; " +
+				"a receipt that lists only what worked is how a migration loses a team in week two.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace, from list_workspaces."},
+    "job_id": {"type": "string", "description": "The import job UUID. Omit for this workspace's most recent import."}
+  },
+  "required": ["workspace_id"],
+  "additionalProperties": false
+}`),
 		},
 		{
 			Name: ToolCreateIssue,

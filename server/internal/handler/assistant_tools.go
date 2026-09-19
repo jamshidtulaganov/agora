@@ -162,6 +162,22 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 	case assistant.ToolListIntegrations:
 		return h.assistantListIntegrations(ctx, caller, args)
 
+	// --- imports ----------------------------------------------------------
+	// The migration concierge (docs/importers-plan.md §4). Every one of these
+	// takes a connection_id and never a key; confirm_import parks a card like
+	// the deletes do, because the job it starts writes thousands of rows. See
+	// assistant_imports.go.
+	case assistant.ToolListImportConnections:
+		return h.assistantListImportConnections(ctx, caller, args)
+	case assistant.ToolDryRunImport:
+		return h.assistantDryRunImport(ctx, caller, args)
+	case assistant.ToolUpdateImportMapping:
+		return h.assistantUpdateImportMapping(ctx, caller, args)
+	case assistant.ToolConfirmImport:
+		return h.assistantConfirmImport(ctx, caller, args)
+	case assistant.ToolImportStatus:
+		return h.assistantImportStatus(ctx, caller, args)
+
 	// --- mutations --------------------------------------------------------
 	case assistant.ToolCreateIssue:
 		return h.assistantCreateIssue(ctx, caller, args)

@@ -230,6 +230,25 @@ import {
   ZohoSyncConfigsResponseSchema,
   EMPTY_ZOHO_SYNC_CONFIGS,
 } from "../zoho/types";
+import type {
+  ImportConnection,
+  CreateImportConnectionRequest,
+  ImportDryRunRequest,
+  ImportDryRunResult,
+  ImportJob,
+  StartImportRequest,
+  StartImportResult,
+} from "../imports/types";
+import {
+  ImportConnectionsResponseSchema,
+  ImportDryRunResponseSchema,
+  ImportJobSchema,
+  StartImportResponseSchema,
+  EMPTY_IMPORT_CONNECTIONS,
+  EMPTY_IMPORT_DRY_RUN,
+  EMPTY_IMPORT_JOB,
+  EMPTY_START_IMPORT,
+} from "../imports/types";
 import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
   CloudRuntimeNode,
@@ -4096,6 +4115,83 @@ export class ApiClient {
     return this.fetch(`/api/lark/binding/redeem`, {
       method: "POST",
       body: JSON.stringify({ token }),
+    });
+  }
+
+  // --- Importers (docs/importers-plan.md §6) --------------------------------
+  //
+  // Every response here goes through a schema with an explicit fallback. An
+  // import is the one place in the product where a drifted response would be
+  // read as "nothing to import" — a blank preview over a workspace full of
+  // issues — so parse-don't-cast is not optional on this surface.
+  //
+  // The source API key appears in exactly ONE direction: the body of
+  // createImportConnection. Nothing reads it back, and no method here returns
+  // anything derived from it.
+
+  async listImportConnections(workspaceId: string): Promise<ImportConnection[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/import/connections`);
+    return parseWithFallback(raw, ImportConnectionsResponseSchema, EMPTY_IMPORT_CONNECTIONS, {
+      endpoint: "GET /api/workspaces/{id}/import/connections",
+    });
+  }
+
+  async createImportConnection(
+    workspaceId: string,
+    data: CreateImportConnectionRequest,
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/import/connections`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async probeImportConnection(workspaceId: string, connectionId: string): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/import/connections/${connectionId}/probe`,
+      { method: "POST" },
+    );
+  }
+
+  async deleteImportConnection(workspaceId: string, connectionId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/import/connections/${connectionId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async dryRunImport(
+    workspaceId: string,
+    data: ImportDryRunRequest,
+  ): Promise<ImportDryRunResult> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/import/dry-run`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, ImportDryRunResponseSchema, EMPTY_IMPORT_DRY_RUN, {
+      endpoint: "POST /api/workspaces/{id}/import/dry-run",
+    });
+  }
+
+  async startImport(workspaceId: string, data: StartImportRequest): Promise<StartImportResult> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/import/jobs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, StartImportResponseSchema, EMPTY_START_IMPORT, {
+      endpoint: "POST /api/workspaces/{id}/import/jobs",
+    });
+  }
+
+  async getImportJob(workspaceId: string, jobId: string): Promise<ImportJob> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/import/jobs/${jobId}`);
+    return parseWithFallback(raw, ImportJobSchema, EMPTY_IMPORT_JOB, {
+      endpoint: "GET /api/workspaces/{id}/import/jobs/{jid}",
+    });
+  }
+
+  async cancelImport(workspaceId: string, jobId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/import/jobs/${jobId}/cancel`, {
+      method: "POST",
     });
   }
 }

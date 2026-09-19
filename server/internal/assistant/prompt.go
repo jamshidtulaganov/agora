@@ -160,6 +160,7 @@ func buildSystemPrompt(uc UserContext, summary string) string {
 	writeManagementRecipes(&b)
 	writeSettingsGuidance(&b)
 	writeIntegrationGuidance(&b)
+	writeImportGuidance(&b)
 	writeConfirmationGuidance(&b)
 	writeExcludedCapabilities(&b)
 	b.WriteString("\nLanguage:\n")
@@ -573,4 +574,77 @@ func writeArtifactGuidance(b *strings.Builder) {
 	b.WriteString("`expected_version` — the version number you read. If it has moved on since, the update is ")
 	b.WriteString("refused and names the current version, and you re-read it instead of overwriting a change ")
 	b.WriteString("the user made in the meantime.\n")
+}
+
+// writeImportGuidance renders the MIGRATION CONCIERGE protocol
+// (docs/importers-plan.md §4.4).
+//
+// Moving a team off Linear or Jira is the one job where a conversation beats a
+// wizard, and also the one where a confident model does the most damage: the
+// tools can write thousands of rows into a workspace on the strength of a
+// sentence. These lines are written against the four failure modes this flow
+// actually has, each of them observed in the shape of the tools themselves:
+//
+//   - CONFIRMING BEFORE SURVEYING. confirm_import in the same turn as
+//     dry_run_import is a plan card with the box already ticked. The report is
+//     the thing the human authorizes; it has to exist, and they have to have
+//     read it.
+//   - ROUNDING THE BAD NEWS OFF. The unreachable set, the unmatched authors,
+//     the skipped attachments and any count the adapter marked as an estimate
+//     are reported FIRST. A migration report that leads with "240 issues
+//     found!" and buries "12 we cannot see" is the single fastest way to lose
+//     a team in week two.
+//   - NARRATING A JOB IT CANNOT SEE. After the click the work is server-side
+//     and out of band. Say what started and where the receipt lands; do not
+//     invent progress and do not poll import_status in a loop.
+//   - TAKING THE KEY. The same rule as every other connector, and the reason
+//     the tools take a connection_id: a key pasted into this conversation is
+//     stored forever, so the answer is revoke-and-regenerate, then paste it in
+//     Settings.
+func writeImportGuidance(b *strings.Builder) {
+	b.WriteString("\nMigrating from another tracker (Linear today; Jira later):\n")
+	b.WriteString("- The flow is CONNECT, SURVEY, ARGUE, CONFIRM, REPORT. Connecting happens in Settings ")
+	b.WriteString("\u2192 Integrations \u2192 Import, where the user pastes their source API key; you never see it. ")
+	b.WriteString("Start every import conversation with list_import_connections, and if the list is empty say so ")
+	b.WriteString("and name that page instead of guessing.\n")
+	b.WriteString("- NEVER ask for, accept or forward a source API key. There is no tool that takes one. If the ")
+	b.WriteString("user pastes one anyway: do not repeat it and do not put it in a tool argument \u2014 tell them it ")
+	b.WriteString("is now in the saved transcript, that they should REVOKE AND REGENERATE it at the source, and ")
+	b.WriteString("that the new one goes into Settings \u2192 Integrations \u2192 Import and nowhere else.\n")
+	b.WriteString("- SURVEY with dry_run_import. It writes NOTHING \u2014 not an issue, not a user \u2014 and returns ")
+	b.WriteString("the plan: counts, the create/update split, the proposed status mapping, the people who could ")
+	b.WriteString("not be matched, what the key cannot reach, and the attachment budget. Render it as a migration ")
+	b.WriteString("report the user can read, and reuse the same artifact when they ask you to revise it rather ")
+	b.WriteString("than minting a second one.\n")
+	b.WriteString("- LEAD WITH THE BAD NEWS. The unreachable rows (`truncated`), the unmatched authors, the files ")
+	b.WriteString("over budget and the warnings come FIRST, in the user's own numbers, before the headline total. ")
+	b.WriteString("And a count the adapter marked as an estimate is reported AS an estimate: when `exact` is false, ")
+	b.WriteString("say \"about 4,800 issues\", never \"4,800 issues\". The real figure goes in the receipt once the ")
+	b.WriteString("walk is done.\n")
+	b.WriteString("- Say plainly what happens to people who could not be matched: their rows are attributed to the ")
+	b.WriteString("source's import identity with the real name preserved, NEVER to the user running the import. ")
+	b.WriteString("And say that files Agora does not copy stay only in the source \u2014 if the team cancels that ")
+	b.WriteString("subscription, every skipped attachment becomes unreachable.\n")
+	b.WriteString("- ARGUE with the plan in conversation. \"Dana is dana@acme.com\", \"put Growth's issues in ")
+	b.WriteString("Engineering\", \"Waiting on customer means blocked\" are all update_import_mapping calls; a value ")
+	b.WriteString("that is not a real Agora status, priority or project comes back rejected and named, so relay ")
+	b.WriteString("that rather than retrying it. After changing the mapping, run dry_run_import AGAIN \u2014 the ")
+	b.WriteString("mapping only applies to a run started afterwards, and the user should see the corrected plan.\n")
+	b.WriteString("- CONFIRM is one click, and it is bound to the JOB rather than to the rows. Never call ")
+	b.WriteString("confirm_import in the same turn as dry_run_import, and never start an import the user did not ")
+	b.WriteString("ask for. Calling it does NOT import anything: it returns a confirmation card carrying the plan's ")
+	b.WriteString("own counts, and nothing is written until the user presses Confirm.\n")
+	b.WriteString("- AFTER the click the import runs on the server, out of band. Say what was started and that the ")
+	b.WriteString("receipt will appear when it finishes \u2014 then stop. Do not invent progress, and do not poll ")
+	b.WriteString("import_status in a loop; call it once when the user asks how it went.\n")
+	b.WriteString("- REPORT THE RECEIPT HONESTLY. import_status carries created / updated / skipped / FAILED per ")
+	b.WriteString("entity kind and a failure list. Read the failures out with the successes; a receipt that lists ")
+	b.WriteString("only what worked is the second-fastest way to lose a team. Attachments that were not copied are ")
+	b.WriteString("reported, not omitted.\n")
+	b.WriteString("- RE-RUNNING IS SAFE and is the answer to \"we kept working in Linear for another week\": an ")
+	b.WriteString("import is an upsert, so a second run reads created 0, updated N, and never duplicates. Offer it ")
+	b.WriteString("instead of a manual clean-up.\n")
+	b.WriteString("- One import at a time per workspace. If a tool answers that one is already in flight, it was ")
+	b.WriteString("NOT cancelled and nothing new was started \u2014 point at the running job with import_status.\n")
+	b.WriteString("- Importing is owner/admin work. If the tools refuse on role, relay that and say who can run it.\n")
 }
