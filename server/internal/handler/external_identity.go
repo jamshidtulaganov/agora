@@ -39,7 +39,16 @@ var errExternalIdentityClaimed = errors.New("external identity already linked to
 // belongs to someone else the WHERE fails, no row is updated, and ExecResult
 // reports 0 rows affected — which we translate into the sentinel error.
 func (h *Handler) linkExternalIdentity(ctx context.Context, provider, externalID, userID string) error {
-	tag, err := h.DB.Exec(ctx,
+	return linkExternalIdentityOn(ctx, h.DB, provider, externalID, userID)
+}
+
+// linkExternalIdentityOn is linkExternalIdentity against an explicit executor,
+// so a caller that must bind an identity inside a transaction (the Slack OAuth
+// callback writes the installation and the installer's link together, or
+// neither) gets the same steal guard rather than a second copy of the SQL.
+// pgx.Tx satisfies the same Exec/Query/QueryRow shape as the pool.
+func linkExternalIdentityOn(ctx context.Context, exec dbExecutor, provider, externalID, userID string) error {
+	tag, err := exec.Exec(ctx,
 		`INSERT INTO user_external_identity (provider, external_id, user_id)
 		 VALUES ($1, $2, $3::uuid)
 		 ON CONFLICT (provider, external_id)

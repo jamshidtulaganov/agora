@@ -524,6 +524,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// TELEGRAM_WEBHOOK_SECRET inside the handler; always returns 200 to
 	// suppress Telegram retries.
 	r.Post("/telegram/webhook", h.TelegramWebhook)
+	// Slack app ingress (no Agora auth). Both surfaces carry their own proof:
+	// /slack/events is authenticated by Slack's HMAC-SHA256 signature over the
+	// RAW body (5-minute replay window, verified inside the handler), and
+	// /slack/oauth/callback by the secretbox-sealed `state` the begin endpoint
+	// minted — the browser arrives from slack.com with no Agora session
+	// guaranteed, so neither can sit behind middleware.Auth. Distinct from the
+	// Slack Incoming Webhook release connector, which is outbound only and has
+	// no ingress route at all.
+	r.Post("/slack/events", h.SlackEvents)
+	r.Get("/slack/oauth/callback", h.SlackOAuthCallback)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -950,6 +960,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// terminal failure.
 					r.Post("/lark/install/begin", h.BeginLarkInstall)
 					r.Get("/lark/install/{sessionId}/status", h.GetLarkInstallStatus)
+				})
+
+				// Slack app. Listing is member-visible for the same reason
+				// as Lark and GitHub — the Integrations tab must render for
+				// non-admins, and the response carries no credential.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Get("/slack/installations", h.ListSlackInstallations)
+				})
+				// Install / revoke are owner-admin AND human-only: the
+				// consent screen an install produces grants a bot token for
+				// the whole Slack workspace, and a revoke silences every
+				// channel route hanging off it. Neither is something an
+				// agent token should be able to do on a human's behalf.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.With(handler.RequireHumanActor).Post("/slack/install/begin", h.BeginSlackInstall)
+					r.With(handler.RequireHumanActor).Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
 				})
 			})
 		})

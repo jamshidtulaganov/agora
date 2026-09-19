@@ -77,6 +77,13 @@ type AppConfig struct {
 	BitrixEnabled bool `json:"bitrix_enabled,omitempty"`
 	ZohoEnabled   bool `json:"zoho_enabled,omitempty"`
 	LarkEnabled   bool `json:"lark_enabled,omitempty"`
+	// SlackEnabled gates the Slack APP surface (install button, channel
+	// routes) — not the Slack Incoming Webhook release connector, which needs
+	// no deployment keys and stays available either way. True only when all
+	// four Slack keys are present: a half-configured deployment that showed an
+	// install button would die at the code exchange, after an admin had already
+	// granted scopes in Slack.
+	SlackEnabled bool `json:"slack_enabled,omitempty"`
 	// TelegramBotsEnabled gates the per-agent bot surface, which is separate
 	// from TelegramOnly (login mode) and from the platform bot token: an agent
 	// bot's credential is sealed at rest, so without the key no install can
@@ -107,6 +114,9 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		BitrixEnabled: bitrixEndpointsEnabled(),
 		ZohoEnabled:   zohoConfigured(),
 		LarkEnabled:   strings.TrimSpace(os.Getenv("AGORA_LARK_SECRET_KEY")) != "",
+		// Same four-way gate BeginSlackInstall and /slack/events enforce, so
+		// "the UI offers it" and "the server does it" can never disagree.
+		SlackEnabled: slackEnabled(),
 		// Same key InstallAgentTelegramBot requires; offering the flow without
 		// it would fail at the last step, after the operator has already pasted
 		// a live bot token.

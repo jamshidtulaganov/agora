@@ -1098,6 +1098,37 @@ type SkillFile struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SlackChannelRoute struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	ChannelID      string             `json:"channel_id"`
+	ChannelName    string             `json:"channel_name"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	Events         []string           `json:"events"`
+	Enabled        bool               `json:"enabled"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SlackInstallation struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	TeamID            string             `json:"team_id"`
+	TeamName          string             `json:"team_name"`
+	EnterpriseID      string             `json:"enterprise_id"`
+	AppID             string             `json:"app_id"`
+	BotUserID         string             `json:"bot_user_id"`
+	BotTokenEncrypted []byte             `json:"bot_token_encrypted"`
+	Scopes            string             `json:"scopes"`
+	InstallerUserID   pgtype.UUID        `json:"installer_user_id"`
+	Status            string             `json:"status"`
+	InstalledAt       pgtype.Timestamptz `json:"installed_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Sprint struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

@@ -105,6 +105,17 @@ var Registry = []Def{
 	{Key: "AGORA_BITRIX_USER_POLL_INTERVAL", Kind: KindInt, Category: "Bitrix", Label: "Bitrix user poll interval (s)", Description: "Seconds between per-user Bitrix task imports (0 disables polling).", Default: "0"},
 	{Key: "AGORA_BITRIX_TAG_ALIASES", Kind: KindString, Category: "Bitrix", Label: "Bitrix tag synonyms", Description: "JSON map of canonical tag \u2192 every spelling that means it, e.g. {\"bug\":[\"bug\",\"\u0431\u0430\u0433\",\"BugReport\"]}. Tags are typed by hand in more than one language, so an exact-match filter answers \"how many bugs\" with whichever spelling the asker guessed. Empty uses the built-in defaults."},
 
+	// ---- Slack integration ---------------------------------------------
+	// The Slack APP (OAuth v2 bot token, Events API, Block Kit). Distinct from
+	// the Slack Incoming Webhook release connector, which needs no keys at all
+	// (its sealed webhook URL is per workspace). All four Slack credentials —
+	// these two plus AGORA_SLACK_CLIENT_SECRET / AGORA_SLACK_SIGNING_SECRET /
+	// AGORA_SLACK_SECRET_KEY below — must be present before /api/config reports
+	// slack_enabled and the install endpoints stop returning 503.
+	{Key: "AGORA_SLACK_CLIENT_ID", Kind: KindString, Category: "Slack", Label: "Slack client id", Description: "OAuth v2 client id of the Slack app this deployment installs. Agora Cloud ships one app; self-hosters register their own (Slack caps an app at five unfurl domains and changing them forces a re-install, so one shared app cannot serve every deployment's domain)."},
+	{Key: "AGORA_SLACK_APP_ID", Kind: KindString, Category: "Slack", Label: "Slack app id", Description: "App id (A…) of the Slack app. Optional: when set, the /slack/events ingress refuses deliveries carrying a different api_app_id."},
+	{Key: "AGORA_SLACK_NOTIFY_ENABLED", Kind: KindBool, Category: "Slack", Label: "Slack notifications", Description: "Post notifications to Slack for this project's issues. Off disables channel routes and personal DMs without uninstalling the app.", Default: "true", ProjectScoped: true},
+
 	// ---- Platform ------------------------------------------------------
 	{Key: "AGORA_TELEGRAM_ONLY", Kind: KindBool, Category: "Platform", Label: "Telegram-only mode", Description: "Restrict the web app to the Telegram mini-app login flow."},
 	{Key: "AGORA_TELEGRAM_SHARED_LOGIN_STORE", Kind: KindBool, Category: "Platform", Label: "Shared Telegram login store", Description: "Persist short-lived Telegram login state in PostgreSQL for multi-instance and rolling deployments."},
@@ -121,6 +132,9 @@ var Registry = []Def{
 	{Key: "AGORA_FIGMA_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Figma seal key", Description: "Secretbox key for Figma integration."},
 	{Key: "AGORA_RELEASE_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Release integration seal key", Description: "Secretbox key for per-workspace release-integration webhook URLs / signing secrets."},
 	{Key: "AGORA_MCP_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "MCP credential seal key", Description: "Secretbox key for per-workspace remote-MCP auth headers (bearer tokens)."},
+	{Key: "AGORA_SLACK_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Slack seal key", Description: "Secretbox key for per-workspace Slack bot tokens (slack_installation) and the OAuth install state. Unset means the Slack install endpoints fail closed with 503 rather than storing a bot token in the clear."},
+	{Key: "AGORA_SLACK_CLIENT_SECRET", Kind: KindSecret, Category: "Secrets", Label: "Slack client secret", Description: "OAuth v2 client secret used once per install, at the oauth.v2.access code exchange."},
+	{Key: "AGORA_SLACK_SIGNING_SECRET", Kind: KindSecret, Category: "Secrets", Label: "Slack signing secret", Description: "Verifies every inbound Slack request (HMAC-SHA256 over v0:timestamp:body, 5-minute window). Unset means /slack/events fails closed with 503 \u2014 accepting unverified payloads is not a fallback."},
 	{Key: "AGORA_IMPORT_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Importer seal key", Description: "Secretbox key for per-workspace source-tracker tokens (import_connection: Linear API key, Jira token). Unset means the import endpoints fail closed with 503 rather than storing a token in the clear."},
 	{Key: "TELEGRAM_BOT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Telegram bot token", Description: "Bot API token."},
 	{Key: "ZHIPU_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zhipu API key", Description: "GLM model API key."},
