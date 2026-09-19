@@ -27,6 +27,8 @@ import {
   EMPTY_MCP_CREDENTIAL_STATUS,
   EMPTY_MCP_CREDENTIAL_LIST,
   IssueDeployEventsResponseSchema,
+  StaleIssuesResponseSchema,
+  EMPTY_STALE_ISSUES,
   OrchestrationRunSchema,
   ListIssuesResponseSchema,
   ListTestCasesResponseSchema,
@@ -2388,5 +2390,70 @@ describe("report schedule schema drift", () => {
       { endpoint: "PUT /api/assistant/artifacts/{id}/pins/{pinId}/schedule" },
     );
     expect(missing.schedule).toBeNull();
+  });
+});
+
+describe("StaleIssuesResponseSchema", () => {
+  const endpoint = { endpoint: "GET /api/issues/staleness" };
+  const row = {
+    issue_id: "issue-1",
+    identifier: "MUL-123",
+    title: "Wire the staleness endpoint",
+    status: "in_review",
+    reason: "review_done",
+    since: "2026-09-16T00:00:00Z",
+  };
+
+  function parse(data: unknown) {
+    return parseWithFallback(data, StaleIssuesResponseSchema, EMPTY_STALE_ISSUES, endpoint);
+  }
+
+  it("parses a well-formed response", () => {
+    expect(parse({ stale: [row] })).toEqual({ stale: [row] });
+  });
+
+  it("falls back to an empty list when the stale key is missing entirely", () => {
+    // An older backend that doesn't serve this shape yet costs the nudge,
+    // not the page.
+    expect(parse({})).toEqual({ stale: [] });
+    expect(parse(null)).toEqual({ stale: [] });
+    expect(parse("not json at all")).toEqual({ stale: [] });
+  });
+
+  it("degrades a null / wrong-typed array to an empty list", () => {
+    expect(parse({ stale: null })).toEqual({ stale: [] });
+    expect(parse({ stale: "nope" })).toEqual({ stale: [] });
+    expect(parse({ stale: 7 })).toEqual({ stale: [] });
+  });
+
+  it("keeps a row whose reason the client has never heard of", () => {
+    // Enum drift downgrades, not crashes: a fifth rule from a newer server
+    // must still reach the UI, which renders it generically.
+    const drifted = parse({ stale: [{ ...row, reason: "date_slipped_in_slack" }] });
+    expect(drifted.stale).toHaveLength(1);
+    expect(drifted.stale[0]?.reason).toBe("date_slipped_in_slack");
+  });
+
+  it("fills a partial row instead of dropping the response", () => {
+    const partial = parse({ stale: [{ issue_id: "issue-2" }] });
+    expect(partial.stale[0]).toEqual({
+      issue_id: "issue-2",
+      identifier: "",
+      title: "",
+      status: "",
+      reason: "",
+      since: "",
+    });
+  });
+
+  it("degrades a wrong-typed row to no staleness at all", () => {
+    // A number where a string belongs is real drift, not an omission — the
+    // array `.catch([])` swallows it so the rest of the page keeps rendering.
+    expect(parse({ stale: [{ ...row, issue_id: 42 }] })).toEqual({ stale: [] });
+  });
+
+  it("ignores unknown extra fields a newer server adds", () => {
+    const wider = parse({ stale: [{ ...row, confidence: 0.8 }], computed_at: "now" });
+    expect(wider.stale[0]?.issue_id).toBe("issue-1");
   });
 });

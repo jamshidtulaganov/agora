@@ -69,3 +69,45 @@ export interface Issue {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Staleness — Tier 2 of docs/living-truth-plan.md. A stale signal is
+ * INFERENCE, never a write: it is computed on read from issue / comment /
+ * task timestamps and only ever renders. Nothing is stored, so nothing can
+ * itself go stale.
+ */
+export const KNOWN_STALE_REASONS = [
+  // in_progress, no active task, no open linked PR, quiet for N days.
+  "idle",
+  // in_review, has linked PRs, all merged/closed for N days.
+  "review_done",
+  // done, but at least one linked PR is open/draft again.
+  "reopened_work",
+  // blocked and quiet for N days.
+  "blocked_quiet",
+] as const;
+
+export type KnownStaleReason = (typeof KNOWN_STALE_REASONS)[number];
+
+/**
+ * The wire type is deliberately WIDER than the four known reasons: a server
+ * that learns a fifth rule must degrade to a generic "looks stale" rendering
+ * on older clients, never crash and never drop the row (CLAUDE.md "API
+ * Response Compatibility" → enum drift downgrades, not crashes).
+ */
+export type StaleReason = KnownStaleReason | (string & {});
+
+export interface StaleIssue {
+  issue_id: string;
+  identifier: string;
+  title: string;
+  /** Issue status as of the computation. Widened for the same drift reason. */
+  status: string;
+  reason: StaleReason;
+  /** ISO timestamp the rule measured from — what the age in the UI counts. */
+  since: string;
+}
+
+export interface StaleIssuesResponse {
+  stale: StaleIssue[];
+}

@@ -40,6 +40,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { AvatarGroup, AvatarGroupCount } from "@agora/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
+import { IssueStalenessNote } from "./staleness-indicator";
 import type { AgentTask, Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@agora/core/types";
 import { contentReferencesAttachment } from "@agora/core/types";
 import { formatDateOnly } from "@agora/core/issues/date";
@@ -1388,6 +1389,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_status)}>
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
+          {/* Staleness sits directly under the status control it is about
+              (docs/living-truth-plan.md Tier 2): one muted sentence, no
+              action, nothing at all when the issue looks fine. */}
+          <IssueStalenessNote issueId={issue.id} />
           <PropRow label={t(($) => $.detail.prop_assignee)}>
             <div className="flex flex-col items-start gap-1">
               <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />

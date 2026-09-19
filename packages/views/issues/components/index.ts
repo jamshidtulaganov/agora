@@ -10,3 +10,10 @@ export { ReplyInput } from "./reply-input";
 export { IssueMentionCard } from "./issue-mention-card";
 export { IssueChip } from "./issue-chip";
 export { ArtifactCodeViewer } from "./artifact-code-viewer";
+export {
+  StalenessIndicator,
+  StalenessTooltip,
+  StalenessNote,
+  IssueStalenessNote,
+  useIssueStaleness,
+} from "./staleness-indicator";

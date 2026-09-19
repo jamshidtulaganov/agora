@@ -963,6 +963,7 @@ func assistantWorkspaceGateArgs(ws, insider string) map[string]string {
 		assistant.ToolUsageSummary:       `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolActivityDigest:     `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolQAStatus:           `{"workspace_id":"` + ws + `"}`,
+		assistant.ToolListStaleIssues:    `{"workspace_id":"` + ws + `"}`,
 
 		// The MAIN-RULE parity tools. Every one of them is workspace-scoped, so
 		// every one of them owes an outsider a refusal — including the deletes,

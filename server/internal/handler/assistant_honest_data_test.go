@@ -448,6 +448,7 @@ func TestEveryListToolCarriesAScopeEnvelope(t *testing.T) {
 		assistant.ToolActivityDigest:  `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolUsageSummary:    `{"workspace_id":"` + ws + `"}`,
 		assistant.ToolQAStatus:        `{"workspace_id":"` + ws + `"}`,
+		assistant.ToolListStaleIssues: `{"workspace_id":"` + ws + `"}`,
 	}
 	for tool, args := range cases {
 		t.Run(tool, func(t *testing.T) {

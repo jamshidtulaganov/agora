@@ -183,6 +183,7 @@ import type {
   CreateBillingCheckoutSessionResponse,
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
+  StaleIssuesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -273,6 +274,8 @@ import {
   AttachmentResponseSchema,
   CancelTaskResponseSchema,
   ChildIssuesResponseSchema,
+  StaleIssuesResponseSchema,
+  EMPTY_STALE_ISSUES,
   CommentsListSchema,
   CommentTriggerPreviewSchema,
   CloudRuntimeNodeListSchema,
@@ -958,6 +961,23 @@ export class ApiClient {
 
   async getChildIssueProgress(): Promise<{ progress: { parent_issue_id: string; total: number; done: number }[] }> {
     return this.fetch("/api/issues/child-progress");
+  }
+
+  /**
+   * Issues that look stale right now (docs/living-truth-plan.md Tier 2).
+   *
+   * Workspace-scoped through the ambient `X-Workspace-ID` header like every
+   * other workspace read — the caller keeps `wsId` in the query key, not in
+   * this signature. Deliberately a SEPARATE request from the issue list: the
+   * hot list/board path must stay untouched, and a missing/failing staleness
+   * response costs the nudge and nothing else.
+   */
+  async getIssueStaleness(projectId?: string): Promise<StaleIssuesResponse> {
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/staleness${query}`);
+    return parseWithFallback(raw, StaleIssuesResponseSchema, EMPTY_STALE_ISSUES, {
+      endpoint: "GET /api/issues/staleness",
+    });
   }
 
   async deleteIssue(id: string): Promise<void> {

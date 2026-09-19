@@ -165,6 +165,11 @@ func TestPromptCarriesTheReportRecipes(t *testing.T) {
 		"MY DAY",
 		"never a second create_artifact of the same report",
 		"Recipes READ.",
+		// Living truth: the sprint report's risks section and the my-day
+		// closer both start from the tracker's own staleness signal rather
+		// than from the model's read of a status list.
+		"list_stale_issues",
+		"LEAD THE RISKS WITH WHAT THE TRACKER ITSELF SAYS IS STALE",
 	} {
 		if !containsFold(prompt, want) {
 			t.Fatalf("the prompt never mentions %q — the recipe layer is missing", want)

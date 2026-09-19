@@ -1,4 +1,6 @@
 export type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction } from "./issue";
+export type { KnownStaleReason, StaleReason, StaleIssue, StaleIssuesResponse } from "./issue";
+export { KNOWN_STALE_REASONS } from "./issue";
 export type {
   Agent,
   AgentStatus,

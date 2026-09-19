@@ -66,6 +66,8 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		ToolGetMySettings, ToolUpdateMySettings, ToolUpdateSidebar, ToolUpdateNotificationPreferences,
 		// Analytics.
 		ToolUsageSummary, ToolActivityDigest, ToolInboxSummary, ToolQAStatus,
+		// Living truth — where the tracker thinks it has gone wrong.
+		ToolListStaleIssues,
 		// Artifacts — session-scoped, not workspace-scoped.
 		ToolCreateArtifact, ToolUpdateArtifact,
 		// Plans — one confirmation for several related writes.

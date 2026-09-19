@@ -825,6 +825,15 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 		// keyword, but the earlier link row carries close_intent=true, so
 		// MUL-1 still advances.
 		reevalIssues := make([]db.Issue, 0, len(idents))
+		// LIVING TRUTH Tier 1b (docs/living-truth-plan.md): the OTHER end of
+		// the loop. A close-intent PR being open is the most obvious true
+		// signal in the whole integration and Agora was dropping it — the
+		// merge moved the issue to done, but nothing ever moved it to
+		// in_progress, so a board could show "todo" over work that had a
+		// branch, a diff and a reviewer. Collected here and applied after
+		// every link row for this event is persisted, mirroring the merged
+		// path's re-evaluation.
+		startIssues := make([]db.Issue, 0, len(idents))
 		for _, id := range idents {
 			issue, ok := h.lookupIssueByIdentifier(ctx, inst.WorkspaceID, prefix, id)
 			if !ok {
@@ -845,6 +854,26 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 			}
 			linkedIssueIDs = append(linkedIssueIDs, uuidToString(issue.ID))
 			reevalIssues = append(reevalIssues, issue)
+			// FORWARD-ONLY, and only from a standing start: backlog and todo
+			// are the two statuses that are simply not true once a PR that
+			// says "Closes X" exists. in_progress is already right;
+			// in_review / done / blocked / cancelled are all FURTHER along or
+			// deliberate human judgement, and dragging one of those backwards
+			// because a PR opened would be the exact behaviour that makes
+			// people turn automation off.
+			//
+			// `state` (not p.Action) is the gate, so this fires on opened,
+			// reopened, ready_for_review and any later edit that keeps the
+			// closing keyword — and never on a draft, which derivePRState
+			// reports as "draft" precisely because a draft is not yet work
+			// anybody is claiming to be doing.
+			if state == "open" && closeIntent && (issue.Status == "backlog" || issue.Status == "todo") {
+				startIssues = append(startIssues, issue)
+			}
+		}
+
+		for _, issue := range startIssues {
+			h.startIssueOnPullRequest(ctx, issue, workspaceID, pr)
 		}
 
 		// A terminal PR event (`merged` or `closed`) may be the moment the
@@ -872,7 +901,7 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 					continue
 				}
 				if counts.OpenCount == 0 && counts.MergedWithCloseIntentCount > 0 {
-					h.advanceIssueToDone(ctx, issue, workspaceID)
+					h.advanceIssueToDone(ctx, issue, workspaceID, pr)
 				}
 			}
 		}
@@ -1189,7 +1218,46 @@ func (h *Handler) lookupIssueByIdentifier(ctx context.Context, workspaceID pgtyp
 	return issue, true
 }
 
-func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, workspaceID string) {
+// startIssueOnPullRequest applies the Tier 1b move: a backlog/todo issue whose
+// close-intent PR is open becomes in_progress, with provenance.
+//
+// It deliberately does NOT do what advanceIssueToDone does beyond the status +
+// event: no parent notification, no knowledge capture. Those hang off
+// COMPLETION, and starting is not completing.
+func (h *Handler) startIssueOnPullRequest(ctx context.Context, issue db.Issue, workspaceID string, pr db.GithubPullRequest) {
+	updated, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+		ID:          issue.ID,
+		Status:      "in_progress",
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		slog.Warn("github: start issue on open pr failed", "err", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	h.postDerivedStatusProvenance(ctx, issue, fmt.Sprintf(
+		"Status changed to in_progress — PR [#%d](%s) opened with close intent.",
+		pr.PrNumber, pr.HtmlUrl))
+
+	// Same broadcast shape advanceIssueToDone publishes, so an open board picks
+	// the move up on the same listener with no new client-side handling.
+	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
+	resp := issueToResponse(updated, prefix)
+	h.publish(protocol.EventIssueUpdated, workspaceID, "system", "", map[string]any{
+		"issue":          resp,
+		"status_changed": true,
+		"prev_status":    issue.Status,
+		"creator_type":   issue.CreatorType,
+		"creator_id":     uuidToString(issue.CreatorID),
+		"source":         "github_pr_opened",
+	})
+}
+
+// advanceIssueToDone applies the merged→done move the three-rule gate above
+// authorised. `trigger` is the PR whose webhook caused this re-evaluation — not
+// necessarily the only PR that participated, but the one the team will
+// recognise, and the one the provenance comment names.
+func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, workspaceID string, trigger db.GithubPullRequest) {
 	updated, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
 		ID:          issue.ID,
 		Status:      "done",
@@ -1199,6 +1267,14 @@ func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, worksp
 		slog.Warn("github: advance issue to done failed", "err", err)
 		return
 	}
+
+	// LIVING TRUTH Tier 1a: say WHY. This move is correct and has been for a
+	// long time, but until now it landed with no trail at all — the status
+	// simply changed and nobody could tell whether a person or the platform
+	// did it. Best-effort: the transition has already committed.
+	h.postDerivedStatusProvenance(ctx, issue, fmt.Sprintf(
+		"Status changed to done — PR [#%d](%s) merged (close intent).",
+		trigger.PrNumber, trigger.HtmlUrl))
 
 	// Fire the platform parent-notification path on the same transition the
 	// HTTP UpdateIssue / BatchUpdateIssues paths use. A merged PR is one of

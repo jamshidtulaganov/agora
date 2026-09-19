@@ -1140,6 +1140,24 @@
     "update_failed": "Vazifani yangilab bo‘lmadi",
     "updated_ago": "Yangilangan {{time}}"
   },
+  "staleness": {
+    "aria_label": "Eskirganga o‘xshaydi",
+    "age": "Oxirgi faollik {{time}}",
+    "short": {
+      "idle": "Ishda, lekin hech narsa qimirlamayapti",
+      "review_done": "Tekshiruvda, lekin bog‘langan PR’lar allaqachon yopilgan",
+      "reopened_work": "done deb belgilangan, lekin PR yana ochiq",
+      "blocked_quiet": "Bloklangan va shundan beri hech qanday yangilanish yo‘q",
+      "generic": "Bu issue endi haqiqatga mos kelmasligi mumkin"
+    },
+    "long": {
+      "idle": "Bu issue eskirganga o‘xshaydi — u in_progress holatida, lekin oxirgi faollik {{time}} bo‘lgan.",
+      "review_done": "Bu issue eskirganga o‘xshaydi — u in_review holatida, lekin bog‘langan PR’lar {{time}} birlashtirilgan yoki yopilgan.",
+      "reopened_work": "Bu issue eskirganga o‘xshaydi — u done deb belgilangan, lekin bog‘langan PR {{time}} qayta ochilgan.",
+      "blocked_quiet": "Bu issue eskirganga o‘xshaydi — u bloklangan, oxirgi yangilanish esa {{time}} bo‘lgan.",
+      "generic": "Bu issue eskirganga o‘xshaydi — oxirgi faollik {{time}} bo‘lgan."
+    }
+  },
   "actions": {
     "status": "Holat",
     "priority": "Muhimlik",

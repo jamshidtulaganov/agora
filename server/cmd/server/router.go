@@ -1037,6 +1037,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/child-progress", h.ChildIssueProgress)
 				r.Get("/children", h.ListChildrenByParents)
 				r.Get("/grouped", h.ListGroupedIssues)
+				// Living truth (Tier 2): which issues look like their status
+				// has stopped being true. READ-ONLY and deliberately its own
+				// endpoint — the frontend fetches it BESIDE the list and
+				// merges client-side, so the board's hot path is untouched.
+				r.Get("/staleness", h.ListStaleIssues)
 				r.Get("/", h.ListIssues)
 				r.Post("/", h.CreateIssue)
 				r.Post("/quick-create", h.QuickCreateIssue)

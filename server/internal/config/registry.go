@@ -72,6 +72,16 @@ var Registry = []Def{
 	// ---- Docs / knowledge ----------------------------------------------
 	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync.", ProjectScoped: true},
 
+	// ---- Living truth (staleness) ----------------------------------------
+	// How long a tracker state may sit untouched before Agora says out loud
+	// that it has probably stopped being true. These tune the READ-ONLY
+	// staleness signal (GET /api/issues/staleness, the assistant's
+	// list_stale_issues, the list/detail indicators) — nothing here ever
+	// changes an issue's status, so a wrong number is noisy, never destructive.
+	{Key: "AGORA_STALE_IDLE_DAYS", Kind: KindInt, Category: "Truth", Label: "Idle threshold (days)", Description: "Days an in_progress issue may go with no activity — no comment, no task, no issue edit — and with no active task and no open pull request, before it is flagged `idle`. Activity is the freshest of the issue row, its newest comment and its newest agent task.", Default: "5"},
+	{Key: "AGORA_STALE_REVIEW_DONE_DAYS", Kind: KindInt, Category: "Truth", Label: "Review-done threshold (days)", Description: "Days an in_review issue may sit after ALL of its linked pull requests have merged or closed before it is flagged `review_done` — the work landed and the status never followed.", Default: "2"},
+	{Key: "AGORA_STALE_BLOCKED_DAYS", Kind: KindInt, Category: "Truth", Label: "Blocked-quiet threshold (days)", Description: "Days a blocked issue may go with no activity before it is flagged `blocked_quiet`. Blocked is a human judgement Agora never sets or clears itself; this only surfaces the ones nobody has revisited.", Default: "7"},
+
 	// ---- Agora Assistant --------------------------------------------------
 	// The product's own system-level AI (user-scoped, cross-workspace). Instance
 	// keys, never project-scoped: which model answers a person's chat is not a
@@ -111,6 +121,7 @@ var Registry = []Def{
 	{Key: "AGORA_FIGMA_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Figma seal key", Description: "Secretbox key for Figma integration."},
 	{Key: "AGORA_RELEASE_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Release integration seal key", Description: "Secretbox key for per-workspace release-integration webhook URLs / signing secrets."},
 	{Key: "AGORA_MCP_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "MCP credential seal key", Description: "Secretbox key for per-workspace remote-MCP auth headers (bearer tokens)."},
+	{Key: "AGORA_IMPORT_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Importer seal key", Description: "Secretbox key for per-workspace source-tracker tokens (import_connection: Linear API key, Jira token). Unset means the import endpoints fail closed with 503 rather than storing a token in the clear."},
 	{Key: "TELEGRAM_BOT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Telegram bot token", Description: "Bot API token."},
 	{Key: "ZHIPU_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zhipu API key", Description: "GLM model API key."},
 	{Key: "ANTHROPIC_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Anthropic API key", Description: "Messages API key, used when AGORA_ASSISTANT_PROVIDER=anthropic."},

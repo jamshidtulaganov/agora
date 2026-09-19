@@ -1125,6 +1125,24 @@
     "update_failed": "更新 issue 失败",
     "updated_ago": "更新于 {{time}}"
   },
+  "staleness": {
+    "aria_label": "看起来已过期",
+    "age": "最近动态 {{time}}",
+    "short": {
+      "idle": "处于 in_progress，但一直没有进展",
+      "review_done": "处于 in_review，但关联的 PR 已经关闭",
+      "reopened_work": "已标记 done，但又有 PR 处于打开状态",
+      "blocked_quiet": "处于 blocked，此后没有任何更新",
+      "generic": "这个 issue 可能已经与实际情况不符"
+    },
+    "long": {
+      "idle": "这个 issue 看起来已过期——它还处于 in_progress，但最近一次动态是 {{time}}。",
+      "review_done": "这个 issue 看起来已过期——它还处于 in_review，但关联的 PR 已于 {{time}}合并或关闭。",
+      "reopened_work": "这个 issue 看起来已过期——它已标记 done，但关联的 PR 于 {{time}}重新打开。",
+      "blocked_quiet": "这个 issue 看起来已过期——它处于 blocked，最近一次更新是 {{time}}。",
+      "generic": "这个 issue 看起来已过期——最近一次动态是 {{time}}。"
+    }
+  },
   "actions": {
     "status": "状态",
     "priority": "优先级",

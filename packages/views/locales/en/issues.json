@@ -1140,6 +1140,24 @@
     "update_failed": "Failed to update issue",
     "updated_ago": "Updated {{time}}"
   },
+  "staleness": {
+    "aria_label": "Looks stale",
+    "age": "Last activity {{time}}",
+    "short": {
+      "idle": "In progress, but nothing has moved it",
+      "review_done": "In review, but its pull requests are already closed",
+      "reopened_work": "Marked done, but a pull request is open again",
+      "blocked_quiet": "Blocked, with no update since then",
+      "generic": "This issue may no longer match reality"
+    },
+    "long": {
+      "idle": "This issue looks stale — it's in progress, but the last activity was {{time}}.",
+      "review_done": "This issue looks stale — it's in review, but its pull requests were merged or closed {{time}}.",
+      "reopened_work": "This issue looks stale — it's marked done, but a linked pull request reopened {{time}}.",
+      "blocked_quiet": "This issue looks stale — it's blocked, and the last update was {{time}}.",
+      "generic": "This issue looks stale — the last activity was {{time}}."
+    }
+  },
   "actions": {
     "status": "Status",
     "priority": "Priority",

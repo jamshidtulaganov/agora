@@ -1197,6 +1197,217 @@ func (q *Queries) ListOpenIssues(ctx context.Context, arg ListOpenIssuesParams) 
 	return items, nil
 }
 
+const listStaleIssues = `-- name: ListStaleIssues :many
+WITH candidate AS (
+    SELECT i.id, i.number, i.title, i.status, i.updated_at
+    FROM issue i
+    WHERE i.workspace_id = $1
+      AND i.archived_at IS NULL
+      AND i.status IN ('in_progress', 'in_review', 'done', 'blocked')
+      AND ($2::uuid IS NULL OR i.project_id = $2::uuid)
+      -- Same non-owner visibility gate as ListIssues: a restricted member sees
+      -- only issues that are theirs. NULL disables it (owners see everything).
+      AND (
+        $3::uuid IS NULL
+        OR (i.creator_type = 'member' AND i.creator_id = $3::uuid)
+        OR (i.assignee_type = 'member' AND i.assignee_id = $3::uuid)
+        OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+              SELECT a.id FROM agent a
+               WHERE a.workspace_id = $1
+                 AND a.owner_id = $3::uuid))
+        OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+              SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+               WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+                 AND sm.member_id = $3::uuid
+              UNION
+              SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+               WHERE s.workspace_id = $1
+                 AND a.owner_id = $3::uuid
+              UNION
+              SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+                JOIN agent a ON a.id = sm.member_id
+               WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+                 AND a.owner_id = $3::uuid))
+      )
+),
+signal AS (
+    SELECT
+        c.id,
+        c.number,
+        c.title,
+        c.status,
+        GREATEST(
+            c.updated_at,
+            COALESCE(cm.last_comment_at, c.updated_at),
+            COALESCE(tk.last_task_at, c.updated_at)
+        ) AS last_activity_at,
+        COALESCE(tk.has_active_task, FALSE) AS has_active_task,
+        COALESCE(pr.linked_count, 0) AS linked_count,
+        COALESCE(pr.open_count, 0) AS open_count,
+        pr.resolved_at,
+        pr.open_since
+    FROM candidate c
+    LEFT JOIN LATERAL (
+        SELECT MAX(cc.created_at) AS last_comment_at
+        FROM comment cc
+        WHERE cc.issue_id = c.id
+    ) cm ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT
+            MAX(GREATEST(
+                t.created_at,
+                COALESCE(t.dispatched_at, t.created_at),
+                COALESCE(t.started_at, t.created_at),
+                COALESCE(t.completed_at, t.created_at)
+            )) AS last_task_at,
+            bool_or(t.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')) AS has_active_task
+        FROM agent_task_queue t
+        WHERE t.issue_id = c.id
+    ) tk ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT
+            count(*) AS linked_count,
+            COALESCE(SUM(CASE WHEN p.state IN ('open', 'draft') THEN 1 ELSE 0 END), 0) AS open_count,
+            -- The moment the LAST linked PR stopped being in flight.
+            MAX(COALESCE(p.merged_at, p.closed_at)) AS resolved_at,
+            -- The newest still-open PR: the freshest evidence that work resumed.
+            MAX(CASE WHEN p.state IN ('open', 'draft') THEN p.pr_created_at END) AS open_since
+        FROM issue_pull_request ipr
+        JOIN github_pull_request p ON p.id = ipr.pull_request_id
+        WHERE ipr.issue_id = c.id
+    ) pr ON TRUE
+),
+verdict AS (
+    SELECT
+        s.id,
+        s.number,
+        s.title,
+        s.status,
+        CASE
+            WHEN s.status = 'in_progress'
+                 AND NOT s.has_active_task
+                 AND s.open_count = 0
+                 AND s.last_activity_at <= now() - ($4::int * INTERVAL '1 day')
+                THEN 'idle'
+            WHEN s.status = 'in_review'
+                 AND s.linked_count > 0
+                 AND s.open_count = 0
+                 -- A merged/closed PR with neither timestamp cannot be aged, so
+                 -- it fails closed (no signal) rather than reporting an age we
+                 -- would have had to invent.
+                 AND s.resolved_at IS NOT NULL
+                 AND s.resolved_at <= now() - ($5::int * INTERVAL '1 day')
+                THEN 'review_done'
+            WHEN s.status = 'done' AND s.open_count > 0
+                THEN 'reopened_work'
+            WHEN s.status = 'blocked'
+                 AND s.last_activity_at <= now() - ($6::int * INTERVAL '1 day')
+                THEN 'blocked_quiet'
+            ELSE NULL
+        END AS reason,
+        CASE
+            WHEN s.status = 'in_review' THEN COALESCE(s.resolved_at, s.last_activity_at)
+            WHEN s.status = 'done' THEN COALESCE(s.open_since, s.last_activity_at)
+            ELSE s.last_activity_at
+        END AS since
+    FROM signal s
+)
+SELECT
+    v.id AS issue_id,
+    v.number,
+    v.title,
+    v.status,
+    v.reason::text AS reason,
+    v.since::timestamptz AS since
+FROM verdict v
+WHERE v.reason IS NOT NULL
+ORDER BY v.since ASC, v.number ASC
+`
+
+type ListStaleIssuesParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ProjectID      pgtype.UUID `json:"project_id"`
+	RestrictToUser pgtype.UUID `json:"restrict_to_user"`
+	IdleDays       int32       `json:"idle_days"`
+	ReviewDoneDays int32       `json:"review_done_days"`
+	BlockedDays    int32       `json:"blocked_days"`
+}
+
+type ListStaleIssuesRow struct {
+	IssueID pgtype.UUID        `json:"issue_id"`
+	Number  int32              `json:"number"`
+	Title   string             `json:"title"`
+	Status  string             `json:"status"`
+	Reason  string             `json:"reason"`
+	Since   pgtype.Timestamptz `json:"since"`
+}
+
+// LIVING TRUTH, Tier 2 (docs/living-truth-plan.md): the issues whose tracker
+// state has most likely stopped being true. This query NEVER writes — a stale
+// signal is inference, so it renders and nothing more.
+//
+// Four rules, each on a disjoint status, so an issue matches at most one and a
+// plain CASE is enough (no priority ordering to get wrong):
+//
+//	idle           in_progress · no active task · no open linked PR ·
+//	               no activity for @idle_days
+//	review_done    in_review · has linked PRs · every one merged/closed, and
+//	               the last of them resolved @review_done_days ago
+//	reopened_work  done · at least one linked PR still open/draft
+//	blocked_quiet  blocked · no activity for @blocked_days
+//
+// "Activity" is the freshest of three clocks — the issue row, its newest
+// comment, and its newest agent task. agent_task_queue has no updated_at, so
+// the task clock is the latest of the lifecycle stamps it does carry.
+//
+// `since` is the timestamp the matching rule measured FROM, so the caller can
+// render an age without a second query: last activity for the two quiet rules,
+// the moment the last PR resolved for review_done, and when the still-open PR
+// was opened for reopened_work.
+//
+// Shape / EXPLAIN sanity: the candidate CTE narrows to one workspace's
+// non-archived issues in the four interesting statuses FIRST (idx on
+// issue(workspace_id) + the status predicate), and the three LATERALs then run
+// once per surviving row against indexed foreign keys — comment(issue_id),
+// agent_task_queue(issue_id), issue_pull_request(issue_id) (PK prefix) joined
+// to github_pull_request by primary key. That is N small index lookups over a
+// board-sized candidate set, not a workspace-wide scan of comments or tasks,
+// which is why this stays a SEPARATE query instead of a join into the hot list
+// path.
+func (q *Queries) ListStaleIssues(ctx context.Context, arg ListStaleIssuesParams) ([]ListStaleIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listStaleIssues,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.RestrictToUser,
+		arg.IdleDays,
+		arg.ReviewDoneDays,
+		arg.BlockedDays,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStaleIssuesRow{}
+	for rows.Next() {
+		var i ListStaleIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.Number,
+			&i.Title,
+			&i.Status,
+			&i.Reason,
+			&i.Since,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockIssueDuplicateKey = `-- name: LockIssueDuplicateKey :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
 `

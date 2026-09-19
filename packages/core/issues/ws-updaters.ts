@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { issueKeys } from "./queries";
+import { stalenessKeys } from "./staleness";
 import { labelKeys } from "../labels/queries";
 import { projectKeys } from "../projects/queries";
 import {
@@ -10,6 +11,18 @@ import {
 import { cleanupDeletedIssueCaches } from "./delete-cache";
 import type { Issue, IssueLabelsResponse, IssueMetadata, Label } from "../types";
 import type { ListIssuesCache } from "../types";
+
+/**
+ * Staleness (docs/living-truth-plan.md Tier 2) is DERIVED from issue status,
+ * comments and tasks — the very things these WS handlers already react to —
+ * so it rides the existing issue-event sweep instead of getting WS events of
+ * its own. Blanket prefix: the rules cross issues (an issue leaving
+ * in_review changes only its own row, but a project filter changes which
+ * rows the query returned at all), and the payload is a handful of rows.
+ */
+function invalidateStaleness(qc: QueryClient, wsId: string) {
+  qc.invalidateQueries({ queryKey: stalenessKeys.all(wsId) });
+}
 
 export function onIssueCreated(
   qc: QueryClient,
@@ -34,6 +47,7 @@ export function onIssueCreated(
     qc.invalidateQueries({ queryKey: issueKeys.children(wsId, issue.parent_issue_id) });
     qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
   }
+  invalidateStaleness(qc, wsId);
 }
 
 export function onIssueUpdated(
@@ -98,6 +112,7 @@ export function onIssueUpdated(
     }
     qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   }
+  invalidateStaleness(qc, wsId);
 }
 
 /**
@@ -185,4 +200,5 @@ export function onIssueDeleted(
   qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+  invalidateStaleness(qc, wsId);
 }

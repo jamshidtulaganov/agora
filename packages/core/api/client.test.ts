@@ -1297,3 +1297,64 @@ describe("report schedule API", () => {
     expect(drifted[0]?.schedule).toBeNull();
   });
 });
+
+describe("getIssueStaleness", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const row = {
+    issue_id: "issue-1",
+    identifier: "MUL-123",
+    title: "Wire the staleness endpoint",
+    status: "in_review",
+    reason: "review_done",
+    since: "2026-09-16T00:00:00Z",
+  };
+
+  it("reads the workspace-scoped route, with no project filter by default", async () => {
+    const fetchMock = jsonFetch({ stale: [row] });
+    const client = new ApiClient("https://api.example.test");
+    const res = await client.getIssueStaleness();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/issues/staleness",
+    );
+    expect(res.stale).toHaveLength(1);
+  });
+
+  it("passes project_id through, url-encoded", async () => {
+    const fetchMock = jsonFetch({ stale: [] });
+    const client = new ApiClient("https://api.example.test");
+    await client.getIssueStaleness("proj 1/2");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/issues/staleness?project_id=proj%201%2F2",
+    );
+  });
+
+  it("keeps an unknown reason so the row can render generically", async () => {
+    jsonFetch({ stale: [{ ...row, reason: "date_slipped_in_slack" }] });
+    const client = new ApiClient("https://api.example.test");
+    const res = await client.getIssueStaleness();
+    expect(res.stale[0]?.reason).toBe("date_slipped_in_slack");
+  });
+
+  it("degrades a drifted body to no staleness instead of throwing", async () => {
+    const client = new ApiClient("https://api.example.test");
+
+    jsonFetch({});
+    expect(await client.getIssueStaleness()).toEqual({ stale: [] });
+
+    jsonFetch({ stale: null });
+    expect(await client.getIssueStaleness()).toEqual({ stale: [] });
+
+    jsonFetch({ stale: [{ ...row, since: 12345 }] });
+    expect(await client.getIssueStaleness()).toEqual({ stale: [] });
+  });
+});

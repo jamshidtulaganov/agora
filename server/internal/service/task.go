@@ -2103,6 +2103,52 @@ func (s *TaskService) maybeReTriggerSquadLeaderOnMemberFailure(ctx context.Conte
 	return true
 }
 
+// postDerivedStatusProvenance writes the system comment that explains a status
+// the PLATFORM moved rather than a person — the service-side twin of the
+// handler's helper of the same name (living_truth.go).
+//
+// Same convention as every other system comment in this file: author_type
+// 'system' with the zero UUID (the column is NOT NULL and the frontend branches
+// on author_type), type 'system', and the ordinary comment.created broadcast so
+// an open issue page shows it without a refetch. Purely best-effort — the
+// status change it describes has already committed, and a failed comment must
+// never escalate into a failed sweep.
+func (s *TaskService) postDerivedStatusProvenance(ctx context.Context, issue db.Issue, content string) {
+	comment, err := s.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  "system",
+		AuthorID:    pgtype.UUID{Valid: true},
+		Content:     content,
+		Type:        "system",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("provenance: create system comment failed",
+			"error", err, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventCommentCreated,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "system",
+		Payload: map[string]any{
+			"comment": map[string]any{
+				"id":          util.UUIDToString(comment.ID),
+				"issue_id":    util.UUIDToString(comment.IssueID),
+				"author_type": comment.AuthorType,
+				"author_id":   util.UUIDToString(comment.AuthorID),
+				"content":     comment.Content,
+				"type":        comment.Type,
+				"parent_id":   util.UUIDToPtr(comment.ParentID),
+				"created_at":  comment.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			},
+			"issue_title":  issue.Title,
+			"issue_status": issue.Status,
+		},
+	})
+}
+
 func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTaskQueue) int {
 	if len(tasks) == 0 {
 		return 0
@@ -2166,6 +2212,17 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 								ID: t.IssueID, Status: "todo", WorkspaceID: issue.WorkspaceID,
 							}); updateErr != nil {
 								slog.Warn("handle failed tasks: reset stuck issue failed", "issue_id", issueKey, "error", updateErr)
+							} else {
+								// LIVING TRUTH Tier 1a (docs/living-truth-plan.md):
+								// this is the one BACKWARD move the platform is
+								// allowed to make, and a backward move with no
+								// explanation is the single most alarming thing a
+								// tracker can do to a person — the issue they were
+								// watching in_progress is suddenly todo again and
+								// nothing says why. Best-effort: the reset has
+								// already committed.
+								s.postDerivedStatusProvenance(ctx, issue,
+									"Status reset to todo — task failed and no open PR remained.")
 							}
 						}
 					}

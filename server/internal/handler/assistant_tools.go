@@ -271,6 +271,13 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 	case assistant.ToolQAStatus:
 		return h.assistantQAStatus(ctx, caller, args)
 
+	// --- living truth -----------------------------------------------------
+	// Read-only staleness (docs/living-truth-plan.md). See living_truth.go —
+	// the executor shares its query with GET /api/issues/staleness so the
+	// assistant and the UI can never disagree about what "stale" means.
+	case assistant.ToolListStaleIssues:
+		return h.assistantListStaleIssues(ctx, caller, args)
+
 	// --- artifacts --------------------------------------------------------
 	// Session-scoped, not workspace-scoped: see assistant_artifacts.go.
 	case assistant.ToolCreateArtifact:

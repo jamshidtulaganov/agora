@@ -46,6 +46,7 @@ import type {
   ReportSchedule,
   AssistantOperation,
   AssistantOperationDecision,
+  StaleIssuesResponse,
 } from "../types";
 
 const OrchestrationStepSchema = z.object({
@@ -2495,3 +2496,31 @@ export const ReportScheduleResponseSchema = z
 export const EMPTY_REPORT_SCHEDULE_RESPONSE: { schedule: ReportSchedule | null } = {
   schedule: null,
 };
+
+// ---------------------------------------------------------------------------
+// Staleness — GET /api/issues/staleness (docs/living-truth-plan.md, Tier 2).
+//
+// Lenient on purpose. This response only ever drives a quiet nudge glyph, so
+// every failure mode must cost the nudge and nothing else:
+//   - `reason` stays `z.string()`, never `z.enum(...)`. A server that learns
+//     a fifth rule must render generically on an older desktop build, not
+//     drop the row and not throw (CLAUDE.md "Enum drift downgrades").
+//   - every field defaults, so a partial row still lists.
+//   - the array `.catch([])`, so `stale: null` / `stale: "nope"` from a
+//     drifted backend degrades to "nothing is stale" instead of failing the
+//     whole object.
+// ---------------------------------------------------------------------------
+export const StaleIssueSchema = z.object({
+  issue_id: z.string().default(""),
+  identifier: z.string().default(""),
+  title: z.string().default(""),
+  status: z.string().default(""),
+  reason: z.string().default(""),
+  since: z.string().default(""),
+}).loose();
+
+export const StaleIssuesResponseSchema = z.object({
+  stale: z.array(StaleIssueSchema).catch([]).default([]),
+}).loose();
+
+export const EMPTY_STALE_ISSUES: StaleIssuesResponse = { stale: [] };

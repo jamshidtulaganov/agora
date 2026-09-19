@@ -167,6 +167,13 @@ const (
 	ToolInboxSummary   = "inbox_summary"
 	ToolQAStatus       = "qa_status"
 
+	// Living truth (read). Which issues look like their status has stopped
+	// being true — the tracker's own opinion of where it is wrong
+	// (docs/living-truth-plan.md). READ-ONLY by design, not by omission: the
+	// signal is inference over timestamps, and a model that "helpfully" moved
+	// a status because a row appeared here would be writing on a guess.
+	ToolListStaleIssues = "list_stale_issues"
+
 	// Artifacts — rich outputs (chart, table, report, small HTML tool) that
 	// live beside the transcript instead of inside it. These are the only
 	// tools in the catalog scoped to the SESSION rather than to a workspace:
@@ -1714,6 +1721,28 @@ func ToolSpecs() []llm.Tool {
 			Description: "QA regression totals for a workspace over the last 30 days: how many test runs " +
 				"passed, failed and were skipped, plus how much of the suite is scripted.",
 			Parameters: workspaceOnlySchema("UUID of the workspace, from list_workspaces."),
+		},
+		{
+			Name: ToolListStaleIssues,
+			Description: "The issues in ONE workspace whose status has probably stopped being true — what the " +
+				"tracker itself flags as suspect. READ-ONLY. Call it whenever the user asks what is stuck, " +
+				"stale, slipping or at risk, and lead a sprint report's risks with it instead of guessing at " +
+				"risk from a status list. Each row carries a reason — idle (in progress but silent, with no " +
+				"task and no open pull request), review_done (in review, but every linked pull request already " +
+				"merged or closed), reopened_work (marked done while a linked pull request is open again), " +
+				"blocked_quiet (blocked and untouched) — plus `since`, the timestamp the rule measured from, so " +
+				"you can state the age. These are INFERENCES from timestamps, not facts: say what is stale and " +
+				"why, and never move an issue because it appeared here. An empty list is a real answer — say " +
+				"nothing looks stale.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace, from list_workspaces."},
+    "project_id": {"type": "string", "description": "Optional project to narrow to: a UUID from list_projects, or the project title."}
+  },
+  "required": ["workspace_id"],
+  "additionalProperties": false
+}`),
 		},
 		{
 			Name: ToolCreateArtifact,

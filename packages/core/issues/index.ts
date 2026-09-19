@@ -5,3 +5,4 @@ export * from "./ws-updaters";
 export * from "./config";
 export * from "./stores";
 export * from "./stage";
+export * from "./staleness";
