@@ -179,10 +179,7 @@ describe("TelegramTab", () => {
     });
   });
 
-  // 15s timeout: this test types character-by-character through userEvent and
-  // has twice timed out at vitest's 5s default on slow CI runners while
-  // passing locally in ~1s. The budget is for the machine, not the code.
-  it("submits access edits with ids split from free text", { timeout: 15000 }, async () => {
+  it("submits access edits with ids split from free text", async () => {
     // People paste ids separated by newlines, commas or spaces; a trailing
     // newline must not be submitted as an id the backend then rejects.
     mockSetAccess.mockResolvedValue(CONNECTED);
@@ -217,8 +214,7 @@ describe("TelegramTab", () => {
     expect(screen.queryByRole("option", { name: "bitrix-manager" })).toBeNull();
   });
 
-  // Same 15s budget as the access-edit test above, same CI-runner reason.
-  it("sends the pasted token once and closes the form", { timeout: 15000 }, async () => {
+  it("sends the pasted token once and closes the form", async () => {
     // The token is full control of the bot, so the form must not linger with
     // it still on screen after a successful install.
     mockInstall.mockResolvedValue(CONNECTED);
