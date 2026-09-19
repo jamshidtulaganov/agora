@@ -186,3 +186,45 @@ RETURNING *;
 SELECT COUNT(*) FROM issue
 WHERE workspace_id = $1
   AND metadata -> 'external_ref' ->> 'import_id' = sqlc.arg('import_id')::text;
+
+-- name: UpdateIssueImported :one
+-- The importer's update: the second run over an issue it already created.
+-- Deliberately NOT UpdateIssue. Two differences, both load-bearing:
+--   * updated_at is the SOURCE's, not now(). An import that stamps today's
+--     date on a two-year-old issue has destroyed the thing it was migrating.
+--   * every column the importer owns is set unconditionally rather than
+--     COALESCEd. A partial-struct call against a COALESCE-ing update silently
+--     keeps a stale value; against this one it is visibly a caller bug. (The
+--     opposite mistake — UpdateProject COALESCEs only 4 of 9 columns and NULLs
+--     the rest — is the reason this is spelled out.)
+-- Columns the importer does NOT own (number, creator, position, archived_at)
+-- are untouched: re-importing must not renumber an issue people have linked to.
+UPDATE issue SET
+    title = $3,
+    description = $4,
+    status = $5,
+    priority = $6,
+    assignee_type = $7,
+    assignee_id = $8,
+    parent_issue_id = $9,
+    project_id = $10,
+    start_date = $11,
+    due_date = $12,
+    metadata = $13,
+    updated_at = sqlc.arg('updated_at')
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
+
+-- name: UpsertIssueDependency :execrows
+-- Relations are applied in their own pass, last, because a blocks-link can
+-- point at an issue that only exists after the pass that creates it.
+-- issue_dependency has no unique constraint, so the dedup is a NOT EXISTS guard
+-- rather than an ON CONFLICT: re-running an import must not stack duplicate
+-- edges. 0 rows affected means "already there", which is the re-run's success
+-- case, not a failure.
+INSERT INTO issue_dependency (issue_id, depends_on_issue_id, type)
+SELECT $1, $2, $3
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_dependency
+    WHERE issue_id = $1 AND depends_on_issue_id = $2 AND type = $3
+);

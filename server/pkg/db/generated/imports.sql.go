@@ -831,6 +831,101 @@ func (q *Queries) UpdateImportJobProgress(ctx context.Context, arg UpdateImportJ
 	return err
 }
 
+const updateIssueImported = `-- name: UpdateIssueImported :one
+UPDATE issue SET
+    title = $3,
+    description = $4,
+    status = $5,
+    priority = $6,
+    assignee_type = $7,
+    assignee_id = $8,
+    parent_issue_id = $9,
+    project_id = $10,
+    start_date = $11,
+    due_date = $12,
+    metadata = $13,
+    updated_at = $14
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, archived_at
+`
+
+type UpdateIssueImportedParams struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	Title         string             `json:"title"`
+	Description   pgtype.Text        `json:"description"`
+	Status        string             `json:"status"`
+	Priority      string             `json:"priority"`
+	AssigneeType  pgtype.Text        `json:"assignee_type"`
+	AssigneeID    pgtype.UUID        `json:"assignee_id"`
+	ParentIssueID pgtype.UUID        `json:"parent_issue_id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	StartDate     pgtype.Date        `json:"start_date"`
+	DueDate       pgtype.Date        `json:"due_date"`
+	Metadata      []byte             `json:"metadata"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// The importer's update: the second run over an issue it already created.
+// Deliberately NOT UpdateIssue. Two differences, both load-bearing:
+//   - updated_at is the SOURCE's, not now(). An import that stamps today's
+//     date on a two-year-old issue has destroyed the thing it was migrating.
+//   - every column the importer owns is set unconditionally rather than
+//     COALESCEd. A partial-struct call against a COALESCE-ing update silently
+//     keeps a stale value; against this one it is visibly a caller bug. (The
+//     opposite mistake — UpdateProject COALESCEs only 4 of 9 columns and NULLs
+//     the rest — is the reason this is spelled out.)
+//
+// Columns the importer does NOT own (number, creator, position, archived_at)
+// are untouched: re-importing must not renumber an issue people have linked to.
+func (q *Queries) UpdateIssueImported(ctx context.Context, arg UpdateIssueImportedParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, updateIssueImported,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Title,
+		arg.Description,
+		arg.Status,
+		arg.Priority,
+		arg.AssigneeType,
+		arg.AssigneeID,
+		arg.ParentIssueID,
+		arg.ProjectID,
+		arg.StartDate,
+		arg.DueDate,
+		arg.Metadata,
+		arg.UpdatedAt,
+	)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
 const upsertCommentImported = `-- name: UpsertCommentImported :one
 INSERT INTO comment (
     issue_id, workspace_id, author_type, author_id, content, type, parent_id,
@@ -899,4 +994,33 @@ func (q *Queries) UpsertCommentImported(ctx context.Context, arg UpsertCommentIm
 		&i.ExternalID,
 	)
 	return i, err
+}
+
+const upsertIssueDependency = `-- name: UpsertIssueDependency :execrows
+INSERT INTO issue_dependency (issue_id, depends_on_issue_id, type)
+SELECT $1, $2, $3
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_dependency
+    WHERE issue_id = $1 AND depends_on_issue_id = $2 AND type = $3
+)
+`
+
+type UpsertIssueDependencyParams struct {
+	IssueID          pgtype.UUID `json:"issue_id"`
+	DependsOnIssueID pgtype.UUID `json:"depends_on_issue_id"`
+	Type             string      `json:"type"`
+}
+
+// Relations are applied in their own pass, last, because a blocks-link can
+// point at an issue that only exists after the pass that creates it.
+// issue_dependency has no unique constraint, so the dedup is a NOT EXISTS guard
+// rather than an ON CONFLICT: re-running an import must not stack duplicate
+// edges. 0 rows affected means "already there", which is the re-run's success
+// case, not a failure.
+func (q *Queries) UpsertIssueDependency(ctx context.Context, arg UpsertIssueDependencyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertIssueDependency, arg.IssueID, arg.DependsOnIssueID, arg.Type)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
