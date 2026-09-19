@@ -979,6 +979,35 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Post("/slack/install/begin", h.BeginSlackInstall)
 					r.With(handler.RequireHumanActor).Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
 				})
+
+				// Tracker import — Linear (docs/importers-plan.md §6).
+				// Owner/admin throughout, not member-visible like the other
+				// integrations: a connection names the tracker a team is
+				// leaving, and a dry run spends the customer's source rate
+				// limit. Every write is additionally RequireHumanActor —
+				// storing a credential, spending it, importing thousands of
+				// rows into a workspace and cancelling a run are all things a
+				// human decides, never an agent token acting on their behalf.
+				// The sealed token is never echoed by any of these.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Get("/import/connections", h.ListImportConnections)
+					r.With(handler.RequireHumanActor).Post("/import/connections", h.CreateImportConnection)
+					r.With(handler.RequireHumanActor).Post("/import/connections/{cid}/probe", h.ProbeImportConnection)
+					r.With(handler.RequireHumanActor).Delete("/import/connections/{cid}", h.DeleteImportConnection)
+					// Cheap "what is in there?" for the scope picker, long
+					// before anyone pays for a full walk.
+					r.Get("/import/connections/{cid}/containers", h.ListImportContainers)
+					// The survey. Writes a job row and a plan — no workspace
+					// rows at all — and answers 202 + a job id when the walk
+					// outlasts the request window.
+					r.With(handler.RequireHumanActor).Post("/import/dry-run", h.DryRunImport)
+					// The confirm. This is the gesture that writes.
+					r.With(handler.RequireHumanActor).Post("/import/jobs", h.CreateImportJob)
+					r.Get("/import/jobs", h.ListImportJobs)
+					r.Get("/import/jobs/{jid}", h.GetImportJob)
+					r.With(handler.RequireHumanActor).Post("/import/jobs/{jid}/cancel", h.CancelImportJob)
+				})
 			})
 		})
 

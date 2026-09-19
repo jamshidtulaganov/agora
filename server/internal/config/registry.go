@@ -116,6 +116,21 @@ var Registry = []Def{
 	{Key: "AGORA_SLACK_APP_ID", Kind: KindString, Category: "Slack", Label: "Slack app id", Description: "App id (A…) of the Slack app. Optional: when set, the /slack/events ingress refuses deliveries carrying a different api_app_id."},
 	{Key: "AGORA_SLACK_NOTIFY_ENABLED", Kind: KindBool, Category: "Slack", Label: "Slack notifications", Description: "Post notifications to Slack for this project's issues. Off disables channel routes and personal DMs without uninstalling the app.", Default: "true", ProjectScoped: true},
 
+	// ---- Tracker import (Linear / Jira → Agora) -------------------------
+	// docs/importers-plan.md §6. The seal key AGORA_IMPORT_SECRET_KEY lives
+	// with the other secrets below; without it every import write endpoint
+	// answers 503, so these tunables only matter on a deployment that has one.
+	// The caps are surfaced in the dry-run report rather than enforced
+	// silently: anything over budget is skipped AND LISTED (§3.6).
+	{Key: "AGORA_IMPORT_ENABLED", Kind: KindBool, Category: "Import", Label: "Tracker import", Description: "Expose the Linear/Jira import endpoints. On by default — an import still needs the seal key, an admin, a probed connection and a human confirm, so this is a kill switch rather than the gate. Off answers 503 everywhere.", Default: "true"},
+	{Key: "AGORA_IMPORT_MAX_ISSUES", Kind: KindInt, Category: "Import", Label: "Max issues per import", Description: "Ceiling on how many issues one run walks. 0 is uncapped (the normal setting for a migration); a non-zero value clamps whatever the operator chose and the plan reports what was left behind.", Default: "0"},
+	{Key: "AGORA_IMPORT_MAX_ATTACHMENT_MB", Kind: KindInt, Category: "Import", Label: "Max attachment size (MB)", Description: "Per-file cap. Files over it are skipped and listed in the report with their source URL — never silently dropped.", Default: "25"},
+	{Key: "AGORA_IMPORT_MAX_TOTAL_ATTACHMENT_MB", Kind: KindInt, Category: "Import", Label: "Max attachment total (MB)", Description: "Whole-import file budget. Raising it and re-running is safe: the importer upserts, so a second pass is \"created: 0, updated: N\".", Default: "2048"},
+	{Key: "AGORA_IMPORT_MAX_ATTACHMENTS_PER_ISSUE", Kind: KindInt, Category: "Import", Label: "Max attachments per issue", Description: "Per-issue file count cap.", Default: "20"},
+	{Key: "AGORA_IMPORT_MAX_FAILURES", Kind: KindInt, Category: "Import", Label: "Max recorded failures", Description: "Bounds import_job.failures so a pathological run cannot write a 200 MB jsonb column. Failures beyond the bound are counted, and the receipt says the list is truncated.", Default: "200"},
+	{Key: "AGORA_IMPORT_DRY_RUN_WAIT_SECONDS", Kind: KindInt, Category: "Import", Label: "Dry-run wait (s)", Description: "How long POST /import/dry-run holds the request open hoping to answer with the plan itself before returning 202 and letting the client poll the job. The survey keeps running either way.", Default: "20"},
+	{Key: "AGORA_IMPORT_JOB_TIMEOUT_MINUTES", Kind: KindInt, Category: "Import", Label: "Import job timeout (min)", Description: "Ceiling on one background run. A job that exceeds it is cancelled and recorded as cancelled, so a wedged walk cannot hold the workspace's one in-flight slot forever.", Default: "120"},
+
 	// ---- Platform ------------------------------------------------------
 	{Key: "AGORA_TELEGRAM_ONLY", Kind: KindBool, Category: "Platform", Label: "Telegram-only mode", Description: "Restrict the web app to the Telegram mini-app login flow."},
 	{Key: "AGORA_TELEGRAM_SHARED_LOGIN_STORE", Kind: KindBool, Category: "Platform", Label: "Shared Telegram login store", Description: "Persist short-lived Telegram login state in PostgreSQL for multi-instance and rolling deployments."},

@@ -205,4 +205,12 @@ const (
 	// deleting the row; the audit trail is preserved.
 	EventLarkInstallationCreated = "lark_installation:created"
 	EventLarkInstallationRevoked = "lark_installation:revoked"
+
+	// Tracker import progress (docs/importers-plan.md §3.7). Workspace-scoped
+	// and THROTTLED at the source — the Runner emits a tick every N rows and
+	// every 2s, whichever is slower, so a 10k-issue import is not 10k frames.
+	// The payload carries counters only; the authoritative state is the
+	// import_job row, which the client reads through the membership-gated
+	// GET /api/workspaces/{id}/import/jobs/{jid}.
+	EventImportProgress = "import:progress"
 )

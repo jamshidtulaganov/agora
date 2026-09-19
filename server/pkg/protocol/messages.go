@@ -31,6 +31,19 @@ type TaskProgressPayload struct {
 	Total   int    `json:"total,omitempty"`
 }
 
+// ImportProgressPayload is one throttled tick of a running tracker import
+// (docs/importers-plan.md §3.7). Total is 0 whenever the source cannot produce
+// an exact count — a walk that reports "4,000 of unknown" says so rather than
+// inventing a denominator.
+type ImportProgressPayload struct {
+	JobID   string `json:"job_id"`
+	Phase   string `json:"phase"` // fetch | plan | apply
+	Kind    string `json:"kind"`  // issues | comments | attachments | …
+	Done    int    `json:"done"`
+	Total   int    `json:"total,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 // TaskCompletedPayload is sent from daemon to server when a task finishes.
 type TaskCompletedPayload struct {
 	TaskID string `json:"task_id"`
