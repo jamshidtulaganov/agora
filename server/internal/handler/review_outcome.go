@@ -11,6 +11,7 @@ import (
 	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"github.com/jamshidtulaganov/agora/server/internal/service"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // Review OUTCOME routing — the two exits of the review-first pipeline, entirely
@@ -312,6 +313,25 @@ func (h *Handler) onReviewVerdictLabel(ctx context.Context, issue db.Issue, gate
 	if reloaded, err := h.Queries.GetIssue(ctx, issue.ID); err == nil {
 		fresh = reloaded
 	}
+	// Announce the verdict on the bus at the write site, BEFORE the direct
+	// Telegram call below. Until now a landed review verdict reached the
+	// outside world through that direct call alone, so any listener that
+	// subscribed to the bus — the Slack fanout, and whatever comes after it —
+	// silently missed review outcomes entirely. Publishing here rather than
+	// adding a second direct call is the whole point: the next integration
+	// gets review verdicts for free.
+	//
+	// Payload is ids plus the verdict word; a subscriber refetches through the
+	// membership-gated endpoints. ActorType is "system" on purpose: this
+	// function is reached from a human label attach (a user id), an HTTP
+	// comment capture and a task completion (an agent id), so the one thing
+	// that would be wrong here is claiming to know which.
+	h.publish(protocol.EventReviewVerdict, uuidToString(fresh.WorkspaceID), "system", actorID, map[string]any{
+		"issue_id": uuidToString(fresh.ID),
+		"verdict":  verdict,
+		"actor_id": actorID,
+	})
+
 	h.SendReviewVerdictGroupNotify(ctx, fresh, verdict, h.reviewVerdictNextStep(ctx, fresh, verdict))
 
 	// A verdict label set by an AGENT lands through the capture path, not the label

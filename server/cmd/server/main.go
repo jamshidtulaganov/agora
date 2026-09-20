@@ -352,6 +352,13 @@ func main() {
 	// each new inbox item. No-op unless Lark is wired and the recipient bound
 	// their Lark identity. Shares the same bus instance.
 	registerLarkPushListeners(bus, h)
+	// Slack app push: the workspace's configured channel routes plus personal
+	// DMs for members who linked Slack. Quiet by default — a channel hears
+	// only failures and failing gate verdicts until an admin opts into more —
+	// and DMs inherit inbox mute for free, because a muted notification never
+	// creates the inbox item this hangs off. No-op unless all four Slack keys
+	// are set; the delivery worker starts below, bound to sweepCtx.
+	registerSlackPushListeners(bus, h)
 	// Release-integrations dispatcher: fan deploy:recorded / release:shipped out
 	// to each workspace's configured outbound connectors (Phase 2: webhook).
 	// No-op unless AGORA_RELEASE_SECRET_KEY is set and an integration matches.
@@ -367,6 +374,14 @@ func main() {
 	if h.Assistant != nil {
 		h.Assistant.StartRecovery(sweepCtx)
 	}
+	// Slack outbound delivery: per-channel token buckets (chat.postMessage is
+	// 1 msg/sec/channel) and a coalescing window, so a bulk status change
+	// becomes one message per channel instead of a burst Slack answers with
+	// 429s. Bound to sweepCtx: at shutdown an in-flight coalescing window is
+	// abandoned rather than posting into a channel after the process was told
+	// to stop. Started before the HTTP server accepts, so no event can arrive
+	// with nowhere to queue.
+	h.StartSlackDelivery(sweepCtx)
 	autopilotCtx, autopilotCancel := context.WithCancel(context.Background())
 	taskSvc := service.NewTaskService(queries, pool, hub, bus, daemonWakeup)
 	taskSvc.Analytics = analyticsClient
@@ -506,6 +521,9 @@ func main() {
 	// final batch of queued heartbeat bumps.
 	sweepCancel()
 	heartbeatScheduler.Stop()
+	// Drain the Slack worker: sweepCancel already unblocked its waits, so this
+	// only joins the goroutines before exit.
+	h.StopSlackDelivery()
 
 	// Join the Lark Hub's per-installation supervisor goroutines so the
 	// lease renewer can issue a final release before process exit;
