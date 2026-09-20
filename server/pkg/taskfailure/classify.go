@@ -44,7 +44,7 @@ func Classify(rawError string) Reason {
 	trimmed := strings.TrimSpace(rawError)
 	if trimmed == "" {
 		// SQL maps NULL/empty to a separate bucket ("empty_error"),
-		// but that bucket is not part of the canonical 21. In-flight
+		// but that bucket is not part of the canonical 22. In-flight
 		// callers should never hand us empty input — if they do, the
 		// safest landing is the catchall.
 		return ReasonAgentUnknown
@@ -52,6 +52,32 @@ func Classify(rawError string) Reason {
 	lower := strings.ToLower(trimmed)
 
 	switch {
+	// 0. Agora-imposed budget exhausted. FIRST, ahead of every other
+	//    rule: Claude Code's budget messages carry words ("limit",
+	//    "budget", "turns") that the quota / context buckets would
+	//    otherwise claim, and misfiling a budget as a provider quota
+	//    error would route it to the runtime-failover path instead of
+	//    to a human (docs/orchestration-upgrade-plan.md §B2).
+	//
+	//    Markers, per the Claude Code CLI reference: --max-budget-usd
+	//    terminates the run with "Budget limit reached", and --max-turns
+	//    exits with an error naming the turn cap. The daemon also writes
+	//    ReasonBudgetExhausted DIRECTLY when it knows the run was killed
+	//    by a server-sent wall-clock budget, so this string rule is the
+	//    in-process (provider-reported) half only.
+	case containsAny(lower,
+		"budget limit reached",
+		"max-budget-usd",
+		"max_budget_usd",
+		"budget exceeded",
+		"exceeded the budget",
+		"max-turns",
+		"max_turns",
+		"maximum number of turns",
+		"reached the turn limit",
+	):
+		return ReasonBudgetExhausted
+
 	// 1. Context / token window overflow. Checked early so "token
 	//    limit" doesn't get swallowed by the broader "limit" / "quota"
 	//    rule below.

@@ -47,11 +47,24 @@ const (
 	EventTaskFailed                = "task:failed"    // running → failed
 	EventTaskMessage               = "task:message"
 	EventTaskCancelled             = "task:cancelled" // * → cancelled
+	// EventTaskWaitingHuman: running → waiting_human. The agent raised an
+	// escalation; the run ENDED and the task is parked until a person
+	// answers. Unlike waiting_local_directory (a daemon-owned hold that
+	// clears in seconds) this one is owned by a human and may sit for a day,
+	// so the runtime slot is freed rather than held.
+	EventTaskWaitingHuman = "task:waiting_human"
 
 	// Orchestration events. This is a cache-coherence signal for persisted
 	// plan/run/step transitions; the HTTP orchestration response remains the
 	// authoritative state returned to clients.
 	EventOrchestrationChanged = "orchestration:changed"
+
+	// Escalation events (docs/orchestration-upgrade-plan.md §B1).
+	// Workspace-scoped: an escalation names an issue, and issues are
+	// tenanted. Both carry {issue_id, escalation} so a client can update the
+	// issue card, the inbox and the decision queue from one payload.
+	EventEscalationOpened   = "escalation:opened"   // an agent stopped and asked
+	EventEscalationResolved = "escalation:resolved" // answered or cancelled by a human
 
 	// Inbox events
 	EventInboxNew           = "inbox:new"
@@ -152,6 +165,19 @@ const (
 
 	// QA test cases changed for an issue (agent authored, or a run recorded).
 	EventTestCasesChanged = "test_cases:changed"
+
+	// Code review landed a verdict on an issue. Published at the one place a
+	// verdict is acted on (handler/review_outcome.go's onReviewVerdictLabel),
+	// so every ingress — CLI label attach, HTTP verdict comment capture,
+	// task-completion capture — announces it exactly once.
+	//
+	// Added because review outcomes used to reach external systems through a
+	// DIRECT call only (SendReviewVerdictGroupNotify), which meant any
+	// listener that subscribed to the bus silently missed them. Payload is
+	// ids plus the verdict word: a subscriber refetches through the
+	// membership-gated endpoints, so a fanout can never become the thing that
+	// leaks an issue's contents.
+	EventReviewVerdict = "review:verdict"
 
 	// Knowledge items changed / KB recompiled (structured knowledge flywheel).
 	EventKnowledgeChanged = "knowledge:changed"

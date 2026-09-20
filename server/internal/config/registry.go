@@ -50,6 +50,25 @@ var Registry = []Def{
 	{Key: "AGORA_MEDIUM_TIER", Kind: KindBool, Category: "QA", Label: "Medium-tier default", Description: "Treat an un-escalated, un-tiered issue as tier:medium: dev+QA run on sonnet (not the agent's opus default), the brief drops the heavy navigation blocks, and QA takes the fast smoke path. risk:guarded/critical, context:large and any explicit tier: label still get the full opus path. Default on — turn it off to put every task back on the agent's own model.", Default: "true", ProjectScoped: true},
 	{Key: "AGORA_QA_WATCHDOG_WINDOW_HOURS", Kind: KindInt, Category: "QA", Label: "QA watchdog window (hours)", Description: "How long a silent QA gate waits before escalating to qa:stale.", Default: "24"},
 
+	// ---- Budgets ---------------------------------------------------------
+	// Per-task ceilings (docs/orchestration-upgrade-plan.md §B2). Before
+	// these, an Agora agent ran under: unlimited wall clock, unlimited turns,
+	// unlimited money, and no way to ask a question. Budgets are the half of
+	// the fix that makes an agent STOP; the escalation hatch is the half that
+	// gives the stop somewhere to go — a blown budget raises a kind='budget'
+	// escalation and is deliberately NOT auto-retried.
+	//
+	// FAIL-OPEN by construction: an empty / unparsable / non-positive value
+	// means NO cap, never a cap of zero. A cap nobody set must never wedge a
+	// fleet, and a typo in a dollar field must not fail every run instantly.
+	// Project-scoped, so one project can run a tighter fleet than another.
+	{Key: "AGORA_TASK_BUDGET_USD_TRIVIAL", Kind: KindString, Category: "Budgets", Label: "Task budget — trivial ($)", Description: "Hard per-run dollar ceiling for tier:trivial issues, e.g. 0.50. Enforced in-process by Claude Code (--max-budget-usd); other runtimes have no budget flag and are covered by turns + wall clock instead. Empty = no cap.", ProjectScoped: true},
+	{Key: "AGORA_TASK_BUDGET_USD_LIGHT", Kind: KindString, Category: "Budgets", Label: "Task budget — light ($)", Description: "Hard per-run dollar ceiling for tier:light issues, e.g. 1.50. Empty = no cap.", ProjectScoped: true},
+	{Key: "AGORA_TASK_BUDGET_USD_MEDIUM", Kind: KindString, Category: "Budgets", Label: "Task budget — medium ($)", Description: "Hard per-run dollar ceiling for ordinary (tier:medium and untiered) issues, e.g. 5. This is the one most runs use. Empty = no cap.", ProjectScoped: true},
+	{Key: "AGORA_TASK_BUDGET_USD_HEAVY", Kind: KindString, Category: "Budgets", Label: "Task budget — heavy ($)", Description: "Hard per-run dollar ceiling for tier:heavy and context:large issues, e.g. 15. Empty = no cap.", ProjectScoped: true},
+	{Key: "AGORA_TASK_MAX_TURNS", Kind: KindInt, Category: "Budgets", Label: "Task turn cap", Description: "Maximum assistant turns in a single run, across every tier. This is a runaway-loop guard, not a cost dial — the cost dial is the per-tier dollar budget above. Set high enough that only a stuck agent trips it: hitting it stops the run and raises an escalation instead of retrying. Emitted by the claude and codebuddy runtimes (--max-turns); opencode and cursor ignore it. 0 = no cap.", Default: "200", ProjectScoped: true},
+	{Key: "AGORA_TASK_TIMEOUT_MINUTES", Kind: KindInt, Category: "Budgets", Label: "Task wall-clock budget (minutes)", Description: "Per-task wall-clock ceiling, applied by the daemon to every runtime. When set it overrides the daemon-wide AGORA_AGENT_TIMEOUT for issue tasks, and a run that trips it is classified as a blown budget (escalates) rather than a timeout (retries). Default 0 = no cap, which preserves the deliberate no-wall-clock default (MUL-3064) whose liveness net is the idle / tool / startup watchdogs.", Default: "0", ProjectScoped: true},
+
 	// ---- Sprint / dev flow ---------------------------------------------
 	// (Instance-global — these couple to the daemon / worktree model, so they
 	// are not per-project overridable today.)

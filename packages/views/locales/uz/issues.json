@@ -671,6 +671,7 @@
     "status_queued": "Navbatda",
     "status_dispatched": "Boshlanmoqda",
     "status_waiting_local_directory": "Lokal katalog kutilmoqda",
+    "status_waiting_human": "Odamning javobi kutilmoqda",
     "status_running": "Ishlamoqda",
     "status_completed": "Bajarildi",
     "status_failed": "Muvaffaqiyatsiz",
@@ -1606,5 +1607,15 @@
       "tests": "Test-case",
       "verdict": "Xulosa"
     }
+  },
+  "escalation": {
+    "heading": "{{name}} sizning javobingizni kutmoqda",
+    "an_agent": "Agent",
+    "tried": "Allaqachon urinib ko‘rdi:",
+    "answer_placeholder": "Javob bering yoki nima qilish kerakligini ayting…",
+    "send_answer": "Javobni yuborish",
+    "resume_hint": "Agent kontekstini saqlagan holda javobingiz bilan davom etadi.",
+    "answered_toast": "Javob yuborildi — agent davom etmoqda",
+    "answer_failed": "Javobni yuborib bo‘lmadi"
   }
 }

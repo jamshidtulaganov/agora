@@ -27,6 +27,7 @@ import type {
   AgentRunCount,
   AgentRuntime,
   InboxItem,
+  Escalation,
   IssueSubscriber,
   Comment,
   CommentTriggerPreview,
@@ -418,6 +419,10 @@ import {
   type QAVerdictsResponse,
   ReviewVerdictSchema,
   EMPTY_REVIEW_VERDICT,
+  EscalationSchema,
+  EscalationListSchema,
+  EMPTY_ESCALATION_LIST,
+  EMPTY_ESCALATION,
   ReviewDecisionResponseSchema,
   EMPTY_REVIEW_DECISION,
   OrchestrationRunSchema,
@@ -1915,6 +1920,51 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-verdict`);
     return parseWithFallback(raw, ReviewVerdictSchema, EMPTY_REVIEW_VERDICT, {
       endpoint: "GET /api/issues/:id/review-verdict",
+    });
+  }
+
+  // --- Escalations ---------------------------------------------------------
+  // An agent stopped and asked. Read is open to anyone who can see the issue;
+  // resolve/cancel are human-only server-side (RequireHumanActor).
+
+  async listIssueEscalations(issueId: string): Promise<Escalation[]> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/escalations`);
+    return parseWithFallback(raw, EscalationListSchema, EMPTY_ESCALATION_LIST, {
+      endpoint: "GET /api/issues/:id/escalations",
+    }).escalations;
+  }
+
+  // Every open escalation in the workspace, oldest first — the decision
+  // queue's read.
+  async listOpenEscalations(): Promise<Escalation[]> {
+    const raw = await this.fetch<unknown>("/api/escalations");
+    return parseWithFallback(raw, EscalationListSchema, EMPTY_ESCALATION_LIST, {
+      endpoint: "GET /api/escalations",
+    }).escalations;
+  }
+
+  // Answer an escalation. The answer is posted as a comment and becomes the
+  // resumed run's prompt, so free text and a picked option are the same
+  // mechanism — which is why "redirect the agent" needs no separate verb.
+  // 409 when someone else answered first.
+  async resolveEscalation(escalationId: string, answer: string): Promise<Escalation> {
+    const raw = await this.fetch<unknown>(`/api/escalations/${escalationId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ answer }),
+    });
+    return parseWithFallback(raw, EscalationSchema, EMPTY_ESCALATION, {
+      endpoint: "POST /api/escalations/:id/resolve",
+    });
+  }
+
+  // Withdraw the question without answering it. The parked run is NOT
+  // resumed — whoever cancels owns what happens next.
+  async cancelEscalation(escalationId: string): Promise<Escalation> {
+    const raw = await this.fetch<unknown>(`/api/escalations/${escalationId}/cancel`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, EscalationSchema, EMPTY_ESCALATION, {
+      endpoint: "POST /api/escalations/:id/cancel",
     });
   }
 

@@ -1035,3 +1035,49 @@ export function useRespondToOrchestrationStep() {
     },
   });
 }
+
+/**
+ * Answer an escalation — the human half of the decision queue
+ * (docs/orchestration-upgrade-plan.md §B1 step 6/7).
+ *
+ * Deliberately NOT optimistic, unlike most mutations here. Answering does
+ * more than flip a flag: it posts the answer as a comment and re-enqueues the
+ * parked run. Showing "answered" before the server agreed would, on a 409
+ * (someone else answered first), mean rolling back a state the user believes
+ * they caused — and the whole point of this surface is that the human's
+ * decision is real. The request is fast and the button shows a pending state
+ * instead.
+ *
+ * Invalidates the escalation list, the issue's tasks (a run was just
+ * resumed), the timeline/comments (the answer landed as one) and the inbox
+ * (the action_required item is now handled).
+ */
+export function useResolveEscalation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { escalationId: string; issueId: string; answer: string }) =>
+      api.resolveEscalation(vars.escalationId, vars.answer),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.escalations(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.tasks(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.timeline(vars.issueId) });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+    },
+  });
+}
+
+/**
+ * Withdraw an escalation without answering it. The parked run is NOT resumed
+ * — whoever cancels owns what happens next.
+ */
+export function useCancelEscalation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { escalationId: string; issueId: string }) =>
+      api.cancelEscalation(vars.escalationId),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.escalations(vars.issueId) });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+    },
+  });
+}

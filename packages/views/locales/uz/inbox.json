@@ -51,7 +51,8 @@
     "qa_passed": "QA muvaffaqiyatsizlikdan keyin o'tdi",
     "review_failed": "Kod-tekshiruvdan o'tmadi",
     "review_passed": "Kod-tekshiruvdan o'tdi",
-    "merge_ready": "Birlashtirishga tayyor"
+    "merge_ready": "Birlashtirishga tayyor",
+    "escalation": "Sizning javobingizni kutmoqda"
   },
   "labels": {
     "set_status_to": "Holat o‘rnatildi",

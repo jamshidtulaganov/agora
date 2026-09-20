@@ -51,7 +51,8 @@
     "qa_passed": "QA пройдено после провала",
     "review_failed": "Код-ревью не пройдено",
     "review_passed": "Код-ревью пройдено",
-    "merge_ready": "Готово к слиянию"
+    "merge_ready": "Готово к слиянию",
+    "escalation": "Ждёт вашего ответа"
   },
   "labels": {
     "set_status_to": "Установить статус",

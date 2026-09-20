@@ -51,7 +51,8 @@
     "qa_passed": "QA passed after a fail",
     "review_failed": "Code review failed",
     "review_passed": "Code review passed",
-    "merge_ready": "Ready to merge"
+    "merge_ready": "Ready to merge",
+    "escalation": "Waiting on you"
   },
   "labels": {
     "set_status_to": "Set status to",

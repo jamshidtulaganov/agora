@@ -1286,6 +1286,108 @@ func (s *TaskService) MarkTaskWaitingLocalDirectory(ctx context.Context, taskID 
 	return &task, nil
 }
 
+// MarkTaskWaitingHuman parks a dispatched/running task in the waiting_human
+// state after its agent raised an escalation
+// (docs/orchestration-upgrade-plan.md §B1 step 3). reason carries the
+// escalation's one-sentence prompt so every task surface can say what is
+// being waited on without joining task_escalation.
+//
+// Modelled on MarkTaskWaitingLocalDirectory above, with one deliberate
+// difference in meaning: waiting_local_directory is a LIVENESS hold owned by
+// the daemon and cleared within seconds, while waiting_human is owned by a
+// PERSON and may sit for a day (the measured median human wait is 24.9h).
+// That is why waiting_human is absent from every runtime-capacity,
+// offline-sweep and stale-task predicate: parking frees the runtime slot, and
+// a daemon restart must never fail a question nobody has answered yet.
+//
+// It is explicitly NOT a failure: no retry, no failover, no qa:* label
+// change, no orchestration-terminal callback. The run ended; the work did not.
+func (s *TaskService) MarkTaskWaitingHuman(ctx context.Context, taskID pgtype.UUID, reason string) (*db.AgentTaskQueue, error) {
+	reason = strings.TrimSpace(reason)
+	task, err := s.Queries.MarkAgentTaskWaitingHuman(ctx, db.MarkAgentTaskWaitingHumanParams{
+		ID:         taskID,
+		WaitReason: pgtype.Text{String: reason, Valid: reason != ""},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mark task waiting_human: %w", err)
+	}
+
+	slog.Info("task waiting_human",
+		"task_id", util.UUIDToString(task.ID),
+		"issue_id", util.UUIDToString(task.IssueID),
+		"reason", reason,
+	)
+	// Parking frees the agent's capacity slot — reconcile so the roster stops
+	// showing it as busy while a human thinks.
+	s.ReconcileAgentStatus(ctx, task.AgentID)
+	s.broadcastTaskEvent(ctx, protocol.EventTaskWaitingHuman, task)
+	return &task, nil
+}
+
+// ResumeEscalatedTask re-enqueues a parked run once its escalation has been
+// answered (plan §B1 step 7). Returns nil when there is nothing to resume:
+// the escalation was raised outside a run, or the parked task was cancelled
+// or otherwise moved on while the human was deciding.
+//
+// The child inherits session_id/work_dir, so the claim handler hands the
+// daemon a prior_session_id and the CLI rehydrates the conversation with
+// `--resume` instead of paying to re-read the repository from cold. It does
+// NOT spend the retry budget: an answered question is not a failed attempt,
+// and charging one would make an agent that asks look worse than one that
+// guesses — the precise incentive this whole feature inverts.
+//
+// The parked row is deliberately LEFT in waiting_human rather than closed:
+// it is the honest record that the run ended parked, it carries the session
+// pointer the resume reads, and marking it 'completed' would fire the
+// orchestration terminal callback and advance a DAG whose work is not done.
+func (s *TaskService) ResumeEscalatedTask(
+	ctx context.Context,
+	issue db.Issue,
+	esc db.TaskEscalation,
+	answerCommentID pgtype.UUID,
+) (*db.AgentTaskQueue, error) {
+	if !esc.TaskID.Valid {
+		return nil, nil
+	}
+	parked, err := s.Queries.GetAgentTask(ctx, esc.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("resume escalated task: load parked task: %w", err)
+	}
+	if parked.Status == "cancelled" {
+		slog.Info("escalation resume skipped: parked task was cancelled",
+			"task_id", util.UUIDToString(parked.ID),
+			"escalation_id", util.UUIDToString(esc.ID))
+		return nil, nil
+	}
+	// Don't stack a second run on an issue that already has one in flight —
+	// a human may have answered after separately re-running the issue.
+	if active, err := s.Queries.HasActiveTaskForIssue(ctx, issue.ID); err == nil && active {
+		slog.Info("escalation resume skipped: issue already has an active task",
+			"issue_id", util.UUIDToString(issue.ID),
+			"escalation_id", util.UUIDToString(esc.ID))
+		return nil, nil
+	}
+
+	task, err := s.Queries.CreateEscalationResumeTask(ctx, db.CreateEscalationResumeTaskParams{
+		ParentTaskID:     parked.ID,
+		TriggerCommentID: answerCommentID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resume escalated task: %w", err)
+	}
+
+	slog.Info("escalation resume enqueued",
+		"task_id", util.UUIDToString(task.ID),
+		"parent_task_id", util.UUIDToString(parked.ID),
+		"issue_id", util.UUIDToString(issue.ID),
+		"escalation_id", util.UUIDToString(esc.ID),
+		"resume_session", task.SessionID.Valid,
+	)
+	s.ReconcileAgentStatus(ctx, task.AgentID)
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+	return &task, nil
+}
+
 // CompleteTask marks a task as completed.
 // Issue status is NOT changed here — the agent manages it via the CLI.
 //
@@ -1613,6 +1715,14 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 		retried, _ = s.maybeFailoverToFallbackRuntime(ctx, task, failureReason)
 	}
 
+	// Budget exhaustion escalates; it never retries (see retryableReasons).
+	// A budget that silently retries is not a budget, and a budget that
+	// silently stops is indistinguishable from a broken daemon — the only
+	// honest third option is to put the decision in front of a person.
+	if retried == nil && failureReason == taskfailure.ReasonBudgetExhausted.String() {
+		s.RaiseBudgetEscalation(ctx, task, errMsg)
+	}
+
 	// Skip the per-failure system comment when we'll immediately retry —
 	// the new task will surface its own status to the user, and we don't
 	// want to spam the issue with "task timed out" messages on every
@@ -1673,6 +1783,12 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 // allowed to act on. Agent-side errors (compile failures, model rejections,
 // etc.) are intentionally excluded — those are real problems that the user
 // should see, not infrastructure flakiness.
+//
+// taskfailure.ReasonBudgetExhausted is DELIBERATELY ABSENT and must stay
+// absent: an exhausted spend / turn / wall-clock budget is the one failure
+// whose retry would spend the very thing that ran out. MaybeRetryFailedTask
+// therefore declines it and FailTask raises a kind='budget' escalation
+// instead (docs/orchestration-upgrade-plan.md §B2).
 var retryableReasons = map[string]bool{
 	"runtime_offline":           true,
 	"runtime_recovery":          true,

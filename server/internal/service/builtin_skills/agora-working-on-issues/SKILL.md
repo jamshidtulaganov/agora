@@ -1,6 +1,6 @@
 ---
 name: agora-working-on-issues
-description: "Use when working on a Agora issue after the runtime has provided the trigger context — to apply the product contracts the runtime brief does not encode: how PR linking differs from close intent, how to read a linked PR's real state via the pull-requests CLI, which metadata keys are high-signal, what status changes trigger on the server, and how sub-issue create status (todo vs backlog) controls whether assigned agents start immediately."
+description: "Use when working on a Agora issue after the runtime has provided the trigger context — to apply the product contracts the runtime brief does not encode: how PR linking differs from close intent, how to read a linked PR's real state via the pull-requests CLI, which metadata keys are high-signal, what status changes trigger on the server, how to stop and ask a human with `agora issue escalate` instead of guessing, and how sub-issue create status (todo vs backlog) controls whether assigned agents start immediately."
 user-invocable: false
 allowed-tools: Bash(agora *), Bash(git *), Bash(gh *)
 ---
@@ -143,6 +143,50 @@ on it. These are the contracts, not advice:
   itself on merge — you do not also need to flip it manually.
 - **`cancelled`** stops outstanding work; treat it as a user-driven decision.
 
+## Stop and ask instead of guessing
+
+You cannot ask a question mid-run — every Claude invocation carries
+`--disallowedTools AskUserQuestion`, because a headless run has no UI for a
+prompt to render in. The out-of-band hatch is a CLI verb, and using it is a
+state change, not a comment:
+
+```bash
+agora issue escalate <issue-id> --need "the one thing you need decided" --tried "what you ruled out"
+```
+
+Contracts, not advice:
+
+- **It returns immediately.** It does not poll and does not block your run —
+  that is the whole difference from `agora telegram ask`, which blocks the
+  process for up to 60 minutes. Post your final comment saying where you
+  stopped, then end the run.
+- **Your task parks, it does not fail.** The row moves to `waiting_human`; no
+  retry fires, no `qa:*` label changes, and the runtime slot is freed.
+- **You are resumed with the answer in the SAME session.** The human's reply
+  is posted as a comment and becomes your next run's trigger, so you keep
+  your context instead of re-reading the repository.
+- **One open escalation per issue** — a database guarantee, not a convention.
+  A second `escalate` on the same issue REPLACES the first rather than
+  queueing a second question for the same person.
+- **Only a human can clear it.** Never you, never another agent.
+
+Optional flags: `--option "A" --option "B"` when the answer is a choice
+between concrete alternatives, and `--kind blocked|permission|risk` when it is
+not a plain question (default `question`).
+
+Escalate when the requirement is genuinely ambiguous, you need an access or
+credential decision, or you would be guessing at something expensive to undo.
+Do NOT escalate for anything you can find out yourself by reading the repo,
+the issue, or the linked PR.
+
+### When a budget stops you
+
+Runs carry per-task budgets (turn cap, and optionally a dollar ceiling and a
+wall clock). A run that exhausts one is NOT retried — it raises a
+`kind: budget` escalation automatically and waits for a human to raise the
+budget or narrow the task. You do not raise that one yourself; you just see
+your run end.
+
 ## Sub-issues: `todo` starts work now, `backlog` parks it
 
 On an agent-assigned issue, create status decides whether the assignee fires
@@ -189,6 +233,7 @@ agora issue create --title "Step 3" --parent <issue-id> --assignee <agent> --sta
 
 `references/working-on-issues-source-map.md` — accurate `file:line` for every
 contract above: the `pull-requests` CLI and route, the PR response field list,
+the `escalate` verb, its route and its parking / resume path,
 `derivePRState`, the two-path link (`extractIdentifiers`) vs close-intent
 (`extractClosingIdentifiers`) proof, the backlog enqueue lines, child-done
 notify, and the metadata CLI. Re-derive before depending on an exact line.

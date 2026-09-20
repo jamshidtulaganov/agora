@@ -1517,12 +1517,34 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// daemon and forwarded verbatim to the CLI, so setting it here
 			// fully controls both the model and — via the [1m] suffix — the 1M
 			// context window. See applyIssueCostTier for the policy.
-			if resp.Agent != nil && !task.OrchestrationStepID.Valid {
+			if resp.Agent != nil {
 				labelRows, _ := h.listLabelsForIssueSafe(r, issue.ID, issue.WorkspaceID)
 				labelSet := make(map[string]bool, len(labelRows))
 				for _, l := range labelRows {
 					labelSet[strings.ToLower(strings.TrimSpace(l.Name))] = true
 				}
+				// Per-task budgets (docs/orchestration-upgrade-plan.md §B2):
+				// turns, dollars and wall clock, resolved from the issue's tier
+				// and the project's config. Applied to EVERY issue task,
+				// orchestration steps included — a DAG worker that grinds
+				// forever costs exactly as much as a solo one, and the budget
+				// is what converts grinding into an escalation a human can
+				// answer. Additive on the wire, so an old daemon ignores it.
+				budgets := h.taskBudgetsForIssue(r.Context(), issue, labelSet)
+				resp.MaxTurns = budgets.MaxTurns
+				resp.MaxBudgetUSD = budgets.MaxBudgetUSD
+				resp.TimeoutSeconds = budgets.TimeoutSeconds
+				if budgets.MaxBudgetUSD > 0 || budgets.MaxTurns > 0 || budgets.TimeoutSeconds > 0 {
+					slog.Info("task budgets resolved",
+						"task_id", uuidToString(task.ID),
+						"issue_id", uuidToString(issue.ID),
+						"tier", budgetTierForLabels(labelSet),
+						"max_turns", budgets.MaxTurns,
+						"max_budget_usd", budgets.MaxBudgetUSD,
+						"timeout_seconds", budgets.TimeoutSeconds,
+					)
+				}
+
 				// Flag-gated leaner default: a project on AGORA_MEDIUM_TIER treats
 				// an un-escalated, un-tiered issue as tier:medium so applyIssueCostTier
 				// picks sonnet over the agent's (often opus[1m]) default — faster
@@ -1530,39 +1552,45 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				// full opus path (mediumTierApplies). Injected into the runtime
 				// labelSet only (never persisted), so it drives THIS run's model
 				// without overriding a human's tier: decision.
-				if h.mediumTierEnabled(r.Context(), issue) && mediumTierApplies(labelSet) {
+				if !task.OrchestrationStepID.Valid && h.mediumTierEnabled(r.Context(), issue) && mediumTierApplies(labelSet) {
 					labelSet["tier:medium"] = true
 				}
-				if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
-					slog.Info("issue cost-tier applied",
-						"issue_id", uuidToString(issue.ID),
-						"from_model", resp.Agent.Model, "to_model", m,
-						"from_thinking", resp.Agent.ThinkingLevel, "to_thinking", tl,
-					)
-					resp.Agent.Model = m
-					resp.Agent.ThinkingLevel = tl
-				} else if isClaudeProvider(runtime.Provider) && !labelSet["tier:trivial"] && !labelSet["tier:light"] && !labelSet["tier:heavy"] {
-					// No human tier: label decided the model above — check
-					// the issue's actual diff size now that a PR may exist.
-					// Claude-only: the downgrade emits a claude model id (guarded
-					// again inside applyDiffSizeCostDowngrade), and skipping the
-					// PR query entirely on non-claude runtimes avoids the work.
-					if prs, err := h.Queries.ListPullRequestsByIssue(r.Context(), issue.ID); err == nil {
-						for _, pr := range prs {
-							if !isSmallConfirmedDiff(pr.Additions, pr.Deletions, pr.ChangedFiles) {
-								continue
+				// Model cost-tiering is skipped for persisted orchestration steps:
+				// the DAG's own stage routing already picked who runs what, and
+				// re-deciding the model here would outvote it. The budgets above
+				// still apply — a ceiling is not a routing decision.
+				if !task.OrchestrationStepID.Valid {
+					if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
+						slog.Info("issue cost-tier applied",
+							"issue_id", uuidToString(issue.ID),
+							"from_model", resp.Agent.Model, "to_model", m,
+							"from_thinking", resp.Agent.ThinkingLevel, "to_thinking", tl,
+						)
+						resp.Agent.Model = m
+						resp.Agent.ThinkingLevel = tl
+					} else if isClaudeProvider(runtime.Provider) && !labelSet["tier:trivial"] && !labelSet["tier:light"] && !labelSet["tier:heavy"] {
+						// No human tier: label decided the model above — check
+						// the issue's actual diff size now that a PR may exist.
+						// Claude-only: the downgrade emits a claude model id (guarded
+						// again inside applyDiffSizeCostDowngrade), and skipping the
+						// PR query entirely on non-claude runtimes avoids the work.
+						if prs, err := h.Queries.ListPullRequestsByIssue(r.Context(), issue.ID); err == nil {
+							for _, pr := range prs {
+								if !isSmallConfirmedDiff(pr.Additions, pr.Deletions, pr.ChangedFiles) {
+									continue
+								}
+								if dm, dtl := applyDiffSizeCostDowngrade(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider); dm != resp.Agent.Model || dtl != resp.Agent.ThinkingLevel {
+									slog.Info("diff-size cost downgrade applied",
+										"issue_id", uuidToString(issue.ID),
+										"pr_id", uuidToString(pr.ID),
+										"changed_files", pr.ChangedFiles, "additions", pr.Additions, "deletions", pr.Deletions,
+										"from_model", resp.Agent.Model, "to_model", dm,
+									)
+									resp.Agent.Model = dm
+									resp.Agent.ThinkingLevel = dtl
+								}
+								break
 							}
-							if dm, dtl := applyDiffSizeCostDowngrade(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider); dm != resp.Agent.Model || dtl != resp.Agent.ThinkingLevel {
-								slog.Info("diff-size cost downgrade applied",
-									"issue_id", uuidToString(issue.ID),
-									"pr_id", uuidToString(pr.ID),
-									"changed_files", pr.ChangedFiles, "additions", pr.Additions, "deletions", pr.Deletions,
-									"from_model", resp.Agent.Model, "to_model", dm,
-								)
-								resp.Agent.Model = dm
-								resp.Agent.ThinkingLevel = dtl
-							}
-							break
 						}
 					}
 				}

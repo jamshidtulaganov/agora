@@ -31,9 +31,24 @@ type ExecOptions struct {
 	// SystemPrompt is consumed only by providers that can pass or safely inline
 	// developer/system instructions. Hermes ACP intentionally ignores it and
 	// relies on cwd-scoped context files such as AGENTS.md instead.
-	SystemPrompt              string
-	ThreadName                string
-	MaxTurns                  int
+	SystemPrompt string
+	ThreadName   string
+	// MaxTurns caps how many assistant turns a single run may take. Emitted
+	// by the claude and codebuddy backends; opencode warns and ignores it and
+	// cursor has no equivalent. Resolved per task from the issue's tier at
+	// claim time (docs/orchestration-upgrade-plan.md §B2) — 0 means no cap.
+	MaxTurns int
+	// MaxBudgetUSD is a hard per-run dollar ceiling, enforced in-process by
+	// Claude Code v2.1.217+ in print mode (subagent spend counts toward it;
+	// running background subagents are stopped when it trips). It is the only
+	// real cost cap available to a CLI-subprocess architecture, which is why
+	// it is worth a struct field and one append.
+	//
+	// Honest limitation, stated rather than hidden: ONLY the claude backend
+	// has a budget flag. Every other runtime gets turns + wall clock, and the
+	// per-project / per-workspace caps enforced at claim time are what cover
+	// them. 0 means no cap.
+	MaxBudgetUSD              float64
 	Timeout                   time.Duration
 	SemanticInactivityTimeout time.Duration
 	ResumeSessionID           string          // if non-empty, resume a previous agent session

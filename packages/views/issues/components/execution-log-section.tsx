@@ -197,6 +197,10 @@ const STATUS_TONE: Record<AgentTask["status"], string> = {
   // Same tone as queued/dispatched — visually "stopped" so users see the
   // task is parked, but distinguished by the status label.
   waiting_local_directory: "text-warning",
+  // The escalation park. Amber rather than the plain warning tone: this one
+  // is waiting on a PERSON, not on another task, and the only thing that
+  // clears it is someone answering.
+  waiting_human: "text-warning",
   running: "text-info",
   completed: "text-success",
   failed: "text-destructive",
@@ -250,6 +254,8 @@ function useStatusLabel(status: AgentTask["status"]): string {
     case "dispatched": return t(($) => $.execution_log.status_dispatched);
     case "waiting_local_directory":
       return t(($) => $.execution_log.status_waiting_local_directory);
+    case "waiting_human":
+      return t(($) => $.execution_log.status_waiting_human);
     case "running": return t(($) => $.execution_log.status_running);
     case "completed": return t(($) => $.execution_log.status_completed);
     case "failed": return t(($) => $.execution_log.status_failed);

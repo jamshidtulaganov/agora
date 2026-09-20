@@ -119,6 +119,39 @@ func TestProgressContractPresentInBrief(t *testing.T) {
 	}
 }
 
+// The escalation hatch must ship in every ISSUE brief. Agora's agents
+// structurally cannot ask a question mid-run (--disallowedTools
+// AskUserQuestion), so this section is the only thing standing between "I do
+// not know what to do" and a confident guess that burns a budget. Canary:
+// the section, the verb, and the two behaviours that make it work — do not
+// wait, do not guess (docs/orchestration-upgrade-plan.md §B1 step 5).
+func TestStuckSectionPresentInIssueBrief(t *testing.T) {
+	t.Parallel()
+	out := buildMetaSkillContent("claude", TaskContextForEnv{
+		IssueID: "11111111-2222-3333-4444-555555555555",
+	})
+	if !strings.Contains(out, "## When You Are Stuck") {
+		t.Fatal("expected the escalation section in the brief")
+	}
+	for _, want := range []string{
+		"agora issue escalate",
+		"--need",
+		"Do not guess",
+		"resumed with the answer",
+		"does NOT wait",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stuck section missing %q", want)
+		}
+	}
+
+	// A chat turn already has a human reading it, and the verb takes an
+	// issue — so a brief with no issue must not advertise it.
+	if out := buildMetaSkillContent("claude", TaskContextForEnv{}); strings.Contains(out, "## When You Are Stuck") {
+		t.Error("a brief with no issue must not carry the escalation section")
+	}
+}
+
 // The brief must no longer carry any parent-notification guidance. PR
 // #2918 added a "Tell the parent when you finish a child" rule that
 // turned into noise (self-mention loops, planner ack ping-pong,

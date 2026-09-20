@@ -99,6 +99,10 @@ export const issueKeys = {
   reviewVerdictAll: () => ["issues", "review-verdict"] as const,
   /** Latest run_review code-review verdict for an issue (the Review lens reads this). */
   reviewVerdict: (issueId: string) => [...issueKeys.reviewVerdictAll(), issueId] as const,
+  escalationsAll: () => ["issues", "escalations"] as const,
+  /** Escalations raised on an issue — open first, then answered history.
+   *  The issue-detail escalation card reads this. */
+  escalations: (issueId: string) => [...issueKeys.escalationsAll(), issueId] as const,
   testCasesAll: () => ["issues", "test-cases"] as const,
   /** QA test cases for an issue (the Test-cases panel reads this). */
   testCases: (issueId: string) => [...issueKeys.testCasesAll(), issueId] as const,
@@ -555,6 +559,15 @@ export function deployEventsOptions(issueId: string) {
   return queryOptions({
     queryKey: issueKeys.deployEvents(issueId),
     queryFn: () => api.getIssueDeployEvents(issueId),
+  });
+}
+// Escalations on an issue (open first, then the answered history). The card
+// renders nothing when the list is empty, which is also the parse fallback —
+// a drifted response degrades to "no escalation", never to a broken panel.
+export function issueEscalationsOptions(issueId: string) {
+  return queryOptions({
+    queryKey: issueKeys.escalations(issueId),
+    queryFn: () => api.listIssueEscalations(issueId),
   });
 }
 export function testCasesOptions(issueId: string) {

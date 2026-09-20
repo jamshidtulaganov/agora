@@ -111,6 +111,50 @@ issue fires the agent immediately; `--status backlog` parks it with the assignee
 set but no trigger. Promoting `backlog → todo` later fires it then (update path,
 line 2537).
 
+## `agora issue escalate` — stop and ask a human
+
+Design: `docs/orchestration-upgrade-plan.md` §B1 (state machine) and §B2
+(the budgets that produce escalations).
+
+| Behavior | File:line |
+|---|---|
+| CLI command `escalate <id>` (`--need`, `--tried`, `--option`, `--kind`) | `server/cmd/agora/cmd_issue.go:238` |
+| `runIssueEscalate` — builds the body, prints the sentinel, exits 0 | `server/cmd/agora/cmd_issue.go:1477` |
+| Calls `POST /api/issues/<id>/escalations` (no polling) | `server/cmd/agora/cmd_issue.go:1509` |
+| Route registration (raise + per-issue read) | `server/cmd/server/router.go:1160-1161` |
+| Handler `RaiseEscalation` — AGENT-ONLY (`resolveActor` must say "agent") | `server/internal/handler/escalation.go:61` |
+| Handler `ListIssueEscalations` — open first, then answered history | `server/internal/handler/escalation.go:114` |
+| Handler `ResolveEscalation` — human-only, route-gated `RequireHumanActor` | `server/internal/handler/escalation.go:167` |
+| Human routes (`/api/escalations`, resolve + cancel) | `server/cmd/server/router.go:1617-1620` |
+| `OpenEscalation` — insert/refresh, park, comment, inbox, WS | `server/internal/service/escalation.go:118` |
+| `ResolveEscalation` — answer, answer-comment, resume | `server/internal/service/escalation.go:188` |
+| `MarkTaskWaitingHuman` — `running → waiting_human`, frees the slot | `server/internal/service/task.go:1305` |
+| `ResumeEscalatedTask` — re-enqueue with the session pointer | `server/internal/service/task.go:1343` |
+| Brief section `## When You Are Stuck` | `server/internal/daemon/execenv/runtime_config.go:613` |
+| Table + one-open-row-per-issue index | `server/migrations/209_task_escalation.up.sql` |
+
+"One open escalation per issue" is enforced by the partial unique index
+`idx_task_escalation_open_issue` and the `ON CONFLICT … DO UPDATE` in
+`CreateTaskEscalation` (`server/pkg/db/queries/task_escalation.sql`) — a
+second raise refines the existing row and returns the same `id`.
+
+The resume carries `session_id` / `work_dir` forward
+(`CreateEscalationResumeTask`, `server/pkg/db/queries/agent.sql`) and
+`GetLastTaskSession` accepts `waiting_human`, which is what makes the claim
+handler emit `--resume` instead of starting a cold session. `attempt` is NOT
+incremented: an answered question is not a failed attempt.
+
+## Budgets that end a run
+
+| Behavior | File:line |
+|---|---|
+| `ExecOptions.MaxTurns` / `MaxBudgetUSD` | `server/pkg/agent/agent.go` (ExecOptions) |
+| `--max-turns` / `--max-budget-usd` emission (claude backend only) | `server/pkg/agent/claude.go` (`buildClaudeArgs`) |
+| Per-task budgets resolved from the issue tier at claim | `server/internal/handler/task_budget.go` |
+| Registry keys `AGORA_TASK_BUDGET_USD_*`, `AGORA_TASK_MAX_TURNS`, `AGORA_TASK_TIMEOUT_MINUTES` | `server/internal/config/registry.go` |
+| `ReasonBudgetExhausted` (excluded from `retryableReasons`) | `server/pkg/taskfailure/failure.go`, `server/internal/service/task.go` |
+| Budget failure → `kind='budget'` escalation | `server/internal/service/escalation.go` (`RaiseBudgetEscalation`) |
+
 ## Metadata CLI
 
 | Behavior | File:line |
@@ -134,4 +178,8 @@ grep -n 'func issuePullRequestRowToResponse\|type GitHubPullRequestResponse stru
 grep -n 'extractIdentifiers(\|extractClosingIdentifiers(\|derivePRState(' internal/handler/github.go
 grep -n 'prevIssue.Status == "backlog"\|func (h \*Handler) shouldEnqueueAgentTask' internal/handler/issue.go
 grep -n 'func notifyParentOfChildDone'       internal/handler/issue_child_done.go
+grep -n 'issueEscalateCmd\|func runIssueEscalate' cmd/agora/cmd_issue.go
+grep -n 'RaiseEscalation\|ResolveEscalation\|ListIssueEscalations' cmd/server/router.go internal/handler/escalation.go
+grep -n 'func (s \*TaskService) MarkTaskWaitingHuman\|func (s \*TaskService) ResumeEscalatedTask' internal/service/task.go
+grep -n 'When You Are Stuck'                 internal/daemon/execenv/runtime_config.go
 ```

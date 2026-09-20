@@ -776,3 +776,71 @@ func TestBuildClaudeArgsExtraArgsBeforeCustomArgsAndFiltersBoth(t *testing.T) {
 		t.Fatalf("expected extra args before custom args, got %v", args)
 	}
 }
+
+// The per-run dollar ceiling (docs/orchestration-upgrade-plan.md §B2).
+// --max-budget-usd is the single most valuable external finding in that plan:
+// Agora drives agents as CLI subprocesses, so provider-side prompt caching is
+// not a lever available to us — but Claude Code enforces a hard dollar cap
+// in print mode, and it costs one struct field and one append.
+func TestBuildClaudeArgsEmitsMaxBudgetUSD(t *testing.T) {
+	t.Parallel()
+
+	args := buildClaudeArgs(ExecOptions{MaxBudgetUSD: 2.5, MaxTurns: 120}, slog.Default())
+
+	foundBudget, foundTurns := false, false
+	for i, a := range args {
+		if a == "--max-budget-usd" && i+1 < len(args) {
+			foundBudget = true
+			if args[i+1] != "2.50" {
+				t.Errorf("budget should be formatted as a fixed 2-decimal amount, got %q", args[i+1])
+			}
+		}
+		if a == "--max-turns" && i+1 < len(args) && args[i+1] == "120" {
+			foundTurns = true
+		}
+	}
+	if !foundBudget {
+		t.Errorf("expected --max-budget-usd in args: %v", args)
+	}
+	if !foundTurns {
+		t.Errorf("expected --max-turns in args: %v", args)
+	}
+}
+
+// Zero means NO cap, never a cap of zero: an older server sends nothing, and
+// a $0 ceiling would fail every run the instant it started.
+func TestBuildClaudeArgsOmitsZeroBudget(t *testing.T) {
+	t.Parallel()
+
+	for _, a := range buildClaudeArgs(ExecOptions{MaxBudgetUSD: 0, MaxTurns: 0}, slog.Default()) {
+		if a == "--max-budget-usd" || a == "--max-turns" {
+			t.Fatalf("a zero budget must emit no flag, got %q", a)
+		}
+	}
+}
+
+// The server-resolved budget is appended before ExtraArgs/CustomArgs, so an
+// admin who deliberately writes --max-budget-usd into an agent's custom_args
+// still wins (last flag wins) — the pre-existing contract that
+// TestBuildClaudeArgsExtraArgsBeforeCustomArgsAndFiltersBoth pins.
+func TestBuildClaudeArgsServerBudgetPrecedesCustomArgs(t *testing.T) {
+	t.Parallel()
+
+	args := buildClaudeArgs(ExecOptions{
+		MaxBudgetUSD: 1,
+		CustomArgs:   []string{"--max-budget-usd", "9.00"},
+	}, slog.Default())
+
+	serverIdx, customIdx := -1, -1
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--max-budget-usd" && args[i+1] == "1.00" {
+			serverIdx = i
+		}
+		if args[i] == "--max-budget-usd" && args[i+1] == "9.00" {
+			customIdx = i
+		}
+	}
+	if serverIdx == -1 || customIdx == -1 || serverIdx > customIdx {
+		t.Fatalf("server budget must be emitted before custom args: %v", args)
+	}
+}

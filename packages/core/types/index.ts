@@ -59,6 +59,12 @@ export type {
 } from "./agent";
 export type { Workspace, WorkspaceRepo, GitCredential, FigmaCredentialStatus, McpCredentialStatus, McpCredentialInput, WorkspaceMcpConfigResponse, ReleaseIntegration, ReleaseIntegrationInput, Member, MemberRole, User, MemberWithUser, ActorDirectoryEntry, Invitation, InvitationAuthInfo } from "./workspace";
 export type { InboxItem, InboxSeverity, InboxItemType } from "./inbox";
+export type {
+  Escalation,
+  EscalationKind,
+  EscalationStatus,
+  EscalationListResponse,
+} from "./escalation";
 export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, Reaction } from "./comment";
 export type { Label, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse } from "./label";

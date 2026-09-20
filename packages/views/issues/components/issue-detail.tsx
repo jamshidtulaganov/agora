@@ -67,6 +67,7 @@ import { IssueRepoSection } from "./issue-repo-section";
 import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
+import { EscalationCard } from "./escalation-card";
 import { DesignAuditSection } from "./design-audit-section";
 import { IssueExecution } from "./issue-execution";
 import { useLensParam, getLens } from "../lens";
@@ -1964,6 +1965,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               })()}
             </AppLink>
           )}
+
+          {/* An agent stopped and is waiting on a person. Sits ABOVE the
+              description deliberately: it is the single most time-sensitive
+              thing on the page — a run that is not running until someone
+              answers — and burying it in the sidebar would reproduce the
+              "nobody has looked yet" failure the escalation exists to end.
+              Renders nothing when no escalation is open. */}
+          <EscalationCard issueId={id} />
 
           <div
             {...descDropZoneProps}

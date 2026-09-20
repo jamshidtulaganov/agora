@@ -395,6 +395,15 @@ type AgentTaskResponse struct {
 	// (cloud / system runtimes that pre-date per-task tokens); in that case
 	// the daemon falls back to its own credential. See MUL-2600.
 	AuthToken string `json:"auth_token,omitempty"`
+	// Per-task budgets resolved from the issue's tier at claim time
+	// (docs/orchestration-upgrade-plan.md §B2). See the mirror fields in
+	// internal/daemon/types.go for the full contract. Additive + omitempty
+	// in both directions: a zero always means "no cap", so an older daemon
+	// and an older server both degrade to the previous unbounded behaviour
+	// rather than to a cap of zero.
+	MaxTurns       int     `json:"max_turns,omitempty"`
+	MaxBudgetUSD   float64 `json:"max_budget_usd,omitempty"`
+	TimeoutSeconds int     `json:"timeout_seconds,omitempty"`
 }
 
 // ChatAttachmentMeta is the structured attachment metadata embedded in

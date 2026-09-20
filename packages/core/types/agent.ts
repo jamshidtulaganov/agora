@@ -77,10 +77,18 @@ export interface AgentTask {
   // because another task currently owns the same on-disk path lock.
   // Treated as an active (non-terminal) state alongside queued/dispatched/
   // running by every consumer that buckets tasks into "active vs done".
+  //
+  // `waiting_human` is the ESCALATION park: the agent stopped and asked a
+  // person, and the run ended. It is deliberately NOT an active state — the
+  // runtime slot is freed and the agent is available for other work, because
+  // the median human answer arrives in hours, not seconds. Consumers that
+  // bucket "active vs done" should treat it as neither: the work is not
+  // finished, but nothing is happening.
   status:
     | "queued"
     | "dispatched"
     | "waiting_local_directory"
+    | "waiting_human"
     | "running"
     | "completed"
     | "failed"

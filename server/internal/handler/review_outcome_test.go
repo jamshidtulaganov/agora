@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/jamshidtulaganov/agora/server/internal/events"
 	"github.com/jamshidtulaganov/agora/server/internal/service"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // TestComposeReviewVerdictGroupNotifyText covers the Telegram body: the blocker
@@ -269,5 +272,67 @@ func TestMaybeOpenPROnReviewPassDispatches(t *testing.T) {
 	testHandler.maybeOpenPROnReviewPass(ctx, issue, service.ReviewLabelPass, testUserID)
 	if n := len(dispatches()); n != 1 {
 		t.Fatalf("open_pr dispatches after re-fire = %d, want still 1 (no duplicate merge request)", n)
+	}
+}
+
+// A landed review verdict must announce itself ON THE BUS, not only through
+// the direct Telegram call that used to be its single exit. Every integration
+// that subscribes — the Slack fanout today, whatever comes next — hangs off
+// this event, so a verdict that reaches SendReviewVerdictGroupNotify without
+// publishing is a verdict the rest of the product never hears about.
+func TestOnReviewVerdictLabelPublishesReviewVerdictEvent(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	// Both routing paths off: this test is about the announcement, not the
+	// consequences.
+	t.Setenv("AGORA_REVIEW_FAIL_AUTOROUTE_ENABLED", "")
+	t.Setenv("AGORA_REVIEW_PASS_OPEN_PR_ENABLED", "")
+	t.Setenv("AGORA_TELEGRAM_REVIEW_NOTIFY_ENABLED", "")
+
+	ctx := context.Background()
+	issueID := sliceActionTestIssue(t, "", "")
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	var mu sync.Mutex
+	var seen []events.Event
+	testHandler.Bus.Subscribe(protocol.EventReviewVerdict, func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, e)
+	})
+
+	testHandler.onReviewVerdictLabel(ctx, issue, service.ReviewLabelFail, testUserID)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 1 {
+		t.Fatalf("expected exactly one review:verdict event, got %d", len(seen))
+	}
+	e := seen[0]
+	if e.WorkspaceID != testWorkspaceID {
+		t.Fatalf("event workspace = %q, want the issue's workspace", e.WorkspaceID)
+	}
+	payload, ok := e.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %T, want a map of ids", e.Payload)
+	}
+	if payload["issue_id"] != issueID {
+		t.Fatalf("payload issue_id = %v, want %s", payload["issue_id"], issueID)
+	}
+	if payload["verdict"] != "fail" {
+		t.Fatalf("payload verdict = %v, want fail", payload["verdict"])
+	}
+	// Ids only: a subscriber refetches through the membership-gated
+	// endpoints, so a fanout can never become the thing that leaks an issue.
+	for key := range payload {
+		switch key {
+		case "issue_id", "verdict", "actor_id":
+		default:
+			t.Fatalf("unexpected payload key %q — keep the event to ids", key)
+		}
 	}
 }

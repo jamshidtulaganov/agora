@@ -87,6 +87,22 @@ next.
 Give real alternatives. "Deploy" / "Not now" is a decision. "OK" / "Cancel" on
 something you were going to do anyway is a formality that buys nothing.
 
+### `telegram ask` vs `issue escalate`
+
+Two different questions, two different verbs. Picking the wrong one either
+wastes a runtime slot or asks a question nobody sees.
+
+| | `agora telegram ask` | `agora issue escalate` |
+|---|---|---|
+| Shape | BLOCKS your run until someone taps (up to 60 min) | Returns immediately; your run ends |
+| Use for | A yes/no where a human is demonstrably present and watching | "I am stuck" — you cannot continue and do not know when an answer will come |
+| If nobody answers | Times out; a STOP, not a default | Nothing is lost; it waits as long as the human takes |
+| Cost of waiting | Holds the runtime slot the whole time | None — the slot is freed, the task parks |
+
+So: a gate on something you are about to do right now is `telegram ask`. An
+ambiguity that blocks the whole task is `issue escalate` — see the
+`agora-working-on-issues` skill.
+
 ## What the platform does without you
 
 When an autopilot run completes, the platform posts your write-up to the

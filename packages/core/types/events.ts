@@ -1,6 +1,7 @@
 import type { Issue, IssueMetadata, IssueReaction } from "./issue";
 import type { Agent } from "./agent";
 import type { InboxItem } from "./inbox";
+import type { Escalation } from "./escalation";
 import type { Comment, Reaction } from "./comment";
 import type { TimelineEntry } from "./activity";
 import type { Workspace, MemberWithUser, Invitation } from "./workspace";
@@ -25,12 +26,15 @@ export type WSEventType =
   | "task:dispatch"
   | "task:running"
   | "task:waiting_local_directory"
+  | "task:waiting_human"
   | "task:progress"
   | "task:completed"
   | "task:failed"
   | "task:message"
   | "task:cancelled"
   | "orchestration:changed"
+  | "escalation:opened"
+  | "escalation:resolved"
   | "inbox:new"
   | "inbox:read"
   | "inbox:archived"
@@ -132,6 +136,17 @@ export interface OrchestrationChangedPayload {
   kind: string;
   event_id?: string;
   plan_version?: number;
+}
+
+/**
+ * escalation:opened / escalation:resolved — an agent stopped and asked, or a
+ * human answered. Workspace-scoped: an escalation names an issue, and issues
+ * are tenanted. Carries the whole escalation so one payload can refresh the
+ * issue card, the inbox and the decision queue.
+ */
+export interface EscalationEventPayload {
+  issue_id: string;
+  escalation: Escalation;
 }
 
 export interface AgentStatusPayload {
@@ -280,6 +295,20 @@ export interface TaskRunningPayload {
 // `wait_reason` mirrors the server-side hint (path / holder task id), but
 // is not yet surfaced end-to-end; the UI today only reads the status.
 export interface TaskWaitingLocalDirectoryPayload {
+  task_id: string;
+  agent_id: string;
+  issue_id: string;
+  chat_session_id?: string;
+  status: string;
+  wait_reason?: string;
+}
+
+// task:waiting_human fires when an agent raised an escalation and the server
+// parked its run. Unlike waiting_local_directory — a daemon-owned hold that
+// clears in seconds — this one is owned by a PERSON and may sit for a day, so
+// the runtime slot is freed rather than held. `wait_reason` carries the
+// escalation's one-sentence ask.
+export interface TaskWaitingHumanPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
@@ -491,12 +520,15 @@ export interface WSEventPayloadMap {
   "task:dispatch": TaskDispatchPayload;
   "task:running": TaskRunningPayload;
   "task:waiting_local_directory": TaskWaitingLocalDirectoryPayload;
+  "task:waiting_human": TaskWaitingHumanPayload;
   "task:completed": TaskCompletedPayload;
   "task:failed": TaskFailedPayload;
   "task:message": TaskMessagePayload;
   "task:cancelled": TaskCancelledPayload;
   "task:progress": unknown;
   "orchestration:changed": OrchestrationChangedPayload;
+  "escalation:opened": EscalationEventPayload;
+  "escalation:resolved": EscalationEventPayload;
   "inbox:new": InboxNewPayload;
   "inbox:read": InboxReadPayload;
   "inbox:archived": InboxArchivedPayload;

@@ -8,6 +8,10 @@ import {
   DeployEventSchema,
   deployEnvironmentRequiresHuman,
   DuplicateIssueErrorBodySchema,
+  EscalationSchema,
+  EscalationListSchema,
+  EMPTY_ESCALATION,
+  EMPTY_ESCALATION_LIST,
   EMPTY_DEPLOY_EVENTS,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
   EMPTY_LIST_TEST_CASES,
@@ -2455,5 +2459,91 @@ describe("StaleIssuesResponseSchema", () => {
   it("ignores unknown extra fields a newer server adds", () => {
     const wider = parse({ stale: [{ ...row, confidence: 0.8 }], computed_at: "now" });
     expect(wider.stale[0]?.issue_id).toBe("issue-1");
+  });
+});
+
+// Escalations — the one endpoint whose failure mode is a run stuck forever.
+// If a drifted response blanks the card, nobody answers and nobody knows why,
+// so every one of these cases must degrade to "no escalation" (the card
+// renders nothing) or to a filled-in row, never to a throw.
+describe("EscalationSchema / EscalationListSchema", () => {
+  const row = {
+    id: "esc-1",
+    workspace_id: "ws-1",
+    issue_id: "issue-1",
+    task_id: "task-1",
+    agent_id: "agent-1",
+    kind: "question",
+    prompt: "CSV or XLSX?",
+    detail: "Read the issue; it does not say.",
+    options: ["CSV", "XLSX"],
+    risk_tier: "guarded",
+    status: "open",
+    answer: "",
+    answered_by: "",
+    answered_at: "",
+    resumed_task_id: "",
+    raised_at: "2026-09-20T10:00:00Z",
+  };
+  const parseList = (data: unknown) =>
+    parseWithFallback(data, EscalationListSchema, EMPTY_ESCALATION_LIST, {
+      endpoint: "GET /api/issues/:id/escalations",
+    });
+  const parseOne = (data: unknown) =>
+    parseWithFallback(data, EscalationSchema, EMPTY_ESCALATION, {
+      endpoint: "POST /api/escalations/:id/resolve",
+    });
+
+  it("parses a well-formed list", () => {
+    expect(parseList({ escalations: [row] })).toEqual({ escalations: [row] });
+  });
+
+  it("falls back to no escalations on a shape it cannot read at all", () => {
+    expect(parseList({})).toEqual({ escalations: [] });
+    expect(parseList(null)).toEqual({ escalations: [] });
+    expect(parseList("not json at all")).toEqual({ escalations: [] });
+  });
+
+  it("degrades a null escalations array to an empty list", () => {
+    // A Go `[]TaskEscalation(nil)` marshals to null the day someone drops
+    // emit_empty_slices. That must read as "none", not as a crash.
+    expect(parseList({ escalations: null })).toEqual({ escalations: [] });
+  });
+
+  it("treats null options as no options rather than dropping the row", () => {
+    const parsed = parseList({ escalations: [{ ...row, options: null }] });
+    expect(parsed.escalations).toHaveLength(1);
+    expect(parsed.escalations[0]?.options).toEqual([]);
+  });
+
+  it("treats a null answer as an empty answer", () => {
+    // answer is NULL in the database while an escalation is open.
+    expect(parseOne({ ...row, answer: null }).answer).toBe("");
+  });
+
+  it("keeps a kind and a status the client has never heard of", () => {
+    // Enum drift downgrades, not crashes: the card renders a new kind
+    // generically instead of vanishing.
+    const parsed = parseOne({ ...row, kind: "needs_design_decision", status: "deferred" });
+    expect(parsed.kind).toBe("needs_design_decision");
+    expect(parsed.status).toBe("deferred");
+  });
+
+  it("fills a partial row instead of dropping the whole response", () => {
+    const parsed = parseOne({ id: "esc-9" });
+    expect(parsed.id).toBe("esc-9");
+    expect(parsed.prompt).toBe("");
+    expect(parsed.options).toEqual([]);
+    expect(parsed.status).toBe("open");
+  });
+
+  it("degrades a wrong-typed row to no escalation at all", () => {
+    expect(parseList({ escalations: [{ ...row, prompt: 42 }] })).toEqual({ escalations: [] });
+    expect(parseOne({ ...row, id: 42 })).toEqual(EMPTY_ESCALATION);
+  });
+
+  it("ignores unknown extra fields a newer server adds", () => {
+    const parsed = parseOne({ ...row, escalated_by_policy: true });
+    expect(parsed.id).toBe("esc-1");
   });
 });

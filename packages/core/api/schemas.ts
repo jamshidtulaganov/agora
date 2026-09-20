@@ -16,6 +16,7 @@ import type {
   CreateBillingPortalSessionResponse,
   FigmaCredentialStatus,
   McpCredentialStatus,
+  Escalation,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
@@ -1222,6 +1223,62 @@ export const EMPTY_REVIEW_VERDICT = {
   comment_id: "",
   reviewed_at: "",
   reviewer_agent_id: "",
+};
+
+// --- Escalations ------------------------------------------------------------
+// An agent stopped and asked a human. The schema is deliberately LENIENT:
+// `kind` and `status` stay z.string() so a server that grows a new kind
+// renders a generic card instead of blanking the whole escalation section —
+// the downstream switch statements carry `default` branches for exactly that.
+export const EscalationSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  issue_id: z.string().default(""),
+  task_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  kind: z.string().default("question"),
+  prompt: z.string().default(""),
+  detail: z.string().default(""),
+  // A null array is the shape a Go `[]string(nil)` marshals to when a future
+  // change drops emit_empty_slices — catch it here rather than in the UI.
+  options: z.array(z.string()).nullish().transform((v) => v ?? []),
+  risk_tier: z.string().default(""),
+  status: z.string().default("open"),
+  answer: z.string().nullish().transform((v) => v ?? ""),
+  answered_by: z.string().default(""),
+  answered_at: z.string().default(""),
+  resumed_task_id: z.string().default(""),
+  raised_at: z.string().default(""),
+}).loose();
+
+export const EscalationListSchema = z.object({
+  escalations: z.array(EscalationSchema).nullish().transform((v) => v ?? []),
+}).loose();
+
+// The fallback is "no escalations", which renders exactly the same as an
+// issue nobody has escalated — a drifted response must never make the issue
+// detail look broken.
+export const EMPTY_ESCALATION_LIST: { escalations: Escalation[] } = { escalations: [] };
+
+// The single-escalation fallback. An id of "" is the tell the UI reads as
+// "nothing usable came back" — it renders no card rather than an empty one.
+export const EMPTY_ESCALATION: Escalation = {
+  id: "",
+  workspace_id: "",
+  issue_id: "",
+  task_id: "",
+  agent_id: "",
+  kind: "question",
+  prompt: "",
+  detail: "",
+  options: [],
+  risk_tier: "",
+  status: "open",
+  answer: "",
+  answered_by: "",
+  answered_at: "",
+  resumed_task_id: "",
+  raised_at: "",
 };
 
 // POST /api/issues/:id/review-decision — request_changes also returns the

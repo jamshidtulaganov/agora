@@ -38,6 +38,7 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     review_failed: t(($) => $.types.review_failed),
     review_passed: t(($) => $.types.review_passed),
     merge_ready: t(($) => $.types.merge_ready),
+    escalation: t(($) => $.types.escalation),
   };
 }
 
@@ -115,6 +116,14 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     case "quick_create_failed": {
       const detail = getQuickCreateFailureDetail(item);
       if (detail) return <span>{t(($) => $.labels.failed_with_detail, { detail })}</span>;
+      return <span>{typeLabels[item.type]}</span>;
+    }
+    // An escalation's whole value is that the ASK is visible without opening
+    // anything — a row that says only "Escalation" costs the reader the same
+    // click the escalation is trying to save.
+    case "escalation": {
+      const prompt = details.prompt || item.body;
+      if (prompt) return <span>{prompt}</span>;
       return <span>{typeLabels[item.type]}</span>;
     }
     default:

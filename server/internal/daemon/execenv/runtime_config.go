@@ -599,6 +599,27 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("2. **A headline.** Each time you move to a new phase, output one line by itself starting with `PROGRESS:` then a single plain present-continuous sentence — e.g. `PROGRESS: Reading the greet button component`, `PROGRESS: Running the tests`, `PROGRESS: Opening a pull request`. No file paths, flags, or command names. Use the SAME language as the issue. This line becomes the \"what's happening now\" the human sees.\n\n")
 	b.WriteString("Both feed the human's live view only — they do NOT replace your normal comment / verdict, which you still post as usual.\n\n")
 
+	// The escalation hatch (docs/orchestration-upgrade-plan.md §B1 step 5).
+	// Agora's agents structurally cannot ask a question mid-run — Claude Code
+	// is driven with --disallowedTools AskUserQuestion because a headless run
+	// has no UI for a prompt to render in — so the ONLY way an agent reaches a
+	// human is out of band. Without this section an agent that does not know
+	// what to do does the one thing left to it: it guesses, confidently, and
+	// burns a budget doing it.
+	//
+	// Issue tasks only: the verb takes an issue, and a chat turn already has a
+	// human reading it.
+	if ctx.IssueID != "" {
+		b.WriteString("## When You Are Stuck\n\n")
+		b.WriteString("If you cannot proceed — the requirement is ambiguous, two readings are equally plausible, you need an access/credential decision, or you would be guessing at something expensive to undo — **state what you need in one sentence and stop. Do not guess.** You will be resumed with the answer, in this same session, so you do not lose your context.\n\n")
+		b.WriteString("```bash\n")
+		b.WriteString("agora issue escalate <issue-id> --need \"the one thing you need decided\" --tried \"what you already ruled out\"\n")
+		b.WriteString("```\n\n")
+		b.WriteString("Useful flags: `--option \"A\" --option \"B\"` when the answer is a choice between concrete alternatives (the human gets buttons), and `--kind blocked|permission|risk` when it is not a plain question. The command returns immediately — it does NOT wait. Post your final comment explaining where you stopped, then end the run.\n\n")
+		b.WriteString("Escalate EARLY rather than after a long exploration: a question asked in minute two costs a human thirty seconds, and the same question asked after an hour of guessing costs an hour plus the thirty seconds — and usually a wrong change to undo.\n\n")
+		b.WriteString("Do NOT escalate for things you can find out yourself (read the repo, read the issue, read the linked PR), and do NOT escalate the same thing twice — one open escalation per issue, and a second one replaces the first.\n\n")
+	}
+
 	// TDD contract — DEV (on-assign) tasks only. The single most expensive
 	// cycle in the pipeline is the QA-fail loop: dev hands off wrong → QA
 	// catches it (~5 min gate) → autoroute back → re-dev → re-QA (≈12 min per

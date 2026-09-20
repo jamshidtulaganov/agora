@@ -721,6 +721,23 @@ export function useRealtimeSync(
       if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issue_id) });
     });
 
+    // An agent stopped and asked a human, or a human answered. Both events
+    // refresh the same three surfaces: the issue's escalation card, its task
+    // list (the run either just parked or just resumed) and the inbox (the
+    // action_required item was created or handled). Invalidate rather than
+    // write the payload into the cache — the server is the single source of
+    // truth for a state a human just changed, and an escalation is a rare,
+    // deliberate event where one extra fetch costs nothing.
+    const onEscalationEvent = (p: unknown) => {
+      const { issue_id } = (p ?? {}) as { issue_id?: string };
+      if (!issue_id) return;
+      qc.invalidateQueries({ queryKey: issueKeys.escalations(issue_id) });
+      qc.invalidateQueries({ queryKey: issueKeys.tasks(issue_id) });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+    };
+    const unsubEscalationOpened = ws.on("escalation:opened", onEscalationEvent);
+    const unsubEscalationResolved = ws.on("escalation:resolved", onEscalationEvent);
+
     // Test cases changed (agent authored, or a run recorded) — refresh the panel.
     const unsubTestCasesChanged = ws.on("test_cases:changed", (p) => {
       const { issue_id } = p as { issue_id?: string };
@@ -1214,6 +1231,8 @@ export function useRealtimeSync(
       unsubInboxNew();
       unsubQAEvidenceReady();
       unsubTestCasesChanged();
+      unsubEscalationOpened();
+      unsubEscalationResolved();
       unsubCommentCreated();
       unsubCommentUpdated();
       unsubCommentDeleted();

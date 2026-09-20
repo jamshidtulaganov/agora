@@ -3441,12 +3441,30 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			thinkingLevel = ""
 		}
 	}
+	// Per-task budgets, resolved SERVER-side from the issue's tier
+	// (docs/orchestration-upgrade-plan.md §B2). Zero means "no cap" in every
+	// field, so an older server that sends nothing leaves the daemon on its
+	// previous unbounded behaviour.
+	//
+	// A server-sent wall clock OVERRIDES the daemon-wide AgentTimeout (whose
+	// default is deliberately 0 — MUL-3064 — because the idle / tool / startup
+	// watchdogs are the liveness net). It does not change that default; it is
+	// a per-task ceiling a workspace opted into, and the daemon records which
+	// of the two produced a timeout so the failure can be classified as a
+	// blown budget (escalates) rather than infrastructure flakiness (retries).
+	runTimeout := d.cfg.AgentTimeout
+	budgetWallClock := time.Duration(task.TimeoutSeconds) * time.Second
+	if budgetWallClock > 0 {
+		runTimeout = budgetWallClock
+	}
 	execOpts := agent.ExecOptions{
 		Cwd:                       env.WorkDir,
 		Model:                     model,
 		RunMode:                   task.RunMode,
 		ThreadName:                deriveTaskThreadName(task),
-		Timeout:                   d.cfg.AgentTimeout,
+		MaxTurns:                  task.MaxTurns,
+		MaxBudgetUSD:              task.MaxBudgetUSD,
+		Timeout:                   runTimeout,
 		SemanticInactivityTimeout: d.cfg.CodexSemanticInactivityTimeout,
 		ResumeSessionID:           task.PriorSessionID,
 		ExtraArgs:                 extraArgs,
@@ -3602,7 +3620,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// goes through the FailTask path that forwards session info.
 		comment := result.Error
 		if comment == "" {
-			comment = fmt.Sprintf("%s timed out after %s", provider, d.cfg.AgentTimeout)
+			comment = fmt.Sprintf("%s timed out after %s", provider, runTimeout)
 		}
 		failureReason := "timeout"
 		if reason, ok := classifyResumeUnsafeTimeout(provider, comment); ok {
@@ -3610,6 +3628,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				"failure_reason", reason,
 			)
 			failureReason = reason
+		} else if budgetWallClock > 0 {
+			// The cap that fired was a per-task WALL-CLOCK BUDGET the
+			// workspace set, not infrastructure flakiness. That distinction
+			// decides what happens next: 'timeout' is in retryableReasons and
+			// would silently re-run (and re-spend) the very budget that just
+			// ran out, while budget_exhausted is deliberately excluded and
+			// raises a kind='budget' escalation instead
+			// (docs/orchestration-upgrade-plan.md §B2).
+			taskLog.Warn("agent hit its per-task wall-clock budget",
+				"budget", budgetWallClock.String(),
+			)
+			failureReason = string(taskfailure.ReasonBudgetExhausted)
+			comment = fmt.Sprintf("Run stopped: it hit its %s wall-clock budget for this task. %s", budgetWallClock, comment)
 		}
 		return TaskResult{
 			Status:        "blocked",

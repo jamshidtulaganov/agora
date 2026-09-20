@@ -33,7 +33,11 @@ export type InboxItemType =
   // approval"), and a routine review:pass (info).
   | "review_failed"
   | "review_passed"
-  | "merge_ready";
+  | "merge_ready"
+  // An agent stopped and asked a human (docs/orchestration-upgrade-plan.md
+  // §B1). Always action_required: the run has ENDED and cannot restart
+  // without a person — this is the one notification that is never FYI.
+  | "escalation";
 
 export interface InboxItem {
   id: string;

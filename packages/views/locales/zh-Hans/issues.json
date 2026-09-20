@@ -660,6 +660,7 @@
     "status_queued": "排队中",
     "status_dispatched": "启动中",
     "status_waiting_local_directory": "等待本地目录释放",
+    "status_waiting_human": "等待人工答复",
     "status_running": "处理中",
     "status_completed": "已完成",
     "status_failed": "失败",
@@ -1591,5 +1592,15 @@
       "tests": "测试用例",
       "verdict": "结论"
     }
+  },
+  "escalation": {
+    "heading": "{{name}} 正在等待你的答复",
+    "an_agent": "智能体",
+    "tried": "已尝试：",
+    "answer_placeholder": "回复，或者告诉它改做什么……",
+    "send_answer": "发送答复",
+    "resume_hint": "智能体会带着你的答复继续，上下文不会丢失。",
+    "answered_toast": "答复已发送 — 智能体正在继续",
+    "answer_failed": "答复发送失败"
   }
 }

@@ -12,19 +12,19 @@
 // This package lifts that classifier into the in-flight write path so the
 // stored failure_reason is already refined when the row is first
 // persisted, and so server / daemon / cloud share a single source of
-// truth for the canonical 21 values. PR1 of the Grafana board plan
+// truth for the canonical 22 values. PR1 of the Grafana board plan
 // ([MUL-2946](https://agora/issues/MUL-2946)). Subsequent PRs use
 // AllReasons() to pre-warm the Prometheus failure_reason label set.
 //
-// The 21 canonical values fall into two groups:
+// The 22 canonical values fall into two groups:
 //
-//   - 7 platform-side values (no `agent_error.` prefix) emitted by the
+//   - 8 platform-side values (no `agent_error.` prefix) emitted by the
 //     server-side sweepers and daemon classifiers when the failure is
 //     attributable to the platform/scheduler/runtime layer rather than
 //     anything the agent process did:
 //
 //     queued_expired, runtime_offline, runtime_recovery, timeout,
-//     iteration_limit, agent_blocked, api_invalid_request
+//     iteration_limit, budget_exhausted, agent_blocked, api_invalid_request
 //
 //   - 14 agent-side values (with `agent_error.` prefix) produced by
 //     Classify(rawError) when the agent process surfaced an error string.
@@ -47,7 +47,7 @@ type Reason string
 
 // agentErrorPrefix marks the 14 sub-reasons that originate inside the
 // agent process (provider error, runner crash, context overflow, etc.)
-// as opposed to the 7 platform-side reasons (queue expiry, runtime
+// as opposed to the 8 platform-side reasons (queue expiry, runtime
 // offline, sweeper timeout, etc.). IsAgentError uses this prefix so
 // callers don't have to enumerate the agent-side reasons by hand.
 const agentErrorPrefix = "agent_error."
@@ -90,6 +90,25 @@ const (
 	// 'blocked' workflow state (e.g. requesting human input). Not a
 	// system error.
 	ReasonAgentBlocked Reason = "agent_blocked"
+
+	// ReasonBudgetExhausted: the run hit an Agora-imposed budget —
+	// a per-task dollar ceiling (`--max-budget-usd`), a turn cap
+	// (`--max-turns`), or a per-task wall-clock budget resolved from
+	// the issue's tier. Platform-side for the same reason
+	// ReasonIterationLimit is: it is a ceiling WE set, not an
+	// external API rejection.
+	//
+	// This reason is deliberately EXCLUDED from
+	// service.retryableReasons: retrying a run that ran out of budget
+	// spends the very thing that ran out. FailTask raises a
+	// kind='budget' escalation instead, so a blown budget reaches a
+	// human rather than silently looping or silently stopping
+	// (docs/orchestration-upgrade-plan.md §B2).
+	//
+	// No backfill is owed: unlike the agent_error.* values, nothing
+	// historical can carry this reason — it can only be written by
+	// code that also sets the budget.
+	ReasonBudgetExhausted Reason = "budget_exhausted"
 
 	// ReasonAPIInvalidRequest: the upstream LLM API rejected the
 	// request body with a 400 invalid_request_error (oversized image,
@@ -174,7 +193,7 @@ const (
 	ReasonAgentUnknown Reason = "agent_error.unknown"
 )
 
-// allReasons is the canonical ordered list of the 21 reasons. Order is
+// allReasons is the canonical ordered list of the 22 reasons. Order is
 // stable so callers (e.g. Prometheus collectors that pre-warm series via
 // AllReasons) can build deterministic label sets across restarts.
 //
@@ -190,6 +209,7 @@ var allReasons = []Reason{
 	ReasonRuntimeRecovery,
 	ReasonTimeout,
 	ReasonIterationLimit,
+	ReasonBudgetExhausted,
 	ReasonAgentBlocked,
 	ReasonAPIInvalidRequest,
 
@@ -231,7 +251,7 @@ func (r Reason) IsAgentError() bool {
 	return strings.HasPrefix(string(r), agentErrorPrefix)
 }
 
-// AllReasons returns the canonical 21 reasons in a stable order. The
+// AllReasons returns the canonical 22 reasons in a stable order. The
 // caller MUST NOT mutate the returned slice; a copy is returned so
 // concurrent callers can append to their local copy without corrupting
 // the package-level fixture.

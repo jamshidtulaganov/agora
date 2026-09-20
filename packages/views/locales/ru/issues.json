@@ -671,6 +671,7 @@
     "status_queued": "В очереди",
     "status_dispatched": "Запускается",
     "status_waiting_local_directory": "Ожидание локального каталога",
+    "status_waiting_human": "Ожидание ответа человека",
     "status_running": "Работает",
     "status_completed": "Завершено",
     "status_failed": "Не удалось",
@@ -1606,5 +1607,15 @@
       "tests": "Тест-кейсы",
       "verdict": "Вердикт"
     }
+  },
+  "escalation": {
+    "heading": "{{name}} ждёт вашего ответа",
+    "an_agent": "Агент",
+    "tried": "Уже пробовал:",
+    "answer_placeholder": "Ответьте или скажите, что делать вместо этого…",
+    "send_answer": "Отправить ответ",
+    "resume_hint": "Агент продолжит с вашим ответом, сохранив контекст.",
+    "answered_toast": "Ответ отправлен — агент продолжает",
+    "answer_failed": "Не удалось отправить ответ"
   }
 }

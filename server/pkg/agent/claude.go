@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -495,6 +496,13 @@ var claudeBlockedArgs = map[string]blockedArgMode{
 	// log a warning rather than letting the CLI receive two conflicting
 	// --effort values.
 	"--effort": blockedWithValue,
+	// NOTE: --max-turns and --max-budget-usd are deliberately NOT blocked.
+	// Both have always been settable through custom_args (see
+	// TestBuildClaudeArgsExtraArgsBeforeCustomArgsAndFiltersBoth), and the
+	// people who edit an agent's custom_args are the same admins who set the
+	// workspace budget — so blocking them would remove an existing escape
+	// hatch without closing a privilege gap. The server-resolved values are
+	// appended FIRST, so a deliberate custom_arg still wins (last flag wins).
 }
 
 func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
@@ -525,6 +533,20 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 	}
 	if opts.MaxTurns > 0 {
 		args = append(args, "--max-turns", fmt.Sprintf("%d", opts.MaxTurns))
+	}
+	// Hard per-run dollar ceiling (Claude Code v2.1.217+, print mode only).
+	// The CLI stops the run with "Budget limit reached" — including any
+	// background subagents, whose spend counts toward the same ceiling —
+	// which the daemon classifies as ReasonBudgetExhausted and the server
+	// turns into a kind='budget' escalation rather than a retry
+	// (docs/orchestration-upgrade-plan.md §B2).
+	//
+	// Emitted ONLY here, for the claude backend: no other runtime we drive
+	// has an equivalent flag, and inventing one by post-hoc accounting would
+	// be a meter, not a cap. Formatted with two decimals so a value like
+	// 0.1+0.2 never reaches the CLI as 0.30000000000000004.
+	if opts.MaxBudgetUSD > 0 {
+		args = append(args, "--max-budget-usd", strconv.FormatFloat(opts.MaxBudgetUSD, 'f', 2, 64))
 	}
 	if opts.SystemPrompt != "" {
 		args = append(args, "--append-system-prompt", opts.SystemPrompt)

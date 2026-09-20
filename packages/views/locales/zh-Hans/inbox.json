@@ -51,7 +51,8 @@
     "qa_passed": "QA 失败后已通过",
     "review_failed": "代码评审未通过",
     "review_passed": "代码评审通过",
-    "merge_ready": "可以合并"
+    "merge_ready": "可以合并",
+    "escalation": "等待你的答复"
   },
   "labels": {
     "set_status_to": "状态设为",

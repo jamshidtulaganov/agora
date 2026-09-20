@@ -33,6 +33,15 @@ func TestClassifyRules(t *testing.T) {
 		in   string
 		want Reason
 	}{
+		// 0. Agora-imposed budget. Checked before everything else so the
+		//    quota / context buckets cannot claim these strings — misfiling a
+		//    budget as a provider quota error would route it to runtime
+		//    failover instead of to a human.
+		{"budget limit reached", "Budget limit reached: spent $5.02 of $5.00", ReasonBudgetExhausted},
+		{"max budget flag", "invalid --max-budget-usd value", ReasonBudgetExhausted},
+		{"max turns", "Error: reached --max-turns (120)", ReasonBudgetExhausted},
+		{"maximum number of turns", "the agent hit the maximum number of turns", ReasonBudgetExhausted},
+
 		// 1. Context overflow.
 		{"context length exceeded", "Error: context length exceeded for model gpt-4", ReasonAgentContextOverflow},
 		{"context_length_exceeded code", `{"error":{"code":"context_length_exceeded"}}`, ReasonAgentContextOverflow},

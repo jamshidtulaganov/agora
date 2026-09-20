@@ -204,10 +204,13 @@ func (q *Queries) ArchiveAgentsByRuntime(ctx context.Context, arg ArchiveAgentsB
 const cancelAgentTask = `-- name: CancelAgentTask :one
 UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now()
-WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_human')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override, run_mode
 `
 
+// waiting_human is cancellable for the same reason the others are: the
+// terminate/redirect affordance on the escalation card has to be able to end
+// a parked run the human no longer wants answered.
 func (q *Queries) CancelAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, cancelAgentTask, id)
 	var i AgentTaskQueue
@@ -1007,6 +1010,87 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 	return i, err
 }
 
+const createEscalationResumeTask = `-- name: CreateEscalationResumeTask :one
+INSERT INTO agent_task_queue (
+    agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
+    status, priority, trigger_comment_id, trigger_summary, context,
+    session_id, work_dir,
+    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
+    model_override, thinking_level_override, run_mode, orchestration_step_id
+)
+SELECT
+    p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
+    'queued', p.priority,
+    COALESCE($1::uuid, p.trigger_comment_id),
+    p.trigger_summary, p.context,
+    p.session_id, p.work_dir,
+    p.attempt, p.max_attempts, p.id, FALSE, p.is_leader_task,
+    p.model_override, p.thinking_level_override, p.run_mode, p.orchestration_step_id
+FROM agent_task_queue p
+WHERE p.id = $2
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override, run_mode
+`
+
+type CreateEscalationResumeTaskParams struct {
+	TriggerCommentID pgtype.UUID `json:"trigger_comment_id"`
+	ParentTaskID     pgtype.UUID `json:"parent_task_id"`
+}
+
+// trigger_comment_id is OVERRIDDEN (not inherited): the human's answer was
+// posted as a comment, and pointing the resumed run at it is what makes the
+// answer the prompt — the daemon already injects the trigger comment's body
+// with a "focus on THIS comment" instruction. Falls back to the parent's
+// trigger when no answer comment could be written.
+// Re-enqueues a parked (waiting_human) task once a human answered its
+// escalation. Carries the agent, runtime, issue, orchestration identity and
+// the session pointer forward so the claim handler resumes the SAME provider
+// conversation (`--resume`) rather than paying to re-read the repository.
+//
+// Unlike CreateRetryTask this does NOT increment `attempt`: an answered
+// question is not a failed attempt, and spending the retry budget on it
+// would make a well-behaved agent that asks look worse than one that
+// guesses. orchestration_step_id IS carried forward — an escalation raised
+// while a DAG owns the issue must resume inside the same work unit, not
+// beside it.
+func (q *Queries) CreateEscalationResumeTask(ctx context.Context, arg CreateEscalationResumeTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, createEscalationResumeTask, arg.TriggerCommentID, arg.ParentTaskID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.ModelOverride,
+		&i.OrchestrationStepID,
+		&i.ThinkingLevelOverride,
+		&i.RunMode,
+	)
+	return i, err
+}
+
 const createFailoverTask = `-- name: CreateFailoverTask :one
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
@@ -1680,6 +1764,7 @@ SELECT session_id, work_dir, runtime_id, orchestration_step_id FROM agent_task_q
 WHERE agent_id = $1 AND issue_id = $2
   AND (
     status = 'completed'
+    OR status = 'waiting_human'
     OR (
       status = 'failed'
       AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
@@ -1735,6 +1820,12 @@ type GetLastTaskSessionRow struct {
 // error text. Migration 079 backfills the failure_reason column itself,
 // so observability stays accurate; this clause guarantees session resume
 // never picks up a bad session even when failure_reason hasn't caught up.
+//
+// 'waiting_human' is accepted for the same reason 'completed' is: a parked
+// escalation's session is healthy BY CONSTRUCTION — the run ended because the
+// agent asked a person a question, not because anything broke. Resuming it is
+// the whole point of ResumeEscalatedTask (plan §B1 step 7): the answer lands
+// in an agent that still remembers what it was doing.
 func (q *Queries) GetLastTaskSession(ctx context.Context, arg GetLastTaskSessionParams) (GetLastTaskSessionRow, error) {
 	row := q.db.QueryRow(ctx, getLastTaskSession, arg.AgentID, arg.IssueID)
 	var i GetLastTaskSessionRow
@@ -2779,6 +2870,73 @@ func (q *Queries) ListWorkspaceAgentTaskSnapshot(ctx context.Context, workspaceI
 		return nil, err
 	}
 	return items, nil
+}
+
+const markAgentTaskWaitingHuman = `-- name: MarkAgentTaskWaitingHuman :one
+UPDATE agent_task_queue
+SET status = 'waiting_human', wait_reason = $2
+WHERE id = $1 AND status IN ('dispatched', 'running')
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id, thinking_level_override, run_mode
+`
+
+type MarkAgentTaskWaitingHumanParams struct {
+	ID         pgtype.UUID `json:"id"`
+	WaitReason pgtype.Text `json:"wait_reason"`
+}
+
+// Parks a running task in 'waiting_human' after its agent raised an
+// escalation (docs/orchestration-upgrade-plan.md §B1 step 3). Modelled on
+// MarkAgentTaskWaitingLocalDirectory, with two deliberate differences:
+//
+//  1. It accepts 'dispatched' and 'running' (the escalate verb fires
+//     mid-run, not before the agent starts).
+//  2. It is NOT a liveness state. waiting_local_directory is owned by the
+//     daemon and clears in seconds; waiting_human is owned by a PERSON and
+//     may sit for a day, which is why it is absent from every
+//     runtime-capacity / offline-sweep / stale-task predicate in this file.
+//     Parking therefore frees the runtime slot instead of pinning it.
+//
+// wait_reason carries the escalation's one-sentence prompt so every task
+// surface can say WHAT is being waited on without joining task_escalation.
+// session_id/work_dir are left untouched: the daemon pinned them mid-flight
+// (UpdateAgentTaskSession) and they are what the resume replays into.
+func (q *Queries) MarkAgentTaskWaitingHuman(ctx context.Context, arg MarkAgentTaskWaitingHumanParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, markAgentTaskWaitingHuman, arg.ID, arg.WaitReason)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.ModelOverride,
+		&i.OrchestrationStepID,
+		&i.ThinkingLevelOverride,
+		&i.RunMode,
+	)
+	return i, err
 }
 
 const markAgentTaskWaitingLocalDirectory = `-- name: MarkAgentTaskWaitingLocalDirectory :one

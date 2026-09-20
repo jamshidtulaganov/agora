@@ -1206,6 +1206,25 @@ type TaskContextStat struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type TaskEscalation struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	IssueID       pgtype.UUID        `json:"issue_id"`
+	TaskID        pgtype.UUID        `json:"task_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	Kind          string             `json:"kind"`
+	Prompt        string             `json:"prompt"`
+	Detail        string             `json:"detail"`
+	Options       []string           `json:"options"`
+	RiskTier      string             `json:"risk_tier"`
+	Status        string             `json:"status"`
+	Answer        pgtype.Text        `json:"answer"`
+	AnsweredBy    pgtype.UUID        `json:"answered_by"`
+	AnsweredAt    pgtype.Timestamptz `json:"answered_at"`
+	ResumedTaskID pgtype.UUID        `json:"resumed_task_id"`
+	RaisedAt      pgtype.Timestamptz `json:"raised_at"`
+}
+
 type TaskMessage struct {
 	ID        pgtype.UUID        `json:"id"`
 	TaskID    pgtype.UUID        `json:"task_id"`

@@ -552,10 +552,17 @@ RETURNING *;
 -- error text. Migration 079 backfills the failure_reason column itself,
 -- so observability stays accurate; this clause guarantees session resume
 -- never picks up a bad session even when failure_reason hasn't caught up.
+--
+-- 'waiting_human' is accepted for the same reason 'completed' is: a parked
+-- escalation's session is healthy BY CONSTRUCTION — the run ended because the
+-- agent asked a person a question, not because anything broke. Resuming it is
+-- the whole point of ResumeEscalatedTask (plan §B1 step 7): the answer lands
+-- in an agent that still remembers what it was doing.
 SELECT session_id, work_dir, runtime_id, orchestration_step_id FROM agent_task_queue
 WHERE agent_id = $1 AND issue_id = $2
   AND (
     status = 'completed'
+    OR status = 'waiting_human'
     OR (
       status = 'failed'
       AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
@@ -711,9 +718,70 @@ WHERE t.id = v.id
 RETURNING t.*;
 
 -- name: CancelAgentTask :one
+-- waiting_human is cancellable for the same reason the others are: the
+-- terminate/redirect affordance on the escalation card has to be able to end
+-- a parked run the human no longer wants answered.
 UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now()
-WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_human')
+RETURNING *;
+
+-- name: MarkAgentTaskWaitingHuman :one
+-- Parks a running task in 'waiting_human' after its agent raised an
+-- escalation (docs/orchestration-upgrade-plan.md §B1 step 3). Modelled on
+-- MarkAgentTaskWaitingLocalDirectory, with two deliberate differences:
+--
+--   1. It accepts 'dispatched' and 'running' (the escalate verb fires
+--      mid-run, not before the agent starts).
+--   2. It is NOT a liveness state. waiting_local_directory is owned by the
+--      daemon and clears in seconds; waiting_human is owned by a PERSON and
+--      may sit for a day, which is why it is absent from every
+--      runtime-capacity / offline-sweep / stale-task predicate in this file.
+--      Parking therefore frees the runtime slot instead of pinning it.
+--
+-- wait_reason carries the escalation's one-sentence prompt so every task
+-- surface can say WHAT is being waited on without joining task_escalation.
+-- session_id/work_dir are left untouched: the daemon pinned them mid-flight
+-- (UpdateAgentTaskSession) and they are what the resume replays into.
+UPDATE agent_task_queue
+SET status = 'waiting_human', wait_reason = $2
+WHERE id = $1 AND status IN ('dispatched', 'running')
+RETURNING *;
+
+-- name: CreateEscalationResumeTask :one
+-- trigger_comment_id is OVERRIDDEN (not inherited): the human's answer was
+-- posted as a comment, and pointing the resumed run at it is what makes the
+-- answer the prompt — the daemon already injects the trigger comment's body
+-- with a "focus on THIS comment" instruction. Falls back to the parent's
+-- trigger when no answer comment could be written.
+-- Re-enqueues a parked (waiting_human) task once a human answered its
+-- escalation. Carries the agent, runtime, issue, orchestration identity and
+-- the session pointer forward so the claim handler resumes the SAME provider
+-- conversation (`--resume`) rather than paying to re-read the repository.
+--
+-- Unlike CreateRetryTask this does NOT increment `attempt`: an answered
+-- question is not a failed attempt, and spending the retry budget on it
+-- would make a well-behaved agent that asks look worse than one that
+-- guesses. orchestration_step_id IS carried forward — an escalation raised
+-- while a DAG owns the issue must resume inside the same work unit, not
+-- beside it.
+INSERT INTO agent_task_queue (
+    agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
+    status, priority, trigger_comment_id, trigger_summary, context,
+    session_id, work_dir,
+    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
+    model_override, thinking_level_override, run_mode, orchestration_step_id
+)
+SELECT
+    p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
+    'queued', p.priority,
+    COALESCE(sqlc.narg('trigger_comment_id')::uuid, p.trigger_comment_id),
+    p.trigger_summary, p.context,
+    p.session_id, p.work_dir,
+    p.attempt, p.max_attempts, p.id, FALSE, p.is_leader_task,
+    p.model_override, p.thinking_level_override, p.run_mode, p.orchestration_step_id
+FROM agent_task_queue p
+WHERE p.id = sqlc.arg('parent_task_id')
 RETURNING *;
 
 -- name: CountRunningTasks :one

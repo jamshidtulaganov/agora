@@ -978,6 +978,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.With(handler.RequireHumanActor).Post("/slack/install/begin", h.BeginSlackInstall)
 					r.With(handler.RequireHumanActor).Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
+
+					// Channel routing. Reads are owner/admin too (unlike the
+					// installation list): a route names the channels a team
+					// reports into, which is configuration, not the "who
+					// wired this up" fact the Integrations tab renders for
+					// everyone. The channel picker proxies conversations.list
+					// with the installation's own token, so the browser never
+					// holds a Slack credential.
+					r.Get("/slack/channels", h.ListSlackChannels)
+					r.Get("/slack/routes", h.ListSlackChannelRoutes)
+					r.With(handler.RequireHumanActor).Put("/slack/routes", h.PutSlackChannelRoute)
+					r.With(handler.RequireHumanActor).Put("/slack/routes/{routeId}", h.PutSlackChannelRoute)
+					r.With(handler.RequireHumanActor).Delete("/slack/routes/{routeId}", h.DeleteSlackChannelRoute)
 				})
 
 				// Tracker import — Linear (docs/importers-plan.md §6).
@@ -1151,6 +1164,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// v2). RequireHumanActor: an agent can never approve a
 					// merge or reject a review on the human's behalf.
 					r.With(handler.RequireHumanActor).Post("/review-decision", h.CreateReviewDecision)
+					// Escalations — the agent's "I am stuck" hatch
+					// (docs/orchestration-upgrade-plan.md §B1). RAISE is
+					// agent-only (gated inside the handler, which needs the
+					// resolved actor, not a route-level middleware); the read
+					// is open to anyone who can see the issue. Resolve/cancel
+					// live under /api/escalations below, human-gated.
+					r.Post("/escalations", h.RaiseEscalation)
+					r.Get("/escalations", h.ListIssueEscalations)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/orchestration", h.GetIssueOrchestration)
 					r.Get("/artifact", h.GetIssueArtifact)
@@ -1599,6 +1620,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
+
+			// Escalations — the human half of the decision queue. Reads are
+			// workspace-scoped; resolve and cancel are RequireHumanActor for
+			// the same reason review-decision is: a machine credential must
+			// never answer a question that exists BECAUSE a machine could not
+			// answer it, and an agent clearing its own escalation is just a
+			// slower way of guessing.
+			r.Route("/api/escalations", func(r chi.Router) {
+				r.Get("/", h.ListWorkspaceEscalations)
+				r.With(handler.RequireHumanActor).Post("/{escalationId}/resolve", h.ResolveEscalation)
+				r.With(handler.RequireHumanActor).Post("/{escalationId}/cancel", h.CancelEscalation)
+			})
 
 			// Inbox
 			r.Route("/api/inbox", func(r chi.Router) {

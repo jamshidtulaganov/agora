@@ -227,6 +227,29 @@ var issueCancelTaskCmd = &cobra.Command{
 	RunE: runIssueCancelTask,
 }
 
+// Escalation — the agent's way of asking a human a question without
+// blocking on the answer (docs/orchestration-upgrade-plan.md §B1).
+//
+// This verb EXITS IMMEDIATELY. It does not poll, it does not wait, and it
+// does not hold the runtime slot: that is the entire difference from
+// `agora telegram ask`, which blocks the agent process for up to an hour
+// against a median human response time of 24.9 hours. The run ends, the task
+// parks, and the agent is resumed in the SAME session once someone answers.
+var issueEscalateCmd = &cobra.Command{
+	Use:   "escalate <id>",
+	Short: "Stop and ask a human — parks this run until someone answers",
+	Long: "Raise an escalation on an issue when you cannot proceed: the requirement is ambiguous, " +
+		"two readings are equally plausible, you need an access decision, or you would be guessing at " +
+		"something expensive to undo.\n\n" +
+		"State what you need in ONE sentence via --need. The command returns immediately — it never " +
+		"waits for the answer. Your run ends, the task parks, a human is notified, and you are resumed " +
+		"in this same session with their answer once they reply.\n\n" +
+		"There is one open escalation per issue: raising a second one replaces the first rather than " +
+		"queueing a second question for the same person.",
+	Args: exactArgs(1),
+	RunE: runIssueEscalate,
+}
+
 var issueSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search issues by title or description",
@@ -252,6 +275,7 @@ func init() {
 	issueCmd.AddCommand(issueRunMessagesCmd)
 	issueCmd.AddCommand(issueRerunCmd)
 	issueCmd.AddCommand(issueCancelTaskCmd)
+	issueCmd.AddCommand(issueEscalateCmd)
 	issueCmd.AddCommand(issueSearchCmd)
 
 	issueCommentCmd.AddCommand(issueCommentListCmd)
@@ -354,6 +378,13 @@ func init() {
 	issueCommentAddCmd.Flags().String("parent", "", "Parent comment ID (reply to a specific comment)")
 	issueCommentAddCmd.Flags().StringSlice("attachment", nil, "File path(s) to attach (can be specified multiple times)")
 	issueCommentAddCmd.Flags().String("output", "json", "Output format: table or json")
+
+	// issue escalate
+	issueEscalateCmd.Flags().String("need", "", "REQUIRED. What you need decided, in one sentence")
+	issueEscalateCmd.Flags().String("tried", "", "What you already tried or ruled out (saves the human a round trip)")
+	issueEscalateCmd.Flags().StringArray("option", nil, "A concrete alternative the human can pick (repeatable). Omit for a free-text answer.")
+	issueEscalateCmd.Flags().String("kind", "question", "question | blocked | permission | risk")
+	issueEscalateCmd.Flags().String("output", "text", "Output format: text or json")
 
 	// issue search
 	issueSearchCmd.Flags().Int("limit", 20, "Maximum number of results to return")
@@ -1438,6 +1469,56 @@ func runIssueRerun(cmd *cobra.Command, args []string) error {
 // /api/tasks/{taskId}/cancel which both updates the DB row to status=cancelled
 // and triggers the daemon-side interrupt path (#2107) so an in-flight agent
 // stops emitting tool calls promptly instead of running until its own timeout.
+// runIssueEscalate raises an escalation and returns at once.
+//
+// The sentinel line it prints is deliberate: it is what an agent's own
+// transcript shows, and what a human reading the run log sees at the point
+// the agent stopped. "Waiting on a human" is a state, not an apology.
+func runIssueEscalate(cmd *cobra.Command, args []string) error {
+	need, _ := cmd.Flags().GetString("need")
+	if strings.TrimSpace(need) == "" {
+		return fmt.Errorf("--need is required: say what you need decided, in one sentence")
+	}
+	tried, _ := cmd.Flags().GetString("tried")
+	options, _ := cmd.Flags().GetStringArray("option")
+	kind, _ := cmd.Flags().GetString("kind")
+
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+
+	issueRef, err := resolveIssueRef(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve issue: %w", err)
+	}
+
+	body := map[string]any{
+		"need":  util.UnescapeBackslashEscapes(need),
+		"tried": util.UnescapeBackslashEscapes(tried),
+		"kind":  kind,
+	}
+	if len(options) > 0 {
+		body["options"] = options
+	}
+
+	var esc map[string]any
+	if err := client.PostJSON(ctx, "/api/issues/"+issueRef.ID+"/escalations", body, &esc); err != nil {
+		return fmt.Errorf("raise escalation: %w", err)
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, esc)
+	}
+	fmt.Fprintf(os.Stdout, "ESCALATED: waiting on a human — %s\n", strVal(esc, "prompt"))
+	fmt.Fprintln(os.Stdout, "This run should now end. You will be resumed with the answer.")
+	return nil
+}
+
 func runIssueCancelTask(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)
 	if err != nil {

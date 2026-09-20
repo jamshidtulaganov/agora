@@ -131,6 +131,23 @@ type Task struct {
 	// Empty when the server-side runtime has no owning user — the daemon
 	// then falls back to its own token. See MUL-2600.
 	AuthToken string `json:"auth_token,omitempty"`
+	// Per-task budgets, resolved SERVER-side from the issue's tier at claim
+	// time (docs/orchestration-upgrade-plan.md §B2). Before these, the
+	// contract was "unlimited time, unlimited turns, unlimited money, and no
+	// way to ask" — the budgets are what make an agent stop and escalate
+	// instead of grinding.
+	//
+	// All three are additive and omitempty: an older daemon ignores them and
+	// keeps the previous unbounded behaviour, a newer daemon talking to an
+	// older server sees zeros and does the same. A zero always means "no
+	// cap", never "cap of zero".
+	//
+	// MaxBudgetUSD reaches only the claude backend (the sole runtime with a
+	// budget flag); MaxTurns reaches claude + codebuddy; TimeoutSeconds
+	// applies to every runtime because the daemon enforces it itself.
+	MaxTurns       int     `json:"max_turns,omitempty"`
+	MaxBudgetUSD   float64 `json:"max_budget_usd,omitempty"`
+	TimeoutSeconds int     `json:"timeout_seconds,omitempty"`
 }
 
 // OrchestrationGitDependency is a predecessor commit an integration task must
