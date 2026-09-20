@@ -309,9 +309,9 @@ explicit ceiling: gate solo, do not @mention or summon any other agent unless
 the diff actually touches security-sensitive code or the UI/design. This only
 DOWNGRADES on a reliably-small signal — a `risk:guarded`/`risk:critical` label
 or unknown size takes the full lead-delegate path unchanged, so real feature
-work is never starved of QA. Documentation-only issues get `tier:trivial`
-automatically (the auto-tierer's docs keywords), so they flow through this
-solo path without a human tagging them.
+work is never starved of QA. Docs-only issues get `tier:trivial` automatically.
+The `risk:*` tier is NOT yours to lower: in a risk-mapped project Agora derives
+it server-side from the PR's real changed files, and that beats a weaker label.
 
 Before delegating, the lead is instructed to determine the PROJECT's own
 stack and testing tooling itself (read package.json/go.mod/composer.json,

@@ -58,6 +58,13 @@ vi.mock("./project-pipeline-section", () => ({
   ProjectPipelineSection: () => <div>Advanced safeguards</div>,
 }));
 
+// The risk-map editor has its own query + mutation graph and its own test;
+// stubbed here like the pipeline panel so this file keeps testing the
+// execution defaults it is about.
+vi.mock("./project-risk-map-section", () => ({
+  ProjectRiskMapSection: () => <div>Risky paths</div>,
+}));
+
 import { ProjectExecutionSection } from "./project-execution-section";
 
 function renderSection() {

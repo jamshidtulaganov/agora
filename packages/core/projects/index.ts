@@ -15,3 +15,12 @@ export {
   useSetMyProjectDevServer,
   useDeleteMyProjectDevServer,
 } from "./dev-server-queries";
+export {
+  riskMapKeys,
+  projectRiskMapOptions,
+  useUpdateProjectRiskMap,
+  riskMapTierOptions,
+  riskMapDefaultTier,
+  riskMapMaxEntries,
+  pruneRiskMapEntries,
+} from "./risk-map";

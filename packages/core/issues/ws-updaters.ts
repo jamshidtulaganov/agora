@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { issueKeys } from "./queries";
 import { stalenessKeys } from "./staleness";
+import { decisionQueueKeys } from "./decision-queue";
 import { labelKeys } from "../labels/queries";
 import { projectKeys } from "../projects/queries";
 import {
@@ -22,6 +23,18 @@ import type { ListIssuesCache } from "../types";
  */
 function invalidateStaleness(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: stalenessKeys.all(wsId) });
+  invalidateDecisionQueue(qc, wsId);
+}
+
+/**
+ * The decision queue (docs/orchestration-upgrade-plan.md §A2) is DERIVED the
+ * same way and from the same material — escalations, review and QA state,
+ * merge readiness, age — so it rides the same sweep and gets NO WS events of
+ * its own. Blanket prefix for the same reason staleness uses one: a row
+ * leaving the queue changes the whole ranked list, not one row.
+ */
+function invalidateDecisionQueue(qc: QueryClient, wsId: string) {
+  qc.invalidateQueries({ queryKey: decisionQueueKeys.all(wsId) });
 }
 
 export function onIssueCreated(
@@ -138,6 +151,9 @@ export function onIssueLabelsChanged(
   void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
   void qc.invalidateQueries({ queryKey: ["qa-bugs", wsId] });
   void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness", wsId] });
+  // A qa:* / review:* / merge:* label IS the verdict, so the same event that
+  // moves a cockpit lane also adds, drops or re-ranks a decision-queue row.
+  invalidateDecisionQueue(qc, wsId);
 
   for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
     if (data) qc.setQueryData<ListIssuesCache>(key, patchIssueInBuckets(data, issueId, { labels }));

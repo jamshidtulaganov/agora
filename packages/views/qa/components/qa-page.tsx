@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { List, ListChecks, Bug, Gauge, Rocket, MoreHorizontal } from "lucide-react";
+import { List, ListChecks, Bug, Gauge, Rocket, MoreHorizontal, ShieldQuestion } from "lucide-react";
 import { useWorkspaceId } from "@agora/core";
 import { projectListOptions } from "@agora/core/projects/queries";
 import { sprintReadinessOptions } from "@agora/core/qa/queries";
@@ -28,19 +28,27 @@ import { QASprintReadinessView } from "./qa-sprint-readiness-view";
 import { QASuiteView } from "./qa-suite-view";
 import { BugsLens } from "./bugs-lens";
 import { ReleaseQueue, ViewToggle } from "./release-queue";
+import { DecisionQueue } from "./decision-queue";
 import { ReleaseHealthStrip } from "./release-health-strip";
 
 // The Release page — the OUTER release loop: judge sprint readiness / regression
 // / deploy (Ship) and reconcile QA verdicts (Queue). Per-issue QA lives in the
 // issue cockpit (issue?lens=qa); this page is where the release decision is made.
 //
-// Two primary tabs — Ship (the decision) and Queue (daily triage) — plus a `⋯`
-// overflow for the standing-maintenance surfaces (Bugs / Test suite / Metrics)
+// Two primary tabs — Ship (the decision) and Queue — plus a `⋯` overflow for
+// the standing-maintenance surfaces (QA triage / Bugs / Test suite / Metrics)
 // a small team rarely needs at the top level. Ship is the default when any
 // sprint is active (else Queue). The health strip on top keeps every non-Ship
 // tab honest about "can we ship right now?".
+//
+// Queue is the DECISION QUEUE (docs/orchestration-upgrade-plan.md §A2): one
+// ranked list of everything waiting on a human, across kinds. The QA-verdict
+// triage lanes that used to hold this slot are intact and one click away in
+// the overflow — they answer a different question ("what does QA own right
+// now"), and the plan's whole point is that the top-level surface must be
+// the single list, not two lists competing for the same attention.
 
-type TabKey = "queue" | "ship" | "bugs" | "suite" | "metrics";
+type TabKey = "queue" | "ship" | "triage" | "bugs" | "suite" | "metrics";
 
 export function QAPage() {
   const wsId = useWorkspaceId();
@@ -50,9 +58,10 @@ export function QAPage() {
   // a manual tab pick sets it and wins afterward.
   const [tab, setTab] = useState<TabKey | null>(null);
   const [project, setProject] = useState("all");
-  // Deep-link seed from the health strip's needs-decision chip: switch to
-  // Queue with the needs-human toggle pre-set. Reset right after the Queue
-  // consumes it so the user can clear the toggle afterwards.
+  // Deep-link seed from the health strip's needs-decision chip: switch to QA
+  // triage with the needs-human toggle pre-set (the toggle is a QA-verdict
+  // cut, so it belongs with the lanes, not with the ranked queue). Reset
+  // right after triage consumes it so the user can clear it afterwards.
   const [needsHumanSeed, setNeedsHumanSeed] = useState(false);
   const { data: projectData } = useQuery(projectListOptions(wsId));
   const projects = projectData ?? [];
@@ -68,10 +77,14 @@ export function QAPage() {
   }, [tab, readinessData]);
   const effectiveTab: TabKey = tab ?? "queue";
   useEffect(() => {
-    if (needsHumanSeed && effectiveTab === "queue") setNeedsHumanSeed(false);
+    if (needsHumanSeed && effectiveTab === "triage") setNeedsHumanSeed(false);
   }, [needsHumanSeed, effectiveTab]);
   const openShip = () => setTab("ship");
-  const isOverflowActive = effectiveTab === "bugs" || effectiveTab === "suite" || effectiveTab === "metrics";
+  const isOverflowActive =
+    effectiveTab === "triage" ||
+    effectiveTab === "bugs" ||
+    effectiveTab === "suite" ||
+    effectiveTab === "metrics";
 
   return (
     // Fill the (overflow-hidden) <main> and own our scroll: the header stays
@@ -133,6 +146,10 @@ export function QAPage() {
                   }
                 />
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setTab("triage")}>
+                    <ShieldQuestion className="size-3.5" />
+                    {t(($) => $.qa_cockpit.view_triage)}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setTab("bugs")}>
                     <Bug className="size-3.5" />
                     {t(($) => $.qa_cockpit.view_bugs)}
@@ -160,23 +177,25 @@ export function QAPage() {
             onOpenShip={openShip}
             onOpenQueueNeedsHuman={() => {
               setNeedsHumanSeed(true);
-              setTab("queue");
+              setTab("triage");
             }}
           />
         )}
-        {/* The Queue stays MOUNTED across tab switches (display-toggled, not
+        {/* QA triage stays MOUNTED across tab switches (display-toggled, not
             unmounted) so an in-progress triage cut — filters, bulk selection,
-            list/board layout — survives a glance at Ship/Bugs/Suite/Metrics
+            list/board layout — survives a glance at Ship/Queue/Bugs/Suite
             instead of resetting on every return. */}
-        <div className={effectiveTab === "queue" ? "contents" : "hidden"}>
+        <div className={effectiveTab === "triage" ? "contents" : "hidden"}>
           <ReleaseQueue projectId={projectId} initialNeedsHumanOnly={needsHumanSeed} onOpenShip={openShip} />
         </div>
-        {effectiveTab === "ship" ? (
+        {effectiveTab === "queue" ? (
+          <DecisionQueue projectId={projectId} />
+        ) : effectiveTab === "ship" ? (
           <QASprintReadinessView
             projectId={projectId}
             onSeeBlockers={() => {
               setNeedsHumanSeed(true);
-              setTab("queue");
+              setTab("triage");
             }}
           />
         ) : effectiveTab === "bugs" ? (

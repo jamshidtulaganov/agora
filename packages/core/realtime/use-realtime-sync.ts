@@ -10,6 +10,7 @@ import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
+import { decisionQueueKeys } from "../issues/decision-queue";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
@@ -535,6 +536,12 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // The in-app Changes view reads the same PRs. A push that adds a file
+        // must not leave the file list a commit behind the PR row sitting
+        // right above it, and a stale patch is worse than no patch — it is a
+        // confident answer to "what changed" that is quietly wrong.
+        qc.invalidateQueries({ queryKey: ["github", "issue-changes"] });
+        qc.invalidateQueries({ queryKey: ["github", "issue-change-patch"] });
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the
@@ -715,14 +722,18 @@ export function useRealtimeSync(
       await handleInboxNew(qc, item);
     });
 
-    // A run_qa verdict was parsed + persisted — refresh the issue's QA section.
+    // A run_qa verdict was parsed + persisted — refresh the issue's QA section
+    // and the decision queue, where an unjudged verdict is a waiting row.
     const unsubQAEvidenceReady = ws.on("qa_evidence:ready", (p) => {
       const { issue_id } = p as { issue_id?: string };
-      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issue_id) });
+      if (!issue_id) return;
+      qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issue_id) });
+      const wsId = getCurrentWsId();
+      if (wsId) qc.invalidateQueries({ queryKey: decisionQueueKeys.all(wsId) });
     });
 
     // An agent stopped and asked a human, or a human answered. Both events
-    // refresh the same three surfaces: the issue's escalation card, its task
+    // refresh the same surfaces: the issue's escalation card, its task
     // list (the run either just parked or just resumed) and the inbox (the
     // action_required item was created or handled). Invalidate rather than
     // write the payload into the cache — the server is the single source of
@@ -734,6 +745,12 @@ export function useRealtimeSync(
       qc.invalidateQueries({ queryKey: issueKeys.escalations(issue_id) });
       qc.invalidateQueries({ queryKey: issueKeys.tasks(issue_id) });
       qc.invalidateQueries({ queryKey: ["inbox"] });
+      // ...and the fourth surface: an escalation is the top-ranked kind in
+      // the decision queue (docs/orchestration-upgrade-plan.md §A2), so the
+      // list must gain or lose the row for everyone watching it, not just
+      // for whoever answered.
+      const wsId = getCurrentWsId();
+      if (wsId) qc.invalidateQueries({ queryKey: decisionQueueKeys.all(wsId) });
     };
     const unsubEscalationOpened = ws.on("escalation:opened", onEscalationEvent);
     const unsubEscalationResolved = ws.on("escalation:resolved", onEscalationEvent);

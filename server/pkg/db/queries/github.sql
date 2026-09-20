@@ -91,6 +91,18 @@ RETURNING *;
 SELECT * FROM github_pull_request
 WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4;
 
+-- name: SetGitHubPullRequestChangedPaths :one
+-- Record the repo-relative file list GitHub reports for this PR
+-- (docs/orchestration-upgrade-plan.md §A1.1, migration 210). Deliberately NOT
+-- part of UpsertGitHubPullRequest: the `pull_request` webhook payload has no
+-- file list, so folding this into the upsert would wipe a known list on every
+-- subsequent metadata event. Workspace-guarded like every other write here.
+UPDATE github_pull_request
+SET changed_paths = sqlc.arg('changed_paths')::text[],
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;
+
 -- name: ListPullRequestsByIssue :many
 -- Returns the issue's linked PRs with the aggregated check-suite counts for
 -- the PR's CURRENT head SHA. The `issue_prs` CTE narrows to this issue's PR
@@ -135,7 +147,7 @@ SELECT
     pr.pr_number, pr.title, pr.state, pr.html_url, pr.branch, pr.author_login,
     pr.author_avatar_url, pr.merged_at, pr.closed_at, pr.pr_created_at,
     pr.pr_updated_at, pr.head_sha, pr.mergeable_state,
-    pr.additions, pr.deletions, pr.changed_files,
+    pr.additions, pr.deletions, pr.changed_files, pr.changed_paths,
     pr.created_at, pr.updated_at,
     COALESCE(c.total, 0)::bigint   AS checks_total,
     COALESCE(c.passed, 0)::bigint  AS checks_passed,

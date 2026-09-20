@@ -103,6 +103,22 @@ func (h *Handler) SendIssueInboxDM(ctx context.Context, recipientType, recipient
 			link = web
 		}
 
+		// DECIDE FROM THE PHONE (plan §A3). Two inbox types are one-tap
+		// decisions, and for those the DM carries real action buttons instead
+		// of only a link back to a laptop. Everything else keeps the plain
+		// open-the-app button it has always had.
+		//
+		// The recipient is BOUND by construction here — this line is only
+		// reached after telegramIDByUserID resolved a member's own Telegram
+		// identity — which is what makes a tap attributable to a person and
+		// therefore allowed to act (see telegram_decision_actions.go).
+		if rows := h.decisionDMKeyboard(bgctx, lang, notifType, issueID, link); len(rows) > 0 {
+			if err := h.telegramBot.SendButtons(bgctx, tgID, text, rows); err != nil {
+				slog.Warn("telegram push: decision DM failed", "error", err, "telegram_id", tgID)
+			}
+			return
+		}
+
 		if err := h.telegramBot.SendMessageWithButton(bgctx, tgID, text, dmOpenButton(lang), link); err != nil {
 			slog.Warn("telegram push: DM failed", "error", err, "telegram_id", tgID)
 		}
@@ -178,6 +194,12 @@ var dmEmoji = map[string]string{
 	"agent_blocked":    "⛔",
 	"status_changed":   "🔄",
 	"priority_changed": "🔼",
+	// The decision types (plan §A2/§A3). These DMs carry action buttons, so
+	// their lead emoji has to read as "you are being asked", not "FYI".
+	"escalation":    "🙋",
+	"merge_ready":   "🚦",
+	"qa_failed":     "🧪",
+	"review_failed": "🔍",
 }
 
 // dmLabels[lang][notifType] is the localized bold action label. The "_" key is
@@ -188,6 +210,8 @@ var dmLabels = map[string]map[string]string{
 		"new_comment": "New comment", "task_completed": "Task completed",
 		"task_failed": "Task failed", "agent_blocked": "Agent blocked",
 		"status_changed": "Status changed", "priority_changed": "Priority changed",
+		"escalation": "An agent needs your answer", "merge_ready": "Waiting on your approval",
+		"qa_failed": "QA failed", "review_failed": "Review found blockers",
 		"_": "Update",
 	},
 	"ru": {
@@ -195,6 +219,8 @@ var dmLabels = map[string]map[string]string{
 		"new_comment": "Новый комментарий", "task_completed": "Задача выполнена",
 		"task_failed": "Задача не выполнена", "agent_blocked": "Агент заблокирован",
 		"status_changed": "Статус изменён", "priority_changed": "Приоритет изменён",
+		"escalation": "Агенту нужен ваш ответ", "merge_ready": "Ждёт вашего одобрения",
+		"qa_failed": "QA не пройден", "review_failed": "Ревью нашло блокеры",
 		"_": "Обновление",
 	},
 	"uz": {
@@ -202,6 +228,8 @@ var dmLabels = map[string]map[string]string{
 		"new_comment": "Yangi izoh", "task_completed": "Vazifa bajarildi",
 		"task_failed": "Vazifa bajarilmadi", "agent_blocked": "Agent bloklandi",
 		"status_changed": "Holat o‘zgardi", "priority_changed": "Muhimlik o‘zgardi",
+		"escalation": "Agentga javobingiz kerak", "merge_ready": "Tasdiqlashingizni kutmoqda",
+		"qa_failed": "QA o‘tmadi", "review_failed": "Ko‘rib chiqish blokerlar topdi",
 		"_": "Yangilanish",
 	},
 }
@@ -276,7 +304,10 @@ func composeIssueDM(lang, notifType, identifier, title string, body *string, act
 			}
 			b.WriteString(html.EscapeString(labelFn(to)))
 		}
-	case "new_comment", "mentioned":
+	case "new_comment", "mentioned", "escalation", "merge_ready", "qa_failed", "review_failed":
+		// For a decision DM the body IS the decision: the escalation's one-line
+		// ask, the verdict summary. Without it the message is a title and two
+		// buttons, which is not enough to decide from.
 		if snippet := commentSnippet(body); snippet != "" {
 			b.WriteString("\n<blockquote>")
 			b.WriteString(html.EscapeString(snippet))

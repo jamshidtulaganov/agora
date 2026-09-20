@@ -76,3 +76,58 @@ export interface GitHubConnectResponse {
   url?: string;
   configured: boolean;
 }
+
+/** Where an issue's file list came from. `github` = the live Files API, with
+ * per-file status and +/- counts. `stored` = `changed_paths` persisted by the
+ * PR webhook sync — paths only, so zero counts mean UNKNOWN, not "zero lines".
+ * `none` = nothing known about this PR's files. */
+export type IssueChangeFilesSource = "github" | "stored" | "none";
+
+/** GitHub's per-file verb. Kept as a widened string because GitHub can add a
+ * value at any time — render unknown values with a neutral glyph, never crash. */
+export type IssueChangeFileStatus =
+  | "added"
+  | "modified"
+  | "removed"
+  | "renamed"
+  | "copied"
+  | "changed"
+  | "unchanged"
+  | (string & {});
+
+export interface IssueChangeFile {
+  path: string;
+  /** Empty when the list came from stored paths and the verb is unknown. */
+  status: IssueChangeFileStatus;
+  /** Present on a rename, so a moved file doesn't read as an unrelated add. */
+  previous_path?: string;
+  additions: number;
+  deletions: number;
+}
+
+/** One pull request's contribution to "what did the agent change". */
+export interface IssueChange {
+  pr_number: number;
+  title: string;
+  state: GitHubPullRequestState;
+  html_url: string;
+  repo_owner: string;
+  repo_name: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  files_source: IssueChangeFilesSource;
+  files: IssueChangeFile[];
+}
+
+export interface IssueChangesResponse {
+  changes: IssueChange[];
+}
+
+/** One file's unified diff, fetched on demand. `patch` is null whenever there
+ * is nothing to show, and `reason` always says why — an empty diff pane and a
+ * failed fetch must never look the same. */
+export interface IssueChangePatchResponse {
+  patch: string | null;
+  reason: string;
+}

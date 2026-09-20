@@ -256,6 +256,40 @@ func (q *Queries) GetTaskEscalation(ctx context.Context, arg GetTaskEscalationPa
 	return i, err
 }
 
+const getTaskEscalationByID = `-- name: GetTaskEscalationByID :one
+SELECT id, workspace_id, issue_id, task_id, agent_id, kind, prompt, detail, options, risk_tier, status, answer, answered_by, answered_at, resumed_task_id, raised_at FROM task_escalation WHERE id = $1
+`
+
+// TENANCY DISCOVERY, and nothing else. Every other read here is
+// workspace-scoped, but an out-of-band caller (a Telegram button tap) holds
+// only the escalation id — a callback payload has 64 bytes and a workspace
+// UUID does not fit beside one. So this resolves WHICH workspace the id
+// belongs to, and the caller then re-checks membership and the issue
+// visibility gate against that workspace before anything is read or written.
+func (q *Queries) GetTaskEscalationByID(ctx context.Context, id pgtype.UUID) (TaskEscalation, error) {
+	row := q.db.QueryRow(ctx, getTaskEscalationByID, id)
+	var i TaskEscalation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.TaskID,
+		&i.AgentID,
+		&i.Kind,
+		&i.Prompt,
+		&i.Detail,
+		&i.Options,
+		&i.RiskTier,
+		&i.Status,
+		&i.Answer,
+		&i.AnsweredBy,
+		&i.AnsweredAt,
+		&i.ResumedTaskID,
+		&i.RaisedAt,
+	)
+	return i, err
+}
+
 const listOpenTaskEscalations = `-- name: ListOpenTaskEscalations :many
 SELECT id, workspace_id, issue_id, task_id, agent_id, kind, prompt, detail, options, risk_tier, status, answer, answered_by, answered_at, resumed_task_id, raised_at FROM task_escalation
 WHERE workspace_id = $1 AND status = 'open'

@@ -102,6 +102,14 @@ import {
   IssueBrowserResponseSchema,
   WorkspaceLabsSchema,
   ProjectDevServersSchema,
+  DecisionQueueResponseSchema,
+  EMPTY_DECISION_QUEUE,
+  RiskMapResponseSchema,
+  EMPTY_RISK_MAP,
+  IssueChangesResponseSchema,
+  EMPTY_ISSUE_CHANGES,
+  IssueChangePatchResponseSchema,
+  EMPTY_ISSUE_CHANGE_PATCH,
 } from "./schemas";
 import { parseWithFallback } from "./schema";
 import type { ListTestCasesResponse } from "../types/test-case";
@@ -2545,5 +2553,332 @@ describe("EscalationSchema / EscalationListSchema", () => {
   it("ignores unknown extra fields a newer server adds", () => {
     const parsed = parseOne({ ...row, escalated_by_policy: true });
     expect(parsed.id).toBe("esc-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The decision queue (docs/orchestration-upgrade-plan.md §A2). Its failure
+// mode is the product's worst: a blank list says "nothing needs you" while
+// agents sit parked. Every case below must degrade to a SMALLER list or a
+// filled-in row — never to a throw, and never to silently dropping a row the
+// UI could still have opened.
+// ---------------------------------------------------------------------------
+describe("DecisionQueueResponseSchema", () => {
+  const endpoint = { endpoint: "GET /api/issues/decision-queue" };
+  const row = {
+    kind: "escalation",
+    issue_id: "issue-1",
+    identifier: "MUL-123",
+    title: "Export invoices as PDF",
+    status: "in_progress",
+    project_id: "proj-1",
+    risk_tier: "critical",
+    risk_tier_source: "risk_map",
+    since: "2026-09-20T10:00:00Z",
+    age_hours: 2,
+    needed: "Answer: CSV or XLSX?",
+    needed_code: "escalation_open",
+    score: 174,
+    stale_reason: "",
+    open_pr_count: 0,
+    labels: ["risk:critical"],
+    escalation: {
+      id: "esc-1",
+      kind: "question",
+      prompt: "CSV or XLSX?",
+      detail: "Read the issue; it does not say.",
+      options: ["CSV", "XLSX"],
+    },
+  };
+  const counts = { escalation: 1, merge_ready: 0, qa_failed: 0, review_failed: 0 };
+  const zeroCounts = { escalation: 0, merge_ready: 0, qa_failed: 0, review_failed: 0 };
+
+  function parse(data: unknown) {
+    return parseWithFallback(data, DecisionQueueResponseSchema, EMPTY_DECISION_QUEUE, endpoint);
+  }
+
+  it("parses a well-formed response", () => {
+    expect(parse({ items: [row], total: 1, counts })).toEqual({ items: [row], total: 1, counts });
+  });
+
+  it("falls back to an empty queue on a shape it cannot read at all", () => {
+    expect(parse(null)).toEqual(EMPTY_DECISION_QUEUE);
+    expect(parse("not json at all")).toEqual(EMPTY_DECISION_QUEUE);
+  });
+
+  it("reads a missing items key as an empty queue", () => {
+    // An older backend that does not serve this route yet.
+    expect(parse({}).items).toEqual([]);
+    expect(parse({}).total).toBe(0);
+    expect(parse({}).counts).toEqual(zeroCounts);
+  });
+
+  it("degrades a null / wrong-typed items array to an empty list", () => {
+    expect(parse({ items: null }).items).toEqual([]);
+    expect(parse({ items: "nope" }).items).toEqual([]);
+    expect(parse({ items: 7 }).items).toEqual([]);
+  });
+
+  it("keeps a row whose kind this build has never heard of", () => {
+    // Enum drift downgrades, not crashes: the row still renders and still
+    // opens its issue, generically.
+    const drifted = parse({ items: [{ ...row, kind: "deploy_approval" }], total: 1, counts });
+    expect(drifted.items).toHaveLength(1);
+    expect(drifted.items[0]?.kind).toBe("deploy_approval");
+  });
+
+  it("keeps a row whose risk tier is null, with no opinion on the tier", () => {
+    // `""` means "this project has no risk map" — the row renders NO chip,
+    // which is not the same as rendering a "safe" one.
+    const parsed = parse({ items: [{ ...row, risk_tier: null }], total: 1, counts });
+    expect(parsed.items[0]?.risk_tier).toBe("");
+  });
+
+  it("keeps a row whose age fields are wrong-typed", () => {
+    const parsed = parse({ items: [{ ...row, age_hours: "2", since: null }], total: 1, counts });
+    expect(parsed.items[0]?.age_hours).toBe(0);
+    expect(parsed.items[0]?.since).toBe("");
+    expect(parsed.items[0]?.issue_id).toBe("issue-1");
+  });
+
+  it("degrades a null labels array and a wrong-typed escalation without losing the row", () => {
+    const parsed = parse({
+      items: [{ ...row, labels: null, escalation: "soon" }],
+      total: 1,
+      counts,
+    });
+    expect(parsed.items[0]?.labels).toEqual([]);
+    expect(parsed.items[0]?.escalation).toBeUndefined();
+    expect(parsed.items[0]?.issue_id).toBe("issue-1");
+  });
+
+  it("fills a partial row instead of dropping it", () => {
+    expect(parse({ items: [{ issue_id: "issue-2" }] }).items[0]).toEqual({
+      kind: "",
+      issue_id: "issue-2",
+      identifier: "",
+      title: "",
+      status: "",
+      project_id: "",
+      risk_tier: "",
+      risk_tier_source: "",
+      since: "",
+      age_hours: 0,
+      needed: "",
+      needed_code: "",
+      score: 0,
+      stale_reason: "",
+      open_pr_count: 0,
+      labels: [],
+    });
+  });
+
+  it("drops one unreadable row and lists the rest", () => {
+    // Row-by-row parsing: a single bad row costs that row, not the queue.
+    const parsed = parse({
+      items: [row, 42, null, { ...row, issue_id: "issue-2" }],
+      total: 4,
+      counts,
+    });
+    expect(parsed.items.map((i) => i.issue_id)).toEqual(["issue-1", "issue-2"]);
+  });
+
+  it("degrades a wrong-typed total / counts without losing the rows", () => {
+    const parsed = parse({ items: [row], total: "many", counts: "soon" });
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.total).toBe(0);
+    expect(parsed.counts).toEqual(zeroCounts);
+  });
+
+  it("keeps a counts object a newer server widened", () => {
+    const parsed = parse({
+      items: [row],
+      total: 2,
+      counts: { ...counts, deploy_approval: 1 },
+    });
+    expect(parsed.counts.escalation).toBe(1);
+    expect((parsed.counts as unknown as Record<string, number>).deploy_approval).toBe(1);
+  });
+
+  it("ignores unknown extra fields a newer server adds", () => {
+    const wider = parse({ items: [{ ...row, blast_radius: 3 }], total: 1, counts, computed_at: "now" });
+    expect(wider.items[0]?.issue_id).toBe("issue-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The project risk map (§A1) — a list of module entries. The tier vocabulary
+// is server-owned, so an entry whose tier this build has no copy for must
+// round-trip rather than be deleted on the next save.
+// ---------------------------------------------------------------------------
+describe("RiskMapResponseSchema", () => {
+  const endpoint = { endpoint: "GET /api/projects/{id}/risk-map" };
+  const entry = {
+    module: "auth",
+    tier: "critical",
+    paths: ["server/internal/auth/**"],
+    owner: "jamshid",
+    notes: "Session + token issuance",
+  };
+  const map = {
+    project_id: "proj-1",
+    configured: true,
+    risk_map: [entry],
+    default_tier: "guarded",
+    tiers: ["critical", "guarded", "safe"],
+    max_entries: 40,
+  };
+  const parse = (data: unknown) =>
+    parseWithFallback(data, RiskMapResponseSchema, EMPTY_RISK_MAP, endpoint);
+
+  it("parses a well-formed map", () => {
+    expect(parse(map)).toEqual(map);
+  });
+
+  it("reads a missing / null body as an unconfigured project", () => {
+    expect(parse({})).toEqual(EMPTY_RISK_MAP);
+    expect(parse({ risk_map: null }).risk_map).toEqual([]);
+    expect(parse(null)).toEqual(EMPTY_RISK_MAP);
+  });
+
+  it("keeps an entry whose tier this build has no copy for", () => {
+    const parsed = parse({ ...map, risk_map: [{ ...entry, tier: "nuclear" }], tiers: ["nuclear"] });
+    expect(parsed.risk_map[0]?.tier).toBe("nuclear");
+    expect(parsed.tiers).toEqual(["nuclear"]);
+  });
+
+  it("degrades a wrong-typed paths list to no globs, keeping the entry", () => {
+    const parsed = parse({ ...map, risk_map: [{ ...entry, paths: "server/**" }] });
+    expect(parsed.risk_map[0]?.paths).toEqual([]);
+    expect(parsed.risk_map[0]?.module).toBe("auth");
+  });
+
+  it("drops one unreadable entry and keeps the rest", () => {
+    const parsed = parse({ ...map, risk_map: [entry, 42, { ...entry, module: "billing" }] });
+    expect(parsed.risk_map.map((e) => e.module)).toEqual(["auth", "billing"]);
+  });
+
+  it("degrades a wrong-typed cap / default tier without losing the entries", () => {
+    const parsed = parse({ ...map, max_entries: "forty", default_tier: null });
+    expect(parsed.max_entries).toBe(0);
+    expect(parsed.default_tier).toBe("");
+    expect(parsed.risk_map).toHaveLength(1);
+  });
+
+  it("ignores unknown extra fields a newer server adds", () => {
+    const parsed = parse({ ...map, derived_from_diff: true });
+    expect(parsed.risk_map[0]?.module).toBe("auth");
+  });
+});
+
+// ── In-app Changes view ─────────────────────────────────────────────────────
+//
+// This section claims to show what an agent changed. A claim is worse than
+// silence when it is wrong, so the contract is: a drifted field costs a column,
+// a drifted ROW is dropped, and an unreadable response renders nothing at all.
+
+describe("IssueChangesResponseSchema", () => {
+  const file = {
+    path: "server/internal/handler/auth.go",
+    status: "modified",
+    additions: 10,
+    deletions: 2,
+  };
+  const change = {
+    pr_number: 42,
+    title: "Fix the login redirect",
+    state: "open",
+    html_url: "https://github.com/acme/widget/pull/42",
+    repo_owner: "acme",
+    repo_name: "widget",
+    additions: 12,
+    deletions: 3,
+    changed_files: 1,
+    files_source: "github",
+    files: [file],
+  };
+  const parse = (raw: unknown) =>
+    parseWithFallback(raw, IssueChangesResponseSchema, EMPTY_ISSUE_CHANGES, {
+      endpoint: "GET /api/issues/{id}/changes",
+    });
+
+  it("reads a well-formed response", () => {
+    const parsed = parse({ changes: [change] });
+    expect(parsed.changes).toHaveLength(1);
+    expect(parsed.changes[0]?.files[0]?.path).toBe("server/internal/handler/auth.go");
+    expect(parsed.changes[0]?.files[0]?.additions).toBe(10);
+  });
+
+  it("reads a missing / null changes array as nothing to show", () => {
+    expect(parse({})).toEqual(EMPTY_ISSUE_CHANGES);
+    expect(parse({ changes: null })).toEqual(EMPTY_ISSUE_CHANGES);
+    expect(parse(null)).toEqual(EMPTY_ISSUE_CHANGES);
+  });
+
+  it("degrades wrong-typed counts to 0 without losing the file", () => {
+    const parsed = parse({
+      changes: [{ ...change, files: [{ ...file, additions: "ten", deletions: null }] }],
+    });
+    expect(parsed.changes[0]?.files[0]?.path).toBe("server/internal/handler/auth.go");
+    expect(parsed.changes[0]?.files[0]?.additions).toBe(0);
+    expect(parsed.changes[0]?.files[0]?.deletions).toBe(0);
+  });
+
+  it("keeps a file whose status this build has no glyph for", () => {
+    const parsed = parse({ changes: [{ ...change, files: [{ ...file, status: "teleported" }] }] });
+    expect(parsed.changes[0]?.files[0]?.status).toBe("teleported");
+  });
+
+  it("drops a file row with no path and keeps its siblings", () => {
+    const parsed = parse({
+      changes: [{ ...change, files: [file, 42, { ...file, path: "docs/a.md" }] }],
+    });
+    expect(parsed.changes[0]?.files.map((f) => f.path)).toEqual([
+      "server/internal/handler/auth.go",
+      "docs/a.md",
+    ]);
+  });
+
+  it("degrades a wrong-typed files list to no files, keeping the PR header", () => {
+    const parsed = parse({ changes: [{ ...change, files: "server/a.go" }] });
+    expect(parsed.changes[0]?.pr_number).toBe(42);
+    expect(parsed.changes[0]?.files).toEqual([]);
+  });
+
+  it("defaults an absent files_source to none, so counts are read as unknown", () => {
+    const parsed = parse({ changes: [{ ...change, files_source: undefined }] });
+    expect(parsed.changes[0]?.files_source).toBe("none");
+  });
+
+  it("ignores unknown extra fields a newer server adds", () => {
+    const parsed = parse({ changes: [{ ...change, head_sha: "deadbeef" }] });
+    expect(parsed.changes[0]?.pr_number).toBe(42);
+  });
+});
+
+describe("IssueChangePatchResponseSchema", () => {
+  const parse = (raw: unknown) =>
+    parseWithFallback(raw, IssueChangePatchResponseSchema, EMPTY_ISSUE_CHANGE_PATCH, {
+      endpoint: "GET /api/issues/{id}/changes/patch",
+    });
+
+  it("reads a patch and an explicit null-with-reason alike", () => {
+    expect(parse({ patch: "@@ -1 +1 @@", reason: "" }).patch).toBe("@@ -1 +1 @@");
+    const absent = parse({ patch: null, reason: "patch_unavailable" });
+    expect(absent.patch).toBeNull();
+    expect(absent.reason).toBe("patch_unavailable");
+  });
+
+  it("reads a wrong-typed patch as no patch rather than rendering a number", () => {
+    expect(parse({ patch: 42, reason: "" }).patch).toBeNull();
+  });
+
+  it("falls back to the generic explanation when the response is unreadable", () => {
+    expect(parse(null)).toEqual(EMPTY_ISSUE_CHANGE_PATCH);
+    expect(parse({}).patch).toBeNull();
+  });
+
+  it("keeps a reason this build has no sentence for, so the UI can default", () => {
+    expect(parse({ patch: null, reason: "some_future_reason" }).reason).toBe("some_future_reason");
   });
 });

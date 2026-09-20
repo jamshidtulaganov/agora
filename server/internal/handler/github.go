@@ -907,6 +907,15 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 		}
 	}
 
+	// SERVER-DERIVED RISK TIER (docs/orchestration-upgrade-plan.md §A1.1). The
+	// payload above carries diff STATS but never the file list, so on a
+	// diff-changing action we go and get one and cache it on the PR row — which
+	// is what lets the server classify blast radius against the project risk map
+	// instead of trusting the agent's own risk:* label. Detached and
+	// best-effort: it must never affect the webhook's acknowledgement, and a
+	// failure simply leaves the tier where it is today.
+	h.maybeSyncPullRequestRisk(ctx, p.Action, pr, linkedIssueIDs)
+
 	// Broadcast PR change to the workspace so any open issue detail page
 	// re-queries its PR list.
 	h.publish(protocol.EventPullRequestUpdated, workspaceID, "system", "", map[string]any{

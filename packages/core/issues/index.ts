@@ -6,3 +6,4 @@ export * from "./config";
 export * from "./stores";
 export * from "./stage";
 export * from "./staleness";
+export * from "./decision-queue";

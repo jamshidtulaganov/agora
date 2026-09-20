@@ -20,6 +20,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { ProjectPipelineSection } from "./project-pipeline-section";
 import { ProjectQASection } from "./project-qa-section";
+import { ProjectRiskMapSection } from "./project-risk-map-section";
 
 const BUILT_IN_DEFAULTS: ProjectOrchestrationDefaults = {
   execution_level: "auto",
@@ -311,6 +312,11 @@ export function ProjectExecutionSection({ projectId }: { projectId: string }) {
                 embedded
                 excludeKeys={["AGORA_AUTO_QA_ENABLED", "AGORA_AUTO_REVIEW_ENABLED"]}
               />
+
+                {/* Which paths are risky — the map the "Extra care for risky
+                    areas" switch above actually reads
+                    (docs/orchestration-upgrade-plan.md §A1). */}
+                <ProjectRiskMapSection projectId={projectId} />
               </div>
             )}
           </div>

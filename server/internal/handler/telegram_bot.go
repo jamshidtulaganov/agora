@@ -82,6 +82,14 @@ func (h *Handler) processBotMessage(ctx context.Context, update telegramUpdate) 
 		return
 	}
 
+	// A "Request changes" tap opens a short window in which the next plain
+	// message is the review note (telegram_decision_actions.go). It has to be
+	// consumed BEFORE the create-wizard fallback below, or the sentence the
+	// reviewer just typed becomes a new task instead of a correction request.
+	if h.maybeCaptureDecisionNote(ctx, tgID, lang, text) {
+		return
+	}
+
 	cmd, rest := splitCommand(text)
 	switch cmd {
 	case "/start":
@@ -163,6 +171,14 @@ func (h *Handler) processBotCallback(ctx context.Context, update telegramUpdate)
 	lang := botLang(cb.From.LanguageCode)
 	// Always ack so the client's inline spinner stops, even if the tap is stale.
 	_ = h.telegramBot.AnswerCallback(ctx, cb.ID)
+
+	// Decision buttons (approve / request changes / answer an escalation) come
+	// first and are namespaced "d:" — see telegram_decision_actions.go. They are
+	// NOT wizard state: a decision DM outlives any wizard, so the wizard lookup
+	// below must not be allowed to swallow one as "a stale button tap".
+	if h.handleTelegramDecisionCallback(ctx, update) {
+		return
+	}
 
 	st, ok := h.telegramWizards.Get(tgID)
 	if !ok {
@@ -419,13 +435,24 @@ func decodeNone(s string) string {
 
 // ── send helpers ────────────────────────────────────────────────────────────
 
+// The three senders below are nil-safe on purpose. Most callers arrive through
+// processTelegramUpdate, which already returns early when the bot is
+// unconfigured — but the decision-button flow (telegram_decision_actions.go)
+// performs a real action and then reports it, and an unconfigured bot must cost
+// the report, never the action.
 func (h *Handler) botSend(ctx context.Context, chatID, text string) {
+	if h.telegramBot == nil {
+		return
+	}
 	if err := h.telegramBot.SendMessage(ctx, chatID, text); err != nil {
 		slog.Warn("telegram bot: send failed", "error", err, "chat_id", chatID)
 	}
 }
 
 func (h *Handler) botSendButtons(ctx context.Context, chatID, text string, rows [][]telegram.Button) {
+	if h.telegramBot == nil {
+		return
+	}
 	if err := h.telegramBot.SendButtons(ctx, chatID, text, rows); err != nil {
 		slog.Warn("telegram bot: send buttons failed", "error", err, "chat_id", chatID)
 	}
@@ -433,6 +460,9 @@ func (h *Handler) botSendButtons(ctx context.Context, chatID, text string, rows 
 
 // botSendOpen sends a message with a single "open the app" deep-link button.
 func (h *Handler) botSendOpen(ctx context.Context, chatID, text, buttonText string) {
+	if h.telegramBot == nil {
+		return
+	}
 	link := telegram.MiniAppLink(telegramBotUsername(), telegramMiniAppShortName(), "")
 	if link == "" {
 		h.botSend(ctx, chatID, text)

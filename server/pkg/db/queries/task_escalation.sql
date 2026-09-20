@@ -82,3 +82,12 @@ RETURNING *;
 -- name: CountOpenTaskEscalations :one
 SELECT COUNT(*) FROM task_escalation
 WHERE workspace_id = $1 AND status = 'open';
+
+-- name: GetTaskEscalationByID :one
+-- TENANCY DISCOVERY, and nothing else. Every other read here is
+-- workspace-scoped, but an out-of-band caller (a Telegram button tap) holds
+-- only the escalation id — a callback payload has 64 bytes and a workspace
+-- UUID does not fit beside one. So this resolves WHICH workspace the id
+-- belongs to, and the caller then re-checks membership and the issue
+-- visibility gate against that workspace before anything is read or written.
+SELECT * FROM task_escalation WHERE id = $1;

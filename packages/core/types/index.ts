@@ -65,6 +65,17 @@ export type {
   EscalationStatus,
   EscalationListResponse,
 } from "./escalation";
+export type {
+  DecisionQueueKind,
+  DecisionQueueRiskTier,
+  DecisionQueueEscalation,
+  DecisionQueueItem,
+  DecisionQueueCounts,
+  DecisionQueueResponse,
+} from "./decision-queue";
+export { KNOWN_DECISION_QUEUE_KINDS } from "./decision-queue";
+export type { RiskMapEntry, RiskMapResponse, UpdateRiskMapRequest } from "./risk-map";
+export { DEFAULT_RISK_MAP_TIERS, DEFAULT_RISK_MAP_MAX_ENTRIES } from "./risk-map";
 export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, Reaction } from "./comment";
 export type { Label, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse } from "./label";
@@ -183,6 +194,12 @@ export type {
   GitHubPullRequestState,
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
+  IssueChange,
+  IssueChangeFile,
+  IssueChangeFileStatus,
+  IssueChangeFilesSource,
+  IssueChangesResponse,
+  IssueChangePatchResponse,
 } from "./github";
 
 export type { ReviewFinding, ReviewVerdict, ReviewDecisionResponse } from "./review";
@@ -198,6 +215,10 @@ export interface MergeReadiness {
   gates: MergeGateStatus[];
   blocked?: string[];
   reviews: string[];
+  /** Risk tier of the change, server-derived (§A1). Optional: an older
+   *  server does not send it, and no surface may require it. */
+  risk_tier?: string;
+  risk_tier_source?: string;
 }
 
 export type {

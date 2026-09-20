@@ -153,6 +153,8 @@ import type {
   NotificationPreferenceResponse,
   NotificationPreferences,
   GitHubPullRequest,
+  IssueChangesResponse,
+  IssueChangePatchResponse,
   MergeReadiness,
   ReviewVerdict,
   ReviewDecisionResponse,
@@ -185,6 +187,9 @@ import type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
   StaleIssuesResponse,
+  DecisionQueueResponse,
+  RiskMapResponse,
+  RiskMapEntry,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -256,6 +261,26 @@ import type {
   CreateCloudRuntimeNodeRequest,
   ListCloudRuntimeNodesParams,
 } from "../runtimes/cloud-runtime";
+import {
+  EMPTY_SLACK_BEGIN,
+  EMPTY_SLACK_CHANNELS,
+  EMPTY_SLACK_INSTALLATIONS,
+  EMPTY_SLACK_ROUTE,
+  EMPTY_SLACK_ROUTES,
+  ListSlackChannelsSchema,
+  ListSlackInstallationsSchema,
+  ListSlackRoutesSchema,
+  SlackBeginSchema,
+  SlackChannelRouteSchema,
+} from "../slack/schemas";
+import type {
+  ListSlackChannelsResponse,
+  ListSlackInstallationsResponse,
+  ListSlackRoutesResponse,
+  SlackBeginResponse,
+  SlackChannelRoute,
+  SlackRouteInput,
+} from "../slack/schemas";
 import { type Logger, noopLogger } from "../logger";
 import { createRequestId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
@@ -296,6 +321,10 @@ import {
   ChildIssuesResponseSchema,
   StaleIssuesResponseSchema,
   EMPTY_STALE_ISSUES,
+  DecisionQueueResponseSchema,
+  EMPTY_DECISION_QUEUE,
+  RiskMapResponseSchema,
+  EMPTY_RISK_MAP,
   CommentsListSchema,
   CommentTriggerPreviewSchema,
   CloudRuntimeNodeListSchema,
@@ -380,6 +409,10 @@ import {
   IssueQAPreviewURLResponseSchema,
   IssueArtifactResponseSchema,
   EMPTY_ISSUE_ARTIFACT,
+  IssueChangesResponseSchema,
+  EMPTY_ISSUE_CHANGES,
+  IssueChangePatchResponseSchema,
+  EMPTY_ISSUE_CHANGE_PATCH,
   EMPTY_ISSUE_QA_PREVIEW_URL,
   QAMetricsResponseSchema,
   EMPTY_QA_METRICS,
@@ -1001,6 +1034,27 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/issues/staleness${query}`);
     return parseWithFallback(raw, StaleIssuesResponseSchema, EMPTY_STALE_ISSUES, {
       endpoint: "GET /api/issues/staleness",
+    });
+  }
+
+  /**
+   * Everything waiting on a human right now, ranked
+   * (docs/orchestration-upgrade-plan.md §A2).
+   *
+   * A SIBLING of the staleness read, for the same reason: it is ranked on
+   * read from signals that already exist, and it must never become a join
+   * into the hot issue-list path. Workspace-scoped through the ambient
+   * `X-Workspace-ID` header; the caller keeps `wsId` in the query key.
+   *
+   * Unlike staleness, a failure here is not free — a blank queue reads as
+   * "nothing needs you". The parse degrades row-by-row and the caller
+   * surfaces a load error rather than an all-clear.
+   */
+  async getDecisionQueue(projectId?: string): Promise<DecisionQueueResponse> {
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/decision-queue${query}`);
+    return parseWithFallback(raw, DecisionQueueResponseSchema, EMPTY_DECISION_QUEUE, {
+      endpoint: "GET /api/issues/decision-queue",
     });
   }
 
@@ -2872,6 +2926,36 @@ export class ApiClient {
     });
   }
 
+  // Per-project risk map — which path globs sit in which risk tier
+  // (docs/orchestration-upgrade-plan.md §A1). The tier a change lands in
+  // gates how deep QA goes, whether a human must sign off, and whether the
+  // change may auto-merge; until this endpoint existed the map was read-only
+  // and the tier was self-reported by the agent.
+  //
+  // A project with no risk map answers with an empty map, which is the same
+  // thing the fallback renders — an unconfigured project and an endpoint an
+  // older server does not serve look identical, and both are safe to edit.
+  async getProjectRiskMap(id: string): Promise<RiskMapResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/risk-map`);
+    return parseWithFallback(raw, RiskMapResponseSchema, EMPTY_RISK_MAP, {
+      endpoint: "GET /api/projects/{id}/risk-map",
+    });
+  }
+
+  // Whole-list write (replace-on-write). The response is parsed through the
+  // same schema so the caller settles on what the SERVER stored — it may
+  // normalise globs, reorder entries, or keep a tier this client never sent
+  // — rather than on the body we posted.
+  async updateProjectRiskMap(id: string, entries: RiskMapEntry[]): Promise<RiskMapResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/risk-map`, {
+      method: "PUT",
+      body: JSON.stringify({ risk_map: entries }),
+    });
+    return parseWithFallback(raw, RiskMapResponseSchema, EMPTY_RISK_MAP, {
+      endpoint: "PUT /api/projects/{id}/risk-map",
+    });
+  }
+
   // Per-developer standing dev servers ("preview per project → per user") —
   // each member's own deployed box for this project. Read = any member;
   // writes are SELF-only (the /me endpoints).
@@ -3994,6 +4078,32 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/pull-requests`);
   }
 
+  /** Files changed per pull request linked to the issue — the in-app Changes
+   *  view. Degrades to `{ changes: [] }` (which renders nothing) rather than
+   *  throwing: this section is an addition to the issue page, and it must never
+   *  be able to take the page down with it. */
+  async getIssueChanges(issueId: string): Promise<IssueChangesResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/changes`);
+    return parseWithFallback(raw, IssueChangesResponseSchema, EMPTY_ISSUE_CHANGES, {
+      endpoint: "GET /api/issues/{id}/changes",
+    });
+  }
+
+  /** One file's unified diff, fetched live. `patch: null` with a `reason` is a
+   *  NORMAL answer here (binary file, diff too large, no GitHub App), not an
+   *  error — the UI turns each reason into a sentence. */
+  async getIssueChangePatch(
+    issueId: string,
+    prNumber: number,
+    path: string,
+  ): Promise<IssueChangePatchResponse> {
+    const query = `pr=${encodeURIComponent(String(prNumber))}&path=${encodeURIComponent(path)}`;
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/changes/patch?${query}`);
+    return parseWithFallback(raw, IssueChangePatchResponseSchema, EMPTY_ISSUE_CHANGE_PATCH, {
+      endpoint: "GET /api/issues/{id}/changes/patch",
+    });
+  }
+
   async getProjectDesignContext(projectId: string): Promise<DesignContextState> {
     const raw = await this.fetch<unknown>(`/api/projects/${projectId}/design-context`);
     return parseWithFallback(raw, DesignContextStateSchema, EMPTY_DESIGN_CONTEXT_STATE, {
@@ -4165,6 +4275,102 @@ export class ApiClient {
     return this.fetch(`/api/lark/binding/redeem`, {
       method: "POST",
       body: JSON.stringify({ token }),
+    });
+  }
+
+  // --- Slack app (docs/slack-integration-plan.md §Phase 1) ------------------
+  //
+  // Parsed, not cast, every one of them. This surface drives a settings panel
+  // that decides whether to show a Connect button and which channels are
+  // wired to which events — a drifted response must degrade into a panel that
+  // still renders, never a white screen or an install that cannot complete.
+  //
+  // The schemas live in ../slack/schemas beside the queries that consume
+  // them, so the whole Slack contract reads in one file.
+
+  async listSlackInstallations(workspaceId: string): Promise<ListSlackInstallationsResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/slack/installations`);
+    return parseWithFallback(raw, ListSlackInstallationsSchema, EMPTY_SLACK_INSTALLATIONS, {
+      endpoint: "GET /api/workspaces/{id}/slack/installations",
+    });
+  }
+
+  /** Mint the sealed state and hand back Slack's consent URL. Nothing is
+   *  written until the OAuth callback returns. */
+  async beginSlackInstall(workspaceId: string): Promise<SlackBeginResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/slack/install/begin`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, SlackBeginSchema, EMPTY_SLACK_BEGIN, {
+      endpoint: "POST /api/workspaces/{id}/slack/install/begin",
+    });
+  }
+
+  async deleteSlackInstallation(workspaceId: string, installationId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/slack/installations/${installationId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /** Routes plus the event vocabulary the SERVER understands — shipped
+   *  together so the UI cannot offer a checkbox that does nothing. */
+  async listSlackRoutes(workspaceId: string): Promise<ListSlackRoutesResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/slack/routes`);
+    return parseWithFallback(raw, ListSlackRoutesSchema, EMPTY_SLACK_ROUTES, {
+      endpoint: "GET /api/workspaces/{id}/slack/routes",
+    });
+  }
+
+  /** Create (no routeId) or edit (routeId) one channel route. */
+  async saveSlackRoute(
+    workspaceId: string,
+    input: SlackRouteInput,
+    routeId?: string,
+  ): Promise<SlackChannelRoute> {
+    const path = routeId
+      ? `/api/workspaces/${workspaceId}/slack/routes/${routeId}`
+      : `/api/workspaces/${workspaceId}/slack/routes`;
+    const raw = await this.fetch<unknown>(path, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+    return parseWithFallback(raw, SlackChannelRouteSchema, EMPTY_SLACK_ROUTE, {
+      endpoint: "PUT /api/workspaces/{id}/slack/routes",
+    });
+  }
+
+  async deleteSlackRoute(workspaceId: string, routeId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/slack/routes/${routeId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /** One page of the channel picker. Paging is passed through rather than
+   *  walked, because conversations.list is Tier 2 and a workspace with
+   *  hundreds of channels would spend that budget on one page load. */
+  async listSlackChannels(
+    workspaceId: string,
+    installationId?: string,
+    cursor?: string,
+  ): Promise<ListSlackChannelsResponse> {
+    const search = new URLSearchParams();
+    if (installationId) search.set("installation_id", installationId);
+    if (cursor) search.set("cursor", cursor);
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/slack/channels${query ? `?${query}` : ""}`,
+    );
+    return parseWithFallback(raw, ListSlackChannelsSchema, EMPTY_SLACK_CHANNELS, {
+      endpoint: "GET /api/workspaces/{id}/slack/channels",
+    });
+  }
+
+  /** Start the PERSONAL link — one person binding their Slack identity to
+   *  their Agora account. Requests no bot scopes. */
+  async beginSlackUserLink(): Promise<SlackBeginResponse> {
+    const raw = await this.fetch<unknown>("/api/me/links/slack/begin", { method: "POST" });
+    return parseWithFallback(raw, SlackBeginSchema, EMPTY_SLACK_BEGIN, {
+      endpoint: "POST /api/me/links/slack/begin",
     });
   }
 

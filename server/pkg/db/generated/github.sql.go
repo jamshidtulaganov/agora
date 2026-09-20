@@ -136,7 +136,7 @@ func (q *Queries) GetGitHubInstallationByInstallationID(ctx context.Context, ins
 }
 
 const getGitHubPullRequest = `-- name: GetGitHubPullRequest :one
-SELECT id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, provider FROM github_pull_request
+SELECT id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, provider, changed_paths FROM github_pull_request
 WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4
 `
 
@@ -180,6 +180,7 @@ func (q *Queries) GetGitHubPullRequest(ctx context.Context, arg GetGitHubPullReq
 		&i.Deletions,
 		&i.ChangedFiles,
 		&i.Provider,
+		&i.ChangedPaths,
 	)
 	return i, err
 }
@@ -356,7 +357,7 @@ SELECT
     pr.pr_number, pr.title, pr.state, pr.html_url, pr.branch, pr.author_login,
     pr.author_avatar_url, pr.merged_at, pr.closed_at, pr.pr_created_at,
     pr.pr_updated_at, pr.head_sha, pr.mergeable_state,
-    pr.additions, pr.deletions, pr.changed_files,
+    pr.additions, pr.deletions, pr.changed_files, pr.changed_paths,
     pr.created_at, pr.updated_at,
     COALESCE(c.total, 0)::bigint   AS checks_total,
     COALESCE(c.passed, 0)::bigint  AS checks_passed,
@@ -391,6 +392,7 @@ type ListPullRequestsByIssueRow struct {
 	Additions       int32              `json:"additions"`
 	Deletions       int32              `json:"deletions"`
 	ChangedFiles    int32              `json:"changed_files"`
+	ChangedPaths    []string           `json:"changed_paths"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	ChecksTotal     int64              `json:"checks_total"`
@@ -439,6 +441,7 @@ func (q *Queries) ListPullRequestsByIssue(ctx context.Context, issueID pgtype.UU
 			&i.Additions,
 			&i.Deletions,
 			&i.ChangedFiles,
+			&i.ChangedPaths,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ChecksTotal,
@@ -454,6 +457,58 @@ func (q *Queries) ListPullRequestsByIssue(ctx context.Context, issueID pgtype.UU
 		return nil, err
 	}
 	return items, nil
+}
+
+const setGitHubPullRequestChangedPaths = `-- name: SetGitHubPullRequestChangedPaths :one
+UPDATE github_pull_request
+SET changed_paths = $1::text[],
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, provider, changed_paths
+`
+
+type SetGitHubPullRequestChangedPathsParams struct {
+	ChangedPaths []string    `json:"changed_paths"`
+	ID           pgtype.UUID `json:"id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+}
+
+// Record the repo-relative file list GitHub reports for this PR
+// (docs/orchestration-upgrade-plan.md §A1.1, migration 210). Deliberately NOT
+// part of UpsertGitHubPullRequest: the `pull_request` webhook payload has no
+// file list, so folding this into the upsert would wipe a known list on every
+// subsequent metadata event. Workspace-guarded like every other write here.
+func (q *Queries) SetGitHubPullRequestChangedPaths(ctx context.Context, arg SetGitHubPullRequestChangedPathsParams) (GithubPullRequest, error) {
+	row := q.db.QueryRow(ctx, setGitHubPullRequestChangedPaths, arg.ChangedPaths, arg.ID, arg.WorkspaceID)
+	var i GithubPullRequest
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.InstallationID,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.PrNumber,
+		&i.Title,
+		&i.State,
+		&i.HtmlUrl,
+		&i.Branch,
+		&i.AuthorLogin,
+		&i.AuthorAvatarUrl,
+		&i.MergedAt,
+		&i.ClosedAt,
+		&i.PrCreatedAt,
+		&i.PrUpdatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HeadSha,
+		&i.MergeableState,
+		&i.Additions,
+		&i.Deletions,
+		&i.ChangedFiles,
+		&i.Provider,
+		&i.ChangedPaths,
+	)
+	return i, err
 }
 
 const unlinkIssueFromPullRequest = `-- name: UnlinkIssueFromPullRequest :exec
@@ -507,7 +562,7 @@ ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
     deletions     = EXCLUDED.deletions,
     changed_files = EXCLUDED.changed_files,
     updated_at = now()
-RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, provider
+RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, provider, changed_paths
 `
 
 type UpsertGitHubPullRequestParams struct {
@@ -597,6 +652,7 @@ func (q *Queries) UpsertGitHubPullRequest(ctx context.Context, arg UpsertGitHubP
 		&i.Deletions,
 		&i.ChangedFiles,
 		&i.Provider,
+		&i.ChangedPaths,
 	)
 	return i, err
 }

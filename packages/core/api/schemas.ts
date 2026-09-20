@@ -14,6 +14,7 @@ import type {
   CreateAgentFromTemplateResponse,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
+  DecisionQueueResponse,
   FigmaCredentialStatus,
   McpCredentialStatus,
   Escalation,
@@ -23,6 +24,8 @@ import type {
   ReleaseIntegration,
   OrchestrationRun,
   IssueArtifactResponse,
+  IssueChangesResponse,
+  IssueChangePatchResponse,
   Squad,
   AutopilotTelegramDestination,
   ListExternalIdentityLinksResponse,
@@ -44,6 +47,7 @@ import type {
   PinnedReport,
   PinnedReportSummary,
   ReportPin,
+  RiskMapResponse,
   ReportSchedule,
   AssistantOperation,
   AssistantOperationDecision,
@@ -230,6 +234,7 @@ export interface AppConfigResponse {
   bitrix_enabled?: boolean;
   zoho_enabled?: boolean;
   lark_enabled?: boolean;
+  slack_enabled?: boolean;
   telegram_bots_enabled?: boolean;
 }
 
@@ -375,6 +380,7 @@ export const AppConfigSchema = z.object({
   bitrix_enabled: BooleanWithDefaultSchema(false).optional(),
   zoho_enabled: BooleanWithDefaultSchema(false).optional(),
   lark_enabled: BooleanWithDefaultSchema(false).optional(),
+  slack_enabled: BooleanWithDefaultSchema(false).optional(),
   telegram_bots_enabled: BooleanWithDefaultSchema(false).optional(),
 }).loose();
 
@@ -2581,3 +2587,211 @@ export const StaleIssuesResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_STALE_ISSUES: StaleIssuesResponse = { stale: [] };
+
+// ---------------------------------------------------------------------------
+// Decision queue — GET /api/issues/decision-queue
+// (docs/orchestration-upgrade-plan.md §A2).
+//
+// This is THE surface: one ranked list of everything waiting on a human. Its
+// failure mode is the worst in the product — a drifted response that blanks
+// the list tells a team "nothing needs you" while four agents sit parked. So
+// every field degrades INDIVIDUALLY (`.catch`) and a row that still cannot be
+// read is dropped on its own, leaving the other rows listed:
+//   - `kind`, `risk_tier` and `needed_code` stay z.string(), never
+//     z.enum(...). A kind this build has never seen renders a generic row
+//     that opens its issue.
+//   - `since` and `age_hours` are two spellings of the same fact; the UI
+//     prefers `since` (a cached `age_hours` freezes) but neither is required.
+//   - `total` and `counts` are optional and the UI also derives its header
+//     from `items`, so a missing count never costs the header (CLAUDE.md:
+//     "Don't pin a UI affordance to a single backend field").
+// ---------------------------------------------------------------------------
+export const DecisionQueueEscalationSchema = z.object({
+  id: z.string().catch(""),
+  kind: z.string().catch(""),
+  prompt: z.string().catch(""),
+  detail: z.string().catch(""),
+  options: z.array(z.string()).catch([]),
+}).loose();
+
+export const DecisionQueueItemSchema = z.object({
+  kind: z.string().catch(""),
+  issue_id: z.string().catch(""),
+  identifier: z.string().catch(""),
+  title: z.string().catch(""),
+  status: z.string().catch(""),
+  project_id: z.string().catch(""),
+  risk_tier: z.string().catch(""),
+  risk_tier_source: z.string().catch(""),
+  since: z.string().catch(""),
+  age_hours: z.number().catch(0),
+  needed: z.string().catch(""),
+  needed_code: z.string().catch(""),
+  score: z.number().catch(0),
+  stale_reason: z.string().catch(""),
+  open_pr_count: z.number().catch(0),
+  // A Go `[]string(nil)` marshals to null the day someone drops
+  // emit_empty_slices — that must read as "no labels", not as a bad row.
+  labels: z.array(z.string()).catch([]),
+  // Absent on every kind but `escalation`, and optional even there.
+  escalation: DecisionQueueEscalationSchema.optional().catch(undefined),
+}).loose();
+
+export const DecisionQueueCountsSchema = z.object({
+  escalation: z.number().catch(0),
+  merge_ready: z.number().catch(0),
+  qa_failed: z.number().catch(0),
+  review_failed: z.number().catch(0),
+}).loose();
+
+const EMPTY_DECISION_QUEUE_COUNTS = {
+  escalation: 0,
+  merge_ready: 0,
+  qa_failed: 0,
+  review_failed: 0,
+};
+
+export const DecisionQueueResponseSchema = z.object({
+  // Parsed row-by-row rather than as `z.array(ItemSchema)`: one unreadable
+  // row must cost that row, not the whole queue.
+  items: z
+    .array(z.unknown())
+    .nullish()
+    .transform((rows) =>
+      (rows ?? []).flatMap((row) => {
+        const parsed = DecisionQueueItemSchema.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      }),
+    )
+    .catch([]),
+  total: z.number().catch(0),
+  counts: DecisionQueueCountsSchema.catch(EMPTY_DECISION_QUEUE_COUNTS).default(
+    EMPTY_DECISION_QUEUE_COUNTS,
+  ),
+}).loose();
+
+// "Nothing is waiting on you" — which is also what a healthy workspace looks
+// like, so the empty state must read as calm, never as an error.
+export const EMPTY_DECISION_QUEUE: DecisionQueueResponse = {
+  items: [],
+  total: 0,
+  counts: EMPTY_DECISION_QUEUE_COUNTS,
+};
+
+// ---------------------------------------------------------------------------
+// Project risk map — GET/PUT /api/projects/:id/risk-map (§A1).
+//
+// A LIST of module entries, each with its own tier, globs, owner and note.
+// Lenient in both directions and for the same reason: the tier vocabulary is
+// server-owned (`tiers` on the response), so an entry whose tier this client
+// has no copy for must round-trip untouched rather than be dropped on the
+// next save. A single unreadable entry costs that entry; a wrong-typed
+// `paths` degrades to "no globs" instead of failing the whole map and
+// rendering an empty editor over a configured project.
+// ---------------------------------------------------------------------------
+export const RiskMapEntrySchema = z.object({
+  module: z.string().catch(""),
+  tier: z.string().catch(""),
+  paths: z.array(z.string()).catch([]),
+  owner: z.string().catch(""),
+  notes: z.string().catch(""),
+}).loose();
+
+export const RiskMapResponseSchema = z.object({
+  project_id: z.string().catch(""),
+  configured: z.boolean().catch(false),
+  risk_map: z
+    .array(z.unknown())
+    .nullish()
+    .transform((rows) =>
+      (rows ?? []).flatMap((row) => {
+        const parsed = RiskMapEntrySchema.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      }),
+    )
+    .catch([]),
+  default_tier: z.string().catch(""),
+  tiers: z.array(z.string()).catch([]),
+  max_entries: z.number().catch(0),
+}).loose();
+
+// An unconfigured project and a response this build cannot read look
+// identical — and both are safe to start editing.
+export const EMPTY_RISK_MAP: RiskMapResponse = {
+  project_id: "",
+  configured: false,
+  risk_map: [],
+  default_tier: "",
+  tiers: [],
+  max_entries: 0,
+};
+
+// ── In-app Changes view ─────────────────────────────────────────────────────
+//
+// The desktop build reading this response is older than the server producing
+// it, and the whole point of the view is to be TRUSTED: a drifted field must
+// cost a column, never the section. Every field has a `.catch`, arrays drop
+// unreadable rows instead of failing whole, and `status` / `files_source` stay
+// plain strings so a value GitHub or the server adds tomorrow still renders.
+
+export const IssueChangeFileSchema = z.object({
+  path: z.string().catch(""),
+  status: z.string().catch(""),
+  previous_path: z.string().optional().catch(undefined),
+  additions: z.number().catch(0),
+  deletions: z.number().catch(0),
+}).loose();
+
+export const IssueChangeSchema = z.object({
+  pr_number: z.number().catch(0),
+  title: z.string().catch(""),
+  state: z.string().catch(""),
+  html_url: z.string().catch(""),
+  repo_owner: z.string().catch(""),
+  repo_name: z.string().catch(""),
+  additions: z.number().catch(0),
+  deletions: z.number().catch(0),
+  changed_files: z.number().catch(0),
+  files_source: z.string().catch("none"),
+  files: z
+    .array(z.unknown())
+    .nullish()
+    .transform((rows) =>
+      (rows ?? []).flatMap((row) => {
+        const parsed = IssueChangeFileSchema.safeParse(row);
+        return parsed.success && parsed.data.path ? [parsed.data] : [];
+      }),
+    )
+    .catch([]),
+}).loose();
+
+export const IssueChangesResponseSchema = z.object({
+  changes: z
+    .array(z.unknown())
+    .nullish()
+    .transform((rows) =>
+      (rows ?? []).flatMap((row) => {
+        const parsed = IssueChangeSchema.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      }),
+    )
+    .catch([]),
+}).loose();
+
+// No changes is the same render as an unreadable response: nothing. That is the
+// correct degradation — the section claims to show what the agent changed, and
+// a half-parsed claim is worse than no claim.
+export const EMPTY_ISSUE_CHANGES: IssueChangesResponse = { changes: [] };
+
+export const IssueChangePatchResponseSchema = z.object({
+  patch: z.string().nullish().transform((v) => v ?? null).catch(null),
+  reason: z.string().catch(""),
+}).loose();
+
+// A fallback with an EMPTY reason lands on the UI's `default` branch, which
+// says the diff could not be loaded — the honest thing to say when the response
+// itself was unreadable.
+export const EMPTY_ISSUE_CHANGE_PATCH: IssueChangePatchResponse = {
+  patch: null,
+  reason: "",
+};

@@ -57,6 +57,26 @@ type MergeReadinessResponse struct {
 	Gates   []gateStatus `json:"gates"`
 	Blocked []string     `json:"blocked,omitempty"` // human-readable reasons it is not ready
 	Reviews []string     `json:"reviews"`           // recommended reviewer fleet for this tier (advisory)
+
+	// RiskTier is the BLAST RADIUS of the change — a different axis from `Tier`
+	// above, which is review EFFORT derived from tier: labels. It is the
+	// server-derived tier wherever the pull request's real changed-file list
+	// could be matched against the project risk map (plan §A1.1), and
+	// RiskTierSource says which:
+	//
+	//   derived      the risk map's globs matched the PR's actual files
+	//   label        an explicit risk:* label decided (self-reported unless a
+	//                human set it) — either because there was no file list to
+	//                classify, or because the label was STRICTER than the globs
+	//   map_default  a risk-mapped project with no diff to classify — guarded,
+	//                fail closed
+	//   unclassified the project has no risk map and no label
+	//
+	// Never the empty string: `unclassified` is explicit so no client can read
+	// an absent opinion as "safe" (plan §A1.3). Clients MUST have a default
+	// branch for an unknown value.
+	RiskTier       string `json:"risk_tier"`
+	RiskTierSource string `json:"risk_tier_source"`
 }
 
 // reviewTier maps an issue's blast radius to its review effort. `reviews` is
@@ -219,12 +239,16 @@ func (h *Handler) computeMergeReadiness(ctx context.Context, issue db.Issue) Mer
 		}
 	}
 
+	risk := h.resolveIssueRiskTier(ctx, issue)
+
 	return MergeReadinessResponse{
-		Ready:   ready,
-		Tier:    t.name,
-		Gates:   gates,
-		Blocked: blocked,
-		Reviews: t.reviews,
+		Ready:          ready,
+		Tier:           t.name,
+		Gates:          gates,
+		Blocked:        blocked,
+		Reviews:        t.reviews,
+		RiskTier:       risk.APITier(),
+		RiskTierSource: risk.Source,
 	}
 }
 

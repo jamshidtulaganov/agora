@@ -580,6 +580,7 @@ type GithubPullRequest struct {
 	Deletions       int32              `json:"deletions"`
 	ChangedFiles    int32              `json:"changed_files"`
 	Provider        string             `json:"provider"`
+	ChangedPaths    []string           `json:"changed_paths"`
 }
 
 type GithubPullRequestCheckSuite struct {

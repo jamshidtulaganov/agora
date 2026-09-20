@@ -265,6 +265,23 @@ Contracts:
 - `clearStaleQAGateLabels` runs on EVERY genuine in_review entry, outside the
   QA gate, because it is a DB-only correctness sweep (the diff changed, so the
   previous cycle's verdicts are stale) and must not depend on QA configuration.
+- `issueRiskTier` (`handler/project_risk_map.go:87`) is now a projection of
+  `resolveIssueRiskTier` (`handler/risk_tier.go`), which derives the tier
+  SERVER-SIDE (plan §A1.1): the linked PR's changed-file list
+  (`github_pull_request.changed_paths`, migration 210, fetched from GitHub's PR
+  Files API in `handler/github_pr_files.go` on a diff-changing webhook action) is
+  glob-matched against `project.settings.risk_map`; the strictest matching entry
+  wins and a path no glob claims is GUARDED. Precedence: derived > a STRICTER
+  `risk:*` label (escalation is always allowed) > the label when there is no file
+  list at all (unchanged pre-derivation behaviour) > `guarded` in a risk-mapped
+  project > `""`. `""` stays the internal no-opinion value for the five
+  consumers; the API boundary renders it `unclassified` (`apiRiskTier`). When a
+  tier is derived, the server stamps the matching `risk:<tier>` label and posts a
+  provenance comment (`stampDerivedRiskLabel`), so every label-reading consumer —
+  `issueQAScopeTrivial`, `qaRequiresVisualEvidence` — sees the derived answer
+  without any further plumbing. Write endpoint: `PUT /api/projects/{id}/risk-map`
+  (`handler/project_risk_map_api.go`), owner/admin + `RequireHumanActor`,
+  key-scoped `SetProjectSettingKey`.
 - `enforceQAGateBeforeDone` ALSO enforces a RISK-TIER human-sign-off gate when
   `riskTierGateEnforced()` (env AGORA_RISK_TIER_GATE_ENFORCED, default off): a
   CRITICAL-tier issue (issueRiskTier == "critical") can only be moved to done by a

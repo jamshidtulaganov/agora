@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -13,9 +15,11 @@ import (
 // legacy codebase, stored as project.settings.risk_map. Every agent run gets it
 // at claim time (the run_qa gate reads the same injected block as step 0):
 // classify the diff against the path globs and take the HIGHEST matching tier.
-// There is no dedicated write endpoint yet — the key is authored via project
-// settings (jsonb) directly; writers should prefer a key-scoped jsonb_set so
-// sibling keys are never clobbered.
+//
+// It is authored through PUT /api/projects/{id}/risk-map (project_risk_map_api.go),
+// which writes the key with a key-scoped jsonb_set so sibling settings are never
+// clobbered, and the SERVER now classifies the diff itself — see risk_tier.go
+// for the derivation and its precedence over the agent's self-reported label.
 //
 // Tiers:
 //   - critical — money/stock-integrity paths (billing, kassa, warehouse writes):
@@ -49,27 +53,48 @@ func (h *Handler) projectRiskMap(ctx context.Context, issue db.Issue) ([]riskMap
 	if !issue.ProjectID.Valid {
 		return nil, false
 	}
+	return h.projectRiskMapByID(ctx, issue.ProjectID, issue.WorkspaceID)
+}
+
+// projectRiskMapByID is the same read addressed by project rather than by
+// issue — what the decision queue needs, since it classifies many issues across
+// a handful of projects and must load each project's map once, not once per row.
+func (h *Handler) projectRiskMapByID(ctx context.Context, projectID, workspaceID pgtype.UUID) ([]riskMapEntry, bool) {
+	if !projectID.Valid {
+		return nil, false
+	}
 	// Read fail-closed on workspace: the risk map is a safety control, so it must
 	// come from the issue's OWN project — a workspace-unscoped GetProject would
 	// source the tier policy from a foreign project on FK drift (issue.project_id
 	// is a plain FK with no same-workspace DB constraint).
 	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
-		ID:          issue.ProjectID,
-		WorkspaceID: issue.WorkspaceID,
+		ID:          projectID,
+		WorkspaceID: workspaceID,
 	})
 	if err != nil || len(project.Settings) == 0 {
+		return nil, false
+	}
+	return parseProjectRiskMap(project.Settings, project.ID)
+}
+
+// parseProjectRiskMap pulls the risk_map key out of a project settings blob.
+// Separated from the read so the write endpoint can validate exactly what the
+// resolver will later parse, and so a malformed map is reported identically
+// wherever it is found.
+func parseProjectRiskMap(settings []byte, projectID pgtype.UUID) ([]riskMapEntry, bool) {
+	if len(settings) == 0 {
 		return nil, false
 	}
 	var s struct {
 		RiskMap json.RawMessage `json:"risk_map"`
 	}
-	if json.Unmarshal(project.Settings, &s) != nil || len(s.RiskMap) == 0 {
+	if json.Unmarshal(settings, &s) != nil || len(s.RiskMap) == 0 {
 		return nil, false
 	}
 	var entries []riskMapEntry
 	if err := json.Unmarshal(s.RiskMap, &entries); err != nil {
 		slog.Warn("project risk_map is malformed — the risk tiering is NOT being injected; fix project.settings.risk_map",
-			"project_id", uuidToString(project.ID), "error", err)
+			"project_id", uuidToString(projectID), "error", err)
 		return nil, false
 	}
 	if len(entries) == 0 {
@@ -79,32 +104,24 @@ func (h *Handler) projectRiskMap(ctx context.Context, issue db.Issue) ([]riskMap
 }
 
 // issueRiskTier resolves the autonomy tier the merge gate enforces for an
-// issue. Order: an explicit risk:<tier> label wins (set by triage or a human —
-// editing the label IS the override mechanism); otherwise, in a risk-mapped
-// project, the tier is GUARDED — fail closed: the server cannot see the diff,
-// and unknown must never mean safe. Projects with no risk map return "" (no
-// tiering; pre-risk-map behavior stands).
+// issue, for the five pipeline consumers that have always read it as a bare
+// string (dev landing mode, auto-merge refusal, the done gate, QA gate depth,
+// the evidence floor). It is now a thin projection of resolveIssueRiskTier
+// (risk_tier.go), which owns the precedence:
+//
+//   - the SERVER-DERIVED tier when the linked pull request's real changed-file
+//     list can be glob-matched against the project risk map;
+//   - an explicit risk:<tier> label when there is no such evidence (unchanged
+//     behaviour) or when the label is STRICTER than what the globs derived;
+//   - GUARDED in a risk-mapped project with neither — fail closed, unknown is
+//     never safe;
+//   - "" for a project with no risk map (pre-risk-map behaviour stands).
+//
+// "" stays the internal no-opinion value on purpose: every existing consumer
+// branches on it. The API boundary renders it as `unclassified` instead
+// (apiRiskTier), so no client can read the empty string as "safe".
 func (h *Handler) issueRiskTier(ctx context.Context, issue db.Issue) string {
-	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
-		IssueID:     issue.ID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err == nil {
-		for _, l := range labels {
-			switch strings.ToLower(strings.TrimSpace(l.Name)) {
-			case "risk:critical":
-				return "critical"
-			case "risk:guarded":
-				return "guarded"
-			case "risk:safe":
-				return "safe"
-			}
-		}
-	}
-	if _, ok := h.projectRiskMap(ctx, issue); ok {
-		return "guarded"
-	}
-	return ""
+	return h.resolveIssueRiskTier(ctx, issue).Tier
 }
 
 // issueRiskOwners returns the human owner names of the issue's module:<name>
