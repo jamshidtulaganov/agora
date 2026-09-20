@@ -55,6 +55,7 @@ import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
 import { BitrixAssigneeChip, BitrixTaskLink, BitrixProjectChip, BitrixSummaryAction } from "../../bitrix";
 import { CommentCard } from "./comment-card";
+import { ChangesSection } from "./changes-section";
 import { CollapsibleDescription } from "./collapsible-description";
 import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
@@ -2136,6 +2137,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <div className="mt-4">
             <QAEvidenceSection issueId={id} status={issue.status} />
           </div>
+
+          {/* What the agent changed — file list per linked PR, each file's diff
+              one click away. Sits in the main column (the sidebar PR rail is
+              far too narrow for a diff) and self-hides when the issue produced
+              no code, which is most issues. */}
+          <ChangesSection issueId={id} className="mt-4" />
 
           <div className="my-6 border-t" />
 

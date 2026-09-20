@@ -145,6 +145,17 @@
       "toast_conflict": "Этот Telegram уже привязан к другому пользователю Agora",
       "toast_unlinked": "Telegram отключён",
       "toast_unlink_failed": "Не удалось отключить Telegram"
+    },
+    "slack": {
+      "title": "Slack",
+      "description": "Получайте входящие личными сообщениями в Slack и открывайте превью ссылок Agora в каналах.",
+      "dm_label": "Личные сообщения",
+      "loading": "Проверяем статус привязки…",
+      "linked_hint": "Ваш аккаунт Slack подключён. Новые входящие приходят и в личные сообщения.",
+      "unlinked_hint": "Подключите Slack, чтобы получать входящие в личные сообщения и видеть превью ссылок Agora в каналах.",
+      "connect": "Подключить Slack",
+      "connected": "Подключено",
+      "connect_failed": "Не удалось начать подключение к Slack"
     }
   },
   "tokens": {
@@ -477,6 +488,10 @@
       "name": "Telegram",
       "description": "Подключите ботов агентов и группы для чата и обновлений по работе. Личные уведомления входящих привязываются в разделе Уведомления."
     },
+    "slack": {
+      "name": "Slack",
+      "description": "Отправляйте в канал сбои, вердикты QA и ревью и смотрите превью ссылок Agora."
+    },
     "import": {
       "name": "Импорт",
       "description": "Перенос рабочего пространства Linear в Agora — issue, комментарии, проекты и люди."
@@ -731,6 +746,56 @@
     "access_save": "Сохранить",
     "toast_access_saved": "Доступ обновлён",
     "toast_access_failed": "Не удалось обновить доступ"
+  },
+  "slack": {
+    "page_description": "Подключите это рабочее пространство к Slack и выберите, какие каналы что получают. Личные сообщения привязываются в Настройки → Уведомления.",
+    "connect_button": "Подключить Slack",
+    "loading": "Загрузка подключений Slack…",
+    "not_configured_title": "Slack недоступен",
+    "not_configured_description": "В этой установке не настроено приложение Slack, поэтому подключение не завершится. Попросите администратора задать AGORA_SLACK_CLIENT_ID, AGORA_SLACK_CLIENT_SECRET, AGORA_SLACK_SIGNING_SECRET и AGORA_SLACK_SECRET_KEY.",
+    "empty_title": "Slack не подключён",
+    "empty_description": "Подключите рабочее пространство Slack, чтобы отправлять в канал сбои, вердикты QA и ревью.",
+    "status_revoked": "Отозван",
+    "bot_label": "Бот {{id}}",
+    "disconnect": "Отключить",
+    "disconnect_title": "Отключить это рабочее пространство Slack?",
+    "disconnect_description": "Agora перестанет писать в его каналы, а настройки каналов будут удалены. Приложение останется в Slack, пока его не удалят там.",
+    "disconnect_confirm": "Отключить",
+    "cancel": "Отмена",
+    "toast_connect_failed": "Не удалось начать подключение к Slack",
+    "toast_disconnected": "Slack отключён",
+    "toast_disconnect_failed": "Не удалось отключить Slack",
+    "routes_title": "Каналы",
+    "routes_description": "Выберите канал и то, что он получает. Новый канал начинает тихо — только события, где нужен человек.",
+    "routes_loading": "Загрузка каналов…",
+    "routes_empty": "Ни один канал ещё не настроен.",
+    "channel_label": "Канал",
+    "channel_placeholder": "Выберите канал",
+    "channels_loading": "Загрузка каналов из Slack…",
+    "channels_empty": "Нет доступных каналов",
+    "channels_failed": "Не удалось загрузить каналы из Slack. Попробуйте позже.",
+    "add_route": "Добавить канал",
+    "save": "Сохранить",
+    "remove": "Удалить",
+    "remove_title": "Перестать писать в этот канал?",
+    "remove_description": "Agora перестанет писать в #{{channel}}. Больше ничего не изменится.",
+    "remove_confirm": "Удалить",
+    "not_member_hint": "Сначала пригласите приложение Agora в этот канал, иначе оно не сможет туда писать.",
+    "events_hint": "Новый канал получает только сбои, вердикты QA и ревью. Остальное — в одном флажке отсюда.",
+    "toast_route_saved": "Канал сохранён",
+    "toast_route_save_failed": "Не удалось сохранить канал",
+    "toast_route_removed": "Канал удалён",
+    "toast_route_remove_failed": "Не удалось удалить канал",
+    "events": {
+      "failed": "Задача не выполнена",
+      "qa_verdict": "QA не пройден",
+      "review_verdict": "Нужны правки",
+      "assigned": "Issue назначен",
+      "mentioned": "Упоминание",
+      "agent_done": "Задача завершена",
+      "status_changed": "Статус изменён",
+      "created": "Issue создан"
+    }
   },
   "imports": {
     "description": "Перенесите рабочее пространство Linear в Agora: issue, комментарии, проекты и людей. Сначала предпросмотр — до нажатия «Импортировать» ничего не записывается.",

@@ -9,7 +9,6 @@ import {
   ChevronDown,
   CircleDashed,
   Eye,
-  ExternalLink,
   FileDiff,
   Info,
   Loader2,
@@ -45,7 +44,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink, useNavigation } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { PullRequestList } from "./pull-request-list";
+import { ChangesSection } from "./changes-section";
 import { verdictIcon, verdictTone } from "../../qa/components/verdict";
 import { ArtifactCodeViewer } from "./artifact-code-viewer";
 import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
@@ -265,11 +264,9 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
 function ReviewVerdictCard({
   review,
   stale,
-  diffUrl,
 }: {
   review: ReviewVerdict;
   stale: boolean;
-  diffUrl?: string;
 }) {
   const { t } = useT("issues");
 
@@ -325,17 +322,6 @@ function ReviewVerdictCard({
         )}
         {review.files_reviewed > 0 && (
           <span>{t(($) => $.review_lens.files_reviewed, { n: review.files_reviewed })}</span>
-        )}
-        {diffUrl && (
-          <a
-            href={diffUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-          >
-            {t(($) => $.review_lens.view_diff)}
-            <ExternalLink className="size-3" />
-          </a>
         )}
       </div>
       {stale && (
@@ -435,14 +421,6 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
     (prData?.pull_requests ?? []).some(
       (pr) => pr.state === "open" && Date.parse(pr.pr_updated_at) > reviewedAtMs,
     );
-
-  // One-click from the verdict to the diff the agent reviewed: prefer an open
-  // PR, else the newest one on the issue. Links to the PR page (provider-
-  // agnostic — the diff is one tab away on GitHub/GitLab alike).
-  const primaryPr =
-    (prData?.pull_requests ?? []).find((pr) => pr.state === "open") ??
-    (prData?.pull_requests ?? [])[0];
-  const diffUrl = primaryPr?.html_url || undefined;
 
   // merge:override bypasses the deterministic gates by design, so override
   // wins unconditionally; the normal path still needs a clean pass + a ready
@@ -647,7 +625,7 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
                   </p>
                 </div>
               ) : (
-                <ReviewVerdictCard review={review} stale={stale} diffUrl={diffUrl} />
+                <ReviewVerdictCard review={review} stale={stale} />
               )}
             </section>
 
@@ -819,15 +797,12 @@ export function WorkLensBody({ issueId }: { issueId: string }) {
               </section>
             )}
 
-            {/* PR list. */}
-            <section>
-              <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t(($) => $.detail.section_pull_requests)}
-              </div>
-              <div className="rounded-lg border px-2 py-1.5">
-                <PullRequestList issueId={issueId} />
-              </div>
-            </section>
+            {/* What the agent changed — the file list, and each file's diff
+                inline. This REPLACES the PR list here (same pull requests, plus
+                the answer the reviewer actually came for); the GitHub link
+                lives in each PR's header. The dense status list stays in the
+                issue sidebar, where the rail is too narrow for diffs. */}
+            <ChangesSection issueId={issueId} />
           </div>
 
           {/* Merge gates + tier + override + deploy pointer. */}

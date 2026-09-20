@@ -57,8 +57,11 @@ vi.mock("../../common/actor-avatar", () => ({
     <span data-testid="actor-avatar" data-actor-id={actorId} />
   ),
 }));
-vi.mock("./pull-request-list", () => ({
-  PullRequestList: () => <div data-testid="pull-request-list" />,
+// The PR list was replaced here by the in-app Changes view: same pull
+// requests, plus the file list and diffs the reviewer came for. Its own
+// rendering is covered in changes-section.test.tsx.
+vi.mock("./changes-section", () => ({
+  ChangesSection: () => <div data-testid="changes-section" />,
 }));
 vi.mock("./artifact-code-viewer", () => ({
   ArtifactCodeViewer: () => <div>Exact artifact code</div>,
@@ -223,7 +226,7 @@ describe("ReviewLensBody", () => {
     // One conclusion banner — never the internal tier word.
     expect(screen.getByText(/blocking/)).toBeInTheDocument();
     expect(screen.queryByText(/light/)).not.toBeInTheDocument();
-    expect(screen.getByTestId("pull-request-list")).toBeInTheDocument();
+    expect(screen.getByTestId("changes-section")).toBeInTheDocument();
   });
 
   it("points to the QA cockpit's sprint view for deploy status", async () => {

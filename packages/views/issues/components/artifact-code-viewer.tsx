@@ -32,7 +32,8 @@ import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { CodeBlock } from "@agora/ui/markdown/CodeBlock";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
-import { parseArtifactFileDiff, type ArtifactDiffLine } from "./artifact-diff";
+import { parseArtifactFileDiff } from "./artifact-diff";
+import { DiffLine } from "./diff-line";
 import { artifactDaemonPost, isArtifactRuntimeGone } from "./artifact-daemon-client";
 
 const MAX_VISIBLE_FILES = 500;
@@ -46,35 +47,6 @@ function pathParts(path: string): { name: string; directory: string } {
   const slash = path.lastIndexOf("/");
   if (slash < 0) return { name: path, directory: "" };
   return { name: path.slice(slash + 1), directory: path.slice(0, slash) };
-}
-
-function DiffLine({ line }: { line: ArtifactDiffLine }) {
-  const tone =
-    line.kind === "addition"
-      ? "bg-success/10"
-      : line.kind === "deletion"
-        ? "bg-destructive/10"
-        : line.kind === "hunk"
-          ? "bg-brand/10 text-brand"
-          : line.kind === "meta"
-            ? "bg-muted/40 text-muted-foreground"
-            : "";
-  const marker = line.kind === "addition" ? "+" : line.kind === "deletion" ? "−" : " ";
-
-  return (
-    <div className={cn("grid min-w-max grid-cols-[3.25rem_3.25rem_1.5rem_1fr]", tone)}>
-      <span className="select-none border-r px-2 text-right text-muted-foreground/60" aria-hidden>
-        {line.oldLine ?? ""}
-      </span>
-      <span className="select-none border-r px-2 text-right text-muted-foreground/60" aria-hidden>
-        {line.newLine ?? ""}
-      </span>
-      <span className="select-none px-1.5 text-muted-foreground" aria-hidden>
-        {line.kind === "hunk" || line.kind === "meta" ? "" : marker}
-      </span>
-      <span className="whitespace-pre pr-6">{line.content || " "}</span>
-    </div>
-  );
 }
 
 export function artifactLanguage(path: string): string {

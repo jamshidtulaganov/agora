@@ -145,6 +145,17 @@
       "toast_conflict": "That Telegram account is already linked to another Agora user",
       "toast_unlinked": "Telegram disconnected",
       "toast_unlink_failed": "Could not disconnect Telegram"
+    },
+    "slack": {
+      "title": "Slack",
+      "description": "Get your inbox as Slack direct messages, and unlock Agora link previews in channels.",
+      "dm_label": "Personal DMs",
+      "loading": "Checking link status…",
+      "linked_hint": "Your Slack account is connected. New inbox items are also sent as DMs.",
+      "unlinked_hint": "Connect Slack to receive inbox updates as DMs and to see Agora links unfurl in channels.",
+      "connect": "Connect Slack",
+      "connected": "Connected",
+      "connect_failed": "Could not start the Slack connection"
     }
   },
   "tokens": {
@@ -477,6 +488,10 @@
       "name": "Telegram",
       "description": "Connect per-agent bots and groups for chat and work updates. Personal inbox DMs are linked under Notifications."
     },
+    "slack": {
+      "name": "Slack",
+      "description": "Send failures, QA and review verdicts into a channel, and preview Agora links there."
+    },
     "import": {
       "name": "Import",
       "description": "Move a Linear workspace into Agora — issues, comments, projects and people."
@@ -731,6 +746,56 @@
     "access_save": "Save",
     "toast_access_saved": "Access updated",
     "toast_access_failed": "Could not update access"
+  },
+  "slack": {
+    "page_description": "Connect this workspace to Slack, then pick which channels hear which events. Personal direct messages are linked under Settings → Notifications.",
+    "connect_button": "Connect Slack",
+    "loading": "Loading Slack connections…",
+    "not_configured_title": "Slack is not available",
+    "not_configured_description": "This deployment has no Slack app configured, so an install cannot be completed. Ask an operator to set AGORA_SLACK_CLIENT_ID, AGORA_SLACK_CLIENT_SECRET, AGORA_SLACK_SIGNING_SECRET and AGORA_SLACK_SECRET_KEY.",
+    "empty_title": "Slack is not connected",
+    "empty_description": "Connect a Slack workspace to send failures, QA and review verdicts into a channel.",
+    "status_revoked": "Revoked",
+    "bot_label": "Bot {{id}}",
+    "disconnect": "Disconnect",
+    "disconnect_title": "Disconnect this Slack workspace?",
+    "disconnect_description": "Agora stops posting to its channels and the channel routes are removed. The app stays in Slack until someone removes it there.",
+    "disconnect_confirm": "Disconnect",
+    "cancel": "Cancel",
+    "toast_connect_failed": "Could not start the Slack connection",
+    "toast_disconnected": "Slack disconnected",
+    "toast_disconnect_failed": "Could not disconnect Slack",
+    "routes_title": "Channels",
+    "routes_description": "Pick a channel and what it hears. A new channel starts quiet — only the events that need a human.",
+    "routes_loading": "Loading channels…",
+    "routes_empty": "No channel is set up yet.",
+    "channel_label": "Channel",
+    "channel_placeholder": "Pick a channel",
+    "channels_loading": "Loading channels from Slack…",
+    "channels_empty": "No channels available",
+    "channels_failed": "Could not load channels from Slack. Try again shortly.",
+    "add_route": "Add channel",
+    "save": "Save",
+    "remove": "Remove",
+    "remove_title": "Stop posting to this channel?",
+    "remove_description": "Agora stops posting to #{{channel}}. Nothing else changes.",
+    "remove_confirm": "Remove",
+    "not_member_hint": "Invite the Agora app to this channel first, or it cannot post there.",
+    "events_hint": "A new channel hears only failures, QA and review verdicts. Everything else is one checkbox away.",
+    "toast_route_saved": "Channel saved",
+    "toast_route_save_failed": "Could not save this channel",
+    "toast_route_removed": "Channel removed",
+    "toast_route_remove_failed": "Could not remove this channel",
+    "events": {
+      "failed": "Task failed",
+      "qa_verdict": "QA failed",
+      "review_verdict": "Changes requested",
+      "assigned": "Issue assigned",
+      "mentioned": "Mention",
+      "agent_done": "Task completed",
+      "status_changed": "Status changed",
+      "created": "Issue created"
+    }
   },
   "imports": {
     "description": "Move a whole Linear workspace into Agora: issues, comments, projects and people. Preview first — nothing is written until you press Import.",

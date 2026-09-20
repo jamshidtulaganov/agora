@@ -145,6 +145,17 @@
       "toast_conflict": "Bu Telegram akkaunti boshqa Agora foydalanuvchisiga allaqachon ulangani",
       "toast_unlinked": "Telegram uzildi",
       "toast_unlink_failed": "Telegramni uzib bo‘lmadi"
+    },
+    "slack": {
+      "title": "Slack",
+      "description": "Kiruvchilarni Slack DM sifatida oling va kanallarda Agora havolalari ko'rinishini oching.",
+      "dm_label": "Shaxsiy DMlar",
+      "loading": "Bog'lanish holati tekshirilmoqda…",
+      "linked_hint": "Slack akkauntingiz ulangan. Yangi kiruvchilar DM sifatida ham keladi.",
+      "unlinked_hint": "Slack'ni ulang — kiruvchilar DM bo'lib keladi va kanallarda Agora havolalari ochiladi.",
+      "connect": "Slack'ni ulash",
+      "connected": "Ulangan",
+      "connect_failed": "Slack ulanishini boshlab bo'lmadi"
     }
   },
   "tokens": {
@@ -477,6 +488,10 @@
       "name": "Telegram",
       "description": "Chat va ish yangilanishlari uchun agent botlari va guruhlarni ulang. Shaxsiy kiruvchi DMlar Bildirishnomalar bo‘limida bog‘lanadi."
     },
+    "slack": {
+      "name": "Slack",
+      "description": "Xatolar, QA va ko'rib chiqish xulosalarini kanalga yuboring va Agora havolalarini shu yerda ko'ring."
+    },
     "import": {
       "name": "Import",
       "description": "Linear workspace'ini Agora'ga ko'chirish — issue, izohlar, loyihalar va odamlar."
@@ -731,6 +746,56 @@
     "access_save": "Saqlash",
     "toast_access_saved": "Ruxsat yangilandi",
     "toast_access_failed": "Ruxsatni yangilab bo'lmadi"
+  },
+  "slack": {
+    "page_description": "Bu ish maydonini Slack'ga ulang, so'ng qaysi kanal qaysi hodisalarni olishini tanlang. Shaxsiy DMlar Sozlamalar → Bildirishnomalar orqali bog'lanadi.",
+    "connect_button": "Slack'ni ulash",
+    "loading": "Slack ulanishlari yuklanmoqda…",
+    "not_configured_title": "Slack mavjud emas",
+    "not_configured_description": "Bu o'rnatmada Slack ilovasi sozlanmagan, shuning uchun ulash yakunlanmaydi. Administratordan AGORA_SLACK_CLIENT_ID, AGORA_SLACK_CLIENT_SECRET, AGORA_SLACK_SIGNING_SECRET va AGORA_SLACK_SECRET_KEY ni o'rnatishni so'rang.",
+    "empty_title": "Slack ulanmagan",
+    "empty_description": "Slack ish maydonini ulang — xatolar, QA va ko'rib chiqish xulosalari kanalga tushadi.",
+    "status_revoked": "Bekor qilingan",
+    "bot_label": "Bot {{id}}",
+    "disconnect": "Uzish",
+    "disconnect_title": "Bu Slack ish maydoni uzilsinmi?",
+    "disconnect_description": "Agora uning kanallariga yozishni to'xtatadi va kanal sozlamalari o'chiriladi. Ilova Slack'da kimdir olib tashlamaguncha qoladi.",
+    "disconnect_confirm": "Uzish",
+    "cancel": "Bekor qilish",
+    "toast_connect_failed": "Slack ulanishini boshlab bo'lmadi",
+    "toast_disconnected": "Slack uzildi",
+    "toast_disconnect_failed": "Slack'ni uzib bo'lmadi",
+    "routes_title": "Kanallar",
+    "routes_description": "Kanalni va u nimani olishini tanlang. Yangi kanal jim boshlanadi — faqat odam kerak bo'lgan hodisalar.",
+    "routes_loading": "Kanallar yuklanmoqda…",
+    "routes_empty": "Hali birorta kanal sozlanmagan.",
+    "channel_label": "Kanal",
+    "channel_placeholder": "Kanalni tanlang",
+    "channels_loading": "Slack'dan kanallar yuklanmoqda…",
+    "channels_empty": "Mavjud kanal yo'q",
+    "channels_failed": "Slack'dan kanallarni yuklab bo'lmadi. Birozdan so'ng qayta urining.",
+    "add_route": "Kanal qo'shish",
+    "save": "Saqlash",
+    "remove": "O'chirish",
+    "remove_title": "Bu kanalga yozish to'xtatilsinmi?",
+    "remove_description": "Agora #{{channel}} kanaliga yozmaydi. Boshqa hech narsa o'zgarmaydi.",
+    "remove_confirm": "O'chirish",
+    "not_member_hint": "Avval Agora ilovasini shu kanalga taklif qiling, aks holda u yozolmaydi.",
+    "events_hint": "Yangi kanal faqat xatolar, QA va ko'rib chiqish xulosalarini oladi. Qolgani bitta belgilash uzoqlikda.",
+    "toast_route_saved": "Kanal saqlandi",
+    "toast_route_save_failed": "Bu kanalni saqlab bo'lmadi",
+    "toast_route_removed": "Kanal o'chirildi",
+    "toast_route_remove_failed": "Bu kanalni o'chirib bo'lmadi",
+    "events": {
+      "failed": "Vazifa bajarilmadi",
+      "qa_verdict": "QA o'tmadi",
+      "review_verdict": "O'zgartirish so'raldi",
+      "assigned": "Issue biriktirildi",
+      "mentioned": "Eslatildi",
+      "agent_done": "Vazifa tugadi",
+      "status_changed": "Holat o'zgardi",
+      "created": "Issue yaratildi"
+    }
   },
   "imports": {
     "description": "Linear workspace'ini Agora'ga ko'chiring: issue, izohlar, loyihalar va odamlar. Avval ko'rib chiqing — «Import qilish» bosilmaguncha hech narsa yozilmaydi.",

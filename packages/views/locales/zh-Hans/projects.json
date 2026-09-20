@@ -259,5 +259,29 @@
       "weekly": "{{day}} {{time}}",
       "failed": "上一次定时刷新失败"
     }
+  },
+  "risk_map": {
+    "title": "高风险模块",
+    "explainer": "写下这个项目里高风险的部分。改动一旦触及其中之一，就会走更深的测试，并且需要有人签字才能合并。没有匹配到任何模块的改动按 {{tier}} 处理。",
+    "no_entries": "还没有模块",
+    "untitled_module": "这个模块",
+    "module_label": "模块名称",
+    "module_placeholder": "billing",
+    "tier_label": "{{module}} 的风险等级",
+    "remove_entry": "移除 {{module}}",
+    "add_entry": "添加模块",
+    "no_paths": "还没有路径",
+    "path_placeholder": "server/internal/auth/**",
+    "add_path": "添加",
+    "add_path_to": "向 {{module}} 添加路径",
+    "remove_path": "移除 {{glob}}",
+    "owner_label": "{{module}} 的负责人",
+    "owner_placeholder": "负责人（可选）",
+    "notes_label": "{{module}} 的备注",
+    "notes_placeholder": "备注（可选）",
+    "at_cap": "模块上限：{{max}}",
+    "save": "保存",
+    "saved": "高风险模块已保存",
+    "save_failed": "高风险模块保存失败"
   }
 }

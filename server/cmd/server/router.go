@@ -684,6 +684,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.With(handler.RequireHumanActor).Post("/api/me/links/telegram/start", h.StartTelegramLink)
 		r.With(handler.RequireHumanActor).Post("/api/me/links/telegram/verify", h.VerifyTelegramLink)
 		r.With(handler.RequireHumanActor).Delete("/api/me/links/telegram", h.UnlinkTelegramIdentity)
+		// Link Slack to the current account (Settings → Notifications, and the
+		// destination of an unfurl's "connect your account" prompt). Human-only
+		// for the same reason every identity link is: an agent must never bind
+		// a Slack id to the account it runs as. The consent screen this mints
+		// asks for user scope ONLY — it cannot install the app.
+		r.With(handler.RequireHumanActor).Post("/api/me/links/slack/begin", h.BeginSlackUserLink)
 		// Instance configuration (Settings → Configs). Owner-only (enforced in
 		// the handler); mutations are human-only so an agent's task token can
 		// never flip a global feature flag.
@@ -1112,6 +1118,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// endpoint — the frontend fetches it BESIDE the list and
 				// merges client-side, so the board's hot path is untouched.
 				r.Get("/staleness", h.ListStaleIssues)
+				// The ranked decision queue (docs/orchestration-upgrade-plan.md
+				// §A2): everything in this workspace waiting on a HUMAN —
+				// escalations, changes awaiting approval, red verdicts nobody
+				// acted on, approved-but-unmerged pull requests — as one list
+				// ranked by blast radius × kind × age. A SIBLING of /staleness
+				// for the same reason: computed on read, its own query, never a
+				// join into the board's hot path.
+				r.Get("/decision-queue", h.ListDecisionQueue)
 				r.Get("/", h.ListIssues)
 				r.Post("/", h.CreateIssue)
 				r.Post("/quick-create", h.QuickCreateIssue)
@@ -1196,6 +1210,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
+					// In-app Changes view: which files each linked PR touches,
+					// and one file's unified diff on demand. Both resolve
+					// through loadIssueForUser, so the workspace scope and the
+					// non-owner visibility gate apply exactly as they do on the
+					// issue detail itself.
+					r.Get("/changes", h.GetIssueChanges)
+					r.Get("/changes/patch", h.GetIssueChangePatch)
 					r.Post("/run-regression", h.RunIssueSprintRegression)
 					// Sprint assignment (an issue belongs to at most one sprint).
 					r.Get("/sprint", h.GetIssueSprint)
@@ -1254,6 +1275,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// (CLI: agora project qa-manifest set).
 					r.Post("/qa-manifest/build", h.BuildProjectQAManifest)
 					r.Put("/qa-manifest", h.SetProjectQAManifest)
+					// Risk map — the module/blast-radius tiering the server now
+					// glob-matches a pull request's changed files against
+					// (docs/orchestration-upgrade-plan.md §A1.2). Read = any
+					// member (it is the policy their changes are judged by);
+					// write = owner/admin AND human-only, because the map
+					// decides what an agent may merge without a person, and an
+					// agent that can rewrite it can grant itself permission.
+					r.Get("/risk-map", h.GetProjectRiskMap)
+					r.With(handler.RequireHumanActor).Put("/risk-map", h.SetProjectRiskMap)
 					// Design context is generated and reviewed, never edited as a
 					// project settings blob. Only approved revisions reach runtime.
 					r.Get("/design-context", h.GetProjectDesignContext)

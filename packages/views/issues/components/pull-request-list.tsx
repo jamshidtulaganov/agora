@@ -35,7 +35,10 @@ type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 // collapse the rest once the section reaches 4 rows.
 const PR_LIMIT_BEFORE_COLLAPSE = 4;
 
-const STATE_ICON: Record<
+/** Exported so the in-app Changes view heads each pull request with the same
+ *  icon the sidebar list uses — one PR, one visual identity, wherever it is
+ *  rendered. */
+export const STATE_ICON: Record<
   GitHubPullRequestState,
   { icon: React.ComponentType<{ className?: string }>; className: string }
 > = {
@@ -298,7 +301,10 @@ function getChecksBadge(
     : null;
 }
 
-function getStateLabel(
+/** Exported for the Changes view. `state` is server-driven, so the chain ends
+ *  in the raw value rather than a throw: a new GitHub state must downgrade to
+ *  its own name, never blank out the row. */
+export function getStateLabel(
   state: GitHubPullRequestState,
   t: IssuesT,
 ): string {

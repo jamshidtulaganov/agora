@@ -259,5 +259,29 @@
       "weekly": "{{day}} {{time}}",
       "failed": "Oxirgi jadval bo‘yicha yangilash muvaffaqiyatsiz tugadi"
     }
+  },
+  "risk_map": {
+    "title": "Xavfli modullar",
+    "explainer": "Loyihaning xavfli qismlarini nomlang. Ularga tegadigan o‘zgarish chuqurroq tekshiriladi va merge qilinishidan oldin odamning tasdig‘ini talab qiladi. Hech bir modulga tushmagan hamma narsa {{tier}} deb hisoblanadi.",
+    "no_entries": "Hozircha modul yo‘q",
+    "untitled_module": "bu modul",
+    "module_label": "Modul nomi",
+    "module_placeholder": "billing",
+    "tier_label": "{{module}} uchun xavf darajasi",
+    "remove_entry": "{{module}} ni olib tashlash",
+    "add_entry": "Modul qo‘shish",
+    "no_paths": "Hozircha yo‘l yo‘q",
+    "path_placeholder": "server/internal/auth/**",
+    "add_path": "Qo‘shish",
+    "add_path_to": "{{module}} ga yo‘l qo‘shish",
+    "remove_path": "{{glob}} ni olib tashlash",
+    "owner_label": "{{module}} egasi",
+    "owner_placeholder": "Egasi (ixtiyoriy)",
+    "notes_label": "{{module}} haqida izoh",
+    "notes_placeholder": "Izoh (ixtiyoriy)",
+    "at_cap": "Modullar chegarasi: {{max}}",
+    "save": "Saqlash",
+    "saved": "Xavfli modullar saqlandi",
+    "save_failed": "Xavfli modullarni saqlab bo‘lmadi"
   }
 }

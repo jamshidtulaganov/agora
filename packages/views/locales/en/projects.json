@@ -259,5 +259,29 @@
       "weekly": "{{day}} {{time}}",
       "failed": "Last scheduled refresh failed"
     }
+  },
+  "risk_map": {
+    "title": "Risky modules",
+    "explainer": "Name the risky parts of this project. A change that touches one gets deeper testing and a person's sign-off before it merges. Anything no module matches is treated as {{tier}}.",
+    "no_entries": "No modules yet",
+    "untitled_module": "this module",
+    "module_label": "Module name",
+    "module_placeholder": "billing",
+    "tier_label": "Risk tier for {{module}}",
+    "remove_entry": "Remove {{module}}",
+    "add_entry": "Add module",
+    "no_paths": "No paths yet",
+    "path_placeholder": "server/internal/auth/**",
+    "add_path": "Add",
+    "add_path_to": "Add a path to {{module}}",
+    "remove_path": "Remove {{glob}}",
+    "owner_label": "Owner of {{module}}",
+    "owner_placeholder": "Owner (optional)",
+    "notes_label": "Notes on {{module}}",
+    "notes_placeholder": "Notes (optional)",
+    "at_cap": "Module limit: {{max}}",
+    "save": "Save",
+    "saved": "Risky modules saved",
+    "save_failed": "Couldn't save the risky modules"
   }
 }

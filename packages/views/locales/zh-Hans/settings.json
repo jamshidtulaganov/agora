@@ -145,6 +145,17 @@
       "toast_conflict": "该 Telegram 账号已绑定到其他 Agora 用户",
       "toast_unlinked": "已断开 Telegram",
       "toast_unlink_failed": "无法断开 Telegram"
+    },
+    "slack": {
+      "title": "Slack",
+      "description": "用 Slack 私信接收收件箱，并在频道里解锁 Agora 链接预览。",
+      "dm_label": "个人私信",
+      "loading": "正在检查绑定状态…",
+      "linked_hint": "Slack 账号已连接。新的收件箱条目也会作为私信发送。",
+      "unlinked_hint": "连接 Slack，用私信接收收件箱更新，并在频道里看到 Agora 链接预览。",
+      "connect": "连接 Slack",
+      "connected": "已连接",
+      "connect_failed": "无法开始连接 Slack"
     }
   },
   "tokens": {
@@ -477,6 +488,10 @@
       "name": "Telegram",
       "description": "连接智能体机器人与群组，用于对话和工作更新。个人收件箱私信请在「通知」中绑定。"
     },
+    "slack": {
+      "name": "Slack",
+      "description": "把任务失败、QA 与评审结论发到频道，并在那里预览 Agora 链接。"
+    },
     "import": {
       "name": "导入",
       "description": "把 Linear 工作区迁移到 Agora —— issue、评论、项目和成员。"
@@ -731,6 +746,56 @@
     "access_save": "保存",
     "toast_access_saved": "访问权限已更新",
     "toast_access_failed": "无法更新访问权限"
+  },
+  "slack": {
+    "page_description": "把这个工作区连接到 Slack，再选择哪些频道接收哪些事件。个人私信请在 设置 → 通知 中绑定。",
+    "connect_button": "连接 Slack",
+    "loading": "正在加载 Slack 连接…",
+    "not_configured_title": "Slack 不可用",
+    "not_configured_description": "此部署未配置 Slack 应用，因此无法完成安装。请让运维设置 AGORA_SLACK_CLIENT_ID、AGORA_SLACK_CLIENT_SECRET、AGORA_SLACK_SIGNING_SECRET 和 AGORA_SLACK_SECRET_KEY。",
+    "empty_title": "尚未连接 Slack",
+    "empty_description": "连接一个 Slack 工作区，把任务失败、QA 与评审结论发到频道。",
+    "status_revoked": "已吊销",
+    "bot_label": "机器人 {{id}}",
+    "disconnect": "断开连接",
+    "disconnect_title": "断开这个 Slack 工作区？",
+    "disconnect_description": "Agora 会停止向它的频道发消息，频道配置也会一并删除。Slack 里的应用仍然保留，直到有人在那边移除。",
+    "disconnect_confirm": "断开连接",
+    "cancel": "取消",
+    "toast_connect_failed": "无法开始连接 Slack",
+    "toast_disconnected": "已断开 Slack",
+    "toast_disconnect_failed": "无法断开 Slack",
+    "routes_title": "频道",
+    "routes_description": "选择频道，以及它接收的内容。新频道默认很安静——只发需要人处理的事件。",
+    "routes_loading": "正在加载频道…",
+    "routes_empty": "还没有配置频道。",
+    "channel_label": "频道",
+    "channel_placeholder": "选择频道",
+    "channels_loading": "正在从 Slack 加载频道…",
+    "channels_empty": "没有可用频道",
+    "channels_failed": "无法从 Slack 加载频道，请稍后再试。",
+    "add_route": "添加频道",
+    "save": "保存",
+    "remove": "移除",
+    "remove_title": "停止向这个频道发消息？",
+    "remove_description": "Agora 将不再向 #{{channel}} 发消息，其他设置不变。",
+    "remove_confirm": "移除",
+    "not_member_hint": "请先把 Agora 应用邀请进这个频道，否则无法发送消息。",
+    "events_hint": "新频道只接收任务失败、QA 与评审结论。其他事件随时勾选即可。",
+    "toast_route_saved": "频道已保存",
+    "toast_route_save_failed": "无法保存这个频道",
+    "toast_route_removed": "频道已移除",
+    "toast_route_remove_failed": "无法移除这个频道",
+    "events": {
+      "failed": "任务失败",
+      "qa_verdict": "QA 未通过",
+      "review_verdict": "评审要求修改",
+      "assigned": "issue 已分配",
+      "mentioned": "提及",
+      "agent_done": "任务完成",
+      "status_changed": "状态变更",
+      "created": "issue 已创建"
+    }
   },
   "imports": {
     "description": "把整个 Linear 工作区迁移到 Agora：issue、评论、项目和成员。先预览 —— 在点击\"导入\"之前不会写入任何数据。",
