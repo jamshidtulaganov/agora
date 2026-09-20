@@ -223,6 +223,29 @@ API 返回的 `download_url` 在未配置 CloudFront 签名时会指向 `GET /ap
 
 **注意：** `GITHUB_WEBHOOK_SECRET` 同时被复用为 install 流程里 state token 的签名密钥，所以运维只需要维护一个 secret。它**不是** GitHub App 的 *Client* secret——Client secret 是 OAuth 用的，和本集成无关。完整配置流程见 [GitHub 集成 → Self-Host 配置](/github-integration#self-host-配置)。
 
+## Slack 集成
+
+[Slack 应用](/slack-integration)——频道通知、收件箱私信、链接预览——需要四个环境变量。要么四个都配，要么一个都别配：配一半时 Agora 直接隐藏连接按钮，而不是给一个走到最后才失败的按钮（那时候 admin 已经在 Slack 里授权过了）。
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `AGORA_SLACK_CLIENT_ID` | 空 | Slack 应用 Basic Information 页里的 Client ID，用于拼 OAuth 授权 URL |
+| `AGORA_SLACK_CLIENT_SECRET` | 空 | Client secret，放在 `oauth.v2.access` 请求体里，用一次性 code 换 bot token |
+| `AGORA_SLACK_SIGNING_SECRET` | 空 | Signing secret。每条到 `/slack/events` 的请求都用它对 `v0:{timestamp}:{原始 body}` 做 HMAC-SHA256 校验，并限制在五分钟窗口内 |
+| `AGORA_SLACK_SECRET_KEY` | 空 | 32 字节 base64 密钥，用于把每个工作区的 bot token 加密存储。明文存 token 不是可接受的退路，所以没有它安装会直接拒绝开始 |
+| `AGORA_SLACK_APP_ID` | 空 | 可选。设置之后，`api_app_id` 对不上的事件推送会被拒绝——防止订阅配错地方 |
+| `AGORA_SLACK_NOTIFY_ENABLED` | `true` | 项目级开关，控制整个外发。某个项目太吵时可以单独关掉，不用卸载应用 |
+
+还必须设置 `AGORA_PUBLIC_URL`：OAuth 回调地址（`<public url>/slack/oauth/callback`）由它拼出来，绝不从请求头里取——否则配错的反向代理就能让服务端签发一个指向攻击者域名的回调。
+
+**四个必填变量缺任意一个时：**
+
+- 设置 → 集成 里根本不显示 Slack 卡片（`/api/config` 返回 `slack_enabled: false`）。
+- `POST /api/workspaces/{id}/slack/install/begin` 返回 **503**。
+- `/slack/events` 返回 **503**——没有 signing secret 就分不出伪造请求和真请求，而「全都接受」不是退路。
+
+**注意：** 这些变量属于 Slack *应用*。设置 → 集成 → Release 里的 Slack **Incoming Webhook** 连接器一个都不需要——它按工作区存自己的 webhook URL，并继续独占 `release:shipped` / `deploy:recorded`。
+
 ## 用量统计
 
 默认上报到 Agora 官方 PostHog 实例。不想上报就把 `ANALYTICS_DISABLED=true`。

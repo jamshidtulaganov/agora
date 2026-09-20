@@ -24,6 +24,10 @@ interface ConfigState {
   bitrixEnabled: boolean;
   zohoEnabled: boolean;
   larkEnabled: boolean;
+  // The Slack APP (install button, channel routes, unfurls) — not the Slack
+  // Incoming Webhook release connector, which needs no deployment keys. True
+  // only when all four Slack keys are present on the server.
+  slackEnabled: boolean;
   // Per-agent Telegram bots. Separate from telegramOnly (a login mode) and
   // from the platform bot: an agent bot's token is sealed at rest, so without
   // the seal key no install can succeed and the panel must not offer one.
@@ -43,6 +47,7 @@ interface ConfigState {
     bitrixEnabled?: boolean;
     zohoEnabled?: boolean;
     larkEnabled?: boolean;
+    slackEnabled?: boolean;
     telegramBotsEnabled?: boolean;
   }) => void;
   setDaemonConfig: (config: {
@@ -65,6 +70,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   bitrixEnabled: false,
   zohoEnabled: false,
   larkEnabled: false,
+  slackEnabled: false,
   telegramBotsEnabled: false,
   authConfigLoaded: false,
   markAuthConfigLoaded: () => set({ authConfigLoaded: true }),
@@ -78,6 +84,7 @@ export const configStore = createStore<ConfigState>((set) => ({
     bitrixEnabled = false,
     zohoEnabled = false,
     larkEnabled = false,
+    slackEnabled = false,
     telegramBotsEnabled = false,
   }) =>
     set({
@@ -89,6 +96,7 @@ export const configStore = createStore<ConfigState>((set) => ({
       bitrixEnabled,
       zohoEnabled,
       larkEnabled,
+      slackEnabled,
       telegramBotsEnabled,
       authConfigLoaded: true,
     }),

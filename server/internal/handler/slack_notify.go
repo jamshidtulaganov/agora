@@ -23,7 +23,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -464,13 +463,7 @@ func (h *Handler) slackIssueItem(ctx context.Context, issue db.Issue) slack.Item
 // teammate pastes it back. The host is the FRONTEND origin, never the API's:
 // the API's would render a JSON 404 for a human who clicks it.
 func slackIssueURL(publicURL, slug, identifier string) string {
-	base := normalizePublicURL(os.Getenv("AGORA_APP_URL"))
-	if base == "" {
-		base = normalizePublicURL(os.Getenv("FRONTEND_ORIGIN"))
-	}
-	if base == "" {
-		base = normalizePublicURL(publicURL)
-	}
+	base := slackAppBaseURL(publicURL)
 	if base == "" || strings.TrimSpace(slug) == "" || strings.TrimSpace(identifier) == "" {
 		return ""
 	}

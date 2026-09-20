@@ -78,6 +78,7 @@ export function AuthInitializer({
           bitrixEnabled: cfg.bitrix_enabled === true,
           zohoEnabled: cfg.zoho_enabled === true,
           larkEnabled: cfg.lark_enabled === true,
+          slackEnabled: cfg.slack_enabled === true,
           // Explicit === true: a server that predates the field must read as
           // disabled, not as an install form that cannot succeed.
           telegramBotsEnabled: cfg.telegram_bots_enabled === true,

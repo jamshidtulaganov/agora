@@ -36,6 +36,7 @@
     "mcp-servers",
     "github-integration",
     "lark-bot-integration",
+    "slack-integration",
     "---Self-hosting & ops---",
     "environment-variables",
     "auth-setup",

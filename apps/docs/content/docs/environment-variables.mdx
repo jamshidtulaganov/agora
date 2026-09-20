@@ -220,6 +220,29 @@ The [GitHub PR ↔ issue integration](/github-integration) needs two variables. 
 
 **Note:** `GITHUB_WEBHOOK_SECRET` is reused as the signing key for the install-flow state token, so operators only need to manage one secret. It is **not** the GitHub App's *Client* secret — Client secrets are OAuth-related and not used by this integration. See [GitHub integration → Self-host setup](/github-integration#self-host-setup) for the full walkthrough.
 
+## Slack integration
+
+The [Slack app](/slack-integration) — channel notifications, inbox DMs and link unfurls — needs four variables. All four or nothing: a half-configured deployment hides the Connect button rather than offering one that dies after an admin has already granted scopes in Slack.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGORA_SLACK_CLIENT_ID` | empty | Client ID from your Slack app's Basic Information page. Used to build the OAuth consent URL |
+| `AGORA_SLACK_CLIENT_SECRET` | empty | Client secret. Sent in the `oauth.v2.access` body to exchange the single-use code for a bot token |
+| `AGORA_SLACK_SIGNING_SECRET` | empty | Signing secret. Every delivery to `/slack/events` is verified with HMAC-SHA256 over `v0:{timestamp}:{raw body}` inside a five-minute window |
+| `AGORA_SLACK_SECRET_KEY` | empty | 32-byte base64 key that seals each workspace's bot token at rest. Storing a token in plaintext is not an accepted fallback, so an install refuses to start without it |
+| `AGORA_SLACK_APP_ID` | empty | Optional. When set, event deliveries claiming a different `api_app_id` are rejected — defence in depth against a mis-pointed subscription |
+| `AGORA_SLACK_NOTIFY_ENABLED` | `true` | Project-scoped switch for the whole outbound fanout, so one noisy project can be silenced without uninstalling |
+
+`AGORA_PUBLIC_URL` must also be set: the OAuth redirect (`<public url>/slack/oauth/callback`) is built from it and never from request headers, so a misconfigured proxy cannot talk the server into minting a redirect at an attacker's host.
+
+**Behavior when any of the four required variables is unset:**
+
+- Settings → Integrations does not show the Slack card at all (`/api/config` reports `slack_enabled: false`).
+- `POST /api/workspaces/{id}/slack/install/begin` returns **503**.
+- `/slack/events` returns **503** — without the signing secret a forged delivery is indistinguishable from a real one, and "accept everything" is not a fallback.
+
+**Note:** these variables are for the Slack *app*. The Slack **Incoming Webhook** release connector (Settings → Integrations → Release) needs none of them — it stores its webhook URL per workspace and keeps `release:shipped` / `deploy:recorded` for itself.
+
 ## Usage analytics
 
 By default, the server reports to Agora's official PostHog instance. To opt out, set `ANALYTICS_DISABLED=true`.

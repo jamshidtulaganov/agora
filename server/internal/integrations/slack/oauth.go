@@ -110,6 +110,29 @@ func (cfg OAuthConfig) AuthorizeURL(state string) string {
 	return base + "?" + q.Encode()
 }
 
+// UserAuthorizeURL builds the consent URL for the PERSONAL link flow — the
+// growth loop an unfurl's `user_auth_required` prompt sends people into.
+//
+// It requests `user_scope` and NO bot scopes at all, which matters twice over:
+// a non-admin must not be shown a consent screen that installs the app (Slack
+// would mint a new bot token and re-run the install), and the screen they do
+// see says "Agora wants to know who you are", which is the whole truth. The
+// user token that comes back is discarded; only `authed_user.id` is kept.
+func (cfg OAuthConfig) UserAuthorizeURL(state string) string {
+	base := strings.TrimSpace(cfg.AuthorizeBaseURL)
+	if base == "" {
+		base = DefaultAuthorizeURL
+	}
+	q := url.Values{}
+	q.Set("client_id", cfg.ClientID)
+	q.Set("user_scope", strings.Join(cfg.userScopes(), ","))
+	q.Set("state", state)
+	if cfg.RedirectURI != "" {
+		q.Set("redirect_uri", cfg.RedirectURI)
+	}
+	return base + "?" + q.Encode()
+}
+
 // OAuthTeam identifies the Slack workspace an install landed on.
 type OAuthTeam struct {
 	ID   string `json:"id"`
@@ -167,13 +190,48 @@ func (a OAuthAccess) EnterpriseID() string {
 	return a.Enterprise.ID
 }
 
-// ExchangeCode trades the single-use `code` for a bot token.
+// ExchangeCode trades the single-use `code` for a bot token (the install
+// flow).
+func (c *APIClient) ExchangeCode(ctx context.Context, cfg OAuthConfig, code string) (OAuthAccess, error) {
+	out, err := c.exchange(ctx, cfg, code)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(out.AccessToken) == "" || out.TeamID() == "" {
+		// `ok:true` with no token or no team is a contract violation, not a
+		// success: storing it would create an installation that can never post.
+		return out, &APIError{Method: oauthAccessMethod, Code: "invalid_response"}
+	}
+	return out, nil
+}
+
+// ExchangeUserCode trades the code from the PERSONAL link flow for the Slack
+// user's identity. No bot scopes were requested, so there is no bot token in
+// the response and demanding one (as ExchangeCode does) would reject a
+// perfectly good link. The user token Slack returns is deliberately dropped —
+// `authed_user.id` is the only thing this flow keeps.
+func (c *APIClient) ExchangeUserCode(ctx context.Context, cfg OAuthConfig, code string) (OAuthAccess, error) {
+	out, err := c.exchange(ctx, cfg, code)
+	if err != nil {
+		return out, err
+	}
+	if strings.TrimSpace(out.AuthedUser.ID) == "" {
+		return out, &APIError{Method: oauthAccessMethod, Code: "invalid_response"}
+	}
+	return out, nil
+}
+
+// oauthAccessMethod is the one endpoint both exchanges call.
+const oauthAccessMethod = "oauth.v2.access"
+
+// exchange performs the oauth.v2.access call itself.
 //
 // oauth.v2.access is form-encoded (not JSON like the rest of the Web API) and
 // is the one Web API call that carries no bearer token — the client secret in
-// the body is the credential.
-func (c *APIClient) ExchangeCode(ctx context.Context, cfg OAuthConfig, code string) (OAuthAccess, error) {
-	const method = "oauth.v2.access"
+// the body is the credential. What counts as a USABLE response differs between
+// the install and link flows, so that assertion belongs to the callers above.
+func (c *APIClient) exchange(ctx context.Context, cfg OAuthConfig, code string) (OAuthAccess, error) {
+	const method = oauthAccessMethod
 	var out OAuthAccess
 
 	if strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
@@ -216,11 +274,6 @@ func (c *APIClient) ExchangeCode(ctx context.Context, cfg OAuthConfig, code stri
 	}
 	if !out.OK {
 		return out, &APIError{Method: method, Code: out.Error, StatusCode: resp.StatusCode}
-	}
-	if strings.TrimSpace(out.AccessToken) == "" || out.TeamID() == "" {
-		// `ok:true` with no token or no team is a contract violation, not a
-		// success: storing it would create an installation that can never post.
-		return out, &APIError{Method: method, Code: "invalid_response", StatusCode: resp.StatusCode}
 	}
 	return out, nil
 }

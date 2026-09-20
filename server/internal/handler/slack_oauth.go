@@ -38,10 +38,15 @@ import (
 // callback is refused.
 const slackStateTTL = 10 * time.Minute
 
-// slackStateKind values. PR 1 mints only "install"; the personal-link flow
-// (Phase 1 unfurl, PR 3) adds "link" without changing the envelope, which is
-// why the field exists now rather than after the wire shape is in production.
-const slackStateKindInstall = "install"
+// slackStateKind values. "install" is the workspace install (bot token);
+// "link" is one person binding their Slack identity to their Agora account —
+// the flow an unfurl's "connect your account" prompt sends them into. Both
+// ride the same sealed envelope and the same callback, which is why the Kind
+// field was minted with PR 1 rather than bolted on here.
+const (
+	slackStateKindInstall = "install"
+	slackStateKindLink    = "link"
+)
 
 // slackOAuthState is the sealed payload. Short JSON keys keep the state
 // parameter well inside URL length limits.
@@ -150,10 +155,26 @@ func (h *Handler) BeginSlackInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, SlackInstallBeginResponse{AuthorizeURL: cfg.AuthorizeURL(state)})
 }
 
-// slackSettingsURL is where the callback bounces the browser: the workspace's
-// Integrations tab, scrolled to Slack. Falls back to the workspace-less
-// settings path when the slug is unknown (a state we could not open).
+// slackSettingsURL is where the install callback bounces the browser: the
+// workspace's Integrations tab, scrolled to Slack. Falls back to the
+// workspace-less settings path when the slug is unknown (a state we could not
+// open).
 func slackSettingsURL(slug string, params url.Values) string {
+	q := url.Values{"integration": {"slack"}}
+	for k, vs := range params {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	return slackSettingsURLForTab(slug, "integrations", q)
+}
+
+// slackSettingsURLForTab builds a Settings deep link on the FRONTEND origin.
+// The personal-link flow lands on the Notifications tab (where the "Connect
+// Slack" row lives) rather than Integrations, because the two flows are
+// different people doing different things: an admin wiring a workspace, and
+// one person binding their own account.
+func slackSettingsURLForTab(slug, tab string, params url.Values) string {
 	frontend := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
 	if frontend == "" {
 		frontend = "http://localhost:3000"
@@ -164,8 +185,7 @@ func slackSettingsURL(slug string, params url.Values) string {
 	}
 	base += "/settings"
 	q := url.Values{}
-	q.Set("tab", "integrations")
-	q.Set("integration", "slack")
+	q.Set("tab", tab)
 	for k, vs := range params {
 		for _, v := range vs {
 			q.Add(k, v)
@@ -232,6 +252,14 @@ func (h *Handler) SlackOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	ws, err := h.Queries.GetWorkspace(r.Context(), wsUUID)
 	if err != nil {
 		fail("", "workspace_not_found")
+		return
+	}
+
+	// The personal-link flow shares the envelope, the callback and the
+	// single-use code, and diverges here: no bot token was granted, so there
+	// is no installation to write — only an identity to bind.
+	if state.Kind == slackStateKindLink {
+		h.completeSlackUserLink(w, r, cfg, ws.Slug, installerUUID, code)
 		return
 	}
 
@@ -343,4 +371,97 @@ func (h *Handler) storeSlackInstallation(ctx context.Context, p slackInstallPara
 		return false, err
 	}
 	return identityClaimed, nil
+}
+
+// ---------------------------------------------------------------------------
+// Personal link (docs/slack-integration-plan.md §Phase 1 — "Unfurl")
+// ---------------------------------------------------------------------------
+
+// BeginSlackUserLink handles POST /api/me/links/slack/begin.
+//
+// One person binding their Slack identity to their Agora account. It is the
+// destination of the unfurl's "connect your account" prompt and of the
+// Settings → Notifications row, and it exists so that (a) an unfurl can
+// decide what this person may see, and (b) their inbox DMs can find them.
+//
+// RequireHumanActor: an identity link is exactly the kind of thing the actor
+// gate exists for — an agent must never be able to bind a Slack id to the
+// account it runs as.
+//
+// The workspace comes from the request's workspace context, not from a body
+// field: it decides only where the callback lands the browser, and taking it
+// from the caller would let one person's link redirect into a workspace they
+// have nothing to do with.
+func (h *Handler) BeginSlackUserLink(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	cfg, err := h.slackOAuthConfig()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "slack integration is not configured")
+		return
+	}
+	if cfg.RedirectURI == "" {
+		writeError(w, http.StatusServiceUnavailable, "AGORA_PUBLIC_URL is not set; slack cannot redirect back")
+		return
+	}
+	box, err := slackSealBox()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	wsID := strings.TrimSpace(h.resolveWorkspaceID(r))
+	if wsID == "" {
+		// The sealed envelope carries a workspace by construction (it is what
+		// the callback redirects into). Without one there is nowhere to send
+		// the browser back to, and inventing a default would land somebody in
+		// a workspace at random.
+		writeError(w, http.StatusBadRequest, "workspace context is required")
+		return
+	}
+	state, err := sealSlackState(box, slackOAuthState{
+		Kind:        slackStateKindLink,
+		WorkspaceID: wsID,
+		UserID:      userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to mint slack link state")
+		return
+	}
+	writeJSON(w, http.StatusOK, SlackInstallBeginResponse{AuthorizeURL: cfg.UserAuthorizeURL(state)})
+}
+
+// completeSlackUserLink finishes the personal-link callback: exchange the
+// code, keep `authed_user.id`, bind it to the Agora user the sealed state
+// names, and bounce the browser back to Notifications.
+//
+// Nothing about an installation is touched. The link flow requested no bot
+// scopes, so Slack returns no bot token — asking for one would fail a
+// perfectly good link, which is why ExchangeUserCode exists.
+func (h *Handler) completeSlackUserLink(
+	w http.ResponseWriter, r *http.Request, cfg slack.OAuthConfig,
+	slug string, userUUID pgtype.UUID, code string,
+) {
+	redirect := func(params url.Values) {
+		http.Redirect(w, r, slackSettingsURLForTab(slug, "notifications", params), http.StatusFound)
+	}
+
+	access, err := newSlackAPIClient().ExchangeUserCode(r.Context(), cfg, code)
+	if err != nil {
+		redirect(url.Values{"slack_error": {"exchange_failed"}})
+		return
+	}
+	linkErr := h.linkExternalIdentity(r.Context(), providerSlack, access.AuthedUser.ID, uuidToString(userUUID))
+	switch {
+	case linkErr == nil:
+		redirect(url.Values{"slack_linked": {"1"}})
+	case errors.Is(linkErr, errExternalIdentityClaimed):
+		// The steal guard refused: this Slack user id already belongs to a
+		// different Agora account. No row changed, and saying so is the only
+		// way the person can understand why their DMs never arrive.
+		redirect(url.Values{"slack_error": {"identity_claimed"}})
+	default:
+		redirect(url.Values{"slack_error": {"link_failed"}})
+	}
 }

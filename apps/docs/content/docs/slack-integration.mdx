@@ -1,0 +1,85 @@
+---
+title: Slack integration
+description: Connect a workspace to Slack so failures, QA and review verdicts land in a channel, your inbox arrives as a DM, and Agora links unfurl into a preview.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Connect Agora to the Slack workspace your team already talks in. Three things follow: a channel hears the events that need a human, your inbox arrives as a direct message, and an Agora link pasted into a conversation unfurls into a small preview of the issue.
+
+The design rule behind all of it is **quiet by default**. A new channel hears failures, QA verdicts and review verdicts — nothing else — because the way every chat integration dies is volume.
+
+## What the integration does
+
+| Surface | Behavior |
+|---|---|
+| **Channel notifications** | An owner or admin picks channels and what each one hears. A fresh channel starts on `failed`, `qa_verdict` and `review_verdict`. |
+| **Personal DMs** | Inbox items (assignment, mention, comment, agent done) arrive as a Slack DM, for anyone who has connected their own Slack account. |
+| **Link unfurls** | Pasting an Agora issue or project link shows its identifier, title, status, assignee and priority, with a button back into Agora. |
+| **Release webhook** | Unchanged and separate. The Slack **Incoming Webhook** connector in **Settings → Integrations → Release** keeps `release:shipped` and `deploy:recorded`; the Slack app never claims those events, so there is nothing to double-post. |
+
+## Connect the workspace (owner / admin)
+
+1. Open **Settings → Integrations → Slack**.
+2. Click **Connect Slack**. Slack's consent screen opens in a new tab.
+3. Approve, and Slack sends you back to the same settings page with the workspace connected.
+
+The consent screen asks for `chat:write`, `chat:write.public`, `links:read`, `links:write`, `channels:read`, `groups:read`, `im:write` and `team:read`. There is **no message-history scope of any kind** — the app cannot read your conversations.
+
+<Callout type="info">
+If the card says **Slack is not available**, the deployment has no Slack app configured. A self-hosted Agora brings its own: `AGORA_SLACK_CLIENT_ID`, `AGORA_SLACK_CLIENT_SECRET`, `AGORA_SLACK_SIGNING_SECRET` and `AGORA_SLACK_SECRET_KEY` must all be set. See [Environment variables](/environment-variables).
+</Callout>
+
+## Route events to a channel
+
+Under the connection, pick a channel and click **Add channel**. It starts on the quiet default; tick anything else you want.
+
+| Event | What it means | Default |
+|---|---|---|
+| `failed` | An agent task failed | On |
+| `qa_verdict` | A QA gate failed | On |
+| `review_verdict` | A review asked for changes | On |
+| `assigned` | An issue was assigned to someone | Off |
+| `mentioned` | Someone was @-mentioned | Off |
+| `agent_done` | An agent finished a task | Off |
+| `status_changed` | An issue changed status | Off |
+| `created` | An issue was created | Off |
+
+Passing QA and passing reviews are not sent to channels. Teams that want the good news turn on `agent_done`, which is exactly that signal.
+
+Comments are **never** routed to a channel. A comment is context for one person; in a room it is the thing that makes people mute.
+
+<Callout type="warning">
+Invite the Agora app to a private channel before routing it. A public channel works without an invite; a private one does not, and the post fails silently in Slack.
+</Callout>
+
+## Connect your own account
+
+Open **Settings → Notifications → Slack** and click **Connect Slack**. That consent screen asks for your identity only — no bot permissions.
+
+Connecting does two things:
+
+- **Inbox DMs.** New inbox items arrive as a Slack DM. They follow the notification preferences on that same page: a muted group never creates an inbox item, so it never becomes a DM either. There is no second set of switches to keep in sync.
+- **Unfurls.** Link previews are authorised as the person who posted the link, so connecting is what lets you see them.
+
+## Link unfurls
+
+Paste an issue link — `https://your-agora/acme/issues/MUL-123` — into a channel and it expands into the identifier, title, status, assignee, priority and project, plus an **Open in Agora** button. Project links unfurl to the project name.
+
+What does *not* appear: the description. An unfurl renders to everyone in the channel, including people who are not Agora users, so the body of an issue stays in Agora.
+
+Who sees what:
+
+- **Not connected, or not a member of that workspace** — Slack shows *you* a private "connect your account" prompt. Nothing is posted to the channel.
+- **Connected, but the issue is not yours** — the same private prompt. The [issue-visibility gate](/members-roles) applies unchanged: if you could not open the issue in Agora, its title does not reach the channel through you.
+- **A link to a workspace this Slack team is not connected to** — nothing happens at all.
+
+## Disconnect
+
+**Settings → Integrations → Slack → Disconnect** stops Agora posting and removes the channel routes. The installation row is kept for audit and reconnecting restores it.
+
+Removing the app inside Slack has the same effect from the other direction: Agora marks the installation revoked the moment Slack says the token is gone.
+
+<Callout type="info">
+One Slack workspace can back several Agora workspaces (an agency, or one workspace per product). Disconnecting one of them never uninstalls the app for its siblings.
+</Callout>

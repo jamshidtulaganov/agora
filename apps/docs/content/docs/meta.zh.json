@@ -34,6 +34,7 @@
     "mcp-servers",
     "github-integration",
     "lark-bot-integration",
+    "slack-integration",
     "---自部署运维---",
     "environment-variables",
     "auth-setup",

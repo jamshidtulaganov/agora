@@ -1,6 +1,6 @@
 "use client";
 
-import { DatabaseZap, Import, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
+import { DatabaseZap, Hash, Import, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import {
@@ -13,8 +13,10 @@ import { importConnectionsOptions } from "@agora/core/imports";
 import { zohoConnectionOptions } from "@agora/core/zoho";
 import { larkInstallationsOptions } from "@agora/core/lark";
 import { telegramInstallationsOptions } from "@agora/core/telegram";
+import { slackInstallationsOptions } from "@agora/core/slack";
 import { LarkTab } from "./lark-tab";
 import { TelegramTab } from "./telegram-tab";
+import { SlackTab } from "./slack-tab";
 import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
 import { ImportSection } from "./import-section";
@@ -46,6 +48,11 @@ export function IntegrationsTab() {
   const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const zohoEnabled = useConfigStore((s) => s.zohoEnabled);
   const larkEnabled = useConfigStore((s) => s.larkEnabled);
+  // The Slack APP card. Gated on the same four-key server gate that decides
+  // whether an install can complete at all — a deployment with no Slack app
+  // configured must not advertise one. (The Release card's Slack webhook is a
+  // different, keyless thing and stays regardless.)
+  const slackEnabled = useConfigStore((s) => s.slackEnabled);
 
   // The Import card's badge is driven by the same query its body spreads, so
   // TanStack dedupes and the header costs no extra request.
@@ -71,6 +78,10 @@ export function IntegrationsTab() {
   const { data: larkData } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId && larkEnabled,
+  });
+  const { data: slackData } = useQuery({
+    ...slackInstallationsOptions(wsId),
+    enabled: !!wsId && slackEnabled,
   });
   // Same options factory the tab body spreads, so the card header and the
   // panel share one cache entry instead of fetching twice.
@@ -179,6 +190,25 @@ export function IntegrationsTab() {
         >
           <TelegramTab />
         </IntegrationCard>
+
+        {slackEnabled ? (
+          <IntegrationCard
+            icon={<Hash className="h-4 w-4" />}
+            name={t(($) => $.integrations.slack.name)}
+            description={t(($) => $.integrations.slack.description)}
+            // Connected means a LIVE installation, not merely a deployment
+            // that could accept one: a green badge beside "Slack is not
+            // connected" is the bug the Telegram card already fixed.
+            status={status(
+              (slackData?.installations ?? []).some(
+                (installation) => installation.status === "active",
+              ),
+            )}
+            defaultOpen={navigation.searchParams.get("integration") === "slack"}
+          >
+            <SlackTab />
+          </IntegrationCard>
+        ) : null}
 
         {larkEnabled ? (
           <IntegrationCard

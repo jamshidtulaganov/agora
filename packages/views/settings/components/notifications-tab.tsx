@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";
 import { TelegramNotificationSetting } from "./telegram-notification-setting";
+import { SlackNotificationSetting } from "./slack-notification-setting";
 
 // Inbox event groups rendered in the per-event toggle list. `system_notifications`
 // is a sibling preference key but lives in its own section below.
@@ -119,6 +120,8 @@ export function NotificationsTab() {
       </section>
 
       <TelegramNotificationSetting />
+
+      <SlackNotificationSetting />
     </div>
   );
 }

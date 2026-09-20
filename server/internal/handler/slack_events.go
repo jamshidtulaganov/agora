@@ -41,6 +41,13 @@ type slackEventEnvelope struct {
 	EventID   string `json:"event_id"`
 	Event     struct {
 		Type string `json:"type"`
+		// link_shared: who posted, where, and which links Slack found. The
+		// event carries NO surrounding message text — by design on Slack's
+		// side — so the URL string is the entire input to the unfurl.
+		User      string            `json:"user"`
+		Channel   string            `json:"channel"`
+		MessageTS string            `json:"message_ts"`
+		Links     []slackSharedLink `json:"links"`
 		// tokens_revoked carries the revoked token ids by kind. A revoked
 		// *user* token does not kill the installation; a revoked bot token does.
 		Tokens struct {
@@ -118,9 +125,9 @@ func (h *Handler) SlackEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleSlackEventCallback acts on the two lifecycle events that invalidate a
-// stored bot token. Everything else is acknowledged and ignored until PR 2/3
-// add their subscribers.
+// handleSlackEventCallback dispatches the events Phase 1 subscribes to:
+// link_shared (unfurling, slack_unfurl.go) and the two lifecycle events that
+// invalidate a stored bot token. Everything else is acknowledged and ignored.
 //
 // Both events arrive with a team id and NO workspace context, and one Slack
 // team may back several Agora workspaces sharing one bot token — so the
@@ -129,6 +136,12 @@ func (h *Handler) handleSlackEventCallback(r *http.Request, envelope slackEventE
 	teamID := strings.TrimSpace(envelope.TeamID)
 
 	switch envelope.Event.Type {
+	case "link_shared":
+		// Detaches immediately: resolving an issue and calling chat.unfurl is
+		// database and network work, and it must not run inside the
+		// three-second ack budget.
+		h.handleSlackLinkShared(envelope)
+
 	case "app_uninstalled":
 		if teamID == "" {
 			return

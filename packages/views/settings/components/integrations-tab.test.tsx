@@ -9,6 +9,7 @@ const configRef = vi.hoisted(() => ({
   bitrixEnabled: false,
   zohoEnabled: false,
   larkEnabled: false,
+  slackEnabled: false,
   telegramBotsEnabled: false,
 }));
 const queryCalls = vi.hoisted(() => [] as { queryKey?: unknown; enabled?: boolean }[]);
@@ -62,6 +63,9 @@ vi.mock("@agora/core/lark", () => ({
 vi.mock("@agora/core/telegram", () => ({
   telegramInstallationsOptions: () => ({ queryKey: ["telegram", "workspace-1", "installations"] }),
 }));
+vi.mock("@agora/core/slack", () => ({
+  slackInstallationsOptions: () => ({ queryKey: ["slack", "workspace-1", "installations"] }),
+}));
 vi.mock("./mcp-servers-tab", () => ({ McpServersTab: () => null }));
 vi.mock("./release-integrations-section", () => ({ ReleaseIntegrationsSection: () => null }));
 vi.mock("./figma-integration-section", () => ({ FigmaIntegrationSection: () => null }));
@@ -70,6 +74,7 @@ vi.mock("./zoho-tab", () => ({ ZohoTab: () => null }));
 vi.mock("./import-section", () => ({ ImportSection: () => null }));
 vi.mock("./lark-tab", () => ({ LarkTab: () => null }));
 vi.mock("./telegram-tab", () => ({ TelegramTab: () => null }));
+vi.mock("./slack-tab", () => ({ SlackTab: () => null }));
 
 const { IntegrationsTab } = await import("./integrations-tab");
 
@@ -78,6 +83,7 @@ describe("IntegrationsTab", () => {
     queryCalls.length = 0;
     navigationRef.search = "";
     configRef.telegramBotsEnabled = false;
+    configRef.slackEnabled = false;
     assistantRef.availability = undefined;
     assistantRef.setOpen.mockClear();
   });
@@ -92,6 +98,38 @@ describe("IntegrationsTab", () => {
     expect(screen.getByText(enSettings.integrations.telegram.name)).toBeInTheDocument();
     expect(queryCalls).toContainEqual(expect.objectContaining({
       queryKey: ["telegram", "workspace-1", "installations"],
+      enabled: true,
+    }));
+  });
+
+  // The Slack APP card is gated on the four-key server gate. A deployment
+  // without a Slack app must not show a Connect button that dies at the OAuth
+  // exchange — and must not fetch its installations either.
+  it("hides Slack on a deployment with no Slack app configured", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab />
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByText(enSettings.integrations.slack.name)).toBeNull();
+    expect(queryCalls).toContainEqual(expect.objectContaining({
+      queryKey: ["slack", "workspace-1", "installations"],
+      enabled: false,
+    }));
+  });
+
+  it("shows Slack once the deployment reports the app as configured", () => {
+    configRef.slackEnabled = true;
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(enSettings.integrations.slack.name)).toBeInTheDocument();
+    expect(queryCalls).toContainEqual(expect.objectContaining({
+      queryKey: ["slack", "workspace-1", "installations"],
       enabled: true,
     }));
   });

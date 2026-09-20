@@ -1,0 +1,85 @@
+---
+title: Slack 接入
+description: 把工作区连接到 Slack——任务失败、QA 与评审结论发到频道，收件箱变成私信，粘贴的 Agora 链接会展开成预览。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+把 Agora 接到团队本来就在用的 Slack 工作区。接好之后有三件事：频道只收需要人处理的事件，收件箱以私信形式送到你手上，聊天里粘贴的 Agora 链接会展开成一张 issue 预览。
+
+背后的设计原则只有一条：**默认安静**。新频道只接收任务失败、QA 与评审结论——其他什么都不发，因为聊天类集成的死法永远是消息太多。
+
+## 这个集成能做什么
+
+| 场景 | 行为 |
+|---|---|
+| **频道通知** | owner 或 admin 选择频道以及它接收的内容。新频道默认只有 `failed`、`qa_verdict`、`review_verdict`。 |
+| **个人私信** | 收件箱条目（分配、提及、评论、智能体完成）以 Slack 私信送达，前提是你连接了自己的 Slack 账号。 |
+| **链接预览** | 粘贴 Agora 的 issue 或项目链接，会显示编号、标题、状态、负责人和优先级，并带一个回到 Agora 的按钮。 |
+| **发布 webhook** | 不受影响，也互不重叠。**设置 → 集成 → Release** 里的 Slack Incoming Webhook 继续负责 `release:shipped` 和 `deploy:recorded`；Slack 应用不碰这两个事件，因此不会重复推送。 |
+
+## 连接工作区（owner / admin）
+
+1. 打开 **设置 → 集成 → Slack**。
+2. 点击 **连接 Slack**，Slack 的授权页会在新标签页打开。
+3. 授权后 Slack 会把你送回同一个设置页，工作区即已连接。
+
+授权页申请的权限是 `chat:write`、`chat:write.public`、`links:read`、`links:write`、`channels:read`、`groups:read`、`im:write` 和 `team:read`。**没有任何消息历史权限**——这个应用读不到你们的聊天记录。
+
+<Callout type="info">
+如果卡片显示 **Slack 不可用**，说明该部署没有配置 Slack 应用。自托管的 Agora 需要自备一套：`AGORA_SLACK_CLIENT_ID`、`AGORA_SLACK_CLIENT_SECRET`、`AGORA_SLACK_SIGNING_SECRET` 和 `AGORA_SLACK_SECRET_KEY` 必须全部设置。参见[环境变量](/environment-variables)。
+</Callout>
+
+## 把事件发到频道
+
+在连接下方选择一个频道并点击 **添加频道**。它会以安静的默认集合开始，其他事件随时勾选。
+
+| 事件 | 含义 | 默认 |
+|---|---|---|
+| `failed` | 智能体任务失败 | 开 |
+| `qa_verdict` | QA 未通过 | 开 |
+| `review_verdict` | 评审要求修改 | 开 |
+| `assigned` | issue 被分配给某人 | 关 |
+| `mentioned` | 有人被 @ | 关 |
+| `agent_done` | 智能体完成任务 | 关 |
+| `status_changed` | issue 状态变更 | 关 |
+| `created` | issue 被创建 | 关 |
+
+QA 通过和评审通过不会发到频道。想听好消息的团队打开 `agent_done` 就行——那正是这个信号。
+
+评论**永远**不进频道。评论是给某一个人的上下文；放进房间里就会变成大家静音的理由。
+
+<Callout type="warning">
+私有频道要先把 Agora 应用邀请进去再配置路由。公开频道不邀请也能发，私有频道不行，而且失败在 Slack 侧是悄无声息的。
+</Callout>
+
+## 连接你自己的账号
+
+打开 **设置 → 通知 → Slack**，点击 **连接 Slack**。这个授权页只申请身份信息，不申请任何机器人权限。
+
+连接之后有两件事：
+
+- **收件箱私信**。新的收件箱条目会以 Slack 私信送达，并且遵循同一页上的通知偏好：被静音的分组根本不会产生收件箱条目，自然也不会变成私信。没有第二套开关需要同步。
+- **链接预览**。预览是以粘贴链接的那个人的身份鉴权的，所以连接账号正是你能看到预览的前提。
+
+## 链接预览
+
+在频道里粘贴一个 issue 链接——`https://你的-agora/acme/issues/MUL-123`——它会展开成编号、标题、状态、负责人、优先级和项目，外加一个 **Open in Agora** 按钮。项目链接展开成项目名称。
+
+不会出现的是：描述。预览对频道里所有人可见，包括根本不用 Agora 的人，所以 issue 正文留在 Agora 里。
+
+谁能看到什么：
+
+- **没有连接账号，或者不是这个工作区的成员**——Slack 只给*你本人*一个私密的「连接账号」提示，频道里什么都不会出现。
+- **连接了，但这个 issue 不属于你**——同样是那个私密提示。[issue 可见性规则](/members-roles)原样生效：你在 Agora 里打不开的 issue，它的标题也不会经你之手出现在频道里。
+- **链接指向的工作区没有连接这个 Slack 团队**——什么都不会发生。
+
+## 断开连接
+
+**设置 → 集成 → Slack → 断开连接** 会停止发消息并删除频道配置。安装记录保留用于审计，重新连接即可恢复。
+
+在 Slack 那边移除应用效果相同，方向相反：Slack 一说令牌失效，Agora 就把这条安装标记为已吊销。
+
+<Callout type="info">
+一个 Slack 工作区可以对应多个 Agora 工作区（比如代理公司，或者一个产品一个工作区）。断开其中一个，绝不会把应用从其他工作区一起卸掉。
+</Callout>
