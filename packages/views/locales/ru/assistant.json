@@ -206,7 +206,16 @@
       "plan": "план",
       "usage": "использование",
       "activity": "активность",
-      "qa_status": "статус QA"
+      "qa_status": "статус QA",
+      "zoho_account": "ваш доступ к Zoho",
+      "zoho_crm_modules": "модули Zoho CRM",
+      "zoho_crm_fields": "поля Zoho CRM",
+      "zoho_crm": "Zoho CRM",
+      "zoho_record": "запись Zoho CRM",
+      "zoho_departments": "отделы Zoho Desk",
+      "zoho_tickets": "тикеты Zoho Desk",
+      "zoho_ticket": "тикет Zoho Desk",
+      "zoho_conversation": "переписка по тикету"
     }
   },
   "confirm": {

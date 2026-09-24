@@ -309,6 +309,11 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 		return h.assistantProposePlan(ctx, caller, args)
 
 	default:
+		// The person's own Zoho, read-only — offered to a run only when they
+		// have connected it (assistant_zoho.go).
+		if assistant.IsZohoTool(name) {
+			return h.assistantZohoTool(ctx, caller, name, args)
+		}
 		// Hard allowlist: an unknown name is either model hallucination or a
 		// stale catalog. Both are the model's problem to correct, not ours.
 		return nil, fmt.Errorf("unknown tool %q", name)

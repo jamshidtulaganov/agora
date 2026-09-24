@@ -18,6 +18,13 @@ describe("describeTool", () => {
     expect(describeTool("qa_status")).toEqual({ verb: "check", object: "qa_status" });
   });
 
+  it("names the person's Zoho reads in words", () => {
+    expect(describeTool("zoho_crm_search")).toEqual({ verb: "search", object: "zoho_crm" });
+    expect(describeTool("zoho_desk_list_tickets")).toEqual({ verb: "list", object: "zoho_tickets" });
+    expect(describeTool("zoho_desk_get_ticket")).toEqual({ verb: "get", object: "zoho_ticket" });
+    expect(describeTool("zoho_whoami")).toEqual({ verb: "check", object: "zoho_account" });
+  });
+
   it("returns null for a tool this build does not know, so the row falls back to the raw name", () => {
     expect(describeTool("list_widgets")).toBeNull();
     expect(describeTool("teleport_issue")).toBeNull();

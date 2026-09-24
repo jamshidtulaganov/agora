@@ -69,6 +69,11 @@ type Service struct {
 	// owned by the HTTP layer, and the assistant package must not read env.
 	// When unset the prompt falls back to the provider's raw model id.
 	ModelLabel func() string
+	// Integrations adds per-person tools and a prompt note to one run —
+	// today the person's own Zoho (read-only), present only once they have
+	// connected it. Injected by the HTTP layer, which owns the credentials;
+	// nil means no integrations.
+	Integrations func(ctx context.Context, userID string) (tools []llm.Tool, note string)
 
 	mu sync.Mutex
 	// runs maps run id -> cancel, so POST /runs/{id}/cancel can stop one.
@@ -305,8 +310,15 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 			systemText += "\n\n" + contextText
 		}
 	}
-	system := llm.Message{Role: "system", Content: systemText}
 	tools := ToolSpecs()
+	if s.Integrations != nil {
+		extra, note := s.Integrations(ctx, userID)
+		tools = append(tools, extra...)
+		if note != "" {
+			systemText += "\n\n" + note
+		}
+	}
+	system := llm.Message{Role: "system", Content: systemText}
 
 	// The timezone the client captured when this message was sent rides on the
 	// context every tool executes under. "Today" is the caller's day, not the

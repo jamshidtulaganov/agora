@@ -206,7 +206,16 @@
       "plan": "a plan",
       "usage": "usage",
       "activity": "activity",
-      "qa_status": "QA status"
+      "qa_status": "QA status",
+      "zoho_account": "your Zoho access",
+      "zoho_crm_modules": "Zoho CRM modules",
+      "zoho_crm_fields": "Zoho CRM fields",
+      "zoho_crm": "Zoho CRM",
+      "zoho_record": "a Zoho CRM record",
+      "zoho_departments": "Zoho Desk departments",
+      "zoho_tickets": "Zoho Desk tickets",
+      "zoho_ticket": "a Zoho Desk ticket",
+      "zoho_conversation": "a ticket conversation"
     }
   },
   "confirm": {
