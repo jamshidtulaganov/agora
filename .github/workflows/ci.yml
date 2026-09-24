@@ -133,3 +133,39 @@ jobs:
 
       - name: Test shell installers
         run: bash scripts/install.test.sh
+
+  deploy:
+    # Render cannot auto-deploy this repo: it is connected as a public repo URL,
+    # so Render never receives GitHub push events and `autoDeploy` never fires.
+    # CI deploys instead, and only after every job above passed on master. Each
+    # service's deploy hook lives in a repo secret (Render dashboard → service →
+    # Settings → Deploy Hook). An unset secret skips that service with a warning
+    # rather than failing the run, so forks and new clones stay green.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [frontend, backend, installer]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploys for this commit
+        env:
+          HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+          HOOK_WEB: ${{ secrets.RENDER_DEPLOY_HOOK_WEB }}
+        run: |
+          set -euo pipefail
+          deploy() {
+            local name="$1" hook="$2"
+            if [ -z "$hook" ]; then
+              echo "::warning::Render deploy hook for $name is not set; skipping"
+              return 0
+            fi
+            local code
+            code=$(curl -sS -o "/tmp/render-$name.json" -w '%{http_code}' -X POST "${hook}&ref=${GITHUB_SHA}")
+            # 200 = deploy created; 202 = queued behind a deploy already running.
+            if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "202" ]; then
+              echo "::error::Render deploy hook for $name returned HTTP $code"
+              cat "/tmp/render-$name.json" || true
+              return 1
+            fi
+            echo "$name: deploy queued for ${GITHUB_SHA::9} ($(cat "/tmp/render-$name.json"))"
+          }
+          deploy backend "$HOOK_BACKEND"
+          deploy web "$HOOK_WEB"
