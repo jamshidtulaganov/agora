@@ -5,22 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohocrm"
 	"github.com/jamshidtulaganov/agora/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/zohoread"
 )
 
-// Agora-hosted Zoho MCP server (U3, docs/zoho-dynamic-integration.md): a
-// Streamable-HTTP MCP endpoint at POST /mcp/zoho that gives agents full Zoho
-// tool calling AS THE ACTING USER. The agent's runtime authenticates with
-// its task-scoped `mat_` token; the server resolves the acting identity and
-// mints Zoho access tokens from sealed credentials entirely server-side —
-// no Zoho secret ever reaches a daemon, an agent process, or an mcp_config
-// blob (unlike embedded-auth hosted MCP URLs).
+// Agora-hosted Zoho MCP server: a Streamable-HTTP MCP endpoint at POST
+// /mcp/zoho that gives agents read-only Zoho CRM and Desk tools (the shared
+// zohoread surface). The agent's runtime authenticates with its task-scoped
+// `mat_` token; the server resolves the acting person and mints Zoho access
+// tokens from their sealed zoho_account grant entirely server-side — no Zoho
+// secret ever reaches a daemon, an agent process, or an mcp_config blob.
 //
 // The acting identity is only ever the person the task works for
 // (zohoActingUserForTask, zoho_identity.go) calling with their own Zoho
@@ -33,8 +31,6 @@ import (
 // every request is independently authenticated by the bearer token — so no
 // session store is needed; GET (server-initiated streams) answers 405 per
 // spec for servers that do not offer them.
-
-var zohoMcpModuleRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,100}$`)
 
 type jsonRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -55,78 +51,25 @@ type jsonRPCResponse struct {
 	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
-// mcpTool is the wire shape of one tool definition for tools/list.
-type mcpTool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
-}
-
-func objSchema(props map[string]any, required ...string) map[string]any {
-	s := map[string]any{"type": "object", "properties": props}
-	if len(required) > 0 {
-		s["required"] = required
-	}
-	return s
-}
-
-// zohoMcpTools is the static tool surface. Generic + schema-aware by design:
-// the modules/fields tools teach the agent the org's real schema (including
-// custom modules), and the record tools then operate on any of them — no
-// per-module tool definitions.
-var zohoMcpTools = []mcpTool{
-	{
-		Name:        "zoho_whoami",
-		Description: "Identity check: which Zoho user (or org-level connection) your calls act as.",
-		InputSchema: objSchema(map[string]any{}),
-	},
-	{
-		Name:        "zoho_crm_modules",
-		Description: "List the CRM org's modules (stock + custom). Use before touching records to learn what exists.",
-		InputSchema: objSchema(map[string]any{}),
-	},
-	{
-		Name:        "zoho_crm_fields",
-		Description: "List one module's fields with types and picklist values. Use to learn the schema before searching or writing.",
-		InputSchema: objSchema(map[string]any{
-			"module": map[string]any{"type": "string", "description": "Module api_name, e.g. Leads or CustomModule34"},
-		}, "module"),
-	},
-	{
-		Name:        "zoho_crm_search",
-		Description: "Run a COQL SELECT query, e.g. SELECT id, Subject FROM Tasks WHERE Status = 'Open' LIMIT 50. Read-only.",
-		InputSchema: objSchema(map[string]any{
-			"coql": map[string]any{"type": "string", "description": "A COQL SELECT statement"},
-		}, "coql"),
-	},
-	{
-		Name:        "zoho_crm_get_record",
-		Description: "Fetch one record by module api_name and record id.",
-		InputSchema: objSchema(map[string]any{
-			"module": map[string]any{"type": "string"},
-			"id":     map[string]any{"type": "string"},
-		}, "module", "id"),
-	},
-}
-
-// zohoActingClient resolves the Zoho client for the person this task works
-// for. Returns a human-readable identity label for zoho_whoami, or ok=false
-// when the task can't be attributed to a person or that person hasn't
-// connected Zoho.
-func (h *Handler) zohoActingClient(ctx context.Context, r *http.Request) (*zohocrm.Client, string, bool) {
-	wsUUID, err := util.ParseUUID(r.Header.Get("X-Workspace-ID"))
-	if err != nil {
-		return nil, "", false
-	}
+// zohoActingClients resolves the Zoho clients of the person this task works
+// for. On failure it returns the message the agent should relay.
+func (h *Handler) zohoActingClients(ctx context.Context, r *http.Request) (zohoCall, zohoread.Clients, error) {
+	call := zohoCall{Source: "agent"}
+	call.WorkspaceID, _ = util.ParseUUID(r.Header.Get("X-Workspace-ID"))
+	call.TaskID, _ = util.ParseUUID(r.Header.Get("X-Task-ID"))
 	userID, reason, ok := h.zohoTaskIdentityForRequest(ctx, r.Header.Get("X-Task-ID"))
 	if !ok {
-		return nil, "", false
+		return call, zohoread.Clients{}, fmt.Errorf(
+			"no Zoho access for this task: Zoho is only read as the person the task works for, and none could be identified. Ask the person to @mention you")
 	}
-	client, ok := h.zohoCRMClientForUser(ctx, wsUUID, userID)
+	call.UserID = userID
+	clients, ok := h.zohoClientsForUser(ctx, userID)
 	if !ok {
-		return nil, "", false
+		return call, zohoread.Clients{}, fmt.Errorf(
+			"no Zoho access for this task: the person who %s hasn't connected their Zoho account in Agora (Settings → Profile → Connected accounts), or it needs reconnecting", reason)
 	}
-	return client, "the person who " + reason, true
+	clients.Me.ActingFor = "the person who " + reason
+	return call, clients, nil
 }
 
 // ZohoMcpProxy is the Streamable-HTTP MCP endpoint. Auth contract: the
@@ -180,7 +123,7 @@ func (h *Handler) ZohoMcpProxy(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		h.writeZohoMcpResult(w, req.ID, map[string]any{})
 	case "tools/list":
-		h.writeZohoMcpResult(w, req.ID, map[string]any{"tools": zohoMcpTools})
+		h.writeZohoMcpResult(w, req.ID, map[string]any{"tools": zohoread.Tools()})
 	case "tools/call":
 		h.handleZohoMcpToolCall(w, r, req)
 	default:
@@ -224,86 +167,41 @@ func (h *Handler) handleZohoMcpToolCall(w http.ResponseWriter, r *http.Request, 
 			Error: &jsonRPCError{Code: -32602, Message: "invalid params"}})
 		return
 	}
-	args := params.Arguments
-	strArg := func(key string) string {
-		s, _ := args[key].(string)
-		return strings.TrimSpace(s)
+	known := false
+	for _, t := range zohoread.Tools() {
+		if t.Name == params.Name {
+			known = true
+			break
+		}
 	}
-
-	client, identity, ok := h.zohoActingClient(r.Context(), r)
-	if !ok {
-		h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf(
-			"no Zoho access for this task: Zoho is only read as the person the task works for, and either no person could be identified or they haven't connected their Zoho account. Ask them to connect Zoho in Agora, then @mention you"))
-		return
-	}
-
-	requireModule := func() (string, bool) {
-		m := strArg("module")
-		if !zohoMcpModuleRe.MatchString(m) {
-			h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf("module must match %s", zohoMcpModuleRe.String()))
-			return "", false
-		}
-		return m, true
-	}
-
-	switch params.Name {
-	case "zoho_whoami":
-		if user, err := client.GetCurrentUser(r.Context()); err == nil {
-			h.writeZohoMcpToolResult(w, req.ID, map[string]any{
-				"acting_as": identity, "zoho_user": user,
-			}, nil)
-			return
-		}
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"acting_as": identity}, nil)
-	case "zoho_crm_modules":
-		modules, err := client.ListModules(r.Context())
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"modules": modules}, err)
-	case "zoho_crm_fields":
-		module, ok := requireModule()
-		if !ok {
-			return
-		}
-		fields, err := client.ListFields(r.Context(), module)
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"module": module, "fields": fields}, err)
-	case "zoho_crm_search":
-		coql := strArg("coql")
-		// COQL is read-only by API design; the SELECT check just fails fast
-		// on obviously wrong input. Zoho enforces the acting user's own
-		// permissions on every row.
-		if !strings.HasPrefix(strings.ToUpper(coql), "SELECT") {
-			h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf("coql must be a SELECT statement"))
-			return
-		}
-		rows, more, err := client.Query(r.Context(), coql)
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"rows": rows, "more_records": more}, err)
-	case "zoho_crm_get_record":
-		module, ok := requireModule()
-		if !ok {
-			return
-		}
-		id := strArg("id")
-		if id == "" {
-			h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf("id is required"))
-			return
-		}
-		rec, err := client.GetRecord(r.Context(), module, id)
-		h.writeZohoMcpToolResult(w, req.ID, rec, err)
-	default:
+	if !known {
 		writeJSON(w, http.StatusOK, jsonRPCResponse{JSONRPC: "2.0", ID: req.ID,
 			Error: &jsonRPCError{Code: -32602, Message: "unknown tool: " + params.Name}})
+		return
 	}
+	call, clients, err := h.zohoActingClients(r.Context(), r)
+	if err != nil {
+		h.writeZohoMcpToolResult(w, req.ID, nil, err)
+		return
+	}
+	res, err := h.runZohoTool(r.Context(), call, clients, params.Name, params.Arguments)
+	h.writeZohoMcpToolResult(w, req.ID, res.Value, err)
 }
 
 // injectZohoMcpProxy auto-provisions the "zoho" MCP server entry into a
-// claimed task's mcp_config when the workspace has a Zoho connection —
-// the Figma pattern (provision on relevance) applied at workspace scope.
-// The entry's only credential is the task token the daemon already holds;
-// an operator-defined "zoho" server in the agent config wins untouched.
-func (h *Handler) injectZohoMcpProxy(ctx context.Context, wsUUID pgtype.UUID, mcpConfig json.RawMessage, authToken string) json.RawMessage {
+// claimed task's mcp_config when the person the task works for has a
+// connected Zoho account — the Figma pattern (provision on relevance). The
+// entry's only credential is the task token the daemon already holds; an
+// operator-defined "zoho" server in the agent config wins untouched.
+func (h *Handler) injectZohoMcpProxy(ctx context.Context, taskID pgtype.UUID, mcpConfig json.RawMessage, authToken string) json.RawMessage {
 	if authToken == "" || h.cfg.PublicURL == "" {
 		return mcpConfig
 	}
-	if _, err := h.Queries.GetZohoConnectionForWorkspace(ctx, wsUUID); err != nil {
+	userID, _, ok := h.zohoActingUserForTask(ctx, taskID)
+	if !ok {
+		return mcpConfig
+	}
+	if acc, err := h.Queries.GetZohoAccountByUser(ctx, userID); err != nil || acc.Status != "connected" {
 		return mcpConfig
 	}
 	servers := mcpServersOf(mcpConfig)

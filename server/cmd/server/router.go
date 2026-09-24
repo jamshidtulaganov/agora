@@ -514,6 +514,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
+	// Zoho consent-screen redirect (no Agora auth — the single-use state
+	// issued by POST /api/me/zoho/connect ties the grant to its person).
+	r.Get("/api/integrations/zoho/callback", h.ZohoOAuthCallback)
 	// Stripe webhook (no Agora auth — Stripe signs the raw body
 	// with a shared secret, the agora-cloud upstream verifies. We
 	// only forward the bytes + the Stripe-Signature header; see
@@ -584,6 +587,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// Permanent and credential-revoking: never allow an agent/task token to
 		// delete the human account it is acting on behalf of.
 		r.With(handler.RequireHumanActor).Delete("/api/me", h.DeleteMe)
+		// The person's own Zoho account — connected once, read-only, used for
+		// every Zoho read made for them. The handlers refuse agent tokens.
+		r.Get("/api/me/zoho", h.GetMyZohoAccount)
+		r.Post("/api/me/zoho/connect", h.ConnectMyZohoAccount)
+		r.Delete("/api/me/zoho", h.DisconnectMyZohoAccount)
 		// Agora-hosted Zoho MCP server (Streamable HTTP). Agents reach it
 		// with their task-scoped mat_ token — the handler enforces
 		// X-Actor-Source=task_token and resolves the acting Zoho identity
@@ -825,9 +833,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// member manages their own (and only their own) binding,
 					// so these live in the member group, not the admin group.
 					// Handlers reject agent actors and never return secrets.
-					r.Get("/zoho-user-binding", h.GetZohoUserBindingStatus)
-					r.Put("/zoho-user-binding", h.PutZohoUserBinding)
-					r.Delete("/zoho-user-binding", h.DeleteZohoUserBinding)
 					// Release integrations listing is member-visible (same
 					// rationale as figma/lark: the Integrations tab must render
 					// for non-admins). The query never selects the sealed

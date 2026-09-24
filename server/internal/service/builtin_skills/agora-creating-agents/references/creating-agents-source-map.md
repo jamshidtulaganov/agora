@@ -88,10 +88,10 @@ only.
 
 | Contract | Line | Behavior |
 |---|---|---|
-| `ZohoMcpProxy` endpoint | ~136 | POST /mcp/zoho, task-token actors only (403 otherwise); minimal MCP Streamable-HTTP subset (initialize/ping/tools list+call; notifications 202; GET 405) |
-| Acting identity | ~116 (+ `zoho_identity.go`) | only the person the task works for (`zohoActingUserForTask`: initiator → @mention author → autopilot creator → quick-create requester → last member assigner → issue creator → parent issue / parent task), with their own Zoho binding; NO runtime-owner or org-level fallback; no identity → isError tool result |
-| Tool surface | ~70 | read-only: whoami, modules, fields, COQL SELECT search, get record; create/update removed (an unknown-tool error) |
-| Claim-time auto-provision | ~302 (+ `daemon.go` after mat_ mint) | `injectZohoMcpProxy` adds the `zoho` entry with the task's own token; agent-defined `zoho` entry wins; no-op without AGORA_PUBLIC_URL or a workspace connection |
+| `ZohoMcpProxy` endpoint | ~79 | POST /mcp/zoho, task-token actors only (403 otherwise); minimal MCP Streamable-HTTP subset (initialize/ping/tools list+call; notifications 202; GET 405) |
+| Acting identity | ~56 (+ `zoho_identity.go`) | only the person the task works for (`zohoActingUserForTask`: initiator → @mention author → autopilot creator → quick-create requester → last member assigner → issue creator → parent issue / parent task), with their own `zoho_account` grant (`zoho_account.go`); NO runtime-owner, other-person or org-level fallback; no identity → isError tool result |
+| Tool surface | ~160 (+ `server/internal/zohoread`) | read-only CRM (whoami, modules, fields, COQL SELECT search, get record) + Desk (departments, list tickets, get ticket by number/id, conversation); unknown names → JSON-RPC -32602; every call audited in `zoho_call_log` (counts, never contents) |
+| Claim-time auto-provision | ~196 (+ `daemon.go` after mat_ mint) | `injectZohoMcpProxy` adds the `zoho` entry with the task's own token only when the task's person has a connected Zoho account; agent-defined `zoho` entry wins; no-op without AGORA_PUBLIC_URL |
 
 ## Routes — `server/cmd/server/router.go`
 

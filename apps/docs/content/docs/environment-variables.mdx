@@ -243,6 +243,23 @@ The [Slack app](/slack-integration) — channel notifications, inbox DMs and lin
 
 **Note:** these variables are for the Slack *app*. The Slack **Incoming Webhook** release connector (Settings → Integrations → Release) needs none of them — it stores its webhook URL per workspace and keeps `release:shipped` / `deploy:recorded` for itself.
 
+## Zoho (per-person, read-only)
+
+Each person connects their **own** Zoho account once (Settings → Profile → Connected accounts). Every Zoho read the Assistant or an agent makes for them uses that person's grant, so Zoho's own role, profile and sharing rules decide what Agora sees — nobody gets more than they can see in Zoho. The grant only carries read scopes; Agora never creates or changes anything in Zoho.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGORA_ZOHO_CLIENT_ID` | empty | Client ID of a **server-based** client registered in api-console.zoho.com. Register the redirect URI `<AGORA_PUBLIC_URL>/api/integrations/zoho/callback` and enable multi-DC if people are in more than one Zoho data center |
+| `AGORA_ZOHO_CLIENT_SECRET` | empty | That client's secret |
+| `AGORA_ZOHO_SECRET_KEY` | empty | 32-byte base64 key that seals each person's grant at rest (shared with the workspace Zoho connection). Without it, Connect Zoho stays hidden |
+| `AGORA_ZOHO_SCOPES` | read-only CRM + Desk list | Optional override of the requested scopes. The default is `ZohoCRM.modules.READ`, `ZohoCRM.coql.READ`, `ZohoCRM.settings.READ`, `ZohoCRM.users.READ`, `Desk.tickets.READ`, `Desk.basic.READ`, `Desk.contacts.READ`, `Desk.search.READ`, `Desk.settings.READ` |
+
+`AGORA_PUBLIC_URL` must also be set; the redirect URI is built from it, never from request headers.
+
+**Behavior when a required variable is unset:** `GET /api/me/zoho` reports `available: false` (the UI shows "Zoho isn't set up on this server yet") and `POST /api/me/zoho/connect` returns **503**.
+
+**Local development:** `go run ./cmd/fakezoho` serves an in-memory Zoho with two people who see different deals and tickets. Point the backend at it with `AGORA_ZOHO_CLIENT_ID=1000.FAKEZOHOCLIENT`, `AGORA_ZOHO_CLIENT_SECRET=fake-zoho-secret` and `ZOHO_DYN_ACCOUNTS_BASE` / `ZOHO_DYN_API_BASE` / `ZOHO_DYN_DESK_BASE` set to its address.
+
 ## Usage analytics
 
 By default, the server reports to Agora's official PostHog instance. To opt out, set `ANALYTICS_DISABLED=true`.

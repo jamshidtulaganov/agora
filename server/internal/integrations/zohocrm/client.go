@@ -93,10 +93,11 @@ func (c *Client) AccessToken(ctx context.Context) (string, error) {
 	return c.mintLocked(ctx)
 }
 
-// forceRefresh discards the cached token and mints a new one — the 401-retry
-// path. stale is the token that just failed; the mint is skipped when another
-// goroutine already replaced it.
-func (c *Client) forceRefresh(ctx context.Context, stale string) (string, error) {
+// ForceRefresh discards the cached token and mints a new one — the 401-retry
+// path, also used by the Desk client that shares this grant. stale is the
+// token that just failed; the mint is skipped when another goroutine already
+// replaced it.
+func (c *Client) ForceRefresh(ctx context.Context, stale string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.accessToken != "" && c.accessToken != stale {
@@ -169,7 +170,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 		return err
 	}
 	if status == http.StatusUnauthorized {
-		if token, err = c.forceRefresh(ctx, token); err != nil {
+		if token, err = c.ForceRefresh(ctx, token); err != nil {
 			return err
 		}
 		if status, body, err = c.doGet(ctx, path, token); err != nil {
@@ -240,7 +241,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload, out a
 		return err
 	}
 	if status == http.StatusUnauthorized {
-		if token, err = c.forceRefresh(ctx, token); err != nil {
+		if token, err = c.ForceRefresh(ctx, token); err != nil {
 			return err
 		}
 		if status, respBody, err = c.doRequest(ctx, method, path, token, body); err != nil {
