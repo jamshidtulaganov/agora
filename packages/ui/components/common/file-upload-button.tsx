@@ -12,6 +12,9 @@ interface FileUploadButtonProps {
   className?: string;
   size?: "sm" | "default";
   multiple?: boolean;
+  /** Tooltip text; defaults to the "Attach file" label. Use it for the
+   *  accepted-files rules so they don't need their own line of UI. */
+  title?: string;
 }
 
 function FileUploadButton({
@@ -20,6 +23,7 @@ function FileUploadButton({
   className,
   size = "default",
   multiple = false,
+  title,
 }: FileUploadButtonProps) {
   const { t } = useTranslation("ui");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -42,7 +46,7 @@ function FileUploadButton({
         onClick={() => inputRef.current?.click()}
         disabled={disabled}
         aria-label={attachLabel}
-        title={attachLabel}
+        title={title ?? attachLabel}
         className={cn(
           "inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none",
           btnSize,

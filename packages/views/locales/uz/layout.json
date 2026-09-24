@@ -18,8 +18,7 @@
     "mcp": "MCP serverlar",
     "bitrix": "Bitrix",
     "settings": "Sozlamalar",
-    "automations": "Avtomatizatsiyalar",
-    "artifacts": "Artefaktlar"
+    "automations": "Avtomatizatsiyalar"
   },
   "help": {
     "trigger": "Yordam",
@@ -57,26 +56,5 @@
     "header": "Hozir ishlayapti",
     "queued": "{{count}} ta navbatda",
     "empty": "Hozir hech narsa ishlamayapti"
-  },
-  "artifacts_library": {
-    "title": "Artefaktlar",
-    "description": "Suhbatlaringizdagi saqlangan natijalar. Oching, tekshiring va davom eting.",
-    "create": "Yangi artefakt",
-    "search": "Yuklangan artefaktlarni qidirish",
-    "filter": "Tur bo‘yicha saralash",
-    "all": "Barchasi",
-    "loading": "Artefaktlar yuklanmoqda…",
-    "error": "Artefaktlarni yuklab bo‘lmadi.",
-    "retry": "Qayta urinish",
-    "no_results": "Mos artefakt topilmadi. Yana yuklang yoki qidiruvni o‘zgartiring.",
-    "empty": "Assistentdan hisobot, jadval, diagramma yoki interaktiv artefakt yaratishni so‘rang.",
-    "version": "v{{version}}",
-    "untitled": "Nomsiz artefakt",
-    "edit": "Chatda tahrirlash",
-    "more": "Yana yuklash",
-    "download": "Yuklab olish",
-    "view": "Artefakt ko‘rinishi",
-    "preview": "Ko‘rish",
-    "code": "Kod"
   }
 }

@@ -23,14 +23,24 @@ interface ComposerProps {
   /** Prefilled text (e.g. from an empty-state example prompt). */
   value: string;
   onValueChange: (value: string) => void;
-  scopeLabel?: string;
+  /**
+   * A one-line status under the box ("Checking status…", what a retry will
+   * resend). Omitted when there is nothing to say — the destination itself is
+   * the workspace chip in the toolbar, so it is never repeated here.
+   */
+  status?: string;
   /**
    * The session's resolved context (focus workspace), rendered above the
    * field in BOTH variants. A node rather than a value so the composer stays
    * free of query/mutation wiring — see components/context-chip.tsx.
    */
   contextChip?: ReactNode;
-  resourceControls?: ReactNode;
+  /** Pickers + attach button, drawn inside the box next to Send. */
+  toolbar?: ReactNode;
+  /** Attached-file pills, drawn inside the box above the text. */
+  attachments?: ReactNode;
+  /** Context notes and errors under the box; null when empty. */
+  notices?: ReactNode;
   /**
    * Put the caret in the field on mount. The docked composer asks for this so
    * a session switch (which remounts the conversation) lands ready to type;
@@ -56,9 +66,11 @@ export function Composer({
   sendUnavailable,
   value,
   onValueChange,
-  scopeLabel,
+  status,
   contextChip,
-  resourceControls,
+  toolbar,
+  attachments,
+  notices,
   autoFocus,
   variant = "docked",
 }: ComposerProps) {
@@ -175,10 +187,11 @@ export function Composer({
       )}
       <div
         className={cn(
-          "flex w-full items-end gap-2 rounded-xl border border-input bg-card transition-colors focus-within:border-brand/60",
-          hero ? "p-2.5 shadow-sm" : "p-2",
+          "flex w-full flex-col rounded-xl border border-input bg-card transition-colors focus-within:border-brand/60",
+          hero && "shadow-sm",
         )}
       >
+        {attachments && <div className="px-3 pt-2.5">{attachments}</div>}
         <Textarea
           ref={textareaRef}
           value={value}
@@ -189,19 +202,22 @@ export function Composer({
           rows={hero ? 2 : 1}
           autoFocus={hero || autoFocus}
           className={cn(
-            "flex-1 resize-none border-0 bg-transparent px-1 py-1 shadow-none outline-none focus-visible:ring-0 dark:bg-transparent",
-            hero ? "max-h-48 min-h-14" : "max-h-40 min-h-9",
+            "w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 shadow-none outline-none focus-visible:ring-0 dark:bg-transparent",
+            hero ? "max-h-48 min-h-16" : "max-h-40 min-h-10",
           )}
         />
-        <SubmitButton
-          onClick={handleSend}
-          disabled={!value.trim() || isSending || sendUnavailable}
-          loading={isSending}
-          running={isRunning}
-          onStop={onStop}
-          tooltip={t(($) => $.composer.send_tooltip)}
-          stopTooltip={t(($) => $.composer.stop_tooltip)}
-        />
+        <div className="flex items-end gap-2 px-1.5 pb-1.5">
+          <div className="min-w-0 flex-1">{toolbar}</div>
+          <SubmitButton
+            onClick={handleSend}
+            disabled={!value.trim() || isSending || sendUnavailable}
+            loading={isSending}
+            running={isRunning}
+            onStop={onStop}
+            tooltip={t(($) => $.composer.send_tooltip)}
+            stopTooltip={t(($) => $.composer.stop_tooltip)}
+          />
+        </div>
       </div>
     </div>
   );
@@ -210,31 +226,32 @@ export function Composer({
     <div className="mx-auto mb-1.5 flex w-full max-w-2xl items-center">{contextChip}</div>
   ) : null;
 
-  const counter = nearLimit && (
-    <div className="mx-auto mt-1 w-full max-w-2xl text-right text-xs text-muted-foreground">
-      {t(($) => $.composer.char_limit, { count: value.length, max: ASSISTANT_MESSAGE_MAX_LENGTH })}
+  const counter = nearLimit ? t(($) => $.composer.char_limit, { count: value.length, max: ASSISTANT_MESSAGE_MAX_LENGTH }) : null;
+  const below = notices || status || counter ? (
+    <div className="mx-auto mt-1.5 flex w-full max-w-2xl items-start gap-3 px-1">
+      <div className="min-w-0 flex-1 space-y-1">
+        {notices}
+        {status && <p className="text-xs text-muted-foreground">{status}</p>}
+      </div>
+      {counter && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{counter}</span>}
     </div>
-  );
+  ) : null;
 
   if (hero) {
     return (
       <div className="w-full">
         {context}
         {field}
-        {resourceControls}
-        {scopeLabel && <div className="mx-auto mt-2 w-full max-w-2xl text-xs text-muted-foreground">{scopeLabel}</div>}
-        {counter}
+        {below}
       </div>
     );
   }
 
   return (
-    <div className="border-t bg-background px-4 py-3">
+    <div className="bg-background px-4 pb-4 pt-2">
       {context}
       {field}
-      {resourceControls}
-      {scopeLabel && <div className="mx-auto mt-2 w-full max-w-2xl text-xs text-muted-foreground">{scopeLabel}</div>}
-      {counter}
+      {below}
     </div>
   );
 }

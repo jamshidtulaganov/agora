@@ -113,18 +113,10 @@ export interface AssistantState {
   activeSessionId: string | null;
   draftsBySession: Record<string, AssistantDraft>;
   composerContextBySession: Record<string, AssistantComposerContext>;
-  /**
-   * Artifact currently shown in the split pane, keyed by session id.
-   * Ephemeral — deliberately NOT persisted (a reopened app should land on
-   * the transcript, not on whatever pane was open days ago) and cleared on
-   * identity switch, same as the other ephemeral maps here.
-   */
-  openArtifactId: Record<string, string>;
   setIdentity: (identityId: string | null) => void;
   setActiveSession: (id: string | null) => void;
   setDraft: (sessionId: string, draft: AssistantDraft | null) => void;
   setComposerContext: (sessionId: string, context: AssistantComposerContext | null) => void;
-  setOpenArtifact: (sessionId: string, artifactId: string | null) => void;
 }
 
 export interface AssistantStoreOptions {
@@ -145,7 +137,6 @@ export function createAssistantStore(options: AssistantStoreOptions) {
     activeSessionId: null,
     draftsBySession: {},
     composerContextBySession: {},
-    openArtifactId: {},
     setIdentity: (identityId) => {
       const key = identityKey(identityId);
       logger.info("setIdentity", { identityId });
@@ -156,7 +147,6 @@ export function createAssistantStore(options: AssistantStoreOptions) {
         // previous identity — never carry it across a user switch.
         draftsBySession: identityId ? readDrafts(storage.getItem(`${DRAFT_STORAGE_KEY}:${identityId}`)) : {},
         composerContextBySession: identityId ? readComposerContexts(storage.getItem(`${COMPOSER_CONTEXT_STORAGE_KEY}:${identityId}`)) : {},
-        openArtifactId: {},
       });
     },
     setActiveSession: (id) => {
@@ -196,14 +186,6 @@ export function createAssistantStore(options: AssistantStoreOptions) {
       const identityId = get().identityId;
       if (identityId) storage.setItem(`${COMPOSER_CONTEXT_STORAGE_KEY}:${identityId}`, JSON.stringify(next));
       set({ composerContextBySession: next });
-    },
-    setOpenArtifact: (sessionId, artifactId) => {
-      const current = get().openArtifactId;
-      if ((current[sessionId] ?? null) === artifactId) return;
-      const next = { ...current };
-      if (artifactId) next[sessionId] = artifactId;
-      else delete next[sessionId];
-      set({ openArtifactId: next });
     },
   }));
 

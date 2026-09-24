@@ -549,15 +549,16 @@ func writeExcludedCapabilities(b *strings.Builder) {
 // the numbers in a chart must come from the analytics/read tools in this same
 // conversation, never from the model's own arithmetic.
 //
-// The third rule — update rather than create — is what makes the pane feel
-// like one living document. A follow-up answered with a second artifact
+// The third rule — update rather than create — is what makes the artifact
+// feel like one living document (the chat shows it once, at its latest
+// version). A follow-up answered with a second artifact
 // strands the one the user is looking at.
 func writeArtifactGuidance(b *strings.Builder) {
 	b.WriteString("\nArtifacts (charts, tables, reports):\n")
 	b.WriteString("- When the user asks for a CHART, GRAPH, DASHBOARD, REPORT, TABLE or any kind of ")
 	b.WriteString("VISUALIZATION, PRODUCE AN ARTIFACT with create_artifact. Do not draw it in chat text, ")
-	b.WriteString("and do not describe what the chart would look like — the artifact opens in its own pane ")
-	b.WriteString("next to the conversation and is the answer.\n")
+	b.WriteString("and do not describe what the chart would look like — the artifact appears right in the ")
+	b.WriteString("conversation, where the user can print or download it, and is the answer.\n")
 	b.WriteString("- Choose the cheapest kind that does the job: `chart` for anything over time or across ")
 	b.WriteString("categories, `table` for a comparison or a list with columns, `markdown` for a written ")
 	b.WriteString("report or digest. Use `html` ONLY when the answer genuinely needs interactivity that the ")

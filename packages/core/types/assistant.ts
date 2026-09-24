@@ -197,23 +197,3 @@ export interface AssistantArtifact extends AssistantArtifactSummary {
   content: string;
 }
 
-// --- Artifact revisions -------------------------------------------------
-// `update_artifact` bumps the artifact's version and appends an immutable
-// revision row, so a dashboard the assistant has refreshed ten times is still
-// inspectable at any point in between. The list read carries no bodies (up to
-// 256 KB each); the detail read carries exactly one.
-
-/** One entry in the pane's version picker. */
-export interface AssistantArtifactRevisionSummary {
-  id: string;
-  artifact_id: string;
-  /** 1-based; matches the artifact's `version` at the time it was written. */
-  version: number;
-  title: string;
-  created_at: string;
-}
-
-/** A historical version in full — rendered READ-ONLY by the pane. */
-export interface AssistantArtifactRevision extends AssistantArtifactRevisionSummary {
-  content: string;
-}

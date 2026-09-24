@@ -41,9 +41,6 @@ import type {
   AssistantAvailability,
   SendAssistantMessageResponse,
   AssistantArtifact,
-  AssistantArtifactSummary,
-  AssistantArtifactRevision,
-  AssistantArtifactRevisionSummary,
   PinnedReport,
   PinnedReportSummary,
   ReportPin,
@@ -2346,10 +2343,6 @@ const AssistantArtifactSummaryShape = {
   updated_at: z.string().default(""),
 };
 
-export const AssistantArtifactSummarySchema = z
-  .object(AssistantArtifactSummaryShape)
-  .loose();
-
 export const AssistantArtifactSchema = z
   .object({
     ...AssistantArtifactSummaryShape,
@@ -2366,66 +2359,6 @@ export const EMPTY_ASSISTANT_ARTIFACT: AssistantArtifact = {
   version: 1,
   created_at: "",
   updated_at: "",
-};
-
-export const AssistantArtifactListSchema = z
-  .array(AssistantArtifactSummarySchema)
-  // A malformed row degrades the whole list to empty rather than throwing —
-  // the artifact list is a convenience surface, never the only way back to
-  // an artifact (the transcript card is).
-  .catch([]);
-
-// The paged library cannot treat malformed rows as an empty page: callers
-// would stop pagination and hide later artifacts. Keep cosmetic row fallbacks
-// but require the identifiers and kind used to render/open every row.
-export const AssistantArtifactLibraryPageSchema = z
-  .array(AssistantArtifactSummarySchema)
-  .refine((rows) => rows.every((row) => row.id && row.session_id && row.kind));
-
-export const EMPTY_ASSISTANT_ARTIFACT_LIST: AssistantArtifactSummary[] = [];
-
-// Artifact revisions — GET /api/assistant/artifacts/{id}/revisions[/{version}].
-// Same leniency posture as the artifact itself: cosmetic fields `.catch()` so
-// one drifted row can't blank a picker that is otherwise usable, while
-// `version` is the only field the UI truly needs — a row that arrives without
-// a usable version is dropped by the picker rather than rendered as "v0".
-const AssistantArtifactRevisionSummaryShape = {
-  id: z.string().default(""),
-  artifact_id: z.string().default(""),
-  version: z.number().catch(0),
-  title: z.string().catch(""),
-  created_at: z.string().catch(""),
-};
-
-export const AssistantArtifactRevisionSummarySchema = z
-  .object(AssistantArtifactRevisionSummaryShape)
-  .loose();
-
-export const AssistantArtifactRevisionSchema = z
-  .object({
-    ...AssistantArtifactRevisionSummaryShape,
-    content: z.string().default(""),
-  })
-  .loose();
-
-// A malformed row degrades the whole history to empty — the picker then
-// collapses to the plain version badge, exactly like the 404 path taken while
-// the revisions endpoints were not yet deployed.
-export const AssistantArtifactRevisionListSchema = z
-  .array(AssistantArtifactRevisionSummarySchema)
-  .catch([]);
-
-export const EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST: AssistantArtifactRevisionSummary[] = [];
-
-// `version: 0` is the "nothing renderable came back" marker the pane checks
-// before it swaps the current artifact out for a historical body.
-export const EMPTY_ASSISTANT_ARTIFACT_REVISION: AssistantArtifactRevision = {
-  id: "",
-  artifact_id: "",
-  version: 0,
-  title: "",
-  content: "",
-  created_at: "",
 };
 
 // --- Pinned reports (assistant artifacts published to a project) ---------

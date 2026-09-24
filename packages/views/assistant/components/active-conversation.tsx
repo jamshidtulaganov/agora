@@ -24,7 +24,7 @@ import { Composer } from "./composer";
 import { FollowUpChips } from "./follow-up-chips";
 import { AssistantContextChip } from "./context-chip";
 import { AssistantLauncher } from "./launcher";
-import { AssistantComposeResources } from "./compose-resources";
+import { useAssistantComposeResources } from "./compose-resources";
 
 export interface InitialAssistantMessage {
   content: string;
@@ -37,7 +37,6 @@ interface ActiveConversationProps {
   initialMessage: InitialAssistantMessage | null;
   onInitialMessageConsumed: () => void;
   compact?: boolean;
-  onOpenArtifact?: (artifactId: string) => void;
 }
 
 // The page and panel can both mount the same session. Claim an initial request
@@ -53,7 +52,6 @@ export function ActiveConversation({
   initialMessage,
   onInitialMessageConsumed,
   compact,
-  onOpenArtifact,
 }: ActiveConversationProps) {
   const { t } = useT("assistant");
   const workspace = useCurrentWorkspace();
@@ -219,29 +217,28 @@ export function ActiveConversation({
   };
 
   // A draft that already carries a context is a send waiting to be retried —
-  // it names its own scope. Otherwise the scope is whatever the next send
-  // would use: the composer's pinned workspace if there is one, else the page.
-  const scopeWorkspaceId = draft?.context
-    ? draft.context.workspace_id
-    : targetWorkspaceId(workspace?.id ?? null, composerSelection);
-  const targetWorkspace = scopeWorkspaceId
-    ? workspaces.find((item) => item.id === scopeWorkspaceId)?.name ??
-      (workspace?.id === scopeWorkspaceId ? workspace.name : t(($) => $.composer.scope_previous))
+  // it keeps its own workspace, which can differ from the toolbar's chip.
+  // Only then is the destination spelled out; normally the chip says it.
+  const retryWorkspaceId = draft?.context ? draft.context.workspace_id : undefined;
+  const retryGoesElsewhere =
+    retryWorkspaceId !== undefined &&
+    retryWorkspaceId !== targetWorkspaceId(workspace?.id ?? null, composerSelection);
+  const retryWorkspaceName = retryWorkspaceId
+    ? workspaces.find((item) => item.id === retryWorkspaceId)?.name ??
+      (workspace?.id === retryWorkspaceId ? workspace.name : t(($) => $.composer.scope_previous))
     : t(($) => $.composer.scope_all);
-  const scopeMember = draft?.context
-    ? draft.context.member_id
-      ? t(($) => $.resources.retry_member)
-      : null
-    : composerSelection?.workspace_id === scopeWorkspaceId && composerSelection?.member
-      ? composerSelection.member.name
-      : null;
-  const scopeLabel = t(($) => $.composer.scope_workspace, { workspace: targetWorkspace }) +
-    (scopeMember ? ` · ${scopeMember}` : "") +
-    (draft?.context?.project_id ? ` · ${t(($) => $.resources.retry_project)}` : "") +
-    (draft?.context?.attachment_ids?.length
-      ? ` · ${t(($) => $.resources.retry_files, { count: draft.context.attachment_ids.length })}`
-      : "") +
-    (runsQuery.isPending ? ` · ${t(($) => $.run.checking_status)}` : "");
+  // What a retry will resend, and whether the run state is still loading —
+  // the only things worth a line under the box.
+  const statusParts = [
+    retryGoesElsewhere ? t(($) => $.composer.scope_workspace, { workspace: retryWorkspaceName }) : null,
+    draft?.context?.member_id ? t(($) => $.resources.retry_member) : null,
+    draft?.context?.project_id ? t(($) => $.resources.retry_project) : null,
+    draft?.context?.attachment_ids?.length
+      ? t(($) => $.resources.retry_files, { count: draft.context.attachment_ids.length })
+      : null,
+    runsQuery.isPending ? t(($) => $.run.checking_status) : null,
+  ].filter((part): part is string => !!part);
+  const status = statusParts.length > 0 ? statusParts.join(" · ") : undefined;
   const notice = latestRun?.status === "failed"
     ? t(($) => $.run.failed)
     : latestRun?.status === "cancelled"
@@ -268,14 +265,12 @@ export function ActiveConversation({
   // Rendered in both surfaces so the session's scope is visible before the
   // first message as well as after it — that scope is what tools default to.
   const contextChip = <AssistantContextChip sessionId={sessionId} />;
-  const resourceControls = (
-    <AssistantComposeResources
-      sessionId={sessionId}
-      workspaceId={workspace?.id ?? null}
-      onSelectionChange={handleSelectionChange}
-      onUploadingChange={setUploading}
-    />
-  );
+  const resources = useAssistantComposeResources({
+    sessionId,
+    workspaceId: workspace?.id ?? null,
+    onSelectionChange: handleSelectionChange,
+    onUploadingChange: setUploading,
+  });
 
   if (showEmptyState) {
     return (
@@ -285,9 +280,9 @@ export function ActiveConversation({
         onSend={handleSend}
         isSending={sendMessage.isPending}
         sendUnavailable={!runsQuery.isSuccess || isUploading}
-        scopeLabel={scopeLabel}
+        status={status}
         contextChip={contextChip}
-        resourceControls={resourceControls}
+        resources={resources}
         compact={compact}
       />
     );
@@ -303,7 +298,6 @@ export function ActiveConversation({
         >
           <MessageList
             messages={messages}
-            onOpenArtifact={onOpenArtifact}
             onRegenerate={canResend ? resendLastUserMessage : undefined}
           />
           {followUps.length > 0 && (
@@ -356,9 +350,11 @@ export function ActiveConversation({
         isRunning={isRunning}
         isSending={sendMessage.isPending}
         sendUnavailable={!runsQuery.isSuccess || isUploading}
-        scopeLabel={scopeLabel}
+        status={status}
         contextChip={contextChip}
-        resourceControls={resourceControls}
+        toolbar={resources.toolbar}
+        attachments={resources.attachments}
+        notices={resources.notices}
         // ActiveConversation is keyed by session id, so this remounts — and
         // lands the caret in the composer — on every session switch.
         autoFocus

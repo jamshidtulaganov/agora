@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PanelLeft, Sparkles } from "lucide-react";
@@ -19,21 +19,17 @@ import { PageHeader } from "../layout/page-header";
 import { useT } from "../i18n";
 import { SessionRail } from "./components/session-rail";
 import { ActiveConversation } from "./components/active-conversation";
-import { ArtifactPane } from "./components/artifact-pane";
-import { AssistantLauncher } from "./components/launcher";
+import { AssistantDraftLauncher } from "./components/launcher";
 import { AssistantNotConfiguredState } from "./components/not-configured-state";
 import { useHealActiveAssistantSession } from "./use-active-session";
-import { useArtifactWorkbench } from "./use-artifact-workbench";
-import { WorkbenchDivider } from "./components/workbench-divider";
-import { useWorkbenchResize } from "./components/use-workbench-resize";
 import { messageContext, targetWorkspaceId } from "./lib/message-context";
 import type { InitialAssistantMessage } from "./components/active-conversation";
-import { AssistantComposeResources } from "./components/compose-resources";
 
 const NEW_SESSION_COMPOSER = "__new__";
 
 export function AssistantPage() {
   const { t } = useT("assistant");
+  const { t: tLayout } = useT("layout");
   const workspace = useCurrentWorkspace();
 
   const { data: availability, isLoading: isAvailabilityLoading } = useQuery(
@@ -52,14 +48,6 @@ export function AssistantPage() {
   const runningSessionIds = new Set(sessions.filter((session) =>
     session.latest_run && (session.latest_run.status === "queued" || session.latest_run.status === "running"),
   ).map((session) => session.id));
-  // The workbench: which artifact the pane shows, the pane opening itself when
-  // the agent writes one, and the "updating" hint while it is still writing.
-  const { openArtifactId, openArtifact, isUpdating } = useArtifactWorkbench(
-    activeSessionId,
-    enabled,
-  );
-  const workbenchRef = useRef<HTMLDivElement>(null);
-  const resize = useWorkbenchResize(workbenchRef);
 
   const createSession = useCreateAssistantSession();
   const updateSession = useUpdateAssistantSession();
@@ -173,7 +161,7 @@ export function AssistantPage() {
           <PanelLeft />
         </Button>
         <Sparkles className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-medium">{t(($) => $.session_rail.title)}</h1>
+        <h1 className="text-sm font-medium">{tLayout(($) => $.nav.assistant)}</h1>
       </PageHeader>
       <div className="relative flex flex-1 min-h-0">
         <div
@@ -192,33 +180,16 @@ export function AssistantPage() {
             onDelete={handleDeleteSession}
           />
         </div>
-        <div ref={workbenchRef} className="flex min-w-0 flex-1">
-          <div className="flex min-w-0 flex-1 flex-col">
-            {activeSessionId ? (
-              <ActiveConversation
-                key={activeSessionId}
-                sessionId={activeSessionId}
-                initialMessage={pendingInitialMessage}
-                onInitialMessageConsumed={() => setPendingInitialMessage(null)}
-                onOpenArtifact={openArtifact}
-              />
-            ) : (
-              <DraftConversation onSend={handleSendFromDraft} isCreating={createSession.isPending} workspaceId={workspace?.id ?? null} scopeLabel={t(($) => $.composer.scope_workspace, { workspace: workspace?.name ?? t(($) => $.composer.scope_all) })} />
-            )}
-          </div>
-          {activeSessionId && openArtifactId && (
-            <>
-              <WorkbenchDivider resize={resize} />
-              <ArtifactPane
-                key={openArtifactId}
-                artifactId={openArtifactId}
-                sessionId={activeSessionId}
-                width={resize.paneWidth}
-                isUpdating={isUpdating}
-                onSwitchArtifact={openArtifact}
-                onClose={() => openArtifact(null)}
-              />
-            </>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {activeSessionId ? (
+            <ActiveConversation
+              key={activeSessionId}
+              sessionId={activeSessionId}
+              initialMessage={pendingInitialMessage}
+              onInitialMessageConsumed={() => setPendingInitialMessage(null)}
+            />
+          ) : (
+            <DraftConversation onSend={handleSendFromDraft} isCreating={createSession.isPending} workspaceId={workspace?.id ?? null} />
           )}
         </div>
       </div>
@@ -231,26 +202,25 @@ export function AssistantPage() {
 function DraftConversation({
   onSend,
   isCreating,
-  scopeLabel,
   workspaceId,
 }: {
   onSend: (content: string) => void;
   isCreating: boolean;
-  scopeLabel: string;
   workspaceId: string | null;
 }) {
   const [value, setValue] = useState("");
   const [isUploading, setUploading] = useState(false);
 
   return (
-    <AssistantLauncher
+    <AssistantDraftLauncher
+      draftKey={NEW_SESSION_COMPOSER}
+      workspaceId={workspaceId}
+      onUploadingChange={setUploading}
       value={value}
       onValueChange={setValue}
       onSend={onSend}
       isSending={isCreating}
       sendUnavailable={isUploading}
-      scopeLabel={scopeLabel}
-      resourceControls={<AssistantComposeResources sessionId={NEW_SESSION_COMPOSER} workspaceId={workspaceId} onUploadingChange={setUploading} />}
     />
   );
 }

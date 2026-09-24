@@ -68,7 +68,15 @@ export function artifactFileName(title: string, extension: string): string {
   return `${base || "artifact"}.${extension}`;
 }
 
-export function artifactExport(artifact: AssistantArtifact): ArtifactExport {
+/**
+ * What the chat already drew for this artifact. A chart's useful download is
+ * the picture, not its JSON spec, and the picture only exists once rendered.
+ */
+export interface RenderedArtifact {
+  chartSvg?: string | null;
+}
+
+export function artifactExport(artifact: AssistantArtifact, rendered: RenderedArtifact = {}): ArtifactExport {
   const name = (extension: string, mimeType: string, body: string): ArtifactExport => ({
     filename: artifactFileName(artifact.title, extension),
     mimeType,
@@ -81,7 +89,11 @@ export function artifactExport(artifact: AssistantArtifact): ArtifactExport {
     case "html":
       return name("html", "text/html", artifact.content);
     case "chart":
-      return name("json", "application/json", artifact.content);
+      // The drawn chart as an image when there is one; the spec otherwise
+      // (a malformed spec renders as raw content, so there is no picture).
+      return rendered.chartSvg
+        ? name("svg", "image/svg+xml", rendered.chartSvg)
+        : name("json", "application/json", artifact.content);
     case "table": {
       const spec = parseTableSpec(artifact.content);
       // A spec this build can't read is already shown as raw content in the

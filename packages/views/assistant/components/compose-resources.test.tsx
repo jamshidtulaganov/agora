@@ -7,7 +7,14 @@ import { useAssistantStore } from "@agora/core/assistant";
 import { api } from "@agora/core/api";
 import type { Attachment } from "@agora/core/types";
 import { RESOURCES } from "../../locales";
-import { AssistantComposeResources } from "./compose-resources";
+import { useAssistantComposeResources } from "./compose-resources";
+
+// The hook's three parts render in different spots inside the composer; the
+// harness stacks them so every picker, pill and notice is on screen.
+function ComposeResourcesHarness(props: Parameters<typeof useAssistantComposeResources>[0]) {
+  const { toolbar, attachments, notices } = useAssistantComposeResources(props);
+  return <>{attachments}{toolbar}{notices}</>;
+}
 
 interface TestSelection {
   workspace_id: string | null;
@@ -81,7 +88,7 @@ function renderControls(onUploadingChange = vi.fn()) {
   return render(
     <I18nProvider locale="en" resources={RESOURCES}>
       <QueryClientProvider client={client}>
-        <AssistantComposeResources sessionId="session-1" workspaceId="workspace-1" onUploadingChange={onUploadingChange} />
+        <ComposeResourcesHarness sessionId="session-1" workspaceId="workspace-1" onUploadingChange={onUploadingChange} />
       </QueryClientProvider>
     </I18nProvider>,
   );
@@ -92,7 +99,7 @@ beforeEach(() => {
   vi.mocked(api.uploadFile).mockReset();
 });
 
-describe("AssistantComposeResources", () => {
+describe("useAssistantComposeResources", () => {
   it("selects a project and shows linked resource names without claiming contents are loaded", async () => {
     renderControls();
     await userEvent.click(screen.getByRole("button", { name: "Project" }));
@@ -131,7 +138,7 @@ describe("AssistantComposeResources", () => {
   });
 });
 
-describe("AssistantComposeResources — workspace picker", () => {
+describe("useAssistantComposeResources — workspace picker", () => {
   it("sends the next message to the picked workspace instead of the page's", async () => {
     renderControls();
     // The chip shows where the message is going right now: the page's own.
@@ -169,7 +176,7 @@ describe("AssistantComposeResources — workspace picker", () => {
   });
 });
 
-describe("AssistantComposeResources — member picker", () => {
+describe("useAssistantComposeResources — member picker", () => {
   it("attaches a teammate from the target workspace and can remove them", async () => {
     renderControls();
     await userEvent.click(screen.getByRole("button", { name: "Person" }));

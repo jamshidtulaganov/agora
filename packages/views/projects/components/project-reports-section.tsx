@@ -15,7 +15,7 @@ import {
 } from "@agora/ui/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { ArtifactBody } from "../../assistant/components/artifact-body";
-import { artifactKindIcon } from "../../assistant/components/artifact-card";
+import { artifactKindIcon } from "../../assistant/components/artifact-kind";
 import { useT, useTimeAgo, useWeekdayNames } from "../../i18n";
 
 /**

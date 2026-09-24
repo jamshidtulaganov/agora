@@ -10,6 +10,62 @@ export function humanizeToolName(name: string): string {
   return name.replace(/_/g, " ").trim();
 }
 
+/** Verbs a tool row can say it did — keys of `tool_chip.verb` in the locales. */
+export const TOOL_VERBS = [
+  "list", "search", "get", "create", "update", "delete", "add", "remove", "archive",
+  "comment", "move", "invite", "attach", "mark", "resolve", "pin", "subscribe", "run",
+  "set", "leave", "confirm", "dry_run", "propose", "check",
+] as const;
+export type ToolVerb = (typeof TOOL_VERBS)[number];
+
+/** Things a tool acts on — keys of `tool_chip.object` in the locales. */
+export const TOOL_OBJECTS = [
+  "workspaces", "workspace", "my_issues", "issues", "issue", "stale_issues", "comments",
+  "comment", "projects", "project", "sprints", "sprint", "labels", "label", "issue_label",
+  "issue_to_sprint", "agents", "agent", "squads", "members", "member", "member_role",
+  "runtimes", "skills", "skill", "skill_to_agent", "autopilots", "autopilot", "autopilot_now",
+  "automations", "automation", "automation_enabled", "integrations", "import_connections",
+  "import", "import_mapping", "import_status", "inbox_read", "inbox", "item", "my_settings",
+  "sidebar", "notification_preferences", "artifact", "plan", "usage", "activity", "qa_status",
+] as const;
+export type ToolObject = (typeof TOOL_OBJECTS)[number];
+
+/** Tools whose name has no leading verb: they read a status or a digest. */
+const READ_ONLY_TOOLS: Record<string, ToolObject> = {
+  usage_summary: "usage",
+  activity_digest: "activity",
+  inbox_summary: "inbox",
+  qa_status: "qa_status",
+  import_status: "import_status",
+};
+
+// Longest first, so "dry_run_import" is not read as verb "dry".
+const VERBS_BY_LENGTH = [...TOOL_VERBS].sort((a, b) => b.length - a.length);
+
+export interface ToolDescription {
+  verb: ToolVerb;
+  object: ToolObject;
+}
+
+/**
+ * Split a tool name into a translatable verb + object ("list_my_issues" →
+ * list + my_issues → "Looked up your issues"). Null for a name this build
+ * does not know — a newer server's tool — so the row falls back to the
+ * humanized raw name instead of a wrong sentence.
+ */
+export function describeTool(name: string): ToolDescription | null {
+  const readOnly = READ_ONLY_TOOLS[name];
+  if (readOnly) return { verb: "check", object: readOnly };
+  for (const verb of VERBS_BY_LENGTH) {
+    if (verb === "check" || !name.startsWith(verb + "_")) continue;
+    const object = name.slice(verb.length + 1);
+    if ((TOOL_OBJECTS as readonly string[]).includes(object)) {
+      return { verb, object: object as ToolObject };
+    }
+  }
+  return null;
+}
+
 /** Fields checked, in priority order, for an obvious one-line summary. */
 const SUMMARY_FIELDS = ["title", "name", "issue_key", "key", "id", "label", "url"] as const;
 
@@ -52,11 +108,21 @@ export function summarizeToolResult(result: unknown): string | null {
     if (typeof value === "string" && value.trim()) return truncate(value.trim());
   }
 
-  // Common list-shaped results: { issues: [...] }, { workspaces: [...] }, etc.
-  for (const value of Object.values(obj)) {
-    if (Array.isArray(value)) return `${value.length}`;
-  }
-  if (typeof obj.count === "number") return String(obj.count);
+  const count = resultCount(obj);
+  return count === null ? null : String(count);
+}
 
+/**
+ * How many things a list-shaped result found. An exact server-side `total`
+ * wins over the length of the (possibly capped) page it came with.
+ */
+export function resultCount(result: unknown): number | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const obj = result as Record<string, unknown>;
+  if (typeof obj.total === "number" && Number.isFinite(obj.total)) return obj.total;
+  if (typeof obj.count === "number" && Number.isFinite(obj.count)) return obj.count;
+  for (const value of Object.values(obj)) {
+    if (Array.isArray(value)) return value.length;
+  }
   return null;
 }

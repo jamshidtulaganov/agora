@@ -117,7 +117,7 @@ describe("ConfirmCard — pending", () => {
     renderList([toolMessage("m1", { status: "needs_confirmation", operation: { summary: "Delete it" } })]);
 
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
-    expect(screen.getByText("delete issue")).toBeInTheDocument();
+    expect(screen.getByText("Deleted an issue")).toBeInTheDocument();
   });
 });
 
@@ -280,7 +280,7 @@ describe("ReceiptChip", () => {
   it("degrades to the plain tool chip for a result with no receipt", () => {
     renderList([toolMessage("m1", { id: "issue-1", title: "Fix the login redirect" })]);
 
-    expect(screen.getByText("delete issue")).toBeInTheDocument();
+    expect(screen.getByText("Deleted an issue")).toBeInTheDocument();
     expect(screen.getByText("Fix the login redirect")).toBeInTheDocument();
   });
 });

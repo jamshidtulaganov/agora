@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Wrench, AlertCircle, Check, Copy, RotateCcw } from "lucide-react";
+import { AlertCircle, Check, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { copyText } from "@agora/ui/lib/clipboard";
@@ -11,8 +11,8 @@ import { Markdown } from "../../common/markdown";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import { AssistantAvatar } from "./assistant-avatar";
-import { ArtifactCard } from "./artifact-card";
-import { humanizeToolName, isToolResultError, summarizeToolResult } from "../lib/tool-summary";
+import { ArtifactHistoryRow, InlineArtifact } from "./inline-artifact";
+import { describeTool, humanizeToolName, isToolResultError, resultCount, summarizeToolResult } from "../lib/tool-summary";
 import { isArtifactToolName, parseArtifactToolResult } from "../lib/artifact";
 import { isDayBoundary, relativeDay } from "../lib/transcript-days";
 import {
@@ -28,9 +28,6 @@ import { ReceiptChip, UncertainChip } from "./outcome-chips";
 
 interface MessageListProps {
   messages: AssistantMessage[];
-  /** Opens an artifact produced in this session. Omitted where there is
-   *  nowhere to open it — the cards then render static. */
-  onOpenArtifact?: (artifactId: string) => void;
   /** Re-sends the last user message. Offered on the LAST assistant row only
    *  (ChatGPT-style) and omitted while a run is active, which is what keeps
    *  the action from racing the reply it would replace. */
@@ -47,7 +44,21 @@ function lastSpokenAssistantId(messages: AssistantMessage[]): string | null {
   return null;
 }
 
-export function MessageList({ messages, onOpenArtifact, onRegenerate }: MessageListProps) {
+/**
+ * For each artifact, the transcript row of its latest create/update — the one
+ * row that shows it in full. Earlier rows for the same artifact collapse.
+ */
+function latestArtifactRows(messages: AssistantMessage[]): Map<string, string> {
+  const latest = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role !== "tool" || !isArtifactToolName(message.tool_name)) continue;
+    const ref = parseArtifactToolResult(message.tool_result);
+    if (ref) latest.set(ref.artifactId, message.id);
+  }
+  return latest;
+}
+
+export function MessageList({ messages, onRegenerate }: MessageListProps) {
   // A confirmation card has to know whether a LATER row already reported its
   // outcome, so every row needs its position in the flat transcript — the
   // grouping below loses that.
@@ -58,6 +69,7 @@ export function MessageList({ messages, onOpenArtifact, onRegenerate }: MessageL
   }, [messages]);
 
   const regenerateId = onRegenerate ? lastSpokenAssistantId(messages) : null;
+  const artifactRows = useMemo(() => latestArtifactRows(messages), [messages]);
 
   const row = (message: AssistantMessage) => (
     <MessageRow
@@ -65,7 +77,7 @@ export function MessageList({ messages, onOpenArtifact, onRegenerate }: MessageL
       message={message}
       messages={messages}
       index={indexById.get(message.id) ?? -1}
-      onOpenArtifact={onOpenArtifact}
+      artifactRows={artifactRows}
       onRegenerate={message.id === regenerateId ? onRegenerate : undefined}
     />
   );
@@ -148,14 +160,15 @@ function MessageRow({
   message,
   messages,
   index,
-  onOpenArtifact,
+  artifactRows,
   onRegenerate,
 }: {
   message: AssistantMessage;
   /** Full transcript — a confirmation row reads its outcome from later rows. */
   messages: AssistantMessage[];
   index: number;
-  onOpenArtifact?: (artifactId: string) => void;
+  /** artifact id → the row that shows it in full (latestArtifactRows). */
+  artifactRows: Map<string, string>;
   /** Set on the last assistant row only. */
   onRegenerate?: () => void;
 }) {
@@ -163,17 +176,17 @@ function MessageRow({
     // Every branch below decodes an OPTIONAL tool_result shape and falls back
     // to the generic chip when it doesn't match, so a server that predates
     // (or outgrows) any of these still renders a readable transcript.
-    // Artifact tools get a card instead of a chip — but only when the result
-    // is the shape we know; anything else degrades to the generic chip.
+    // Artifact tools render the artifact itself, inline — but only when the
+    // result is the shape we know; anything else degrades to the generic
+    // chip. A revised artifact shows once, at its last row.
     const artifact = isArtifactToolName(message.tool_name)
       ? parseArtifactToolResult(message.tool_result)
       : null;
     if (artifact) {
-      return (
-        <ArtifactCard
-          artifact={artifact}
-          onOpen={onOpenArtifact ? () => onOpenArtifact(artifact.artifactId) : undefined}
-        />
+      return artifactRows.get(artifact.artifactId) === message.id ? (
+        <InlineArtifact artifact={artifact} />
+      ) : (
+        <ArtifactHistoryRow artifact={artifact} updated={message.tool_name === "update_artifact"} />
       );
     }
 
@@ -328,23 +341,40 @@ function ToolChip({ message }: { message: AssistantMessage }) {
   const { t } = useT("assistant");
   const toolName = message.tool_name ?? "";
   const isError = isToolResultError(message.tool_result);
-  const summary = summarizeToolResult(message.tool_result) ?? t(($) => $.tool_chip.fallback_summary);
   const linkHref = toolResultLink(message.tool_result);
+  const description = describeTool(toolName);
+  const action = description
+    ? t(($) => $.tool_chip.verb[description.verb], {
+        object: t(($) => $.tool_chip.object[description.object]),
+      })
+    : humanizeToolName(toolName);
+  // A list result reads as a count ("32 found"); anything else keeps the
+  // best-effort one-liner (a title, a key) or nothing at all.
+  const count = isError ? null : resultCount(message.tool_result);
+  const detail = isError
+    ? summarizeToolResult(message.tool_result)
+    : count !== null
+      ? t(($) => $.tool_chip.found, { count })
+      : summarizeToolResult(message.tool_result);
 
   const chip = (
     <div
       className={cn(
-        "ml-8 flex min-w-0 items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-xs text-muted-foreground",
-        linkHref && "hover:border-border hover:bg-accent/40 transition-colors",
+        "ml-8 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs text-muted-foreground",
+        linkHref && "transition-colors hover:bg-accent/60 hover:text-foreground",
       )}
     >
       {isError ? (
         <AlertCircle className="size-3 shrink-0 text-destructive/80" />
       ) : (
-        <Wrench className="size-3 shrink-0" />
+        <Check className="size-3 shrink-0" />
       )}
-      <span className="shrink-0 font-medium text-foreground/80">{humanizeToolName(toolName)}</span>
-      <span className={cn("truncate", isError && "text-destructive/80")}>{summary}</span>
+      <span className="shrink-0">{action}</span>
+      {detail && (
+        <span className={cn("truncate", isError ? "text-destructive/80" : "text-muted-foreground/70")}>
+          {detail}
+        </span>
+      )}
     </div>
   );
 

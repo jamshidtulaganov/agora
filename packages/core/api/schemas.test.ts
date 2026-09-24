@@ -73,12 +73,6 @@ import {
   EMPTY_ASSISTANT_OPERATION,
   EMPTY_ASSISTANT_OPERATION_DECISION,
   AssistantArtifactSchema,
-  AssistantArtifactSummarySchema,
-  AssistantArtifactListSchema,
-  AssistantArtifactRevisionSchema,
-  AssistantArtifactRevisionListSchema,
-  EMPTY_ASSISTANT_ARTIFACT_REVISION,
-  EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
   PinnedReportSummarySchema,
   PinnedReportSchema,
   ProjectReportsResponseSchema,
@@ -89,7 +83,6 @@ import {
   EMPTY_PINNED_REPORT,
   ReportPinSchema,
   EMPTY_ASSISTANT_ARTIFACT,
-  EMPTY_ASSISTANT_ARTIFACT_LIST,
 } from "./schemas";
 import {
   EMPTY_DAEMON_BROWSE_TARGET,
@@ -2061,107 +2054,6 @@ describe("AssistantArtifactSchema drift", () => {
       { endpoint: "GET /api/assistant/artifacts/{id}" },
     );
     expect(parsed.id).toBe("");
-  });
-});
-
-describe("AssistantArtifactListSchema drift", () => {
-  const row = {
-    id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
-    session_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-    title: "Sprint report",
-    kind: "markdown",
-    version: 1,
-    created_at: "2026-09-16T10:00:00Z",
-    updated_at: "2026-09-16T10:00:00Z",
-  };
-
-  it("parses a list row that carries no content field", () => {
-    const parsed = AssistantArtifactSummarySchema.parse(row);
-    expect(parsed).toMatchObject(row);
-    expect("content" in parsed).toBe(false);
-  });
-
-  it("degrades a non-array response to EMPTY_ASSISTANT_ARTIFACT_LIST", () => {
-    const parsed = parseWithFallback(
-      { artifacts: [row] },
-      AssistantArtifactListSchema,
-      EMPTY_ASSISTANT_ARTIFACT_LIST,
-      { endpoint: "GET /api/assistant/sessions/{id}/artifacts" },
-    );
-    expect(parsed).toEqual([]);
-  });
-
-  it("degrades to an empty list when a row is malformed", () => {
-    const parsed = AssistantArtifactListSchema.parse([row, { id: 7 }]);
-    expect(parsed).toEqual([]);
-  });
-});
-
-describe("AssistantArtifactRevision schemas drift", () => {
-  const row = {
-    id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-    artifact_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
-    version: 3,
-    title: "Sprint report",
-    created_at: "2026-09-16T10:00:00Z",
-  };
-
-  it("parses a history row and a full revision", () => {
-    expect(AssistantArtifactRevisionListSchema.parse([row])).toEqual([row]);
-    expect(AssistantArtifactRevisionSchema.parse({ ...row, content: "# body" })).toMatchObject({
-      ...row,
-      content: "# body",
-    });
-  });
-
-  it("marks a row with no usable version as v0 so the picker can drop it", () => {
-    // The picker filters `version > 0`: a row it can't address is better
-    // hidden than rendered as a version that can't be fetched.
-    expect(AssistantArtifactRevisionListSchema.parse([{ ...row, version: "3" }])[0]?.version).toBe(0);
-    const { version: _omit, ...without } = row;
-    expect(AssistantArtifactRevisionSchema.parse(without).version).toBe(0);
-  });
-
-  it("degrades a non-array history (or a malformed row) to an empty list", () => {
-    expect(
-      parseWithFallback(
-        { revisions: [row] },
-        AssistantArtifactRevisionListSchema,
-        EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
-        { endpoint: "GET /api/assistant/artifacts/{id}/revisions" },
-      ),
-    ).toEqual([]);
-    expect(AssistantArtifactRevisionListSchema.parse([row, { id: 7 }])).toEqual([]);
-  });
-
-  it("degrades a revision whose content has the wrong type to the empty revision", () => {
-    const parsed = parseWithFallback(
-      { ...row, content: { body: "x" } },
-      AssistantArtifactRevisionSchema,
-      EMPTY_ASSISTANT_ARTIFACT_REVISION,
-      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
-    );
-    // version 0 is what the pane checks before it swaps in a historical body.
-    expect(parsed.version).toBe(0);
-  });
-
-  it("degrades a null response (endpoint not deployed yet) to the empty revision", () => {
-    const parsed = parseWithFallback(
-      null,
-      AssistantArtifactRevisionSchema,
-      EMPTY_ASSISTANT_ARTIFACT_REVISION,
-      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
-    );
-    expect(parsed).toBe(EMPTY_ASSISTANT_ARTIFACT_REVISION);
-  });
-
-  it("keeps a revision that carries extra fields a newer server added", () => {
-    const parsed = AssistantArtifactRevisionSchema.parse({
-      ...row,
-      content: "# body",
-      author: "assistant",
-    });
-    expect(parsed.content).toBe("# body");
   });
 });
 

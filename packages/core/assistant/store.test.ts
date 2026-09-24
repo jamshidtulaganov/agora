@@ -168,15 +168,4 @@ describe("createAssistantStore drafts and artifact state", () => {
     store.getState().setIdentity("user-a");
     expect(store.getState().composerContextBySession).toEqual({});
   });
-
-  it("tracks open artifacts without persisting them", () => {
-    const storage = memoryStorage();
-    const store = createAssistantStore({ storage });
-    store.getState().setIdentity("user-a");
-    store.getState().setOpenArtifact("session-a", "artifact-1");
-    expect(store.getState().openArtifactId).toEqual({ "session-a": "artifact-1" });
-    expect([...storage.values.keys()]).toEqual([]);
-    store.getState().setIdentity("user-b");
-    expect(store.getState().openArtifactId).toEqual({});
-  });
 });
