@@ -209,3 +209,15 @@ func TestZohoCRMModulesDiscovery(t *testing.T) {
 		t.Fatalf("modules: %d %s", mw2.Code, mw2.Body.String())
 	}
 }
+
+// seedZohoConnection saves a workspace (org-level) Zoho connection through
+// the real handler; the connection probe must succeed against the stub the
+// test configured.
+func seedZohoConnection(t *testing.T, wsID string) {
+	t.Helper()
+	if w := putZohoConn(t, wsID, map[string]any{
+		"dc": "us", "client_id": "1000.ws", "client_secret": "ws-secret", "refresh_token": "ws-refresh",
+	}); w.Code != http.StatusOK {
+		t.Fatalf("seed connection: %d %s", w.Code, w.Body.String())
+	}
+}

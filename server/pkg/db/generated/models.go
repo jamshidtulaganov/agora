@@ -1527,6 +1527,40 @@ type WorkspaceInvitation struct {
 	InviteeBitrixID pgtype.Text        `json:"invitee_bitrix_id"`
 }
 
+type ZohoAccount struct {
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	Dc                    string             `json:"dc"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	Scopes                string             `json:"scopes"`
+	ZohoEmail             string             `json:"zoho_email"`
+	ZohoName              string             `json:"zoho_name"`
+	CrmUserID             string             `json:"crm_user_id"`
+	CrmRole               string             `json:"crm_role"`
+	CrmProfile            string             `json:"crm_profile"`
+	DeskOrgID             string             `json:"desk_org_id"`
+	DeskAgentID           string             `json:"desk_agent_id"`
+	DeskDepartments       []byte             `json:"desk_departments"`
+	Status                string             `json:"status"`
+	CheckedAt             pgtype.Timestamptz `json:"checked_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ZohoCallLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Source      string             `json:"source"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Tool        string             `json:"tool"`
+	Object      string             `json:"object"`
+	RecordCount int32              `json:"record_count"`
+	DurationMs  int32              `json:"duration_ms"`
+	Error       string             `json:"error"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ZohoConnection struct {
 	ID                    pgtype.UUID        `json:"id"`
 	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
@@ -1544,6 +1578,12 @@ type ZohoConnection struct {
 	CreatedBy             pgtype.UUID        `json:"created_by"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ZohoOauthState struct {
+	State     string             `json:"state"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type ZohoSyncConfig struct {

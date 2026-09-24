@@ -64,8 +64,10 @@ type Config struct {
 	DisableWorkspaceCreation bool
 	// PublicURL is the absolute base URL the API is reachable at from the
 	// public internet, with no trailing slash (e.g. "https://app.agora.dev").
-	// Used only to build webhook_url responses for autopilot webhook triggers
-	// — never for auth, routing, or workspace resolution. Empty when unset,
+	// Used only to build absolute URLs the outside world calls back on —
+	// autopilot webhook_url responses, OAuth redirect URIs (Slack, Zoho) and
+	// the /mcp/zoho entry handed to agents — never for auth, routing, or
+	// workspace resolution. Empty when unset,
 	// in which case clients fall back to webhook_path + their own origin.
 	// Reading the public host from request headers (Host / X-Forwarded-Host)
 	// is intentionally avoided so a misconfigured reverse proxy cannot trick
