@@ -773,6 +773,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/zoho-projects/projects", h.ListZohoProjects)
 		r.Post("/api/zoho-projects/sync", h.SyncZohoProjects)
 		r.Post("/api/zoho-projects/import", h.ImportZohoProjects)
+		r.Post("/api/zoho-projects/migrate-workspaces", h.MigrateZohoWorkspaces)
 
 		// SD: Zoho Sprints importer (separate product from Zoho Projects;
 		// Team -> Project -> Sprint -> Item). Imports each Sprints project into its

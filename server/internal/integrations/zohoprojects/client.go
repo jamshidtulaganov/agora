@@ -380,6 +380,13 @@ type Project struct {
 	Name        string
 	Description string
 	Status      string
+	// Key is the portal-wide project key ("OCT-33").
+	Key string
+	// CustomStatus is the portal's custom project status ("Active",
+	// "In Progress", "Cancelled"). Status stays the coarse active/archived
+	// bucket; a cancelled project is still Status=="active".
+	CustomStatus string
+	Owner        User
 }
 
 // User is a minimal Zoho Projects user — a task's owner/creator. Only the
@@ -484,11 +491,16 @@ type listProjectsResponse struct {
 }
 
 type rawProject struct {
-	ID          flexInt `json:"id"`
-	IDString    flexInt `json:"id_string"`
-	Name        flexInt `json:"name"`
-	Description flexInt `json:"description"`
-	Status      flexInt `json:"status"`
+	ID           flexInt `json:"id"`
+	IDString     flexInt `json:"id_string"`
+	Name         flexInt `json:"name"`
+	Description  flexInt `json:"description"`
+	Status       flexInt `json:"status"`
+	Key          flexInt `json:"key"`
+	CustomStatus flexInt `json:"custom_status_name"`
+	OwnerID      flexInt `json:"owner_zpuid"`
+	OwnerName    flexInt `json:"owner_name"`
+	OwnerEmail   flexInt `json:"owner_email"`
 }
 
 // ListProjects returns the projects in a portal. Paginates via index/range.
@@ -525,10 +537,17 @@ func (c *Client) ListProjects(ctx context.Context, portalID string) ([]Project, 
 				continue
 			}
 			out = append(out, Project{
-				ID:          id,
-				Name:        rp.Name.String(),
-				Description: rp.Description.String(),
-				Status:      rp.Status.String(),
+				ID:           id,
+				Name:         html.UnescapeString(rp.Name.String()),
+				Description:  rp.Description.String(),
+				Status:       rp.Status.String(),
+				Key:          rp.Key.String(),
+				CustomStatus: rp.CustomStatus.String(),
+				Owner: User{
+					ID:    rp.OwnerID.String(),
+					Name:  rp.OwnerName.String(),
+					Email: rp.OwnerEmail.String(),
+				},
 			})
 		}
 		if len(parsed.Projects) < maxPageSize {
@@ -837,6 +856,70 @@ type listCommentsResponse struct {
 // maxCommentsPerTask caps how many comments GetTaskComments returns so a task
 // with a long thread can't balloon the import. Mirrors the bitrix cap.
 const maxCommentsPerTask = 50
+
+// --- ListProjectUsers -------------------------------------------------------
+
+// ProjectUser is one member of a Zoho project with its project role. Role is
+// Zoho's raw label ("admin", "manager", "employee", "contractor", "client");
+// MapRole turns it into an Agora workspace role.
+type ProjectUser struct {
+	ID     string
+	Name   string
+	Email  string
+	Role   string
+	Active bool
+}
+
+type listProjectUsersResponse struct {
+	Users []struct {
+		ID      flexInt `json:"id"`
+		ZPUID   flexInt `json:"zpuid"`
+		Name    flexInt `json:"name"`
+		Email   flexInt `json:"email"`
+		Role    flexInt `json:"role"`
+		Profile flexInt `json:"profile_type"`
+		Active  *bool   `json:"active"`
+	} `json:"users"`
+}
+
+// ListProjectUsers returns a project's members with their project role. It
+// needs the ZohoProjects.users.READ scope; without it Zoho answers with an
+// "Invalid OAuth scope" error, which the caller treats as "membership unknown"
+// and falls back to the people it can see on tasks.
+func (c *Client) ListProjectUsers(ctx context.Context, portalID, projectID string) ([]ProjectUser, error) {
+	portalID = strings.TrimSpace(portalID)
+	projectID = strings.TrimSpace(projectID)
+	if portalID == "" || projectID == "" {
+		return nil, errors.New("zohoprojects: empty portal or project id")
+	}
+	path := "/portal/" + url.PathEscape(portalID) + "/projects/" + url.PathEscape(projectID) + "/users/"
+	body, err := c.get(ctx, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if emptyJSONBody(body) {
+		return nil, nil
+	}
+	var parsed listProjectUsersResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("zohoprojects: decode project users: %w", err)
+	}
+	out := make([]ProjectUser, 0, len(parsed.Users))
+	for _, u := range parsed.Users {
+		email := strings.TrimSpace(u.Email.String())
+		if email == "" {
+			continue
+		}
+		out = append(out, ProjectUser{
+			ID:     firstNonEmpty(u.ZPUID, u.ID),
+			Name:   u.Name.String(),
+			Email:  email,
+			Role:   firstNonEmpty(u.Role, u.Profile),
+			Active: u.Active == nil || *u.Active,
+		})
+	}
+	return out, nil
+}
 
 // GetTaskComments returns a task's comment feed (author, date, content). It
 // reads one page (the API returns newest-first); the result is capped at
