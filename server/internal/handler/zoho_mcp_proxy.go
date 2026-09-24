@@ -22,10 +22,10 @@ import (
 // no Zoho secret ever reaches a daemon, an agent process, or an mcp_config
 // blob (unlike embedded-auth hosted MCP URLs).
 //
-// Acting identity resolution, most-specific first:
-//  1. task initiator's zoho_user_binding (the human who triggered the run)
-//  2. runtime owner's zoho_user_binding (X-User-ID from the task token)
-//  3. workspace zoho_connection (org-level identity) as fallback
+// The acting identity is only ever the person the task works for
+// (zohoActingUserForTask, zoho_identity.go) calling with their own Zoho
+// grant, so Zoho applies that person's role and sharing rules. There is no
+// runtime-owner or org-level fallback. The tools are read-only.
 //
 // The protocol implementation is a deliberate minimal subset of MCP
 // Streamable HTTP (JSON-RPC 2.0 over POST): initialize, ping, tools/list,
@@ -107,52 +107,26 @@ var zohoMcpTools = []mcpTool{
 			"id":     map[string]any{"type": "string"},
 		}, "module", "id"),
 	},
-	{
-		Name:        "zoho_crm_create_record",
-		Description: "Create one record. data maps field api_names to values (use zoho_crm_fields to learn them). Attributed to the acting user in Zoho.",
-		InputSchema: objSchema(map[string]any{
-			"module": map[string]any{"type": "string"},
-			"data":   map[string]any{"type": "object", "description": "field api_name → value"},
-		}, "module", "data"),
-	},
-	{
-		Name:        "zoho_crm_update_record",
-		Description: "Update fields on one record. Attributed to the acting user in Zoho.",
-		InputSchema: objSchema(map[string]any{
-			"module": map[string]any{"type": "string"},
-			"id":     map[string]any{"type": "string"},
-			"data":   map[string]any{"type": "object", "description": "field api_name → value"},
-		}, "module", "id", "data"),
-	},
 }
 
-// zohoActingClient resolves the Zoho client for this request's acting
-// identity. Returns a human-readable identity label for zoho_whoami.
+// zohoActingClient resolves the Zoho client for the person this task works
+// for. Returns a human-readable identity label for zoho_whoami, or ok=false
+// when the task can't be attributed to a person or that person hasn't
+// connected Zoho.
 func (h *Handler) zohoActingClient(ctx context.Context, r *http.Request) (*zohocrm.Client, string, bool) {
 	wsUUID, err := util.ParseUUID(r.Header.Get("X-Workspace-ID"))
 	if err != nil {
 		return nil, "", false
 	}
-
-	// 1. Task initiator — the human whose request the agent is serving.
-	if taskID, terr := util.ParseUUID(r.Header.Get("X-Task-ID")); terr == nil {
-		if task, qerr := h.Queries.GetAgentTask(ctx, taskID); qerr == nil && task.InitiatorUserID.Valid {
-			if client, ok := h.zohoCRMClientForUser(ctx, wsUUID, task.InitiatorUserID); ok {
-				return client, "task initiator binding", true
-			}
-		}
+	userID, reason, ok := h.zohoTaskIdentityForRequest(ctx, r.Header.Get("X-Task-ID"))
+	if !ok {
+		return nil, "", false
 	}
-	// 2. Runtime owner (the task token's bound user).
-	if userID, uerr := util.ParseUUID(r.Header.Get("X-User-ID")); uerr == nil {
-		if client, ok := h.zohoCRMClientForUser(ctx, wsUUID, userID); ok {
-			return client, "runtime owner binding", true
-		}
+	client, ok := h.zohoCRMClientForUser(ctx, wsUUID, userID)
+	if !ok {
+		return nil, "", false
 	}
-	// 3. Workspace connection — org-level identity.
-	if client, ok := h.zohoCRMClientForWorkspace(ctx, wsUUID); ok {
-		return client, "workspace connection (org-level)", true
-	}
-	return nil, "", false
+	return client, "the person who " + reason, true
 }
 
 // ZohoMcpProxy is the Streamable-HTTP MCP endpoint. Auth contract: the
@@ -259,7 +233,7 @@ func (h *Handler) handleZohoMcpToolCall(w http.ResponseWriter, r *http.Request, 
 	client, identity, ok := h.zohoActingClient(r.Context(), r)
 	if !ok {
 		h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf(
-			"no Zoho identity available: bind your Zoho account in workspace settings, or ask an admin to configure the workspace Zoho connection"))
+			"no Zoho access for this task: Zoho is only read as the person the task works for, and either no person could be identified or they haven't connected their Zoho account. Ask them to connect Zoho in Agora, then @mention you"))
 		return
 	}
 
@@ -314,31 +288,6 @@ func (h *Handler) handleZohoMcpToolCall(w http.ResponseWriter, r *http.Request, 
 		}
 		rec, err := client.GetRecord(r.Context(), module, id)
 		h.writeZohoMcpToolResult(w, req.ID, rec, err)
-	case "zoho_crm_create_record":
-		module, ok := requireModule()
-		if !ok {
-			return
-		}
-		data, _ := args["data"].(map[string]any)
-		if len(data) == 0 {
-			h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf("data object is required"))
-			return
-		}
-		id, err := client.CreateRecord(r.Context(), module, data)
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"id": id, "module": module}, err)
-	case "zoho_crm_update_record":
-		module, ok := requireModule()
-		if !ok {
-			return
-		}
-		id := strArg("id")
-		data, _ := args["data"].(map[string]any)
-		if id == "" || len(data) == 0 {
-			h.writeZohoMcpToolResult(w, req.ID, nil, fmt.Errorf("id and data are required"))
-			return
-		}
-		err := client.UpdateRecord(r.Context(), module, id, data)
-		h.writeZohoMcpToolResult(w, req.ID, map[string]any{"id": id, "module": module, "updated": err == nil}, err)
 	default:
 		writeJSON(w, http.StatusOK, jsonRPCResponse{JSONRPC: "2.0", ID: req.ID,
 			Error: &jsonRPCError{Code: -32602, Message: "unknown tool: " + params.Name}})

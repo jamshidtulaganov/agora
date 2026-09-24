@@ -175,11 +175,15 @@ setting a same-named server on the agent overrides the default. The stored
 **Auto-provisioned "zoho" server.** When the workspace has a Zoho connection
 configured, every claimed task also receives a `zoho` MCP server entry
 pointing at the Agora-hosted Zoho proxy (`/mcp/zoho`), authenticated with the
-task's own token. Its tools (`zoho_whoami`, `zoho_crm_modules`,
-`zoho_crm_fields`, `zoho_crm_search`, `zoho_crm_get_record`,
-`zoho_crm_create_record`, `zoho_crm_update_record`) act AS the human behind
-the task when that person has bound their Zoho account (workspace settings →
-Zoho), falling back to the workspace's org-level connection. An agent-level
+task's own token. Its tools are read-only (`zoho_whoami`,
+`zoho_crm_modules`, `zoho_crm_fields`, `zoho_crm_search`,
+`zoho_crm_get_record`) and act ONLY as the person the task works for — whoever
+started the chat, @mentioned the agent, set up the autopilot, asked for the
+quick-create, or last assigned the issue (else its creator, else the parent
+issue's person) — using that person's own Zoho account, so Zoho applies their
+role and sharing rules. There is no fallback to the runtime owner or to the
+workspace's org-level connection: if no person can be identified, or they
+haven't connected Zoho, every tool returns an error saying so. An agent-level
 `zoho` server entry suppresses the auto-provisioned one.
 
 ## Skill binding

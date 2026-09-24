@@ -75,11 +75,16 @@ func TestZohoMcpProxy_ProtocolHandshake(t *testing.T) {
 	if nw.Code != http.StatusAccepted {
 		t.Fatalf("notification: expected 202, got %d", nw.Code)
 	}
-	// tools/list carries the full surface
+	// tools/list carries the read surface and nothing that writes.
 	lw := mcpCall(t, wsID, testUserID, "", rpc(2, "tools/list", nil))
-	for _, tool := range []string{"zoho_whoami", "zoho_crm_modules", "zoho_crm_fields", "zoho_crm_search", "zoho_crm_get_record", "zoho_crm_create_record", "zoho_crm_update_record"} {
+	for _, tool := range []string{"zoho_whoami", "zoho_crm_modules", "zoho_crm_fields", "zoho_crm_search", "zoho_crm_get_record"} {
 		if !strings.Contains(lw.Body.String(), tool) {
 			t.Fatalf("tools/list missing %s: %s", tool, lw.Body.String())
+		}
+	}
+	for _, tool := range []string{"create_record", "update_record"} {
+		if strings.Contains(lw.Body.String(), tool) {
+			t.Fatalf("tools/list offers a write tool %s: %s", tool, lw.Body.String())
 		}
 	}
 	// GET → 405 (no server-initiated streams)
@@ -105,7 +110,31 @@ func TestZohoMcpProxy_RequiresTaskToken(t *testing.T) {
 	}
 }
 
-func TestZohoMcpProxy_ToolCallActsAsBoundUser(t *testing.T) {
+// seedZohoTask inserts a queued agent task with the given initiator (empty
+// for none) and returns its id — the only input the proxy's identity rule
+// reads.
+func seedZohoTask(t *testing.T, initiatorID string) string {
+	t.Helper()
+	agentID := createHandlerTestAgent(t, "zoho-identity-agent", nil)
+	var initiator any
+	if initiatorID != "" {
+		initiator = initiatorID
+	}
+	var taskID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, initiator_user_id)
+		VALUES ($1, $2, 'queued', 2, $3)
+		RETURNING id
+	`, agentID, handlerTestRuntimeID(t), initiator).Scan(&taskID); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
+	})
+	return taskID
+}
+
+func TestZohoMcpProxy_ToolCallActsAsTaskPerson(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -117,18 +146,19 @@ func TestZohoMcpProxy_ToolCallActsAsBoundUser(t *testing.T) {
 	if w := putZohoBinding(t, wsID, "1000.grantcode.abc"); w.Code != http.StatusOK {
 		t.Fatalf("seed binding: %d %s", w.Code, w.Body.String())
 	}
+	taskID := seedZohoTask(t, testUserID)
 
-	// whoami resolves through the runtime owner's binding.
-	w := mcpCall(t, wsID, testUserID, "", rpc(3, "tools/call", map[string]any{
+	// whoami resolves through the binding of the person who started the task.
+	w := mcpCall(t, wsID, testUserID, taskID, rpc(3, "tools/call", map[string]any{
 		"name": "zoho_whoami", "arguments": map[string]any{},
 	}))
 	text, isErr := toolText(t, w.Body.Bytes())
-	if isErr || !strings.Contains(text, "person@octanefuel.com") || !strings.Contains(text, "runtime owner binding") {
+	if isErr || !strings.Contains(text, "person@octanefuel.com") || !strings.Contains(text, "started this conversation") {
 		t.Fatalf("whoami: isErr=%v text=%s", isErr, text)
 	}
 
 	// modules ride the same identity.
-	mw := mcpCall(t, wsID, testUserID, "", rpc(4, "tools/call", map[string]any{
+	mw := mcpCall(t, wsID, testUserID, taskID, rpc(4, "tools/call", map[string]any{
 		"name": "zoho_crm_modules", "arguments": map[string]any{},
 	}))
 	mtext, misErr := toolText(t, mw.Body.Bytes())
@@ -137,15 +167,50 @@ func TestZohoMcpProxy_ToolCallActsAsBoundUser(t *testing.T) {
 	}
 
 	// Module name validation fails closed.
-	bw := mcpCall(t, wsID, testUserID, "", rpc(5, "tools/call", map[string]any{
+	bw := mcpCall(t, wsID, testUserID, taskID, rpc(5, "tools/call", map[string]any{
 		"name": "zoho_crm_fields", "arguments": map[string]any{"module": "Bad;DROP"},
 	}))
 	if _, bisErr := toolText(t, bw.Body.Bytes()); !bisErr {
 		t.Fatal("expected isError for invalid module name")
 	}
+
+	// A write tool is unknown, not quietly allowed.
+	cw := mcpCall(t, wsID, testUserID, taskID, rpc(6, "tools/call", map[string]any{
+		"name": "zoho_crm_create_record", "arguments": map[string]any{"module": "Deals", "data": map[string]any{"Deal_Name": "x"}},
+	}))
+	if !strings.Contains(cw.Body.String(), "unknown tool") {
+		t.Fatalf("expected unknown tool for create_record, got %s", cw.Body.String())
+	}
 }
 
-func TestZohoMcpProxy_FallsBackToWorkspaceConnection(t *testing.T) {
+// The runtime owner's own binding must not stand in for a task that can't be
+// attributed to a person.
+func TestZohoMcpProxy_NoFallbackToRuntimeOwner(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	stub := zohoBindingStub(t, false)
+	configureZohoConnEnv(t, stub.URL)
+	wsID := createMcpTestWorkspace(t, ctx, "handler-tests-zoho-mcp-owner", "owner")
+	seedZohoConnection(t, wsID)
+	if w := putZohoBinding(t, wsID, "1000.grantcode.abc"); w.Code != http.StatusOK {
+		t.Fatalf("seed binding: %d %s", w.Code, w.Body.String())
+	}
+	taskID := seedZohoTask(t, "") // no initiator, no issue, no mention
+
+	w := mcpCall(t, wsID, testUserID, taskID, rpc(7, "tools/call", map[string]any{
+		"name": "zoho_crm_modules", "arguments": map[string]any{},
+	}))
+	text, isErr := toolText(t, w.Body.Bytes())
+	if !isErr || !strings.Contains(text, "no Zoho access") {
+		t.Fatalf("expected no-access tool error, got isErr=%v text=%s", isErr, text)
+	}
+}
+
+// The workspace's org-level connection must not stand in for a person who
+// hasn't connected Zoho.
+func TestZohoMcpProxy_NoFallbackToWorkspaceConnection(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -154,33 +219,14 @@ func TestZohoMcpProxy_FallsBackToWorkspaceConnection(t *testing.T) {
 	configureZohoConnEnv(t, stub.URL)
 	wsID := createMcpTestWorkspace(t, ctx, "handler-tests-zoho-mcp-fb", "owner")
 	seedZohoConnection(t, wsID)
-	// No user binding — org-level fallback.
+	taskID := seedZohoTask(t, testUserID) // a person, but no binding
 
-	w := mcpCall(t, wsID, testUserID, "", rpc(6, "tools/call", map[string]any{
+	w := mcpCall(t, wsID, testUserID, taskID, rpc(8, "tools/call", map[string]any{
 		"name": "zoho_whoami", "arguments": map[string]any{},
 	}))
 	text, isErr := toolText(t, w.Body.Bytes())
-	if isErr || !strings.Contains(text, "workspace connection (org-level)") {
-		t.Fatalf("fallback identity wrong: isErr=%v text=%s", isErr, text)
-	}
-}
-
-func TestZohoMcpProxy_NoIdentityIsToolError(t *testing.T) {
-	if testHandler == nil || testPool == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-	stub := zohoBindingStub(t, false)
-	configureZohoConnEnv(t, stub.URL)
-	wsID := createMcpTestWorkspace(t, ctx, "handler-tests-zoho-mcp-none", "owner")
-	// No connection, no binding.
-
-	w := mcpCall(t, wsID, testUserID, "", rpc(7, "tools/call", map[string]any{
-		"name": "zoho_crm_modules", "arguments": map[string]any{},
-	}))
-	text, isErr := toolText(t, w.Body.Bytes())
-	if !isErr || !strings.Contains(text, "no Zoho identity") {
-		t.Fatalf("expected identity tool-error, got isErr=%v text=%s", isErr, text)
+	if !isErr || !strings.Contains(text, "no Zoho access") {
+		t.Fatalf("expected no-access tool error, got isErr=%v text=%s", isErr, text)
 	}
 }
 
