@@ -570,25 +570,38 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 
 	draft := zohoprojects.MapTaskToIssue(task)
 	assigneeType, assigneeID := h.zohoResolveAssignee(ctx, wsID, &task.Owner, st)
+	// Every other owner of a multi-owner task is still a person on the project;
+	// resolving them provisions their membership in migration mode.
+	for i := 1; i < len(task.Owners); i++ {
+		h.zohoResolveAssignee(ctx, wsID, &task.Owners[i], st)
+	}
+	// The Zoho creator authors the issue when they are a member; otherwise the
+	// workspace owner stands in, as before.
+	creatorID := ownerID
+	if _, id := h.zohoResolveAssignee(ctx, wsID, &task.Creator, st); id.Valid {
+		creatorID = id
+	}
 
 	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
 		WorkspaceID:  wsID,
 		Title:        draft.Title,
 		Description:  strToText(draft.Description),
 		Status:       draft.Status,
-		Priority:     "none",
+		Priority:     draft.Priority,
 		AssigneeType: assigneeType,
 		AssigneeID:   assigneeID,
 		CreatorType:  "member",
-		CreatorID:    ownerID,
+		CreatorID:    creatorID,
 		ProjectID:    st.agoraProjectID,
+		StartDate:    zohoDate(task.StartDate),
+		DueDate:      zohoDate(task.EndDate),
 		// Link a Zoho subtask under its parent's Agora issue (zero/invalid for a
 		// top-level task).
 		ParentIssueID: parentIssueID,
 		// Dedup is on the task id (set as metadata post-create), not the title.
 		AllowDuplicate: true,
 	}, service.IssueCreateOpts{
-		ActorID: util.UUIDToString(ownerID),
+		ActorID: util.UUIDToString(creatorID),
 	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("create issue: %w", err)
@@ -631,7 +644,7 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 	// Enrich with the task's comments, once (create path only, so a re-import
 	// doesn't duplicate them). Best-effort. Skipped once the run has been
 	// throttled by Zoho's per-endpoint comment rate limit.
-	if st.importComments && !st.commentsThrottled {
+	if st.importComments && !st.commentsThrottled && !task.NoComments {
 		h.importZohoComments(ctx, wsID, res.Issue.ID, ownerID, zohoProjectID, task.ID, st)
 	}
 	return res.Issue.ID, nil
@@ -861,6 +874,7 @@ func (h *Handler) importZohoComments(ctx context.Context, wsID, issueID, ownerID
 		return
 	}
 	if len(comments) == 0 {
+		h.setZohoImportFlag(ctx, wsID, issueID, zohoCommentsImportedMetaKey)
 		return
 	}
 
@@ -930,7 +944,7 @@ func (h *Handler) zohoResolveAssignee(ctx context.Context, wsID pgtype.UUID, own
 		}
 		return h.assigneeIfMember(ctx, wsID, cached)
 	}
-	agoraUser, err := h.Queries.GetUserByEmail(ctx, owner.Email)
+	agoraUser, err := h.Queries.GetUserByEmail(ctx, email)
 	if err != nil {
 		st.userCache[email] = ""
 		return none, pgtype.UUID{}
@@ -938,6 +952,28 @@ func (h *Handler) zohoResolveAssignee(ctx context.Context, wsID pgtype.UUID, own
 	userID := util.UUIDToString(agoraUser.ID)
 	st.userCache[email] = userID
 	return h.assigneeIfMember(ctx, wsID, userID)
+}
+
+// zohoIssueHasFlag reports whether the issue's metadata carries key. A lookup
+// failure reads as "set" so a DB hiccup never triggers duplicate comments.
+func (h *Handler) zohoIssueHasFlag(ctx context.Context, issueID pgtype.UUID, key string) bool {
+	var has bool
+	if err := h.DB.QueryRow(ctx,
+		`SELECT COALESCE(metadata ? $2, false) FROM issue WHERE id = $1`, issueID, key,
+	).Scan(&has); err != nil {
+		return true
+	}
+	return has
+}
+
+// zohoDate converts a Zoho MM-DD-YYYY display date to a pgtype.Date; an empty
+// or unparseable value stays unset.
+func zohoDate(s string) pgtype.Date {
+	t, ok := zohoprojects.ParseDate(s)
+	if !ok {
+		return pgtype.Date{}
+	}
+	return pgtype.Date{Time: t, Valid: true}
 }
 
 // zohoSetIssueAssignee applies an assignee change with a RAW pgx UPDATE — no
