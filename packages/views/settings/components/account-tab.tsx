@@ -13,6 +13,7 @@ import { api, ApiError } from "@agora/core/api";
 import { useT } from "../../i18n";
 import { DeleteAccountDialog } from "./delete-account-dialog";
 import { ProfileAvatarPicker } from "./profile-avatar-picker";
+import { ZohoAccountCard } from "./zoho-account-card";
 
 // Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in
 // JS String.length (UTF-16 code units) here while the server counts runes,
@@ -159,6 +160,13 @@ export function AccountTab() {
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold">
+          {t(($) => $.account.section_connected_accounts)}
+        </h2>
+        <ZohoAccountCard />
       </section>
 
       <section className="space-y-4">

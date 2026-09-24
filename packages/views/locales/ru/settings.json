@@ -52,6 +52,7 @@
   },
   "account": {
     "section_profile": "Профиль",
+    "section_connected_accounts": "Подключённые аккаунты",
     "click_avatar_hint": "Нажмите, чтобы загрузить аватар",
     "name_label": "Имя",
     "profile_description_label": "О вас",
@@ -70,7 +71,27 @@
     "delete_button": "Удалить аккаунт",
     "toast_delete_failed": "Не удалось удалить аккаунт",
     "delete_blocked": "Сначала передайте права владельца или удалите эти рабочие пространства: {{workspaces}}.",
-    "delete_blocked_fallback": "рабочие пространства, где вы единственный владелец"
+    "delete_blocked_fallback": "рабочие пространства, где вы единственный владелец",
+    "zoho": {
+      "title": "Zoho",
+      "not_available": "Zoho пока не настроен на этом сервере.",
+      "description": "Подключите аккаунт Zoho, чтобы ассистент и агенты могли читать ваши данные в Zoho CRM и Desk — только то, что разрешает ваша роль в Zoho. Agora ничего не меняет в Zoho.",
+      "connect": "Подключить Zoho",
+      "connecting": "Открываем Zoho...",
+      "connected_as": "Подключено как {{email}}",
+      "connected": "Подключено",
+      "crm_role_and_profile": "CRM: {{role}} ({{profile}})",
+      "crm_single": "CRM: {{value}}",
+      "desk": "Desk: {{departments}}",
+      "reconnect_warning": "Zoho перестал принимать это подключение. Подключитесь заново, чтобы продолжить.",
+      "reconnect": "Подключить заново",
+      "disconnect": "Отключить",
+      "disconnect_confirm_title": "Отключить Zoho?",
+      "disconnect_confirm_description": "Ассистент и агенты перестанут читать ваши данные Zoho во всех ваших рабочих пространствах. Подключить снова можно в любой момент.",
+      "cancel": "Отмена",
+      "error_connect_failed": "Не удалось открыть Zoho. Попробуйте ещё раз.",
+      "error_disconnect_failed": "Не удалось отключить Zoho. Попробуйте ещё раз."
+    }
   },
   "delete_account_dialog": {
     "title": "Удалить аккаунт",
@@ -597,7 +618,7 @@
     "connection": {
       "title": "Подключение рабочего пространства",
       "description": "Один OAuth-клиент Zoho и refresh token на всё рабочее пространство — обеспечивает обнаружение и синхронизацию модулей CRM. Секреты шифруются на сервере и больше не показываются.",
-      "not_configured": "Подключение Zoho не настроено. Личные привязки и синхронизация модулей CRM недоступны, пока оно не сохранено.",
+      "not_configured": "Подключение Zoho не настроено. Синхронизация модулей CRM недоступна, пока оно не сохранено.",
       "dc_label": "Дата-центр",
       "client_id_label": "Client ID",
       "client_id_placeholder": "1000.XXXXXXXXXX",
@@ -615,7 +636,7 @@
       "disconnect": "Отключить",
       "disconnecting": "Отключение...",
       "disconnect_confirm_title": "Отключить Zoho?",
-      "disconnect_confirm_description": "Синхронизация модулей CRM остановится, а личные привязки участников перестанут работать, пока не будет сохранено новое подключение.",
+      "disconnect_confirm_description": "Синхронизация модулей CRM остановится, пока не будет сохранено новое подключение.",
       "cancel": "Отмена",
       "error_invalid_credentials": "Zoho отклонил эти учётные данные. Проверьте client ID, client secret и refresh token.",
       "error_sealing_unavailable": "Этот сервер не может хранить секреты Zoho (AGORA_ZOHO_SECRET_KEY не задан). Обратитесь к администратору сервера.",
@@ -623,25 +644,6 @@
       "error_disconnect_failed": "Не удалось удалить подключение Zoho.",
       "toast_saved": "Подключение Zoho сохранено",
       "toast_disconnected": "Подключение Zoho удалено"
-    },
-    "binding": {
-      "title": "Ваш аккаунт Zoho",
-      "description": "Подключите свой аккаунт Zoho, чтобы агенты, работающие от вашего имени, обращались к Zoho как вы.",
-      "requires_connection": "Владелец или администратор рабочего пространства должен настроить подключение Zoho, прежде чем вы сможете подключить свой аккаунт.",
-      "bound_as": "Подключено как {{email}}",
-      "bound": "Подключено",
-      "grant_code_label": "Grant code (self-client)",
-      "grant_code_placeholder": "Вставьте self-client grant code",
-      "grant_help": "Создайте self-client grant code в консоли Zoho API со scopes, показанными ниже, и вставьте его сюда в течение пары минут — коды одноразовые и быстро истекают.",
-      "scopes_hint": "Scopes: {{scopes}}",
-      "connect": "Подключить",
-      "connecting": "Подключение...",
-      "unbind": "Отключить аккаунт Zoho",
-      "error_grant_invalid": "Zoho отклонил grant code — коды одноразовые и истекают за считанные минуты. Создайте новый и попробуйте снова.",
-      "error_connect_failed": "Не удалось подключить ваш аккаунт Zoho.",
-      "error_unbind_failed": "Не удалось отключить ваш аккаунт Zoho.",
-      "toast_bound": "Аккаунт Zoho подключён",
-      "toast_unbound": "Аккаунт Zoho отключён"
     },
     "probe": {
       "ok": "OK",

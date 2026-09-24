@@ -24,8 +24,6 @@ const ApiError = vi.hoisted(() => {
 
 const mockSaveConnection = vi.hoisted(() => vi.fn());
 const mockDeleteConnection = vi.hoisted(() => vi.fn());
-const mockBind = vi.hoisted(() => vi.fn());
-const mockUnbind = vi.hoisted(() => vi.fn());
 const mockPush = vi.hoisted(() => vi.fn());
 
 type MemberRole = "owner" | "admin" | "member";
@@ -35,9 +33,6 @@ const membersRef = vi.hoisted(() => ({
 }));
 const connectionRef = vi.hoisted(() => ({
   current: { configured: false } as Record<string, unknown> | undefined,
-}));
-const bindingRef = vi.hoisted(() => ({
-  current: { bound: false } as Record<string, unknown> | undefined,
 }));
 const configsRef = vi.hoisted(() => ({
   current: [] as Record<string, unknown>[],
@@ -49,7 +44,6 @@ vi.mock("@tanstack/react-query", () => ({
     const key = JSON.stringify(opts.queryKey);
     if (key.includes("members")) return { data: membersRef.current, isLoading: false };
     if (key.includes("zoho-connection")) return { data: connectionRef.current, isLoading: false };
-    if (key.includes("zoho-user-binding")) return { data: bindingRef.current, isLoading: false };
     if (key.includes("zoho-sync-configs")) return { data: configsRef.current, isLoading: false };
     return { data: undefined, isLoading: false };
   },
@@ -89,18 +83,12 @@ vi.mock("@agora/core/zoho", () => ({
     queryKey: ["zoho-connection", wsId],
     queryFn: vi.fn(),
   }),
-  zohoUserBindingOptions: (wsId: string) => ({
-    queryKey: ["zoho-user-binding", wsId],
-    queryFn: vi.fn(),
-  }),
   zohoSyncConfigsOptions: (wsId: string) => ({
     queryKey: ["zoho-sync-configs", wsId],
     queryFn: vi.fn(),
   }),
   useSaveZohoConnection: () => ({ mutateAsync: mockSaveConnection, isPending: false }),
   useDeleteZohoConnection: () => ({ mutateAsync: mockDeleteConnection, isPending: false }),
-  useSaveZohoUserBinding: () => ({ mutateAsync: mockBind, isPending: false }),
-  useDeleteZohoUserBinding: () => ({ mutateAsync: mockUnbind, isPending: false }),
 }));
 
 vi.mock("sonner", () => ({
@@ -130,7 +118,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   connectionRef.current = { configured: false };
-  bindingRef.current = { bound: false };
   configsRef.current = [];
 });
 
@@ -240,77 +227,13 @@ describe("ZohoTab — connection section", () => {
   });
 });
 
-describe("ZohoTab — personal binding section", () => {
-  it("walks the unbound → bound flow", async () => {
+describe("ZohoTab — personal account", () => {
+  it("no longer offers a per-workspace personal binding", () => {
     connectionRef.current = { configured: true, dc: "us", client_id: "1000.abc" };
-    bindingRef.current = { bound: false };
-    mockBind.mockResolvedValue({ bound: true, zoho_user_email: "j@x.io" });
-
-    const { rerender } = renderTab();
-    const input = screen.getByLabelText(enSettings.zoho.binding.grant_code_label);
-    await userEvent.type(input, "1000.grant.code");
-    await userEvent.click(screen.getByText(enSettings.zoho.binding.connect));
-    await waitFor(() => expect(mockBind).toHaveBeenCalledWith("1000.grant.code"));
-    expect(toast.success).toHaveBeenCalled();
-
-    // The mutation invalidates the binding query; simulate the refetched state.
-    bindingRef.current = { bound: true, zoho_user_email: "j@x.io", probe_status: "ok" };
-    rerender(<ZohoTab />);
-    expect(screen.getByText("Connected as j@x.io")).toBeTruthy();
-    expect(screen.getByLabelText(enSettings.zoho.binding.unbind)).toBeTruthy();
-    expect(
-      screen.queryByLabelText(enSettings.zoho.binding.grant_code_label),
-    ).toBeNull();
-  });
-
-  it("asks for the workspace connection before binding", () => {
-    connectionRef.current = { configured: false };
     renderTab();
-    expect(screen.getByText(enSettings.zoho.binding.requires_connection)).toBeTruthy();
-    expect(
-      screen.queryByLabelText(enSettings.zoho.binding.grant_code_label),
-    ).toBeNull();
-  });
-
-  it("surfaces a 422 grant rejection inline", async () => {
-    connectionRef.current = { configured: true, dc: "us", client_id: "1000.abc" };
-    mockBind.mockRejectedValue(new ApiError("zoho_grant_invalid", 422));
-    renderTab();
-    await userEvent.type(
-      screen.getByLabelText(enSettings.zoho.binding.grant_code_label),
-      "stale-code",
-    );
-    await userEvent.click(screen.getByText(enSettings.zoho.binding.connect));
-    expect(
-      await screen.findByText(enSettings.zoho.binding.error_grant_invalid),
-    ).toBeTruthy();
-  });
-
-  it("surfaces a 400 with the server's message inline", async () => {
-    connectionRef.current = { configured: true, dc: "us", client_id: "1000.abc" };
-    mockBind.mockRejectedValue(
-      new ApiError("workspace zoho connection must be configured before binding user accounts", 400),
-    );
-    renderTab();
-    await userEvent.type(
-      screen.getByLabelText(enSettings.zoho.binding.grant_code_label),
-      "code",
-    );
-    await userEvent.click(screen.getByText(enSettings.zoho.binding.connect));
-    expect(
-      await screen.findByText(
-        "workspace zoho connection must be configured before binding user accounts",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("unbinds from the bound state", async () => {
-    connectionRef.current = { configured: true, dc: "us", client_id: "1000.abc" };
-    bindingRef.current = { bound: true, zoho_user_email: "j@x.io", probe_status: "ok" };
-    mockUnbind.mockResolvedValue(undefined);
-    renderTab();
-    await userEvent.click(screen.getByLabelText(enSettings.zoho.binding.unbind));
-    await waitFor(() => expect(mockUnbind).toHaveBeenCalled());
+    // The personal Zoho account moved to Settings → Profile.
+    expect(screen.queryByText(/grant code/i)).toBeNull();
+    expect(screen.queryByText(/your zoho account/i)).toBeNull();
   });
 });
 

@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { parseWithFallback } from "../api/schema";
 import {
+  EMPTY_ZOHO_ACCOUNT,
+  EMPTY_ZOHO_CONNECT_RESPONSE,
   EMPTY_ZOHO_CONNECTION_STATUS,
   EMPTY_ZOHO_CRM_MODULES,
   EMPTY_ZOHO_SYNC_CONFIG,
   EMPTY_ZOHO_SYNC_CONFIGS,
-  EMPTY_ZOHO_USER_BINDING_STATUS,
+  ZohoAccountSchema,
+  ZohoConnectResponseSchema,
   ZohoConnectionStatusSchema,
   ZohoCRMModulesResponseSchema,
   ZohoSyncConfigSchema,
   ZohoSyncConfigsResponseSchema,
-  ZohoUserBindingStatusSchema,
+  zohoAccountState,
+  type ZohoAccount,
 } from "./types";
 
 // Contract tests for the dynamic-Zoho wire schemas (CLAUDE.md "API Response
@@ -70,30 +74,6 @@ describe("ZohoConnectionStatusSchema", () => {
       endpoint,
     );
     expect(parsed).toEqual(EMPTY_ZOHO_CONNECTION_STATUS);
-  });
-});
-
-describe("ZohoUserBindingStatusSchema", () => {
-  it("parses a bound payload and defaults missing probe fields", () => {
-    const parsed = parseWithFallback(
-      { bound: true, zoho_user_email: "j@x.io" },
-      ZohoUserBindingStatusSchema,
-      EMPTY_ZOHO_USER_BINDING_STATUS,
-      endpoint,
-    );
-    expect(parsed.bound).toBe(true);
-    expect(parsed.zoho_user_email).toBe("j@x.io");
-    expect(parsed.probe_status).toBe("");
-  });
-
-  it("falls back when bound has the wrong type", () => {
-    const parsed = parseWithFallback(
-      { bound: 1 },
-      ZohoUserBindingStatusSchema,
-      EMPTY_ZOHO_USER_BINDING_STATUS,
-      endpoint,
-    );
-    expect(parsed).toEqual(EMPTY_ZOHO_USER_BINDING_STATUS);
   });
 });
 
@@ -254,5 +234,158 @@ describe("ZohoSyncConfigsResponseSchema", () => {
     expect(parsed.enabled).toBe(false);
     expect(parsed.direction).toBe("");
     expect(parsed.module_api_name).toBe("Tasks");
+  });
+});
+
+describe("ZohoAccountSchema", () => {
+  const parse = (raw: unknown): ZohoAccount =>
+    parseWithFallback(raw, ZohoAccountSchema, EMPTY_ZOHO_ACCOUNT, endpoint);
+
+  it("parses a full connected payload", () => {
+    expect(
+      parse({
+        available: true,
+        connected: true,
+        status: "connected",
+        email: "shohruh.a@octanefuel.com",
+        name: "Shohruh A.",
+        crm_role: "Collections Agent",
+        crm_profile: "Standard",
+        desk_departments: ["Collections"],
+        checked_at: "2026-09-25T10:00:00Z",
+      }),
+    ).toEqual({
+      available: true,
+      connected: true,
+      status: "connected",
+      email: "shohruh.a@octanefuel.com",
+      name: "Shohruh A.",
+      crm_role: "Collections Agent",
+      crm_profile: "Standard",
+      desk_departments: ["Collections"],
+      checked_at: "2026-09-25T10:00:00Z",
+    });
+  });
+
+  it("defaults every field of the not-connected payload", () => {
+    const parsed = parse({ available: true, connected: false });
+    expect(parsed).toEqual({ ...EMPTY_ZOHO_ACCOUNT, available: true });
+    expect(zohoAccountState(parsed)).toBe("not_connected");
+  });
+
+  it("coerces a null desk_departments to []", () => {
+    const parsed = parse({
+      available: true,
+      connected: true,
+      status: "connected",
+      desk_departments: null,
+    });
+    expect(parsed.desk_departments).toEqual([]);
+    expect(parsed.connected).toBe(true);
+  });
+
+  it("drops non-string and empty department entries", () => {
+    const parsed = parse({
+      available: true,
+      connected: true,
+      desk_departments: ["Collections", 7, "", null, "Billing"],
+    });
+    expect(parsed.desk_departments).toEqual(["Collections", "Billing"]);
+  });
+
+  it("degrades wrong-typed fields one by one instead of dropping the payload", () => {
+    const parsed = parse({
+      available: true,
+      connected: true,
+      status: "connected",
+      email: 42,
+      crm_role: { name: "Agent" },
+      crm_profile: null,
+      desk_departments: "Collections",
+      checked_at: 1727258400,
+    });
+    expect(parsed).toEqual({
+      ...EMPTY_ZOHO_ACCOUNT,
+      available: true,
+      connected: true,
+      status: "connected",
+    });
+  });
+
+  it("treats a wrong-typed connected flag as not connected", () => {
+    const parsed = parse({ available: true, connected: "yes" });
+    expect(parsed.connected).toBe(false);
+    expect(zohoAccountState(parsed)).toBe("not_connected");
+  });
+
+  it("treats a wrong-typed available flag as unavailable", () => {
+    const parsed = parse({ available: "true", connected: false });
+    expect(zohoAccountState(parsed)).toBe("unavailable");
+  });
+
+  it("maps an unknown status to reconnect", () => {
+    const parsed = parse({ available: true, connected: true, status: "expired" });
+    expect(parsed.status).toBe("reconnect");
+    expect(zohoAccountState(parsed)).toBe("reconnect");
+  });
+
+  it("maps a wrong-typed status to reconnect", () => {
+    const parsed = parse({ available: true, connected: true, status: 1 });
+    expect(parsed.status).toBe("reconnect");
+  });
+
+  it("trusts connected when status is absent", () => {
+    const parsed = parse({ available: true, connected: true, email: "a@b.io" });
+    expect(parsed.status).toBe("connected");
+  });
+
+  it("falls back to unavailable on a non-object body", () => {
+    expect(parse(null)).toEqual(EMPTY_ZOHO_ACCOUNT);
+    expect(parse("oops")).toEqual(EMPTY_ZOHO_ACCOUNT);
+    expect(parse([])).toEqual(EMPTY_ZOHO_ACCOUNT);
+    expect(zohoAccountState(parse(null))).toBe("unavailable");
+  });
+});
+
+describe("zohoAccountState", () => {
+  it("is unavailable while nothing is known", () => {
+    expect(zohoAccountState(undefined)).toBe("unavailable");
+  });
+
+  it("keeps showing a connected account when new connections are off", () => {
+    expect(
+      zohoAccountState({
+        ...EMPTY_ZOHO_ACCOUNT,
+        available: false,
+        connected: true,
+        status: "connected",
+      }),
+    ).toBe("connected");
+  });
+});
+
+describe("ZohoConnectResponseSchema", () => {
+  it("parses the url", () => {
+    expect(
+      parseWithFallback(
+        { url: "https://accounts.zoho.com/oauth/v2/auth?x=1" },
+        ZohoConnectResponseSchema,
+        EMPTY_ZOHO_CONNECT_RESPONSE,
+        endpoint,
+      ).url,
+    ).toBe("https://accounts.zoho.com/oauth/v2/auth?x=1");
+  });
+
+  it("degrades a missing or wrong-typed url to empty", () => {
+    for (const raw of [{}, { url: null }, { url: 5 }, null]) {
+      expect(
+        parseWithFallback(
+          raw,
+          ZohoConnectResponseSchema,
+          EMPTY_ZOHO_CONNECT_RESPONSE,
+          endpoint,
+        ).url,
+      ).toBe("");
+    }
   });
 });

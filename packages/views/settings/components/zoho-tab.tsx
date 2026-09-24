@@ -30,11 +30,8 @@ import {
   ZOHO_DCS,
   zohoConnectionOptions,
   zohoSyncConfigsOptions,
-  zohoUserBindingOptions,
   useDeleteZohoConnection,
-  useDeleteZohoUserBinding,
   useSaveZohoConnection,
-  useSaveZohoUserBinding,
 } from "@agora/core/zoho";
 import type { ZohoConnectionStatus } from "@agora/core/zoho";
 import { useNavigation } from "../../navigation";
@@ -47,10 +44,11 @@ import { useT } from "../../i18n";
  * 1. Workspace connection — sealed OAuth credentials; status member-visible,
  *    manage (save/rotate/disconnect) owner/admin only. The backend enforces
  *    the roles; the UI hides the affordances to match (Figma tab pattern).
- * 2. Your Zoho account — per-member self-client grant binding, self-service
- *    for every member.
- * 3. CRM module sync — owner/admin summary + link to the module manager on
+ * 2. CRM module sync — owner/admin summary + link to the module manager on
  *    the Zoho page. The Projects/Sprints import deep-link card stays as-is.
+ *
+ * A person's own Zoho account is not here: it is account-level (one per
+ * person, every workspace) and lives in Settings → Profile.
  */
 export function ZohoTab() {
   const wsId = useWorkspaceId();
@@ -73,7 +71,6 @@ export function ZohoTab() {
         canManage={canManage}
         connection={connection}
       />
-      <ZohoUserBindingCard wsId={wsId} connection={connection} />
       {canManage && (
         <ZohoModuleSyncCard
           wsId={wsId}
@@ -342,142 +339,7 @@ function ZohoConnectionCard({
   );
 }
 
-// --- Section 2: personal binding ---------------------------------------------
-
-function ZohoUserBindingCard({
-  wsId,
-  connection,
-}: {
-  wsId: string;
-  connection: ZohoConnectionStatus | undefined;
-}) {
-  const { t } = useT("settings");
-  const { data: binding } = useQuery({
-    ...zohoUserBindingOptions(wsId),
-    enabled: !!wsId,
-  });
-  const bindMut = useSaveZohoUserBinding(wsId);
-  const unbindMut = useDeleteZohoUserBinding(wsId);
-
-  const [grantCode, setGrantCode] = useState("");
-  const [bindError, setBindError] = useState<string | null>(null);
-
-  const bound = binding?.bound === true;
-  const configured = connection?.configured === true;
-
-  const connect = async () => {
-    if (!grantCode.trim() || bindMut.isPending) return;
-    setBindError(null);
-    try {
-      await bindMut.mutateAsync(grantCode.trim());
-      setGrantCode("");
-      toast.success(t(($) => $.zoho.binding.toast_bound));
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 422) {
-        setBindError(t(($) => $.zoho.binding.error_grant_invalid));
-      } else {
-        // 400 carries a meaningful server message (e.g. "workspace zoho
-        // connection must be configured before binding user accounts").
-        setBindError(
-          e instanceof Error && e.message
-            ? e.message
-            : t(($) => $.zoho.binding.error_connect_failed),
-        );
-      }
-    }
-  };
-
-  const unbind = async () => {
-    if (unbindMut.isPending) return;
-    try {
-      await unbindMut.mutateAsync();
-      toast.success(t(($) => $.zoho.binding.toast_unbound));
-    } catch (e) {
-      toast.error(
-        e instanceof Error && e.message
-          ? e.message
-          : t(($) => $.zoho.binding.error_unbind_failed),
-      );
-    }
-  };
-
-  return (
-    <Card>
-      <CardContent className="space-y-4 pt-5">
-        <div className="space-y-1">
-          <h3 className="text-sm font-medium">{t(($) => $.zoho.binding.title)}</h3>
-          <p className="text-xs text-muted-foreground">
-            {t(($) => $.zoho.binding.description)}
-          </p>
-        </div>
-
-        {bound && binding ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
-            <span className="truncate font-medium">
-              {binding.zoho_user_email !== ""
-                ? t(($) => $.zoho.binding.bound_as, {
-                    email: binding.zoho_user_email,
-                  })
-                : t(($) => $.zoho.binding.bound)}
-            </span>
-            <ZohoProbeBadge status={binding.probe_status} />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto h-7 w-7 shrink-0"
-              aria-label={t(($) => $.zoho.binding.unbind)}
-              onClick={unbind}
-              disabled={unbindMut.isPending}
-            >
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
-          </div>
-        ) : !configured ? (
-          <p className="text-sm text-muted-foreground">
-            {t(($) => $.zoho.binding.requires_connection)}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <Input
-              type="password"
-              autoComplete="off"
-              placeholder={t(($) => $.zoho.binding.grant_code_placeholder)}
-              aria-label={t(($) => $.zoho.binding.grant_code_label)}
-              value={grantCode}
-              onChange={(e) => setGrantCode(e.target.value)}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              {t(($) => $.zoho.binding.grant_help)}
-            </p>
-            {connection?.scopes ? (
-              <p className="break-all font-mono text-[11px] text-muted-foreground">
-                {t(($) => $.zoho.binding.scopes_hint, {
-                  scopes: connection.scopes,
-                })}
-              </p>
-            ) : null}
-            {bindError && (
-              <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {bindError}
-              </p>
-            )}
-            <Button
-              onClick={connect}
-              disabled={bindMut.isPending || !grantCode.trim()}
-              size="sm"
-            >
-              {bindMut.isPending
-                ? t(($) => $.zoho.binding.connecting)
-                : t(($) => $.zoho.binding.connect)}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Section 3: CRM module sync summary (owner/admin) ------------------------
+// --- Section 2: CRM module sync summary (owner/admin) ------------------------
 
 function ZohoModuleSyncCard({
   wsId,
@@ -527,7 +389,7 @@ function ZohoModuleSyncCard({
   );
 }
 
-// --- Section 4: Projects/Sprints import deep link (pre-existing behavior) ----
+// --- Section 3: Projects/Sprints import deep link (pre-existing behavior) ----
 
 function ZohoImportCard() {
   const { t } = useT("settings");
@@ -554,7 +416,7 @@ function ZohoImportCard() {
 
 // --- Shared probe badge -------------------------------------------------------
 
-/** Probe badge for connection/binding status. Unknown server-side statuses
+/** Probe badge for the workspace connection status. Unknown server-side statuses
  * render nothing rather than a wrong badge (enum-drift rule). */
 function ZohoProbeBadge({ status }: { status: string | undefined }) {
   const { t } = useT("settings");

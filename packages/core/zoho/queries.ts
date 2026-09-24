@@ -34,7 +34,6 @@ export function zohoSprintsProjectsOptions() {
 
 export const zohoDynKeys = {
   connection: (wsId: string) => ["zoho-connection", wsId] as const,
-  userBinding: (wsId: string) => ["zoho-user-binding", wsId] as const,
   crmModules: (wsId: string) => ["zoho-crm-modules", wsId] as const,
   crmFields: (wsId: string, module: string) =>
     ["zoho-crm-fields", wsId, module] as const,
@@ -46,14 +45,6 @@ export function zohoConnectionOptions(wsId: string) {
   return queryOptions({
     queryKey: zohoDynKeys.connection(wsId),
     queryFn: () => api.getZohoConnection(wsId),
-  });
-}
-
-/** The caller's own Zoho account binding. */
-export function zohoUserBindingOptions(wsId: string) {
-  return queryOptions({
-    queryKey: zohoDynKeys.userBinding(wsId),
-    queryFn: () => api.getZohoUserBinding(wsId),
   });
 }
 
@@ -78,5 +69,23 @@ export function zohoSyncConfigsOptions(wsId: string) {
   return queryOptions({
     queryKey: zohoDynKeys.syncConfigs(wsId),
     queryFn: () => api.listZohoSyncConfigs(wsId),
+  });
+}
+
+// --- Personal Zoho account ----------------------------------------------------
+// Account-scoped (one per person, shared by every workspace), so the key is
+// deliberately NOT keyed on wsId.
+
+export const zohoAccountKeys = {
+  mine: () => ["me", "zoho-account"] as const,
+};
+
+/** The caller's own Zoho account. Connecting finishes in another window on
+ * Zoho's page, so the account card refetches when this window regains
+ * focus (see ZohoAccountCard). */
+export function myZohoAccountOptions() {
+  return queryOptions({
+    queryKey: zohoAccountKeys.mine(),
+    queryFn: () => api.getMyZohoAccount(),
   });
 }

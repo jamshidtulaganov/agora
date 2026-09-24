@@ -212,7 +212,8 @@ import type {
   ZohoSprintsImportResponse,
   ZohoConnectionStatus,
   PutZohoConnectionRequest,
-  ZohoUserBindingStatus,
+  ZohoAccount,
+  ZohoConnectResponse,
   ZohoCRMModule,
   ZohoCRMFieldsResponse,
   ZohoSyncConfig,
@@ -222,8 +223,10 @@ import type {
 import {
   ZohoConnectionStatusSchema,
   EMPTY_ZOHO_CONNECTION_STATUS,
-  ZohoUserBindingStatusSchema,
-  EMPTY_ZOHO_USER_BINDING_STATUS,
+  ZohoAccountSchema,
+  EMPTY_ZOHO_ACCOUNT,
+  ZohoConnectResponseSchema,
+  EMPTY_ZOHO_CONNECT_RESPONSE,
   ZohoCRMModulesResponseSchema,
   EMPTY_ZOHO_CRM_MODULES,
   ZohoCRMFieldsResponseSchema,
@@ -3155,8 +3158,8 @@ export class ApiClient {
 
   // --- Dynamic Zoho integration (docs/zoho-dynamic-integration.md) ---
   // Workspace connection (sealed OAuth credentials, owner/admin writes),
-  // per-user identity binding (self-service), CRM module/field discovery
-  // and per-module sync configs. Status responses never carry secrets.
+  // CRM module/field discovery and per-module sync configs. Status responses
+  // never carry secrets. The personal Zoho account lives under /api/me/zoho.
 
   async getZohoConnection(workspaceId: string): Promise<ZohoConnectionStatus> {
     const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-connection`);
@@ -3180,32 +3183,6 @@ export class ApiClient {
 
   async deleteZohoConnection(workspaceId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/zoho-connection`, {
-      method: "DELETE",
-    });
-  }
-
-  async getZohoUserBinding(workspaceId: string): Promise<ZohoUserBindingStatus> {
-    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-user-binding`);
-    return parseWithFallback(raw, ZohoUserBindingStatusSchema, EMPTY_ZOHO_USER_BINDING_STATUS, {
-      endpoint: "GET /api/workspaces/{id}/zoho-user-binding",
-    });
-  }
-
-  async putZohoUserBinding(
-    workspaceId: string,
-    grantCode: string,
-  ): Promise<ZohoUserBindingStatus> {
-    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-user-binding`, {
-      method: "PUT",
-      body: JSON.stringify({ grant_code: grantCode }),
-    });
-    return parseWithFallback(raw, ZohoUserBindingStatusSchema, EMPTY_ZOHO_USER_BINDING_STATUS, {
-      endpoint: "PUT /api/workspaces/{id}/zoho-user-binding",
-    });
-  }
-
-  async deleteZohoUserBinding(workspaceId: string): Promise<void> {
-    await this.fetch(`/api/workspaces/${workspaceId}/zoho-user-binding`, {
       method: "DELETE",
     });
   }
@@ -3272,6 +3249,38 @@ export class ApiClient {
     await this.fetch(`/api/workspaces/${workspaceId}/zoho/sync-configs/${configId}`, {
       method: "DELETE",
     });
+  }
+
+  // --- Personal Zoho account (account-scoped, not workspace-scoped) ---
+
+  async getMyZohoAccount(): Promise<ZohoAccount> {
+    const raw = await this.fetch<unknown>("/api/me/zoho");
+    return parseWithFallback(raw, ZohoAccountSchema, EMPTY_ZOHO_ACCOUNT, {
+      endpoint: "GET /api/me/zoho",
+    });
+  }
+
+  /** Returns the Zoho sign-in page to open. Throws when the server answers
+   * without a usable http(s) url, so the caller never opens "undefined". */
+  async connectZohoAccount(): Promise<ZohoConnectResponse> {
+    const raw = await this.fetch<unknown>("/api/me/zoho/connect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const { url } = parseWithFallback(
+      raw,
+      ZohoConnectResponseSchema,
+      EMPTY_ZOHO_CONNECT_RESPONSE,
+      { endpoint: "POST /api/me/zoho/connect" },
+    );
+    if (!/^https?:\/\//i.test(url.trim())) {
+      throw new Error("Zoho connect response did not include a sign-in url");
+    }
+    return { url: url.trim() };
+  }
+
+  async disconnectZohoAccount(): Promise<void> {
+    await this.fetch("/api/me/zoho", { method: "DELETE" });
   }
 
   // Policy Agent — the workspace's agent-fleet speed + health (per-agent run
