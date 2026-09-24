@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO "user" (name, email, avatar_url)
 VALUES ($1, $2, $3)
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 type CreateUserParams struct {
@@ -42,12 +42,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav FROM "user"
+SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at FROM "user"
 WHERE id = $1
 `
 
@@ -70,12 +71,13 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav FROM "user"
+SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at FROM "user"
 WHERE email = $1
 `
 
@@ -98,6 +100,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }
@@ -108,7 +111,7 @@ UPDATE "user" SET
     cloud_waitlist_reason = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 type JoinCloudWaitlistParams struct {
@@ -139,6 +142,7 @@ func (q *Queries) JoinCloudWaitlist(ctx context.Context, arg JoinCloudWaitlistPa
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }
@@ -148,7 +152,7 @@ UPDATE "user" SET
     onboarded_at = COALESCE(onboarded_at, now()),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 func (q *Queries) MarkUserOnboarded(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -170,8 +174,23 @@ func (q *Queries) MarkUserOnboarded(ctx context.Context, id pgtype.UUID) (User, 
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
+}
+
+const markUserWelcomeSent = `-- name: MarkUserWelcomeSent :exec
+UPDATE "user" SET
+    welcome_sent_at = now(),
+    updated_at = now()
+WHERE id = $1
+`
+
+// Records that the one-time welcome email went out (Zoho workspace
+// migration), so a re-run of the send skips this person.
+func (q *Queries) MarkUserWelcomeSent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markUserWelcomeSent, id)
+	return err
 }
 
 const patchUserOnboarding = `-- name: PatchUserOnboarding :one
@@ -179,7 +198,7 @@ UPDATE "user" SET
     onboarding_questionnaire = COALESCE($1, onboarding_questionnaire),
     updated_at = now()
 WHERE id = $2
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 type PatchUserOnboardingParams struct {
@@ -210,8 +229,36 @@ func (q *Queries) PatchUserOnboarding(ctx context.Context, arg PatchUserOnboardi
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
+}
+
+const resetOnboardingIfNeverSignedIn = `-- name: ResetOnboardingIfNeverSignedIn :one
+WITH reset AS (
+    UPDATE "user" u SET
+        onboarded_at = NULL,
+        updated_at = now()
+    WHERE u.id = $1
+      AND u.onboarded_at IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM verification_code v
+          WHERE lower(v.email) = lower(u.email) AND v.used
+      )
+    RETURNING u.id
+)
+SELECT EXISTS (SELECT 1 FROM reset) AS reset
+`
+
+// Sends a person whose account was created for them into the first-login
+// member setup: clears onboarded_at, but only while no email login code was
+// ever used for this address — someone who already signs in keeps their
+// settled state. Returns whether the reset happened.
+func (q *Queries) ResetOnboardingIfNeverSignedIn(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, resetOnboardingIfNeverSignedIn, id)
+	var reset bool
+	err := row.Scan(&reset)
+	return reset, err
 }
 
 const setStarterContentState = `-- name: SetStarterContentState :one
@@ -219,7 +266,7 @@ UPDATE "user" SET
     starter_content_state = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 type SetStarterContentStateParams struct {
@@ -251,6 +298,7 @@ func (q *Queries) SetStarterContentState(ctx context.Context, arg SetStarterCont
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }
@@ -269,7 +317,7 @@ UPDATE "user" SET
     hidden_nav = COALESCE($7, hidden_nav),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at
 `
 
 type UpdateUserParams struct {
@@ -324,6 +372,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.HiddenNav,
+		&i.WelcomeSentAt,
 	)
 	return i, err
 }

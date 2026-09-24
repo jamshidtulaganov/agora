@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -248,5 +249,49 @@ func TestBuildInvitationParams_ToAndFromPassedThrough(t *testing.T) {
 	}
 	if !strings.Contains(p.Html, "https://app.agora.dev/invite/abc") {
 		t.Errorf("body missing invite URL: %s", p.Html)
+	}
+}
+
+func TestBuildWelcomeParams_ListsWorkspacesAndEscapes(t *testing.T) {
+	params := buildWelcomeParams("noreply@tsst.ai", "dina.c@tsst.ai", "Dina <b>Carter</b>",
+		[]string{"Customer Experience Team Q3", "R&D <script>"}, "https://app.example/login")
+
+	if params.Subject != "Your team is on Agora now" {
+		t.Errorf("subject = %q", params.Subject)
+	}
+	if len(params.To) != 1 || params.To[0] != "dina.c@tsst.ai" || params.From != "noreply@tsst.ai" {
+		t.Errorf("to/from = %v / %q", params.To, params.From)
+	}
+	for _, want := range []string{
+		"Welcome to Agora, Dina",
+		"Customer Experience Team Q3",
+		"R&amp;D &lt;script&gt;",
+		`href="https://app.example/login"`,
+		"Sign in with <strong",
+		"dina.c@tsst.ai",
+	} {
+		if !strings.Contains(params.Html, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+	if strings.Contains(params.Html, "<script>") || strings.Contains(params.Html, "<b>Carter") {
+		t.Error("body must escape user-controlled text")
+	}
+}
+
+func TestBuildWelcomeParams_CapsTheWorkspaceList(t *testing.T) {
+	var many []string
+	for i := 0; i < 11; i++ {
+		many = append(many, fmt.Sprintf("Workspace %02d", i))
+	}
+	params := buildWelcomeParams("a@x", "b@y", "", many, "https://app.example/login")
+	if !strings.Contains(params.Html, "Workspace 07") || strings.Contains(params.Html, "Workspace 08") {
+		t.Error("expected the first 8 workspaces only")
+	}
+	if !strings.Contains(params.Html, "and 3 more") {
+		t.Error("expected an 'and 3 more' line")
+	}
+	if !strings.Contains(params.Html, "Welcome to Agora</h1>") {
+		t.Error("a nameless recipient gets the plain greeting")
 	}
 }

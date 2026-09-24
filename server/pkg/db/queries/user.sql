@@ -82,3 +82,30 @@ UPDATE "user" SET
     updated_at = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: MarkUserWelcomeSent :exec
+-- Records that the one-time welcome email went out (Zoho workspace
+-- migration), so a re-run of the send skips this person.
+UPDATE "user" SET
+    welcome_sent_at = now(),
+    updated_at = now()
+WHERE id = $1;
+
+-- name: ResetOnboardingIfNeverSignedIn :one
+-- Sends a person whose account was created for them into the first-login
+-- member setup: clears onboarded_at, but only while no email login code was
+-- ever used for this address — someone who already signs in keeps their
+-- settled state. Returns whether the reset happened.
+WITH reset AS (
+    UPDATE "user" u SET
+        onboarded_at = NULL,
+        updated_at = now()
+    WHERE u.id = $1
+      AND u.onboarded_at IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM verification_code v
+          WHERE lower(v.email) = lower(u.email) AND v.used
+      )
+    RETURNING u.id
+)
+SELECT EXISTS (SELECT 1 FROM reset) AS reset;

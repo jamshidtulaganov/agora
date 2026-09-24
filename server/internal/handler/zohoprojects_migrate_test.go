@@ -265,10 +265,12 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 	if _, ok := roles[migEveEmail]; ok {
 		t.Errorf("gmail person must not become a member")
 	}
+	// A created account starts NOT onboarded, so its first sign-in lands in
+	// the member setup rather than straight in a workspace.
 	var onboarded bool
 	testPool.QueryRow(ctx, `SELECT onboarded_at IS NOT NULL FROM "user" WHERE email = $1`, migAliceEmail).Scan(&onboarded)
-	if !onboarded {
-		t.Errorf("provisioned user should be marked onboarded")
+	if onboarded {
+		t.Errorf("provisioned user should start in the member setup (onboarded_at NULL)")
 	}
 
 	// Background task import.
