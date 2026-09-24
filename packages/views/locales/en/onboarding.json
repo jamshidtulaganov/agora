@@ -332,26 +332,22 @@
     "finish_failed": "Couldn't finish the setup. Try again.",
     "about": {
       "title": "Your team is on Agora now",
-      "lede_one": "Your team's projects moved here from Zoho Projects, so your {{count}} workspace is ready, with every task, its status and its comments.",
-      "lede_other": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
-      "lede_few": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
-      "lede_many": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
+      "lede_one": "Your team's projects moved here from Zoho Projects, so your {{count}} workspace is ready, with your tasks, their status and their comments.",
+      "lede_other": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with your tasks, their status and their comments.",
+      "lede_few": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with your tasks, their status and their comments.",
+      "lede_many": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with your tasks, their status and their comments.",
       "cta": "Set up my profile",
       "features": {
-        "tasks": {
-          "title": "Tasks",
-          "body": "Each task has an owner, a status and a due date. Move it along as the work happens."
+        "issues": {
+          "body": "Your Zoho tasks are issues here. Each has an owner, a status and a due date; move it along as the work happens."
         },
-        "my_tasks": {
-          "title": "My tasks",
+        "my_issues": {
           "body": "Everything assigned to you, from every workspace, in one list."
         },
         "inbox": {
-          "title": "Inbox",
           "body": "Assignments, mentions and replies land here, so nothing slips."
         },
         "assistant": {
-          "title": "Assistant",
           "body": "Ask in plain words, like \"what's overdue in Billing?\", and it looks it up or makes the change for you."
         }
       }
@@ -387,25 +383,21 @@
     "back": "Back",
     "next": "Next",
     "done": "Got it",
+    "switcher_title": "Your workspaces",
     "stops": {
       "workspace-switcher": {
-        "title": "Your workspaces",
         "body": "Each department is its own workspace. Switch between them here."
       },
       "myIssues": {
-        "title": "My tasks",
         "body": "Everything assigned to you, across all your workspaces. A good place to start each day."
       },
       "issues": {
-        "title": "Issues",
-        "body": "All of this workspace's tasks, as a list or a board. Open one to comment or change its status."
+        "body": "Your tasks in this workspace, as a list or a board. Open one to comment or change its status."
       },
       "inbox": {
-        "title": "Inbox",
         "body": "Assignments, mentions and replies arrive here."
       },
       "assistant": {
-        "title": "Assistant",
         "body": "Ask about your work in plain words, or ask it to make a change. It shows charts and reports right in the chat."
       }
     }

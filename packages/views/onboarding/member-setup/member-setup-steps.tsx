@@ -30,15 +30,18 @@ function StepTitle({ title, lede }: { title: string; lede: string }) {
 
 // --- 1. What Agora is -------------------------------------------------------
 
-const FEATURES: { key: "tasks" | "my_tasks" | "inbox" | "assistant"; icon: LucideIcon }[] = [
-  { key: "tasks", icon: ListTodo },
-  { key: "my_tasks", icon: CircleUser },
+// Keyed by sidebar nav label, so each row is named exactly as the item the
+// person will look for in the sidebar.
+const FEATURES: { key: "issues" | "my_issues" | "inbox" | "assistant"; icon: LucideIcon }[] = [
+  { key: "issues", icon: ListTodo },
+  { key: "my_issues", icon: CircleUser },
   { key: "inbox", icon: Inbox },
   { key: "assistant", icon: Sparkles },
 ];
 
 export function StepAbout({ workspaces }: { workspaces: Workspace[] }) {
   const { t } = useT("onboarding");
+  const { t: tNav } = useT("layout");
   return (
     <>
       <StepTitle
@@ -52,7 +55,7 @@ export function StepAbout({ workspaces }: { workspaces: Workspace[] }) {
               <Icon className="size-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-medium">{t(($) => $.member_setup.about.features[key].title)}</p>
+              <p className="text-sm font-medium">{tNav(($) => $.nav[key])}</p>
               <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
                 {t(($) => $.member_setup.about.features[key].body)}
               </p>

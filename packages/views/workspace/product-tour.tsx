@@ -10,6 +10,8 @@ import { useT } from "../i18n";
 /** The stops, in order: each is a sidebar item carrying `data-nav-key`. */
 const STOPS = ["workspace-switcher", "myIssues", "issues", "inbox", "assistant"] as const;
 type Stop = (typeof STOPS)[number];
+// Each nav stop's card is titled with the sidebar item's own label.
+const NAV_LABEL = { myIssues: "my_issues", issues: "issues", inbox: "inbox", assistant: "assistant" } as const;
 
 const CARD_WIDTH = 300;
 const GAP = 12;
@@ -27,7 +29,7 @@ function anchorFor(stop: Stop): HTMLElement | null {
 
 /**
  * The first-login "web tour": a spotlight that walks the sidebar — the
- * workspace switcher, My tasks, Issues, Inbox, the Assistant — with one
+ * workspace switcher, My Issues, Issues, Inbox, the Assistant — with one
  * sentence each. Started by the member setup (useProductTourStore) and shown
  * only inside the workspace it opened. A stop whose item is not on screen
  * (hidden by the person, or a narrow window with the sidebar folded away) is
@@ -42,6 +44,7 @@ export function ProductTour() {
 
 function TourSpotlight() {
   const { t } = useT("onboarding");
+  const { t: tNav } = useT("layout");
   const stop = useProductTourStore((s) => s.stop);
   const [stops, setStops] = useState<Stop[] | null>(null);
   const [index, setIndex] = useState(0);
@@ -124,16 +127,18 @@ function TourSpotlight() {
 
   return createPortal(
     <div className="fixed inset-0 z-[60]" aria-live="polite">
-      {/* The spotlight: a hole in a dim veil, drawn as one element's shadow. */}
+      {/* The spotlight: a hole in a dim veil, drawn as one element's shadow,
+          with an outline (not a ring, which is a shadow too) for the edge.
+          The veil is darker in dark mode, where 35% black barely shows. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed rounded-lg ring-2 ring-brand motion-safe:transition-all motion-safe:duration-200"
+        className="pointer-events-none fixed rounded-lg outline-2 outline-brand [--tour-veil:rgb(0_0_0/0.35)] motion-safe:transition-all motion-safe:duration-200 dark:[--tour-veil:rgb(0_0_0/0.6)]"
         style={{
           left: rect.left - PAD,
           top: rect.top - PAD,
           width: rect.width + PAD * 2,
           height: rect.height + PAD * 2,
-          boxShadow: "0 0 0 9999px rgb(0 0 0 / 0.35)",
+          boxShadow: "0 0 0 9999px var(--tour-veil)",
         }}
       />
       <div
@@ -148,7 +153,9 @@ function TourSpotlight() {
         </p>
         <div className="flex flex-col gap-1">
           <h2 id={titleId} className="text-sm font-semibold">
-            {t(($) => $.product_tour.stops[current].title)}
+            {current === "workspace-switcher"
+              ? t(($) => $.product_tour.switcher_title)
+              : tNav(($) => $.nav[NAV_LABEL[current]])}
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
             {t(($) => $.product_tour.stops[current].body)}

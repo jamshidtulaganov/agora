@@ -330,26 +330,22 @@
     "finish_failed": "无法完成设置，请重试。",
     "about": {
       "title": "你的团队已迁到 Agora",
-      "lede_one": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，所有 issue、状态和评论都在。",
-      "lede_other": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，所有 issue、状态和评论都在。",
-      "lede_few": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，所有 issue、状态和评论都在。",
-      "lede_many": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，所有 issue、状态和评论都在。",
+      "lede_one": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，你的 issue、状态和评论都在。",
+      "lede_other": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，你的 issue、状态和评论都在。",
+      "lede_few": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，你的 issue、状态和评论都在。",
+      "lede_many": "团队的项目已从 Zoho Projects 迁到这里：你的 {{count}} 个工作区已就绪，你的 issue、状态和评论都在。",
       "cta": "设置我的资料",
       "features": {
-        "tasks": {
-          "title": "Issue",
+        "issues": {
           "body": "每个 issue 都有负责人、状态和截止日期，随着工作推进更新它。"
         },
-        "my_tasks": {
-          "title": "我的 issue",
+        "my_issues": {
           "body": "所有分配给你的 issue，来自每个工作区，集中在一个列表里。"
         },
         "inbox": {
-          "title": "收件箱",
           "body": "分配、提及和回复都会到这里，不会漏掉。"
         },
         "assistant": {
-          "title": "助手",
           "body": "直接用自然语言提问，比如“Billing 里有哪些逾期？”，它会查出来，或替你完成修改。"
         }
       }
@@ -385,25 +381,21 @@
     "back": "返回",
     "next": "下一步",
     "done": "知道了",
+    "switcher_title": "你的工作区",
     "stops": {
       "workspace-switcher": {
-        "title": "你的工作区",
         "body": "每个部门都有自己的工作区，在这里切换。"
       },
       "myIssues": {
-        "title": "我的 issue",
         "body": "所有工作区里分配给你的 issue，适合每天从这里开始。"
       },
       "issues": {
-        "title": "Issues",
-        "body": "这个工作区的所有 issue，可用列表或看板查看。打开一个即可评论或修改状态。"
+        "body": "你在这个工作区的 issue，可用列表或看板查看。打开一个即可评论或修改状态。"
       },
       "inbox": {
-        "title": "收件箱",
         "body": "分配、提及和回复都会到这里。"
       },
       "assistant": {
-        "title": "助手",
         "body": "用自然语言询问工作情况，或让它做修改。图表和报告会直接显示在对话中。"
       }
     }
