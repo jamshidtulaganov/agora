@@ -595,8 +595,13 @@ func ToolSpecs() []llm.Tool {
 			Description: "List the issues assigned to the user. Omit workspace_id to fan out across EVERY workspace " +
 				"the user belongs to (bounded per workspace) — that is how to answer \"what is on my plate\". " +
 				"Pass workspace_id to look at one workspace only. " +
-				"The result carries a scope object naming every workspace checked, any that could not be read, " +
-				"whether the list was truncated, and the exact total — quote those, never the row count.",
+				"The issues array is a CAPPED page, but total and by_status are EXACT counts the server takes over " +
+				"ALL of the user's matching issues (same filters, archived excluded): total is how many there are, " +
+				"by_status splits them per status. returned is how many rows came back and truncated says whether " +
+				"that is fewer than total. Answer \"how many tasks do I have\" / \"how many of mine are done\" " +
+				"from total and by_status — never by counting the rows. When total is null the count failed: say " +
+				"you do not know the exact number. The scope object names every workspace checked and any that " +
+				"could not be read.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -606,13 +611,14 @@ func ToolSpecs() []llm.Tool {
     },
     "status": {
       "type": "string",
-      "description": "Optional status filter, e.g. todo, in_progress, in_review, done, cancelled."
+      "enum": ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
+      "description": "Optional status filter. Omit it to get every status, split in by_status."
     },
     "limit": {
       "type": "integer",
       "minimum": 1,
       "maximum": 50,
-      "description": "Maximum issues to return (per workspace when unscoped). Defaults to 20."
+      "description": "Maximum issue rows to return (per workspace when unscoped). Defaults to 20. Does not affect total or by_status."
     }
   },
   "additionalProperties": false
@@ -623,8 +629,8 @@ func ToolSpecs() []llm.Tool {
 			Description: "List the issues in ONE workspace — everybody's, not just the user's. This is the plain " +
 				"issue list the board and the Issues page show, and it is what to COUNT from: " +
 				"\"how many bugs are open\", \"what is in the Platform project\", \"show me everything in review\". " +
-				"list_my_issues answers a narrower question (only the user's own) and will under-count if you " +
-				"use it for a workspace-wide total. " +
+				"list_my_issues answers a narrower question (only the user's own — its total and by_status are " +
+				"exact for that) and will under-count if you use it for a workspace-wide total. " +
 				"scope.total is an exact count taken with the same filters (archived issues excluded unless " +
 				"include_archived), so it is the number to quote even when the rows are capped.",
 			Parameters: json.RawMessage(`{
