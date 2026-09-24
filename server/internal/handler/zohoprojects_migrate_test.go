@@ -121,7 +121,7 @@ func newMigrateMock(t *testing.T) *migrateMock {
 				 "start_date":"09-01-2026","end_date":"09-30-2026","is_comment_added":true,
 				 "details":{"owners":[{"zpuid":1,"name":"Alice","email":"`+migAliceEmail+`"}]},
 				 "created_by_email":"`+migBobEmail+`","created_by_full_name":"Bob","created_by_zpuid":"4",
-				 "tasklist":{"id":601,"id_string":"601","name":"General"}},
+				 "tasklist":{"id":602,"id_string":"602","name":"Preparing"}},
 				{"id":9102,"id_string":"9102","name":"Close ledger",
 				 "status":{"name":"Closed","type":"closed"},"priority":"None","is_comment_added":false,
 				 "details":{"owners":[{"zpuid":5,"name":"Eve","email":"`+migEveEmail+`"}]},
@@ -335,6 +335,25 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 	testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE workspace_id = $1::uuid`, wsID).Scan(&comments)
 	if issues != 2 || comments != 1 {
 		t.Errorf("after re-run issues=%d comments=%d, want 2 and 1", issues, comments)
+	}
+
+	// The task list becomes a label on its issue ("General" does not), once.
+	var labels []string
+	lrows, err := testPool.Query(ctx,
+		`SELECT l.name || '@' || (i.metadata->>'zoho_task_id')
+		   FROM issue_to_label x JOIN issue_label l ON l.id = x.label_id JOIN issue i ON i.id = x.issue_id
+		  WHERE i.workspace_id = $1::uuid`, wsID)
+	if err != nil {
+		t.Fatalf("labels: %v", err)
+	}
+	for lrows.Next() {
+		var l string
+		lrows.Scan(&l)
+		labels = append(labels, l)
+	}
+	lrows.Close()
+	if len(labels) != 1 || labels[0] != "Preparing@9101" {
+		t.Errorf("task-list labels = %v, want [Preparing@9101]", labels)
 	}
 }
 

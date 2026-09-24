@@ -568,6 +568,7 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
 			}
 		}
+		h.applyZohoTasklistLabel(ctx, wsID, existing.ID, task)
 		// Migration re-runs backfill comments a throttled earlier run skipped.
 		if st.backfillComments && st.importComments && !st.commentsThrottled && !task.NoComments &&
 			!h.zohoIssueHasFlag(ctx, existing.ID, zohoCommentsImportedMetaKey) {
@@ -653,6 +654,7 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 	}
 
 	h.setZohoOwnerMetadata(ctx, res.Issue.ID, wsID, &task.Owner)
+	h.applyZohoTasklistLabel(ctx, wsID, res.Issue.ID, task)
 
 	slog.Info("zoho import: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID), "task_id", task.ID,
@@ -977,6 +979,20 @@ func (h *Handler) zohoResolveAssignee(ctx context.Context, wsID pgtype.UUID, own
 	userID := util.UUIDToString(agoraUser.ID)
 	st.userCache[email] = userID
 	return h.assigneeIfMember(ctx, wsID, userID)
+}
+
+// applyZohoTasklistLabel files the issue under its Zoho task list as a label
+// (see zohoprojects.TasklistLabel). Attach is idempotent, so the re-sync path
+// calls it too. Best-effort: a failure never blocks the task import.
+func (h *Handler) applyZohoTasklistLabel(ctx context.Context, wsID, issueID pgtype.UUID, task *zohoprojects.Task) {
+	name, ok := zohoprojects.TasklistLabel(task.TasklistName)
+	if !ok {
+		return
+	}
+	if err := h.ensureAndAttachBitrixLabel(ctx, wsID, issueID, name); err != nil {
+		slog.Warn("zoho import: attach task-list label failed",
+			"issue_id", util.UUIDToString(issueID), "task_id", task.ID, "label", name, "error", err)
+	}
 }
 
 // zohoIssueHasFlag reports whether the issue's metadata carries key. A lookup

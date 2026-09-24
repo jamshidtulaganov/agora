@@ -138,3 +138,29 @@ func TestClientParsesTaskFields(t *testing.T) {
 		t.Errorf("creator = %+v", tk.Creator)
 	}
 }
+
+func TestTasklistLabel(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"General", "", false},
+		{"A quick way to get started!", "", false},
+		{"Missing Modules", "", false},
+		{"Sprint 7", "", false},
+		{"", "", false},
+		{"Preparing", "Preparing", true},
+		{"  Customer   Service ", "Customer Service", true},
+		{"Octane &amp; Fuel", "Octane & Fuel", true},
+		{"Провести расчет эффективности и целесообразности наличия международных офисов", "Провести расчет…", true},
+	}
+	for _, c := range cases {
+		got, ok := TasklistLabel(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("TasklistLabel(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+		if len(got) > maxLabelBytes {
+			t.Errorf("TasklistLabel(%q) = %d bytes, over the label limit", c.in, len(got))
+		}
+	}
+}
