@@ -19,7 +19,8 @@ export type OnboardingCompletionPath =
   | "runtime_skipped"
   | "cloud_waitlist"
   | "skip_existing"
-  | "invite_accept";
+  | "invite_accept"
+  | "member_setup";
 
 export type Source =
   | "friends_colleagues"

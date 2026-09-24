@@ -324,5 +324,90 @@
   },
   "errors": {
     "skip_failed": "Onboarding’ni yakunlab bo‘lmadi"
+  },
+  "member_setup": {
+    "progress": "{{total}} tadan {{step}}-qadam",
+    "continue": "Davom etish",
+    "back": "Orqaga",
+    "finish_failed": "Sozlashni yakunlab bo‘lmadi. Qaytadan urinib ko‘ring.",
+    "about": {
+      "title": "Jamoangiz endi Agora’da",
+      "lede_one": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
+      "lede_other": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
+      "lede_few": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
+      "lede_many": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
+      "cta": "Profilni sozlash",
+      "features": {
+        "tasks": {
+          "title": "Vazifalar",
+          "body": "Har bir vazifaning mas’uli, holati va muddati bor. Ish borishi bilan uni oldinga suring."
+        },
+        "my_tasks": {
+          "title": "Mening vazifalarim",
+          "body": "Sizga biriktirilgan hamma narsa, barcha ish maydonlaridan — bitta ro‘yxatda."
+        },
+        "inbox": {
+          "title": "Kiruvchilar",
+          "body": "Biriktirishlar, eslatmalar va javoblar shu yerga keladi — hech narsa qolib ketmaydi."
+        },
+        "assistant": {
+          "title": "Assistent",
+          "body": "Oddiy so‘zlar bilan so‘rang — «Billing’da nima kechikkan?» — u topib beradi yoki o‘zgartirishni o‘zi kiritadi."
+        }
+      }
+    },
+    "profile": {
+      "title": "Jamoa sizni qanday ko‘radi",
+      "lede": "Ismingiz va rasmingiz o‘z vazifalaringiz va izohlaringizda ko‘rinadi.",
+      "photo_hint": "Hamkasblar ishingizni bir qarashda tanishi uchun rasm qo‘shing.",
+      "name_label": "Ism",
+      "name_hint": "Zoho’dan olingan. Sizni boshqacha chaqirishsa, o‘zgartiring.",
+      "name_required": "Davom etish uchun ismingizni kiriting.",
+      "save_failed": "Ismni saqlab bo‘lmadi. Qaytadan urinib ko‘ring."
+    },
+    "notifications": {
+      "title": "Agora sizga qanday xabar bersin",
+      "lede": "Agora sizga vazifa biriktirilganda, sizni eslatishganda va javob kelganda xabar beradi.",
+      "later": "Buni istalgan vaqtda o‘zgartirish mumkin: Sozlamalar → Bildirishnomalar."
+    },
+    "workspaces": {
+      "title": "Ish maydonlaringiz",
+      "lede_one": "Sizda {{count}} ta ish maydoni bor. Boshlash uchun uni oching; yon panelning yuqorisida istalgan vaqtda almashtirish mumkin.",
+      "lede_other": "Sizda {{count}} ta ish maydoni bor. Boshlash uchun bittasini tanlang; yon panelning yuqorisida istalgan vaqtda almashtirish mumkin.",
+      "lede_few": "Sizda {{count}} ta ish maydoni bor. Boshlash uchun bittasini tanlang; yon panelning yuqorisida istalgan vaqtda almashtirish mumkin.",
+      "lede_many": "Sizda {{count}} ta ish maydoni bor. Boshlash uchun bittasini tanlang; yon panelning yuqorisida istalgan vaqtda almashtirish mumkin.",
+      "open": "{{workspace}}ni ochish",
+      "tour_label": "Nima qayerdaligini ko‘rsatish",
+      "tour_hint": "Kirgandan so‘ng yon panel bo‘ylab 30 soniyalik sayohat."
+    }
+  },
+  "product_tour": {
+    "counter": "{{total}} tadan {{step}}",
+    "skip": "O‘tkazib yuborish",
+    "back": "Orqaga",
+    "next": "Keyingi",
+    "done": "Tushunarli",
+    "stops": {
+      "workspace-switcher": {
+        "title": "Ish maydonlaringiz",
+        "body": "Har bir bo‘limning o‘z ish maydoni bor. Ular orasida shu yerda almashing."
+      },
+      "myIssues": {
+        "title": "Mening vazifalarim",
+        "body": "Barcha ish maydonlarida sizga biriktirilgan hamma narsa. Kunni boshlash uchun yaxshi joy."
+      },
+      "issues": {
+        "title": "Vazifalar",
+        "body": "Bu ish maydonining barcha vazifalari — ro‘yxat yoki doska ko‘rinishida. Izoh qoldirish yoki holatini o‘zgartirish uchun vazifani oching."
+      },
+      "inbox": {
+        "title": "Kiruvchilar",
+        "body": "Biriktirishlar, eslatmalar va javoblar shu yerga keladi."
+      },
+      "assistant": {
+        "title": "Assistent",
+        "body": "Ishingiz haqida oddiy so‘zlar bilan so‘rang yoki biror narsani o‘zgartirishni so‘rang. Grafik va hisobotlarni to‘g‘ridan-to‘g‘ri chatda ko‘rsatadi."
+      }
+    }
   }
 }

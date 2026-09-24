@@ -324,5 +324,90 @@
   },
   "errors": {
     "skip_failed": "Failed to finish onboarding"
+  },
+  "member_setup": {
+    "progress": "Step {{step}} of {{total}}",
+    "continue": "Continue",
+    "back": "Back",
+    "finish_failed": "Couldn't finish the setup. Try again.",
+    "about": {
+      "title": "Your team is on Agora now",
+      "lede_one": "Your team's projects moved here from Zoho Projects, so your {{count}} workspace is ready, with every task, its status and its comments.",
+      "lede_other": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
+      "lede_few": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
+      "lede_many": "Your team's projects moved here from Zoho Projects, so your {{count}} workspaces are ready, with every task, its status and its comments.",
+      "cta": "Set up my profile",
+      "features": {
+        "tasks": {
+          "title": "Tasks",
+          "body": "Each task has an owner, a status and a due date. Move it along as the work happens."
+        },
+        "my_tasks": {
+          "title": "My tasks",
+          "body": "Everything assigned to you, from every workspace, in one list."
+        },
+        "inbox": {
+          "title": "Inbox",
+          "body": "Assignments, mentions and replies land here, so nothing slips."
+        },
+        "assistant": {
+          "title": "Assistant",
+          "body": "Ask in plain words, like \"what's overdue in Billing?\", and it looks it up or makes the change for you."
+        }
+      }
+    },
+    "profile": {
+      "title": "How your team sees you",
+      "lede": "Your name and photo appear on the tasks you own and the comments you write.",
+      "photo_hint": "Add a photo so teammates recognise your work at a glance.",
+      "name_label": "Name",
+      "name_hint": "Imported from Zoho. Change it if it's not how you like to be called.",
+      "name_required": "Enter your name to continue.",
+      "save_failed": "Couldn't save your name. Try again."
+    },
+    "notifications": {
+      "title": "Choose how Agora reaches you",
+      "lede": "Agora tells you when a task is assigned to you, when someone mentions you and when there's a reply.",
+      "later": "You can change this any time in Settings → Notifications."
+    },
+    "workspaces": {
+      "title": "Your workspaces",
+      "lede_one": "You're in {{count}} workspace. Open it to start; you can switch any time from the top of the sidebar.",
+      "lede_other": "You're in {{count}} workspaces. Pick one to start; you can switch any time from the top of the sidebar.",
+      "lede_few": "You're in {{count}} workspaces. Pick one to start; you can switch any time from the top of the sidebar.",
+      "lede_many": "You're in {{count}} workspaces. Pick one to start; you can switch any time from the top of the sidebar.",
+      "open": "Open {{workspace}}",
+      "tour_label": "Show me around",
+      "tour_hint": "A 30-second walk through the sidebar once you're in."
+    }
+  },
+  "product_tour": {
+    "counter": "{{step}} of {{total}}",
+    "skip": "Skip tour",
+    "back": "Back",
+    "next": "Next",
+    "done": "Got it",
+    "stops": {
+      "workspace-switcher": {
+        "title": "Your workspaces",
+        "body": "Each department is its own workspace. Switch between them here."
+      },
+      "myIssues": {
+        "title": "My tasks",
+        "body": "Everything assigned to you, across all your workspaces. A good place to start each day."
+      },
+      "issues": {
+        "title": "Issues",
+        "body": "All of this workspace's tasks, as a list or a board. Open one to comment or change its status."
+      },
+      "inbox": {
+        "title": "Inbox",
+        "body": "Assignments, mentions and replies arrive here."
+      },
+      "assistant": {
+        "title": "Assistant",
+        "body": "Ask about your work in plain words, or ask it to make a change. It shows charts and reports right in the chat."
+      }
+    }
   }
 }
