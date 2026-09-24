@@ -27,6 +27,8 @@ export const TOOL_OBJECTS = [
   "automations", "automation", "automation_enabled", "integrations", "import_connections",
   "import", "import_mapping", "import_status", "inbox_read", "inbox", "item", "my_settings",
   "sidebar", "notification_preferences", "artifact", "plan", "usage", "activity", "qa_status",
+  "zoho_account", "zoho_crm_modules", "zoho_crm_fields", "zoho_crm", "zoho_record",
+  "zoho_departments", "zoho_tickets", "zoho_ticket", "zoho_conversation",
 ] as const;
 export type ToolObject = (typeof TOOL_OBJECTS)[number];
 
@@ -37,6 +39,19 @@ const READ_ONLY_TOOLS: Record<string, ToolObject> = {
   inbox_summary: "inbox",
   qa_status: "qa_status",
   import_status: "import_status",
+};
+
+/** The person's own Zoho, read-only: names that don't start with a verb. */
+const ZOHO_TOOLS: Record<string, ToolDescription> = {
+  zoho_whoami: { verb: "check", object: "zoho_account" },
+  zoho_crm_modules: { verb: "list", object: "zoho_crm_modules" },
+  zoho_crm_fields: { verb: "list", object: "zoho_crm_fields" },
+  zoho_crm_search: { verb: "search", object: "zoho_crm" },
+  zoho_crm_get_record: { verb: "get", object: "zoho_record" },
+  zoho_desk_departments: { verb: "list", object: "zoho_departments" },
+  zoho_desk_list_tickets: { verb: "list", object: "zoho_tickets" },
+  zoho_desk_get_ticket: { verb: "get", object: "zoho_ticket" },
+  zoho_desk_ticket_conversation: { verb: "get", object: "zoho_conversation" },
 };
 
 // Longest first, so "dry_run_import" is not read as verb "dry".
@@ -54,6 +69,8 @@ export interface ToolDescription {
  * humanized raw name instead of a wrong sentence.
  */
 export function describeTool(name: string): ToolDescription | null {
+  const zoho = ZOHO_TOOLS[name];
+  if (zoho) return zoho;
   const readOnly = READ_ONLY_TOOLS[name];
   if (readOnly) return { verb: "check", object: readOnly };
   for (const verb of VERBS_BY_LENGTH) {

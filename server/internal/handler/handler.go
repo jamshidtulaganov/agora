@@ -250,6 +250,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// The same label the UI prints under a reply, so "which model are you" is
 	// answered from configuration rather than from the model's own guess.
 	h.Assistant.ModelLabel = assistantModelLabel
+	h.Assistant.Integrations = h.assistantIntegrations
 
 	// Review verdict → merge re-check seam for the internal (task-completion)
 	// ingress paths. The HTTP comment ingress fires this inline (comment.go); the

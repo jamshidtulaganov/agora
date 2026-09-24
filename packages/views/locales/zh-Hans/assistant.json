@@ -206,7 +206,16 @@
       "plan": "计划",
       "usage": "用量",
       "activity": "动态",
-      "qa_status": "QA 状态"
+      "qa_status": "QA 状态",
+      "zoho_account": "你的 Zoho 访问权限",
+      "zoho_crm_modules": "Zoho CRM 模块",
+      "zoho_crm_fields": "Zoho CRM 字段",
+      "zoho_crm": "Zoho CRM",
+      "zoho_record": "一条 Zoho CRM 记录",
+      "zoho_departments": "Zoho Desk 部门",
+      "zoho_tickets": "Zoho Desk 工单",
+      "zoho_ticket": "一个 Zoho Desk 工单",
+      "zoho_conversation": "工单对话"
     }
   },
   "confirm": {

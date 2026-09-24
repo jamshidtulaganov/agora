@@ -206,7 +206,16 @@
       "plan": "reja",
       "usage": "foydalanish",
       "activity": "faollik",
-      "qa_status": "QA holati"
+      "qa_status": "QA holati",
+      "zoho_account": "Zoho’dagi ruxsatingiz",
+      "zoho_crm_modules": "Zoho CRM modullari",
+      "zoho_crm_fields": "Zoho CRM maydonlari",
+      "zoho_crm": "Zoho CRM",
+      "zoho_record": "Zoho CRM yozuvi",
+      "zoho_departments": "Zoho Desk bo‘limlari",
+      "zoho_tickets": "Zoho Desk tiketlari",
+      "zoho_ticket": "Zoho Desk tiketi",
+      "zoho_conversation": "tiket yozishmasi"
     }
   },
   "confirm": {
