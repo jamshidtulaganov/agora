@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -219,9 +220,32 @@ type zohoSyncState struct {
 	skipped int
 }
 
+// zohoClientMu guards the process-wide Zoho client. Every sync state shares it
+// so the access token is fetched once and reused: Zoho throttles token grants
+// per refresh token ("Access Denied"), and a portal-wide run or poller sweep
+// that built a client — and minted a token — per project tripped it.
+var (
+	zohoClientMu  sync.Mutex
+	zohoClientCfg zohoprojects.Config
+	zohoClient    *zohoprojects.Client
+)
+
+// sharedZohoClient returns the client for the current env config, rebuilding it
+// only when the config changes (credential rotation, tests pointing at a mock).
+func sharedZohoClient() *zohoprojects.Client {
+	cfg := zohoConfigFromEnv()
+	zohoClientMu.Lock()
+	defer zohoClientMu.Unlock()
+	if zohoClient == nil || cfg != zohoClientCfg {
+		zohoClient = zohoprojects.NewClient(cfg)
+		zohoClientCfg = cfg
+	}
+	return zohoClient
+}
+
 func (h *Handler) newZohoSyncState() *zohoSyncState {
 	return &zohoSyncState{
-		client:         zohoprojects.NewClient(zohoConfigFromEnv()),
+		client:         sharedZohoClient(),
 		sprintCache:    map[string]pgtype.UUID{},
 		userCache:      map[string]string{},
 		importComments: true,
