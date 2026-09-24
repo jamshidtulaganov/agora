@@ -68,7 +68,7 @@ describe("ProductTour", () => {
     expect(await screen.findByRole("dialog", { name: "Your workspaces" })).toBeInTheDocument();
     expect(screen.getByText("1 of 5")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("dialog", { name: "My tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "My Issues" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("dialog", { name: "Your workspaces" })).toBeInTheDocument();
 
@@ -86,7 +86,7 @@ describe("ProductTour", () => {
     act(() => useProductTourStore.getState().start("ws-1"));
     renderTour();
 
-    expect(await screen.findByRole("dialog", { name: "My tasks" }, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "My Issues" }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.getByText("1 of 4")).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

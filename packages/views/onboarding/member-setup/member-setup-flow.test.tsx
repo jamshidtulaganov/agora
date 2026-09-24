@@ -67,7 +67,7 @@ describe("MemberSetupFlow", () => {
 
     expect(screen.getByRole("heading", { name: "Your team is on Agora now" })).toBeInTheDocument();
     expect(screen.getByText(/your 2 workspaces are ready/)).toBeInTheDocument();
-    expect(screen.getByText("My tasks")).toBeInTheDocument();
+    expect(screen.getByText("My Issues")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Set up my profile/ }));
 
     expect(screen.getByRole("heading", { name: "How your team sees you" })).toBeInTheDocument();

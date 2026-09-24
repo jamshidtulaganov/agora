@@ -332,26 +332,22 @@
     "finish_failed": "Sozlashni yakunlab bo‘lmadi. Qaytadan urinib ko‘ring.",
     "about": {
       "title": "Jamoangiz endi Agora’da",
-      "lede_one": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
-      "lede_other": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
-      "lede_few": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
-      "lede_many": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — barcha vazifalar, holatlar va izohlar bilan.",
+      "lede_one": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — vazifalaringiz, ularning holatlari va izohlari bilan.",
+      "lede_other": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — vazifalaringiz, ularning holatlari va izohlari bilan.",
+      "lede_few": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — vazifalaringiz, ularning holatlari va izohlari bilan.",
+      "lede_many": "Jamoa loyihalari Zoho Projects’dan bu yerga ko‘chdi: {{count}} ta ish maydoningiz tayyor — vazifalaringiz, ularning holatlari va izohlari bilan.",
       "cta": "Profilni sozlash",
       "features": {
-        "tasks": {
-          "title": "Vazifalar",
+        "issues": {
           "body": "Har bir vazifaning mas’uli, holati va muddati bor. Ish borishi bilan uni oldinga suring."
         },
-        "my_tasks": {
-          "title": "Mening vazifalarim",
+        "my_issues": {
           "body": "Sizga biriktirilgan hamma narsa, barcha ish maydonlaridan — bitta ro‘yxatda."
         },
         "inbox": {
-          "title": "Kiruvchilar",
           "body": "Biriktirishlar, eslatmalar va javoblar shu yerga keladi — hech narsa qolib ketmaydi."
         },
         "assistant": {
-          "title": "Assistent",
           "body": "Oddiy so‘zlar bilan so‘rang — «Billing’da nima kechikkan?» — u topib beradi yoki o‘zgartirishni o‘zi kiritadi."
         }
       }
@@ -387,25 +383,21 @@
     "back": "Orqaga",
     "next": "Keyingi",
     "done": "Tushunarli",
+    "switcher_title": "Ish maydonlaringiz",
     "stops": {
       "workspace-switcher": {
-        "title": "Ish maydonlaringiz",
         "body": "Har bir bo‘limning o‘z ish maydoni bor. Ular orasida shu yerda almashing."
       },
       "myIssues": {
-        "title": "Mening vazifalarim",
         "body": "Barcha ish maydonlarida sizga biriktirilgan hamma narsa. Kunni boshlash uchun yaxshi joy."
       },
       "issues": {
-        "title": "Vazifalar",
-        "body": "Bu ish maydonining barcha vazifalari — ro‘yxat yoki doska ko‘rinishida. Izoh qoldirish yoki holatini o‘zgartirish uchun vazifani oching."
+        "body": "Bu ish maydonidagi vazifalaringiz — ro‘yxat yoki doska ko‘rinishida. Izoh qoldirish yoki holatini o‘zgartirish uchun vazifani oching."
       },
       "inbox": {
-        "title": "Kiruvchilar",
         "body": "Biriktirishlar, eslatmalar va javoblar shu yerga keladi."
       },
       "assistant": {
-        "title": "Assistent",
         "body": "Ishingiz haqida oddiy so‘zlar bilan so‘rang yoki biror narsani o‘zgartirishni so‘rang. Grafik va hisobotlarni to‘g‘ridan-to‘g‘ri chatda ko‘rsatadi."
       }
     }
