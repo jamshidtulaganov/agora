@@ -90,7 +90,17 @@ type Client struct {
 	mu          sync.Mutex
 	accessToken string
 	tokenExp    time.Time
+	// tokenErr / tokenErrAt remember the last failed grant so callers within
+	// tokenRetryBackoff get the same error instead of a new grant request —
+	// Zoho answers a burst of grants with "Access Denied" and keeps doing so
+	// while the burst continues.
+	tokenErr   error
+	tokenErrAt time.Time
 }
+
+// tokenRetryBackoff is how long a failed token grant is reused before trying
+// again.
+const tokenRetryBackoff = 30 * time.Second
 
 // NewClient builds a Client from cfg, applying host defaults when unset. It does
 // NOT perform any network call — the first API method triggers the initial
@@ -191,9 +201,14 @@ func (c *Client) token(ctx context.Context, force bool) (string, error) {
 	if !force && c.accessToken != "" && time.Now().Before(c.tokenExp) {
 		return c.accessToken, nil
 	}
+	if c.tokenErr != nil && time.Since(c.tokenErrAt) < tokenRetryBackoff {
+		return "", c.tokenErr
+	}
 	if err := c.refreshAccessToken(ctx); err != nil {
+		c.tokenErr, c.tokenErrAt = err, time.Now()
 		return "", err
 	}
+	c.tokenErr = nil
 	return c.accessToken, nil
 }
 
