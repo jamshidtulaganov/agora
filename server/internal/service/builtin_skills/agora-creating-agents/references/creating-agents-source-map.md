@@ -88,9 +88,10 @@ only.
 
 | Contract | Line | Behavior |
 |---|---|---|
-| `ZohoMcpProxy` endpoint | ~160 | POST /mcp/zoho, task-token actors only (403 otherwise); minimal MCP Streamable-HTTP subset (initialize/ping/tools list+call; notifications 202; GET 405) |
-| Acting identity | ~134 | task initiator binding → runtime owner binding → workspace connection fallback; no identity → isError tool result telling the agent to bind |
-| Claim-time auto-provision | ~330 (+ `daemon.go` after mat_ mint) | `injectZohoMcpProxy` adds the `zoho` entry with the task's own token; agent-defined `zoho` entry wins; no-op without AGORA_PUBLIC_URL or a workspace connection |
+| `ZohoMcpProxy` endpoint | ~136 | POST /mcp/zoho, task-token actors only (403 otherwise); minimal MCP Streamable-HTTP subset (initialize/ping/tools list+call; notifications 202; GET 405) |
+| Acting identity | ~116 (+ `zoho_identity.go`) | only the person the task works for (`zohoActingUserForTask`: initiator → @mention author → autopilot creator → quick-create requester → last member assigner → issue creator → parent issue / parent task), with their own Zoho binding; NO runtime-owner or org-level fallback; no identity → isError tool result |
+| Tool surface | ~70 | read-only: whoami, modules, fields, COQL SELECT search, get record; create/update removed (an unknown-tool error) |
+| Claim-time auto-provision | ~302 (+ `daemon.go` after mat_ mint) | `injectZohoMcpProxy` adds the `zoho` entry with the task's own token; agent-defined `zoho` entry wins; no-op without AGORA_PUBLIC_URL or a workspace connection |
 
 ## Routes — `server/cmd/server/router.go`
 

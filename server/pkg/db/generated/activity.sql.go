@@ -144,6 +144,27 @@ func (q *Queries) HasSquadLeaderNoActionEvaluationForTask(ctx context.Context, a
 	return exists, err
 }
 
+const latestMemberAssignerOfIssue = `-- name: LatestMemberAssignerOfIssue :one
+SELECT actor_id
+FROM activity_log
+WHERE issue_id = $1
+  AND action = 'assignee_changed'
+  AND actor_type = 'member'
+  AND details->>'to_type' IN ('agent', 'squad')
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// The member who most recently handed the issue to an agent or squad — the
+// person an assignment-triggered agent task is working for. Used to pick the
+// only identity that task may use for per-person integrations (Zoho).
+func (q *Queries) LatestMemberAssignerOfIssue(ctx context.Context, issueID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, latestMemberAssignerOfIssue, issueID)
+	var actor_id pgtype.UUID
+	err := row.Scan(&actor_id)
+	return actor_id, err
+}
+
 const listActivitiesForIssue = `-- name: ListActivitiesForIssue :many
 SELECT id, workspace_id, issue_id, actor_type, actor_id, action, details, created_at FROM activity_log
 WHERE issue_id = $1

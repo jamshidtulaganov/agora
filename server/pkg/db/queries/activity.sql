@@ -58,3 +58,16 @@ LEFT JOIN issue i ON i.id = a.issue_id
 WHERE a.workspace_id = $1 AND a.created_at >= sqlc.arg('since')
 ORDER BY a.created_at DESC, a.id DESC
 LIMIT sqlc.arg('limit');
+
+-- name: LatestMemberAssignerOfIssue :one
+-- The member who most recently handed the issue to an agent or squad — the
+-- person an assignment-triggered agent task is working for. Used to pick the
+-- only identity that task may use for per-person integrations (Zoho).
+SELECT actor_id
+FROM activity_log
+WHERE issue_id = $1
+  AND action = 'assignee_changed'
+  AND actor_type = 'member'
+  AND details->>'to_type' IN ('agent', 'squad')
+ORDER BY created_at DESC
+LIMIT 1;
