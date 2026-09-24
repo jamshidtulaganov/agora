@@ -226,10 +226,11 @@ func (h *Handler) assistantRollingWindow(ctx context.Context, caller assistantCa
 // Exact totals
 // ---------------------------------------------------------------------------
 
-// assistantCountIssues is the only source of a non-null scope.total for an
-// issue list. It runs CountIssues, whose predicates are a line-by-line copy of
-// ListIssues' — archive filter and non-owner visibility gate included — so the
-// number describes the same set the rows were drawn from.
+// assistantCountIssues (with its per-status twin below, which list_my_issues
+// uses) is the only source of a non-null scope.total for an issue list. It runs
+// CountIssues, whose predicates are a line-by-line copy of ListIssues' —
+// archive filter and non-owner visibility gate included — so the number
+// describes the same set the rows were drawn from.
 //
 // A failed count is nil, never zero: "I could not count" and "there are none"
 // are different answers, and only one of them is safe to put in a sentence.
@@ -239,6 +240,67 @@ func (h *Handler) assistantCountIssues(ctx context.Context, params db.CountIssue
 		slog.Warn("assistant: count issues failed",
 			"workspace_id", util.UUIDToString(params.WorkspaceID), "error", err)
 		return nil
+	}
+	return &total
+}
+
+// assistantIssueStatuses is every value the issue.status CHECK constraint
+// allows. An unfiltered by_status names each of them, zero included, so "how
+// many are blocked" reads a 0 instead of inferring one from a missing key.
+var assistantIssueStatuses = []string{"backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"}
+
+// assistantCountIssuesByStatus is the per-status twin of assistantCountIssues:
+// CountIssuesByStatus runs the same predicates as ListIssues and CountIssues,
+// grouped by status, so the split sums to the same exact total.
+//
+// A failed count is nil, never an empty split, for the same reason a failed
+// total is nil rather than zero.
+func (h *Handler) assistantCountIssuesByStatus(ctx context.Context, params db.CountIssuesByStatusParams) []db.CountIssuesByStatusRow {
+	rows, err := h.Queries.CountIssuesByStatus(ctx, params)
+	if err != nil {
+		slog.Warn("assistant: count issues by status failed",
+			"workspace_id", util.UUIDToString(params.WorkspaceID), "error", err)
+		return nil
+	}
+	if rows == nil {
+		// Counted, and there are none: an empty split, not an unknown one.
+		rows = []db.CountIssuesByStatusRow{}
+	}
+	return rows
+}
+
+// assistantStatusTally sums exact per-status counts across one workspace or a
+// fan-out of them. It is only ever read next to a known scope.total: one
+// workspace that could not be counted sinks the total, and with it the split.
+type assistantStatusTally struct {
+	byStatus map[string]int64
+}
+
+// newAssistantStatusTally seeds the split. With a status filter only that
+// status is named — seeding the others would state "0 todo" about issues the
+// filter never looked at.
+func newAssistantStatusTally(statusFilter string) *assistantStatusTally {
+	t := &assistantStatusTally{byStatus: map[string]int64{}}
+	if statusFilter != "" {
+		t.byStatus[statusFilter] = 0
+		return t
+	}
+	for _, status := range assistantIssueStatuses {
+		t.byStatus[status] = 0
+	}
+	return t
+}
+
+// add folds one workspace's CountIssuesByStatus rows in and returns that
+// workspace's exact total — nil when the count failed (rows == nil).
+func (t *assistantStatusTally) add(rows []db.CountIssuesByStatusRow) *int64 {
+	if rows == nil {
+		return nil
+	}
+	var total int64
+	for _, row := range rows {
+		t.byStatus[row.Status] += row.Count
+		total += row.Count
 	}
 	return &total
 }

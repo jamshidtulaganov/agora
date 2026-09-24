@@ -475,6 +475,12 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, errAssistantBadArgs
 	}
+	// A status the table cannot hold would match nothing and come back as an
+	// exact-looking "0" — refuse it instead, the way list_issues does.
+	status := strings.ToLower(strings.TrimSpace(args.Status))
+	if err := assistantValidateEnums(status, ""); err != nil {
+		return nil, err
+	}
 	limit := assistantLimit(args.Limit)
 
 	if wsID := strings.TrimSpace(args.WorkspaceID); wsID != "" {
@@ -482,18 +488,14 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 		if err != nil {
 			return nil, err
 		}
-		issues, err := h.assistantMyIssuesIn(ctx, userUUID, ws, role, args.Status, limit)
+		issues, err := h.assistantMyIssuesIn(ctx, userUUID, ws, role, status, limit)
 		if err != nil {
 			return nil, err
 		}
-		total := h.assistantCountIssues(ctx, db.CountIssuesParams{
-			WorkspaceID:    ws.ID,
-			AssigneeID:     userUUID,
-			RestrictToUser: assistantVisibilityRestriction(role, userUUID),
-			Status:         assistantOptionalText(args.Status),
-		})
-		return assistantScopedResult(map[string]any{"issues": issues},
-			assistantCappedScope(ws.Slug, len(issues), int(limit), total))
+		tally := newAssistantStatusTally(status)
+		total := tally.add(h.assistantCountIssuesByStatus(ctx, assistantMyIssuesCountParams(ws, role, userUUID, status)))
+		scope := assistantCappedScope(ws.Slug, len(issues), int(limit), total)
+		return assistantScopedResult(assistantMyIssuesPayload(issues, tally, scope), scope)
 	}
 
 	// Unscoped: fan out across every membership. The per-workspace cap is what
@@ -509,6 +511,7 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 
 	all := []assistantIssueResult{}
 	scope := newAssistantScopeBuilder()
+	tally := newAssistantStatusTally(status)
 	for _, ws := range workspaces {
 		role := ""
 		if member, merr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
@@ -517,7 +520,7 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 		}); merr == nil {
 			role = member.Role
 		}
-		issues, err := h.assistantMyIssuesIn(ctx, userUUID, ws, role, args.Status, limit)
+		issues, err := h.assistantMyIssuesIn(ctx, userUUID, ws, role, status, limit)
 		if err != nil {
 			// One unreadable workspace must not sink the whole answer — but it
 			// is NAMED, so the model can say which one it could not read.
@@ -525,12 +528,7 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 			scope.failedWorkspace(ws.Slug)
 			continue
 		}
-		total := h.assistantCountIssues(ctx, db.CountIssuesParams{
-			WorkspaceID:    ws.ID,
-			AssigneeID:     userUUID,
-			RestrictToUser: assistantVisibilityRestriction(role, userUUID),
-			Status:         assistantOptionalText(args.Status),
-		})
+		total := tally.add(h.assistantCountIssuesByStatus(ctx, assistantMyIssuesCountParams(ws, role, userUUID, status)))
 		truncated := len(issues) >= int(limit)
 		if total != nil {
 			truncated = *total > int64(len(issues))
@@ -538,7 +536,54 @@ func (h *Handler) assistantListMyIssues(ctx context.Context, caller assistantCal
 		scope.checkedWorkspace(ws.Slug, total, truncated)
 		all = append(all, issues...)
 	}
-	return assistantScopedResult(map[string]any{"issues": all}, scope.scope())
+	built := scope.scope()
+	return assistantScopedResult(assistantMyIssuesPayload(all, tally, built), built)
+}
+
+// assistantMyIssuesCountParams is the count twin of the list params built in
+// assistantMyIssuesIn: the same workspace, assignee, visibility gate and status
+// filter (and, by leaving include_archived unset, the same archive filter), so
+// total and by_status describe exactly the set the rows are drawn from.
+func assistantMyIssuesCountParams(ws db.Workspace, role string, userUUID pgtype.UUID, status string) db.CountIssuesByStatusParams {
+	return db.CountIssuesByStatusParams{
+		WorkspaceID:    ws.ID,
+		AssigneeID:     userUUID,
+		RestrictToUser: assistantVisibilityRestriction(role, userUUID),
+		Status:         assistantOptionalText(status),
+	}
+}
+
+// assistantMyIssuesPayload is list_my_issues' answer: the capped page of rows
+// plus the EXACT numbers behind it, at the top level where the model reads
+// first. "How many tasks do I have" was being answered by counting a 20-row
+// page ("32 tasks… I can see 21… 12 done, 20 not done"); with total and
+// by_status in the result there is nothing left to count.
+//
+// total is the same value as scope.total, and by_status is null whenever it is
+// — a split of a partial sum is no more a fact than the partial sum is.
+func assistantMyIssuesPayload(issues []assistantIssueResult, tally *assistantStatusTally, scope assistantScope) map[string]any {
+	var byStatus map[string]int64
+	if scope.Total != nil {
+		byStatus = tally.byStatus
+	}
+	payload := map[string]any{
+		"issues":    issues,
+		"returned":  len(issues),
+		"truncated": scope.Truncated,
+		"total":     scope.Total,
+		"by_status": byStatus,
+	}
+	if scope.Truncated {
+		if scope.Total != nil {
+			payload["note"] = fmt.Sprintf("The issues list is partial: it shows %d of the user's %d. "+
+				"total and by_status are exact counts over all %d — answer any \"how many\" question from them, "+
+				"never by counting the rows.", len(issues), *scope.Total, *scope.Total)
+		} else {
+			payload["note"] = fmt.Sprintf("The issues list is partial (%d shown) and the exact total could not be "+
+				"counted — say there are more, and do not state a total.", len(issues))
+		}
+	}
+	return payload
 }
 
 func (h *Handler) assistantMyIssuesIn(ctx context.Context, userUUID pgtype.UUID, ws db.Workspace, role, status string, limit int32) ([]assistantIssueResult, error) {

@@ -368,6 +368,81 @@ WHERE i.workspace_id = $1
              AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
   );
 
+-- name: CountIssuesByStatus :many
+-- CountIssues split by status: the same predicates, line for line, with a
+-- GROUP BY on top. It exists so a capped page of rows can travel with EXACT
+-- per-status numbers — the assistant's list_my_issues reports these as
+-- by_status (and their sum as total), and "how many of mine are done" is then
+-- read off an aggregate instead of counted from a truncated page.
+--
+-- Keep it in lockstep with CountIssues and ListIssues. The sum over every row
+-- this returns MUST equal CountIssues for the same arguments.
+SELECT i.status, count(*)::bigint AS count FROM issue i
+WHERE i.workspace_id = $1
+  AND (sqlc.narg('include_archived')::bool IS TRUE OR i.archived_at IS NULL)
+  AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
+  AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
+  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
+  AND (sqlc.narg('assignee_ids')::uuid[] IS NULL OR i.assignee_id = ANY(sqlc.narg('assignee_ids')::uuid[]))
+  AND (sqlc.narg('creator_id')::uuid IS NULL OR i.creator_id = sqlc.narg('creator_id'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('scheduled')::bool IS NULL OR (i.start_date IS NOT NULL OR i.due_date IS NOT NULL))
+  AND (sqlc.narg('metadata_filter')::jsonb IS NULL OR i.metadata @> sqlc.narg('metadata_filter')::jsonb)
+  AND (
+    sqlc.narg('involves_user_id')::uuid IS NULL
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1
+             AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
+    ))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id
+            FROM squad_member sm
+            JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1
+             AND sm.member_type = 'member'
+             AND sm.member_id   = sqlc.narg('involves_user_id')::uuid
+          UNION
+          SELECT s.id
+            FROM squad s
+            JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1
+             AND a.workspace_id = $1
+             AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
+          UNION
+          SELECT sm.squad_id
+            FROM squad_member sm
+            JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1
+             AND sm.member_type = 'agent'
+             AND a.workspace_id = $1
+             AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
+    ))
+  )
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
+GROUP BY i.status
+ORDER BY i.status;
+
 -- name: ListChildIssues :many
 SELECT * FROM issue
 WHERE parent_issue_id = $1

@@ -584,6 +584,246 @@ func TestListIssuesTotalHonoursTheVisibilityGate(t *testing.T) {
 	}
 }
 
+// setAssistantTestIssueStatus moves a fixture issue off the default 'todo'.
+func setAssistantTestIssueStatus(t *testing.T, issueID, status string) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(),
+		`UPDATE issue SET status = $2 WHERE id = $1`, issueID, status); err != nil {
+		t.Fatalf("set status %s: %v", status, err)
+	}
+}
+
+// newAssistantTestIssues creates n issues in one status, assigned to assignee.
+func newAssistantTestIssues(t *testing.T, workspaceID, creatorID, assigneeID, status string, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		id := newAssistantTestIssue(t, workspaceID, fmt.Sprintf("%s %d", status, i), creatorID, assigneeID)
+		if status != "todo" {
+			setAssistantTestIssueStatus(t, id, status)
+		}
+	}
+}
+
+// assistantMyIssuesCounts reads list_my_issues' top-level counting fields and
+// checks the invariants that make them safe to quote: total is scope.total,
+// by_status sums to total, and returned is the row count.
+func assistantMyIssuesCounts(t *testing.T, result map[string]any) (total float64, byStatus map[string]float64, returned float64, truncated bool) {
+	t.Helper()
+	for _, key := range []string{"issues", "total", "by_status", "returned", "truncated"} {
+		if _, ok := result[key]; !ok {
+			t.Fatalf("list_my_issues result is missing %q: %v", key, result)
+		}
+	}
+	total, ok := result["total"].(float64)
+	if !ok {
+		t.Fatalf("total = %v, want a number", result["total"])
+	}
+	if scopeTotal, _ := assistantScopeOf(t, result)["total"].(float64); scopeTotal != total {
+		t.Fatalf("total %v disagrees with scope.total %v", total, scopeTotal)
+	}
+	raw, ok := result["by_status"].(map[string]any)
+	if !ok {
+		t.Fatalf("by_status = %v, want an object", result["by_status"])
+	}
+	byStatus = map[string]float64{}
+	var sum float64
+	for status, v := range raw {
+		n, _ := v.(float64)
+		byStatus[status] = n
+		sum += n
+	}
+	if sum != total {
+		t.Fatalf("by_status %v sums to %v, want total %v", byStatus, sum, total)
+	}
+	rows, _ := result["issues"].([]any)
+	returned, _ = result["returned"].(float64)
+	if int(returned) != len(rows) {
+		t.Fatalf("returned = %v, but %d rows came back", returned, len(rows))
+	}
+	truncated, _ = result["truncated"].(bool)
+	if scopeTruncated, _ := assistantScopeOf(t, result)["truncated"].(bool); scopeTruncated != truncated {
+		t.Fatalf("truncated %v disagrees with scope.truncated %v", truncated, scopeTruncated)
+	}
+	return total, byStatus, returned, truncated
+}
+
+func assertAssistantByStatus(t *testing.T, got map[string]float64, want map[string]float64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("by_status = %v, want %v", got, want)
+	}
+	for status, n := range want {
+		if v, ok := got[status]; !ok || v != n {
+			t.Fatalf("by_status[%s] = %v (present %v), want %v — full split %v", status, v, ok, n, got)
+		}
+	}
+}
+
+// "How many tasks do I have" was answered by counting list_my_issues' capped
+// page. The result now carries total and by_status, counted by the server over
+// ALL of the caller's matching issues — so a user with more issues than the cap
+// gets exact numbers, and a truncated page says it is one.
+func TestListMyIssuesCountsAreExactPastThePageCap(t *testing.T) {
+	user := newAssistantTestUser(t, "assistant-mycounts@agora.dev")
+	teammate := newAssistantTestUser(t, "assistant-mycounts-mate@agora.dev")
+	ws := newAssistantTestWorkspace(t, "assistant-mycounts-ws", "MYC")
+	addAssistantTestMember(t, ws, user, "owner")
+	addAssistantTestMember(t, ws, teammate, "member")
+
+	// 25 issues of the caller's — more than the 20-row cap.
+	newAssistantTestIssues(t, ws, user, user, "done", 12)
+	newAssistantTestIssues(t, ws, user, user, "todo", 8)
+	newAssistantTestIssues(t, ws, user, user, "in_progress", 3)
+	newAssistantTestIssues(t, ws, user, user, "blocked", 2)
+	// Not the caller's: assigned to a teammate, or unassigned. The caller is
+	// the owner and can SEE these, but they are not "my" issues.
+	newAssistantTestIssues(t, ws, user, teammate, "todo", 4)
+	newAssistantTestIssues(t, ws, user, "", "in_review", 2)
+	// The caller's, but archived — hidden from the rows, so absent from the
+	// counts too.
+	archived := newAssistantTestIssue(t, ws, "archived mine", user, user)
+	setAssistantTestIssueStatus(t, archived, "done")
+	if _, err := testPool.Exec(context.Background(),
+		`UPDATE issue SET archived_at = now() WHERE id = $1`, archived); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	wantAll := map[string]float64{
+		"backlog": 0, "todo": 8, "in_progress": 3, "in_review": 0,
+		"done": 12, "blocked": 2, "cancelled": 0,
+	}
+
+	t.Run("default page", func(t *testing.T) {
+		result, err := executeAssistantTool(t, user, assistant.ToolListMyIssues, `{"workspace_id":"`+ws+`"}`)
+		if err != nil {
+			t.Fatalf("list_my_issues: %v", err)
+		}
+		total, byStatus, returned, truncated := assistantMyIssuesCounts(t, result)
+		if total != 25 {
+			t.Fatalf("total = %v, want the exact 25", total)
+		}
+		if returned != 20 || !truncated {
+			t.Fatalf("returned %v truncated %v, want the capped 20 and truncated", returned, truncated)
+		}
+		assertAssistantByStatus(t, byStatus, wantAll)
+		if note, _ := result["note"].(string); !strings.Contains(note, "20 of the user's 25") {
+			t.Fatalf("note = %q, want it to say the page is 20 of 25", note)
+		}
+	})
+
+	t.Run("small limit does not shrink the counts", func(t *testing.T) {
+		result, err := executeAssistantTool(t, user, assistant.ToolListMyIssues,
+			`{"workspace_id":"`+ws+`","limit":5}`)
+		if err != nil {
+			t.Fatalf("list_my_issues: %v", err)
+		}
+		total, byStatus, returned, truncated := assistantMyIssuesCounts(t, result)
+		if total != 25 || returned != 5 || !truncated {
+			t.Fatalf("total %v returned %v truncated %v, want 25 / 5 / true", total, returned, truncated)
+		}
+		assertAssistantByStatus(t, byStatus, wantAll)
+	})
+
+	t.Run("status filter names only that status", func(t *testing.T) {
+		result, err := executeAssistantTool(t, user, assistant.ToolListMyIssues,
+			`{"workspace_id":"`+ws+`","status":"done"}`)
+		if err != nil {
+			t.Fatalf("list_my_issues: %v", err)
+		}
+		total, byStatus, returned, truncated := assistantMyIssuesCounts(t, result)
+		if total != 12 || returned != 12 || truncated {
+			t.Fatalf("total %v returned %v truncated %v, want 12 / 12 / false", total, returned, truncated)
+		}
+		// Seeding the other statuses with 0 would claim "0 todo" about issues
+		// the filter never looked at.
+		assertAssistantByStatus(t, byStatus, map[string]float64{"done": 12})
+		if _, hasNote := result["note"]; hasNote {
+			t.Fatalf("an untruncated list carries a truncation note: %v", result["note"])
+		}
+	})
+
+	t.Run("unknown status is refused, not counted as zero", func(t *testing.T) {
+		if _, err := executeAssistantTool(t, user, assistant.ToolListMyIssues,
+			`{"workspace_id":"`+ws+`","status":"open"}`); err == nil {
+			t.Fatalf("status \"open\" was accepted; it would read as an exact 0")
+		}
+	})
+
+	t.Run("unscoped fan-out sums every membership", func(t *testing.T) {
+		second := newAssistantTestWorkspace(t, "assistant-mycounts-second-ws", "MYD")
+		addAssistantTestMember(t, second, user, "member")
+		newAssistantTestIssues(t, second, user, user, "done", 2)
+		newAssistantTestIssues(t, second, user, user, "cancelled", 1)
+
+		result, err := executeAssistantTool(t, user, assistant.ToolListMyIssues, `{}`)
+		if err != nil {
+			t.Fatalf("list_my_issues: %v", err)
+		}
+		total, byStatus, returned, truncated := assistantMyIssuesCounts(t, result)
+		if total != 28 {
+			t.Fatalf("total = %v, want 25 + 3 = 28", total)
+		}
+		// 20 (capped) from the first workspace + all 3 from the second.
+		if returned != 23 || !truncated {
+			t.Fatalf("returned %v truncated %v, want 23 and truncated", returned, truncated)
+		}
+		assertAssistantByStatus(t, byStatus, map[string]float64{
+			"backlog": 0, "todo": 8, "in_progress": 3, "in_review": 0,
+			"done": 14, "blocked": 2, "cancelled": 1,
+		})
+	})
+}
+
+// The counts see exactly what the rows see. A plain member is not counted into
+// issues that are not theirs, a workspace they are not a member of contributes
+// nothing to the fan-out even when an issue there names them, and a named
+// workspace they cannot read is refused outright — never answered with counts.
+func TestListMyIssuesCountsOnlyWhatTheCallerCanSee(t *testing.T) {
+	owner := newAssistantTestUser(t, "assistant-mycounts-gate-owner@agora.dev")
+	member := newAssistantTestUser(t, "assistant-mycounts-gate-member@agora.dev")
+	ws := newAssistantTestWorkspace(t, "assistant-mycounts-gate-ws", "MCG")
+	addAssistantTestMember(t, ws, owner, "owner")
+	addAssistantTestMember(t, ws, member, "member")
+
+	newAssistantTestIssues(t, ws, owner, member, "todo", 2)
+	newAssistantTestIssues(t, ws, owner, member, "done", 1)
+	// The owner's own issues, and one the member created but handed to the
+	// owner: visible to the member in places, but not assigned to them.
+	newAssistantTestIssues(t, ws, owner, owner, "todo", 5)
+	newAssistantTestIssues(t, ws, member, owner, "in_progress", 1)
+
+	// A workspace the member does not belong to, holding an issue assigned to
+	// them anyway (stale invite, removed member, bad import).
+	foreign := newAssistantTestWorkspace(t, "assistant-mycounts-gate-foreign", "MCF")
+	addAssistantTestMember(t, foreign, owner, "owner")
+	newAssistantTestIssues(t, foreign, owner, member, "todo", 3)
+
+	for name, args := range map[string]string{
+		"scoped":   `{"workspace_id":"` + ws + `"}`,
+		"unscoped": `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := executeAssistantTool(t, member, assistant.ToolListMyIssues, args)
+			if err != nil {
+				t.Fatalf("list_my_issues: %v", err)
+			}
+			total, byStatus, returned, truncated := assistantMyIssuesCounts(t, result)
+			if total != 3 || returned != 3 || truncated {
+				t.Fatalf("member total %v returned %v truncated %v, want 3 / 3 / false", total, returned, truncated)
+			}
+			assertAssistantByStatus(t, byStatus, map[string]float64{
+				"backlog": 0, "todo": 2, "in_progress": 0, "in_review": 0,
+				"done": 1, "blocked": 0, "cancelled": 0,
+			})
+		})
+	}
+
+	if result, err := executeAssistantTool(t, member, assistant.ToolListMyIssues,
+		`{"workspace_id":"`+foreign+`"}`); err == nil {
+		t.Fatalf("a non-member workspace answered with %v", result)
+	}
+}
+
 // The unscoped fan-out names every workspace it looked in. An answer that
 // silently omits one is wrong even when every row in it is right.
 func TestUnscopedFanOutNamesTheWorkspacesItChecked(t *testing.T) {
