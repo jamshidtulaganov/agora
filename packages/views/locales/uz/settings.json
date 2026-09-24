@@ -52,6 +52,7 @@
   },
   "account": {
     "section_profile": "Profil",
+    "section_connected_accounts": "Ulangan akkauntlar",
     "click_avatar_hint": "Avatar yuklash uchun bosing",
     "name_label": "Ism",
     "profile_description_label": "Siz haqingizda",
@@ -70,7 +71,27 @@
     "delete_button": "Accountni o‘chirish",
     "toast_delete_failed": "Accountni o‘chirib bo‘lmadi",
     "delete_blocked": "Avval quyidagi workspace’larda ownershipni boshqa egaga o‘tkazing yoki ularni o‘chiring: {{workspaces}}.",
-    "delete_blocked_fallback": "siz yagona owner bo‘lgan workspace’lar"
+    "delete_blocked_fallback": "siz yagona owner bo‘lgan workspace’lar",
+    "zoho": {
+      "title": "Zoho",
+      "not_available": "Bu serverda Zoho hali sozlanmagan.",
+      "description": "Zoho akkauntingizni ulang, shunda Yordamchi va agentlar Zoho CRM va Desk’dagi ma’lumotlaringizni o‘qiy oladi — faqat Zoho’dagi rolingiz ko‘rishga ruxsat bergan qismini. Agora Zoho’da hech narsani o‘zgartirmaydi.",
+      "connect": "Zoho’ni ulash",
+      "connecting": "Zoho ochilmoqda...",
+      "connected_as": "{{email}} sifatida ulangan",
+      "connected": "Ulangan",
+      "crm_role_and_profile": "CRM: {{role}} ({{profile}})",
+      "crm_single": "CRM: {{value}}",
+      "desk": "Desk: {{departments}}",
+      "reconnect_warning": "Zoho bu ulanishni qabul qilmay qo‘ydi. Foydalanishda davom etish uchun qayta ulang.",
+      "reconnect": "Qayta ulash",
+      "disconnect": "Uzish",
+      "disconnect_confirm_title": "Zoho uzilsinmi?",
+      "disconnect_confirm_description": "Yordamchi va agentlar barcha ish maydonlaringizda Zoho ma’lumotlaringizni o‘qishni to‘xtatadi. Istalgan vaqtda qayta ulashingiz mumkin.",
+      "cancel": "Bekor qilish",
+      "error_connect_failed": "Zoho’ni ochib bo‘lmadi. Qayta urinib ko‘ring.",
+      "error_disconnect_failed": "Zoho’ni uzib bo‘lmadi. Qayta urinib ko‘ring."
+    }
   },
   "delete_account_dialog": {
     "title": "Accountni o‘chirish",
@@ -597,7 +618,7 @@
     "connection": {
       "title": "Ish maydoni ulanishi",
       "description": "Butun ish maydoni uchun bitta Zoho OAuth klienti va refresh token — CRM modullarini aniqlash va sinxronlashni ta'minlaydi. Sirlar serverda shifrlanadi va boshqa ko'rsatilmaydi.",
-      "not_configured": "Zoho ulanishi sozlanmagan. U saqlanmaguncha shaxsiy ulanishlar va CRM modul sinxronlash ishlamaydi.",
+      "not_configured": "Zoho ulanishi sozlanmagan. U saqlanmaguncha CRM modul sinxronlash ishlamaydi.",
       "dc_label": "Data-markaz",
       "client_id_label": "Client ID",
       "client_id_placeholder": "1000.XXXXXXXXXX",
@@ -615,7 +636,7 @@
       "disconnect": "Uzish",
       "disconnecting": "Uzilmoqda...",
       "disconnect_confirm_title": "Zoho uzilsinmi?",
-      "disconnect_confirm_description": "CRM modul sinxronlash to'xtaydi va yangi ulanish saqlanmaguncha barcha a'zolarning shaxsiy Zoho ulanishlari ishlamay qoladi.",
+      "disconnect_confirm_description": "Yangi ulanish saqlanmaguncha CRM modul sinxronlash to'xtaydi.",
       "cancel": "Bekor qilish",
       "error_invalid_credentials": "Zoho bu ma'lumotlarni rad etdi. Client ID, client secret va refresh tokenni tekshiring.",
       "error_sealing_unavailable": "Bu server Zoho sirlarini saqlay olmaydi (AGORA_ZOHO_SECRET_KEY o'rnatilmagan). Server administratoriga murojaat qiling.",
@@ -623,25 +644,6 @@
       "error_disconnect_failed": "Zoho ulanishini o'chirib bo'lmadi.",
       "toast_saved": "Zoho ulanishi saqlandi",
       "toast_disconnected": "Zoho ulanishi o'chirildi"
-    },
-    "binding": {
-      "title": "Sizning Zoho akkauntingiz",
-      "description": "O'z Zoho akkauntingizni ulang — sizning nomingizdan ishlaydigan agentlar Zoho ga siz sifatida murojaat qiladi.",
-      "requires_connection": "Akkauntingizni ulashdan oldin ish maydoni owner yoki admin i Zoho ulanishini sozlashi kerak.",
-      "bound_as": "{{email}} sifatida ulangan",
-      "bound": "Ulangan",
-      "grant_code_label": "Self-client grant code",
-      "grant_code_placeholder": "Self-client grant code ni joylashtiring",
-      "grant_help": "Zoho API konsolida quyida ko'rsatilgan scopes bilan self-client grant code yarating va uni bir necha daqiqa ichida shu yerga joylashtiring — kodlar bir martalik va tez eskiradi.",
-      "scopes_hint": "Scopes: {{scopes}}",
-      "connect": "Ulash",
-      "connecting": "Ulanmoqda...",
-      "unbind": "Zoho akkauntini uzish",
-      "error_grant_invalid": "Zoho grant code ni rad etdi — kodlar bir martalik va bir necha daqiqada eskiradi. Yangisini yarating va qayta urinib ko'ring.",
-      "error_connect_failed": "Zoho akkauntingizni ulab bo'lmadi.",
-      "error_unbind_failed": "Zoho akkauntingizni uzib bo'lmadi.",
-      "toast_bound": "Zoho akkaunti ulandi",
-      "toast_unbound": "Zoho akkaunti uzildi"
     },
     "probe": {
       "ok": "OK",

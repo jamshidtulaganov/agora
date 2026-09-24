@@ -52,6 +52,7 @@
   },
   "account": {
     "section_profile": "个人资料",
+    "section_connected_accounts": "已连接的账号",
     "click_avatar_hint": "点击上传头像",
     "name_label": "姓名",
     "profile_description_label": "关于你",
@@ -70,7 +71,27 @@
     "delete_button": "删除账号",
     "toast_delete_failed": "删除账号失败",
     "delete_blocked": "请先转让所有权或删除以下工作区：{{workspaces}}。",
-    "delete_blocked_fallback": "你是唯一所有者的工作区"
+    "delete_blocked_fallback": "你是唯一所有者的工作区",
+    "zoho": {
+      "title": "Zoho",
+      "not_available": "此服务器尚未配置 Zoho。",
+      "description": "连接你的 Zoho 账号后，助手和智能体即可读取你在 Zoho CRM 和 Desk 中的数据——仅限你自己的 Zoho 角色可见的内容。Agora 不会修改 Zoho 中的任何内容。",
+      "connect": "连接 Zoho",
+      "connecting": "正在打开 Zoho...",
+      "connected_as": "已连接：{{email}}",
+      "connected": "已连接",
+      "crm_role_and_profile": "CRM：{{role}}（{{profile}}）",
+      "crm_single": "CRM：{{value}}",
+      "desk": "Desk：{{departments}}",
+      "reconnect_warning": "Zoho 已不再接受此连接。请重新连接以继续使用。",
+      "reconnect": "重新连接",
+      "disconnect": "断开连接",
+      "disconnect_confirm_title": "断开 Zoho？",
+      "disconnect_confirm_description": "助手和智能体将不再读取你在所有工作区中的 Zoho 数据。你可以随时重新连接。",
+      "cancel": "取消",
+      "error_connect_failed": "无法打开 Zoho，请重试。",
+      "error_disconnect_failed": "无法断开 Zoho，请重试。"
+    }
   },
   "delete_account_dialog": {
     "title": "删除账号",
@@ -597,7 +618,7 @@
     "connection": {
       "title": "工作区连接",
       "description": "整个工作区共用一个 Zoho OAuth 客户端和 refresh token——支撑 CRM 模块发现与同步。密钥在服务器端加密存储，保存后不再显示。",
-      "not_configured": "尚未配置 Zoho 连接。在保存连接之前，个人绑定和 CRM 模块同步均不可用。",
+      "not_configured": "尚未配置 Zoho 连接。在保存连接之前，CRM 模块同步不可用。",
       "dc_label": "数据中心",
       "client_id_label": "Client ID",
       "client_id_placeholder": "1000.XXXXXXXXXX",
@@ -615,7 +636,7 @@
       "disconnect": "断开连接",
       "disconnecting": "断开中...",
       "disconnect_confirm_title": "断开 Zoho 连接？",
-      "disconnect_confirm_description": "CRM 模块同步将停止，所有成员的个人 Zoho 绑定也会失效，直到保存新的连接。",
+      "disconnect_confirm_description": "CRM 模块同步将停止，直到保存新的连接。",
       "cancel": "取消",
       "error_invalid_credentials": "Zoho 拒绝了这些凭据。请检查 client ID、client secret 和 refresh token。",
       "error_sealing_unavailable": "此服务器无法存储 Zoho 密钥（未设置 AGORA_ZOHO_SECRET_KEY）。请联系服务器管理员配置。",
@@ -623,25 +644,6 @@
       "error_disconnect_failed": "无法删除 Zoho 连接。",
       "toast_saved": "Zoho 连接已保存",
       "toast_disconnected": "Zoho 连接已删除"
-    },
-    "binding": {
-      "title": "你的 Zoho 账号",
-      "description": "连接你自己的 Zoho 账号，代表你工作的智能体将以你的身份调用 Zoho。",
-      "requires_connection": "需要工作区 owner 或 admin 先配置 Zoho 连接，然后才能连接你的账号。",
-      "bound_as": "已连接为 {{email}}",
-      "bound": "已连接",
-      "grant_code_label": "Self-client grant code",
-      "grant_code_placeholder": "粘贴 self-client grant code",
-      "grant_help": "在 Zoho API 控制台中使用下方显示的 scopes 生成 self-client grant code，并在几分钟内粘贴到这里——授权码一次性有效且很快过期。",
-      "scopes_hint": "Scopes: {{scopes}}",
-      "connect": "连接",
-      "connecting": "连接中...",
-      "unbind": "断开 Zoho 账号",
-      "error_grant_invalid": "Zoho 拒绝了该授权码——授权码一次性有效且几分钟内过期。请重新生成后再试。",
-      "error_connect_failed": "无法连接你的 Zoho 账号。",
-      "error_unbind_failed": "无法断开你的 Zoho 账号。",
-      "toast_bound": "Zoho 账号已连接",
-      "toast_unbound": "Zoho 账号已断开"
     },
     "probe": {
       "ok": "正常",

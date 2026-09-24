@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { zohoDynKeys, zohoKeys } from "./queries";
+import { zohoAccountKeys, zohoDynKeys, zohoKeys } from "./queries";
+import { EMPTY_ZOHO_ACCOUNT } from "./types";
 import type {
   CreateZohoSyncConfigRequest,
   PutZohoConnectionRequest,
   UpdateZohoSyncConfigRequest,
+  ZohoAccount,
   ZohoImportRequest,
   ZohoSprintsImportRequest,
 } from "./types";
@@ -55,39 +57,16 @@ export function useSaveZohoConnection(wsId: string) {
   });
 }
 
-/** Remove the workspace Zoho connection. Bindings and sync configs hang off
- * the connection row server-side, so every dynamic-Zoho query refreshes. */
+/** Remove the workspace Zoho connection. Sync configs hang off the
+ * connection row server-side, so every dynamic-Zoho query refreshes. */
 export function useDeleteZohoConnection(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.deleteZohoConnection(wsId),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: zohoDynKeys.connection(wsId) });
-      qc.invalidateQueries({ queryKey: zohoDynKeys.userBinding(wsId) });
       qc.invalidateQueries({ queryKey: zohoDynKeys.crmModules(wsId) });
       qc.invalidateQueries({ queryKey: zohoDynKeys.syncConfigs(wsId) });
-    },
-  });
-}
-
-/** Exchange a pasted self-client grant code for the caller's own binding. */
-export function useSaveZohoUserBinding(wsId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (grantCode: string) => api.putZohoUserBinding(wsId, grantCode),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: zohoDynKeys.userBinding(wsId) });
-    },
-  });
-}
-
-/** Remove the caller's own Zoho binding. */
-export function useDeleteZohoUserBinding(wsId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.deleteZohoUserBinding(wsId),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: zohoDynKeys.userBinding(wsId) });
     },
   });
 }
@@ -128,6 +107,44 @@ export function useDeleteZohoSyncConfig(wsId: string) {
     mutationFn: (configId: string) => api.deleteZohoSyncConfig(wsId, configId),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: zohoDynKeys.syncConfigs(wsId) });
+    },
+  });
+}
+
+// --- Personal Zoho account ----------------------------------------------------
+
+/** Ask the server for the Zoho sign-in page. The caller opens the returned
+ * url in the system browser; the account query refetches when the person
+ * comes back, so nothing is invalidated here (connecting has not happened
+ * yet when this settles). */
+export function useConnectZohoAccount() {
+  return useMutation({
+    mutationFn: () => api.connectZohoAccount(),
+  });
+}
+
+/** Disconnect the caller's Zoho account (the server also revokes it at Zoho).
+ * Optimistic: the card flips to "not connected" at once and rolls back if
+ * the request fails. */
+export function useDisconnectZohoAccount() {
+  const qc = useQueryClient();
+  const key = zohoAccountKeys.mine();
+  return useMutation({
+    mutationFn: () => api.disconnectZohoAccount(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<ZohoAccount>(key);
+      qc.setQueryData<ZohoAccount>(key, {
+        ...EMPTY_ZOHO_ACCOUNT,
+        available: previous?.available === true,
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key });
     },
   });
 }

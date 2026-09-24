@@ -3,9 +3,10 @@
 // ZohoImportRequest/Response) and zohosprints_endpoints.go
 // (ZohoSprintsProjectResponse, ZohoSprintsImportRequest/Response).
 //
-// The dynamic-integration section below (connection / user binding / CRM
-// discovery / sync configs) mirrors server/internal/handler/zoho_connection.go,
-// zoho_user_binding.go and zohodyn_endpoints.go.
+// The dynamic-integration section below (workspace connection / CRM
+// discovery / sync configs) mirrors server/internal/handler/zoho_connection.go
+// and zohodyn_endpoints.go. The per-person Zoho account section at the end
+// mirrors the account-scoped `/api/me/zoho` endpoints.
 
 import { z } from "zod";
 
@@ -116,33 +117,6 @@ export interface PutZohoConnectionRequest {
   projects_portal_id?: string;
   sprints_team_id?: string;
 }
-
-/** The caller's own Zoho binding (`GET /api/workspaces/{id}/zoho-user-binding`). */
-export interface ZohoUserBindingStatus {
-  bound: boolean;
-  zoho_user_email: string;
-  scopes: string;
-  probe_status: string;
-  probed_at: string;
-}
-
-export const ZohoUserBindingStatusSchema = z
-  .object({
-    bound: z.boolean().default(false),
-    zoho_user_email: z.string().default(""),
-    scopes: z.string().default(""),
-    probe_status: z.string().default(""),
-    probed_at: z.string().default(""),
-  })
-  .loose();
-
-export const EMPTY_ZOHO_USER_BINDING_STATUS: ZohoUserBindingStatus = {
-  bound: false,
-  zoho_user_email: "",
-  scopes: "",
-  probe_status: "",
-  probed_at: "",
-};
 
 /** One discovered CRM module (`GET /api/workspaces/{id}/zoho/crm/modules`). */
 export interface ZohoCRMModule {
@@ -341,3 +315,113 @@ export type UpdateZohoSyncConfigRequest = Omit<
   CreateZohoSyncConfigRequest,
   "module_api_name"
 >;
+
+// --- Personal Zoho account (`/api/me/zoho`) ----------------------------------
+//
+// One Zoho account per person, connected once through Zoho's sign-in page and
+// used in every workspace. Read-only: the person's own Zoho role decides what
+// Agora can see. Account-scoped, so nothing here carries a workspace id.
+
+/** Wire status of a connected account. Anything the server sends that is not
+ * "connected" is treated as "reconnect" (enum-drift downgrades, not crashes). */
+export type ZohoAccountStatus = "connected" | "reconnect";
+
+/** The caller's own Zoho account (`GET /api/me/zoho`). */
+export interface ZohoAccount {
+  /** False when the server has no Zoho sign-in client configured. */
+  available: boolean;
+  connected: boolean;
+  status: ZohoAccountStatus;
+  email: string;
+  name: string;
+  crm_role: string;
+  crm_profile: string;
+  desk_departments: string[];
+  checked_at: string | null;
+}
+
+export const EMPTY_ZOHO_ACCOUNT: ZohoAccount = {
+  available: false,
+  connected: false,
+  status: "reconnect",
+  email: "",
+  name: "",
+  crm_role: "",
+  crm_profile: "",
+  desk_departments: [],
+  checked_at: null,
+};
+
+// Per-field `.catch` so one drifted field degrades on its own instead of
+// sinking the whole payload into the fallback. A non-object body still falls
+// back to EMPTY_ZOHO_ACCOUNT (hides the Connect button) via parseWithFallback.
+export const ZohoAccountSchema = z
+  .object({
+    available: z.boolean().catch(false),
+    connected: z.boolean().catch(false),
+    status: z.unknown().optional(),
+    email: z.string().catch(""),
+    name: z.string().catch(""),
+    crm_role: z.string().catch(""),
+    crm_profile: z.string().catch(""),
+    desk_departments: z
+      .array(z.unknown())
+      .nullish()
+      .transform((v) =>
+        (v ?? []).filter((d): d is string => typeof d === "string" && d !== ""),
+      )
+      .catch([]),
+    checked_at: z
+      .string()
+      .nullish()
+      .transform((v) => (v ? v : null))
+      .catch(null),
+  })
+  .loose()
+  .transform(({ status, ...rest }) => ({
+    ...rest,
+    status: normalizeZohoAccountStatus(status, rest.connected),
+  }));
+
+// An absent status on a connected account trusts `connected`; any present
+// value other than "connected" (a new server-side state, a wrong type) means
+// the connection needs attention.
+function normalizeZohoAccountStatus(
+  status: unknown,
+  connected: boolean,
+): ZohoAccountStatus {
+  if (status === undefined || status === null) {
+    return connected ? "connected" : "reconnect";
+  }
+  return status === "connected" ? "connected" : "reconnect";
+}
+
+/** What the account card should show. */
+export type ZohoAccountState =
+  | "unavailable"
+  | "not_connected"
+  | "connected"
+  | "reconnect";
+
+/** Collapse the account payload into one UI state. A connected account is
+ * shown even when the server can no longer start new connections, so the
+ * person can still see and remove it. */
+export function zohoAccountState(
+  account: ZohoAccount | undefined,
+): ZohoAccountState {
+  if (account?.connected === true) {
+    return account.status === "connected" ? "connected" : "reconnect";
+  }
+  return account?.available === true ? "not_connected" : "unavailable";
+}
+
+/** Response of `POST /api/me/zoho/connect`: the Zoho sign-in page to open. */
+export interface ZohoConnectResponse {
+  url: string;
+}
+
+export const ZohoConnectResponseSchema = z
+  .object({ url: z.string().catch("") })
+  .loose();
+
+export const EMPTY_ZOHO_CONNECT_RESPONSE: ZohoConnectResponse = { url: "" };

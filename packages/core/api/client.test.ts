@@ -1263,3 +1263,66 @@ describe("getIssueStaleness", () => {
     expect(await client.getIssueStaleness()).toEqual({ stale: [] });
   });
 });
+
+describe("personal Zoho account API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(status === 204 ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const client = new ApiClient("https://api.example.test");
+
+  it("reads the account from the account-scoped endpoint", async () => {
+    const fetchMock = jsonFetch({
+      available: true,
+      connected: true,
+      status: "connected",
+      email: "shohruh.a@octanefuel.com",
+      desk_departments: null,
+    });
+    const account = await client.getMyZohoAccount();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/me/zoho");
+    expect(account.connected).toBe(true);
+    expect(account.email).toBe("shohruh.a@octanefuel.com");
+    expect(account.desk_departments).toEqual([]);
+  });
+
+  it("falls back to unavailable on a malformed body", async () => {
+    jsonFetch(["not", "an", "object"]);
+    const account = await client.getMyZohoAccount();
+    expect(account.available).toBe(false);
+    expect(account.connected).toBe(false);
+  });
+
+  it("posts an empty body to connect and returns the sign-in url", async () => {
+    const url = "https://accounts.zoho.com/oauth/v2/auth?client_id=x";
+    const fetchMock = jsonFetch({ url });
+    await expect(client.connectZohoAccount()).resolves.toEqual({ url });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/me/zoho/connect",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe("{}");
+  });
+
+  it.each([{}, { url: null }, { url: "" }, { url: "javascript:alert(1)" }, null])(
+    "rejects a connect response without a usable url (%j)",
+    async (body) => {
+      jsonFetch(body);
+      await expect(client.connectZohoAccount()).rejects.toThrow(/sign-in url/);
+    },
+  );
+
+  it("disconnects with DELETE and accepts 204", async () => {
+    const fetchMock = jsonFetch(null, 204);
+    await expect(client.disconnectZohoAccount()).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/me/zoho");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+});
