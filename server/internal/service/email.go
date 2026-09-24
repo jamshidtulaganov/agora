@@ -362,6 +362,81 @@ func buildInvitationParams(from, to, inviterName, workspaceName, inviteURL strin
 	}
 }
 
+// SendWelcomeEmail tells a person whose account was created for them (the
+// Zoho workspace migration) that their team is on Agora now, which workspaces
+// they are in, and how to sign in. No token rides in the link: signing in is
+// the normal email-code login, so a forwarded email grants nothing.
+func (s *EmailService) SendWelcomeEmail(to, name string, workspaces []string) error {
+	params := buildWelcomeParams(s.fromEmail, to, name, workspaces, appBaseURL()+"/login")
+	if s.smtpHost != "" {
+		return s.sendSMTP(to, params.Subject, params.Html)
+	}
+	if s.client == nil {
+		fmt.Printf("[DEV] Welcome email to %s: workspaces %v — %s/login\n", to, workspaces, appBaseURL())
+		return nil
+	}
+	_, err := s.client.Emails.Send(params)
+	return err
+}
+
+// maxWelcomeWorkspaces caps the list in the email body; the rest is summarized
+// as "and N more" so a portal admin in 17 workspaces gets a readable email.
+const maxWelcomeWorkspaces = 8
+
+// buildWelcomeParams assembles the welcome email. Separated from
+// SendWelcomeEmail so escaping and the workspace list are unit-testable.
+func buildWelcomeParams(from, to, name string, workspaces []string, signInURL string) *resend.SendEmailRequest {
+	firstName := strings.TrimSpace(name)
+	if i := strings.IndexFunc(firstName, unicode.IsSpace); i > 0 {
+		firstName = firstName[:i]
+	}
+	greeting := "Welcome to Agora"
+	if firstName != "" {
+		greeting = "Welcome to Agora, " + html.EscapeString(firstName)
+	}
+
+	var list strings.Builder
+	shown := workspaces
+	if len(shown) > maxWelcomeWorkspaces {
+		shown = shown[:maxWelcomeWorkspaces]
+	}
+	for _, ws := range shown {
+		fmt.Fprintf(&list,
+			`<tr><td style="padding:7px 12px;border-bottom:1px solid #e4e4e7;font-size:13px;color:#0a0d12;">%s</td></tr>`,
+			html.EscapeString(ws))
+	}
+	if extra := len(workspaces) - len(shown); extra > 0 {
+		fmt.Fprintf(&list,
+			`<tr><td style="padding:7px 12px;font-size:12px;color:#71717a;">and %d more</td></tr>`, extra)
+	}
+	workspaceBlock := ""
+	if list.Len() > 0 {
+		workspaceBlock = `<p style="margin:0 0 8px 0;font-size:13px;color:#52525b;">You're a member of:</p>` +
+			`<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 18px 0;border:1px solid #e4e4e7;border-radius:8px;border-collapse:separate;">` +
+			list.String() + `</table>`
+	}
+
+	content := fmt.Sprintf(
+		`<h1 style="margin:0 0 6px 0;font-size:17px;font-weight:600;color:#0a0d12;">%s</h1>
+		<p style="margin:0 0 16px 0;font-size:13px;color:#52525b;line-height:1.5;">Your team's projects moved from Zoho Projects to Agora. Your tasks, their statuses and comments came with them.</p>
+		%s
+		<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;">
+		<tr><td style="background-color:#2071cc;border-radius:6px;">
+		<a href="%s" style="display:inline-block;padding:10px 22px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">Sign in to Agora</a>
+		</td></tr>
+		</table>
+		<p style="margin:0 0 6px 0;font-size:12px;color:#52525b;line-height:1.5;">Sign in with <strong style="color:#0a0d12;">%s</strong> — Agora emails you a one-time code, no password needed.</p>
+		<p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">The first time, a two-minute setup adds your photo and notifications and shows you around.</p>`,
+		greeting, workspaceBlock, html.EscapeString(signInURL), html.EscapeString(to))
+
+	return &resend.SendEmailRequest{
+		From:    from,
+		To:      []string{to},
+		Subject: "Your team is on Agora now",
+		Html:    emailShell(appBaseURL(), "Your team's projects moved from Zoho Projects to Agora", content),
+	}
+}
+
 // sanitizeSubjectField prepares user-controlled text for the email Subject line.
 // Subject is not HTML-rendered, so HTML-escaping would leak literal entities
 // (e.g. &lt;script&gt;) into the recipient's inbox. Instead strip control

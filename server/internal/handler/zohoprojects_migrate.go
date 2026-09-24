@@ -628,9 +628,9 @@ func (h *Handler) createZohoWorkspace(ctx context.Context, p *ZohoMigrateProject
 }
 
 // zohoEnsureUser finds the Agora account for email or creates it. A created
-// account is marked onboarded: the person was placed into a workspace by the
-// migration, so their first sign-in (email code) lands there instead of in the
-// create-a-workspace flow.
+// account is left NOT onboarded on purpose: its first sign-in lands in the
+// member setup (photo, notifications, a tour of their workspaces) instead of
+// straight in a workspace nobody introduced — see the welcome-emails send.
 func (h *Handler) zohoEnsureUser(ctx context.Context, email, name string) (pgtype.UUID, bool, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if u, err := h.Queries.GetUserByEmail(ctx, email); err == nil {
@@ -644,9 +644,6 @@ func (h *Handler) zohoEnsureUser(ctx context.Context, email, name string) (pgtyp
 	u, err := h.Queries.CreateUser(ctx, db.CreateUserParams{Name: strings.TrimSpace(name), Email: email})
 	if err != nil {
 		return pgtype.UUID{}, false, err
-	}
-	if _, err := h.Queries.MarkUserOnboarded(ctx, u.ID); err != nil {
-		slog.Warn("zoho migrate: mark onboarded failed", "email", email, "error", err)
 	}
 	slog.Info("zoho migrate: user created", "email", email, "user_id", util.UUIDToString(u.ID))
 	return u.ID, true, nil
