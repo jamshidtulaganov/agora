@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -394,11 +395,23 @@ type User struct {
 // Created/LastUpdated are the raw Zoho display strings (kept verbatim for the
 // Phase-2 modified-since cursor and for provenance display).
 type Task struct {
-	ID              string
-	Name            string
-	Status          string // human status name (e.g. "Open", "In Progress", "Closed")
-	StatusType      string // status "type" bucket when present ("open"/"closed")
-	Owner           User
+	ID         string
+	Name       string
+	Status     string // human status name (e.g. "Open", "In Progress", "Closed")
+	StatusType string // status "type" bucket when present ("open"/"closed")
+	Owner      User
+	// Owners is every assigned owner (Owner is the first). Zoho's "Unassigned"
+	// placeholder carries no email and is kept out.
+	Owners []User
+	// Creator is the user who created the task (created_by_* fields).
+	Creator  User
+	Priority string // Zoho priority label: "None", "Low", "Medium", "High"
+	// NoComments is true only when Zoho said outright that the task has no
+	// comments, so the importer can skip the rate-limited comments call.
+	NoComments bool
+	// StartDate / EndDate are Zoho's MM-DD-YYYY display dates ("" when unset).
+	StartDate       string
+	EndDate         string
 	Created         string
 	LastUpdated     string
 	LastUpdatedUnix int64 // ms epoch when Zoho supplied last_updated_time_long; 0 otherwise
@@ -601,6 +614,16 @@ type rawTask struct {
 	Status      rawTaskStatus  `json:"status"`
 	Owner       rawTaskOwner   `json:"details"`
 	TasklistRef rawTasklistRef `json:"tasklist"`
+	Priority    flexInt        `json:"priority"`
+	StartDate   flexInt        `json:"start_date"`
+	EndDate     flexInt        `json:"end_date"`
+	CreatorID   flexInt        `json:"created_by_zpuid"`
+	CreatorName flexInt        `json:"created_by_full_name"`
+	CreatorAlt  flexInt        `json:"created_person"`
+	CreatorMail flexInt        `json:"created_by_email"`
+	// CommentAdded is Zoho's "is_comment_added" flag; nil when the response
+	// omits it (then comments must be fetched to know).
+	CommentAdded *bool `json:"is_comment_added"`
 	// Subtasks / IsParent: Zoho's flags that the task has children. Used to gate
 	// the per-task subtasks fetch so childless tasks cost no extra API call.
 	Subtasks bool `json:"subtasks"`
@@ -644,16 +667,37 @@ func (rt rawTask) toTask() Task {
 			Email: o.Email.String(),
 		}
 	}
+	var owners []User
+	for _, o := range rt.Owner.Owners {
+		if strings.TrimSpace(o.Email.String()) == "" {
+			continue
+		}
+		owners = append(owners, User{
+			ID:    firstNonEmpty(o.ID, o.IDAlt),
+			Name:  o.Name.String(),
+			Email: o.Email.String(),
+		})
+	}
 	var updatedUnix int64
 	if v := strings.TrimSpace(rt.UpdatedLong.String()); v != "" {
 		updatedUnix, _ = strconv.ParseInt(v, 10, 64)
 	}
 	return Task{
-		ID:              id,
-		Name:            rt.Name.String(),
-		Status:          rt.Status.Name.String(),
-		StatusType:      rt.Status.Type.String(),
-		Owner:           owner,
+		ID:         id,
+		Name:       html.UnescapeString(rt.Name.String()),
+		Status:     rt.Status.Name.String(),
+		StatusType: rt.Status.Type.String(),
+		Owner:      owner,
+		Owners:     owners,
+		Creator: User{
+			ID:    rt.CreatorID.String(),
+			Name:  firstNonEmpty(rt.CreatorName, rt.CreatorAlt),
+			Email: rt.CreatorMail.String(),
+		},
+		NoComments:      rt.CommentAdded != nil && !*rt.CommentAdded,
+		Priority:        rt.Priority.String(),
+		StartDate:       rt.StartDate.String(),
+		EndDate:         rt.EndDate.String(),
 		Created:         firstNonEmpty(rt.Created),
 		LastUpdated:     firstNonEmpty(rt.Updated),
 		LastUpdatedUnix: updatedUnix,

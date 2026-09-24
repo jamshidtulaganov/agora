@@ -1,6 +1,11 @@
 package zohoprojects
 
-import "strings"
+import (
+	"html"
+	"regexp"
+	"strings"
+	"time"
+)
 
 // Agora issue statuses. Kept as plain strings (not an enum) because the
 // canonical list lives in the DB / handler layer; these are the values the
@@ -30,6 +35,7 @@ const (
 //	name contains "open" / "new" / "todo" / "to do" -> todo
 //
 // Fallback by Zoho status "type":
+//
 //	type == "closed" -> done
 //	type == "open"   -> todo
 //
@@ -55,7 +61,7 @@ func mapStatus(name, statusType string) string {
 		return StatusBacklog
 	case strings.Contains(n, "cancel"), strings.Contains(n, "reject"), strings.Contains(n, "won't"), strings.Contains(n, "wont"):
 		return StatusCancelled
-	case strings.Contains(n, "review"), strings.Contains(n, "testing"), strings.Contains(n, "qa"), strings.Contains(n, "verify"):
+	case strings.Contains(n, "review"), strings.Contains(n, "testing"), strings.Contains(n, "tested"), strings.Contains(n, "to test"), strings.Contains(n, "qa"), strings.Contains(n, "verify"):
 		return StatusInReview
 	case strings.Contains(n, "progress"), strings.Contains(n, "active"), strings.Contains(n, "wip"), strings.Contains(n, "doing"), strings.Contains(n, "started"):
 		return StatusInProgress
@@ -154,6 +160,7 @@ type IssueDraft struct {
 	Title       string
 	Description string
 	Status      string
+	Priority    string
 }
 
 // MapTaskToIssue projects a Zoho task onto an IssueDraft. Title falls back to a
@@ -172,8 +179,9 @@ func MapTaskToIssue(task *Task) IssueDraft {
 	}
 	return IssueDraft{
 		Title:       title,
-		Description: strings.TrimSpace(task.Description),
+		Description: HTMLToText(task.Description),
 		Status:      MapStatusWithType(task.Status, task.StatusType),
+		Priority:    MapPriority(task.Priority),
 	}
 }
 
@@ -201,3 +209,89 @@ func TasklistIsSprint(name string) bool { return nameDenotesSprint(name) }
 // the sprint's work items — so the importer turns such a task into a Agora sprint
 // and files its subtasks under it rather than creating an issue for the task.
 func TaskIsSprint(name string) bool { return nameDenotesSprint(name) }
+
+// MapRole maps a Zoho project/portal role label onto an Agora workspace role
+// (owner is never derived from a role — only the Zoho project owner becomes a
+// workspace owner). Zoho admins and managers run the project, so they get
+// admin; employees, contractors and client users are members. An unknown or
+// empty label degrades to member rather than granting anything.
+func MapRole(zohoRole string) string {
+	r := strings.ToLower(strings.TrimSpace(zohoRole))
+	switch {
+	case strings.Contains(r, "admin"), strings.Contains(r, "manager"), strings.Contains(r, "owner"):
+		return "admin"
+	default:
+		return "member"
+	}
+}
+
+// MapPriority maps Zoho's task priority label onto the Agora ladder. Zoho has no
+// "urgent"; anything unrecognized is "none".
+func MapPriority(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "high":
+		return "high"
+	case "medium":
+		return "medium"
+	case "low":
+		return "low"
+	default:
+		return "none"
+	}
+}
+
+// ParseDate parses a Zoho v1 display date (MM-DD-YYYY). ok=false for "" or any
+// other shape, so a portal with a different date format leaves the field unset
+// instead of storing a wrong day.
+func ParseDate(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("01-02-2006", s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+var (
+	htmlLinkRe  = regexp.MustCompile(`(?is)<a\s[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>`)
+	htmlBreakRe = regexp.MustCompile(`(?i)<br\s*/?>`)
+	htmlBlockRe = regexp.MustCompile(`(?i)</(div|p|li|h[1-6]|tr|blockquote)>`)
+	htmlItemRe  = regexp.MustCompile(`(?i)<li[^>]*>`)
+	htmlTagRe   = regexp.MustCompile(`(?s)<[^>]+>`)
+	blankRunRe  = regexp.MustCompile(`\n{3,}`)
+)
+
+// HTMLToText turns a Zoho rich-text description into plain markdown-ish text:
+// links become [text](url), list items become "- ", block ends and <br> become
+// newlines, every other tag is dropped and entities are decoded. Zoho stores an
+// empty description as "<div><br /></div>", which comes out as "".
+func HTMLToText(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	s = htmlLinkRe.ReplaceAllStringFunc(s, func(m string) string {
+		parts := htmlLinkRe.FindStringSubmatch(m)
+		href := strings.TrimSpace(parts[1])
+		text := strings.TrimSpace(htmlTagRe.ReplaceAllString(parts[2], ""))
+		if text == "" || text == href {
+			return href
+		}
+		return "[" + text + "](" + href + ")"
+	})
+	s = htmlBreakRe.ReplaceAllString(s, "\n")
+	s = htmlItemRe.ReplaceAllString(s, "- ")
+	s = htmlBlockRe.ReplaceAllString(s, "\n")
+	s = htmlTagRe.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	s = strings.ReplaceAll(s, "\u00a0", " ")
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t")
+	}
+	s = strings.Join(lines, "\n")
+	s = blankRunRe.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
+}
