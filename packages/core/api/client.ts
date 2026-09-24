@@ -85,9 +85,6 @@ import type {
   AssistantMessage,
   AssistantAvailability,
   AssistantArtifact,
-  AssistantArtifactSummary,
-  AssistantArtifactRevision,
-  AssistantArtifactRevisionSummary,
   PinnedReport,
   PinnedReportSummary,
   ReportPin,
@@ -480,13 +477,6 @@ import {
   EMPTY_SEND_ASSISTANT_MESSAGE_RESPONSE,
   AssistantArtifactSchema,
   EMPTY_ASSISTANT_ARTIFACT,
-  AssistantArtifactListSchema,
-  AssistantArtifactLibraryPageSchema,
-  EMPTY_ASSISTANT_ARTIFACT_LIST,
-  AssistantArtifactRevisionSchema,
-  AssistantArtifactRevisionListSchema,
-  EMPTY_ASSISTANT_ARTIFACT_REVISION,
-  EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
   AssistantOperationDecisionSchema,
   EMPTY_ASSISTANT_OPERATION_DECISION,
   ProjectReportsResponseSchema,
@@ -2576,43 +2566,6 @@ export class ApiClient {
   }
 
   /**
-   * Immutable version history behind the pane's version picker, newest first
-   * and without bodies.
-   *
-   * Throws on a 404 rather than swallowing it: an installed build that predates
-   * the revisions endpoints must collapse the picker to a plain version badge,
-   * and an empty array (a brand-new artifact) is a different answer from "this
-   * server has no history at all".
-   */
-  async listAssistantArtifactRevisions(
-    artifactId: string,
-  ): Promise<AssistantArtifactRevisionSummary[]> {
-    const raw = await this.fetch<unknown>(`/api/assistant/artifacts/${artifactId}/revisions`);
-    return parseWithFallback(
-      raw,
-      AssistantArtifactRevisionListSchema,
-      EMPTY_ASSISTANT_ARTIFACT_REVISION_LIST,
-      { endpoint: "GET /api/assistant/artifacts/{id}/revisions" },
-    );
-  }
-
-  /** One historical version, with its body. */
-  async getAssistantArtifactRevision(
-    artifactId: string,
-    version: number,
-  ): Promise<AssistantArtifactRevision> {
-    const raw = await this.fetch<unknown>(
-      `/api/assistant/artifacts/${artifactId}/revisions/${version}`,
-    );
-    return parseWithFallback(
-      raw,
-      AssistantArtifactRevisionSchema,
-      EMPTY_ASSISTANT_ARTIFACT_REVISION,
-      { endpoint: "GET /api/assistant/artifacts/{id}/revisions/{version}" },
-    );
-  }
-
-  /**
    * Records the out-of-band human confirmation for a pending destructive
    * operation and executes it server-side. See docs/agora-assistant-final-plan.md
    * ("Pinned wire contract").
@@ -2687,22 +2640,6 @@ export class ApiClient {
       // single-operation decision object exactly the shape it has always had.
       ...(parsed.items.length > 0 ? { items: parsed.items } : {}),
     };
-  }
-
-  async listAssistantArtifacts(sessionId: string): Promise<AssistantArtifactSummary[]> {
-    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/artifacts`);
-    return parseWithFallback(raw, AssistantArtifactListSchema, EMPTY_ASSISTANT_ARTIFACT_LIST, {
-      endpoint: "GET /api/assistant/sessions/{id}/artifacts",
-    });
-  }
-
-  async listMyAssistantArtifacts(offset = 0): Promise<AssistantArtifactSummary[]> {
-    const raw = await this.fetch<unknown>(`/api/assistant/artifacts?offset=${offset}`);
-    const page = parseWithFallback<AssistantArtifactSummary[] | null>(raw, AssistantArtifactLibraryPageSchema, null, {
-      endpoint: "GET /api/assistant/artifacts",
-    });
-    if (page === null) throw new Error("Could not load the artifact library page. Try again.");
-    return page;
   }
 
   // --- Pinned reports ---------------------------------------------------

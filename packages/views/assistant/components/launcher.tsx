@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { cn } from "@agora/ui/lib/utils";
 import { Composer } from "./composer";
+import { useAssistantComposeResources } from "./compose-resources";
+import type { ComposeResources } from "./compose-resources";
 import { AssistantHero, AssistantPromptRows } from "./empty-state";
 
 interface AssistantLauncherProps {
@@ -11,11 +13,12 @@ interface AssistantLauncherProps {
   onSend: (content: string) => void;
   isSending?: boolean;
   sendUnavailable?: boolean;
-  scopeLabel?: string;
+  status?: string;
   /** The session's focus workspace — see components/context-chip.tsx. Absent
    *  before a session exists, where there is nothing to re-scope yet. */
   contextChip?: ReactNode;
-  resourceControls?: ReactNode;
+  /** Message context from useAssistantComposeResources. */
+  resources?: ComposeResources;
   /** Tightened spacing + single-column prompts for the floating panel. */
   compact?: boolean;
 }
@@ -35,9 +38,9 @@ export function AssistantLauncher({
   onSend,
   isSending,
   sendUnavailable,
-  scopeLabel,
+  status,
   contextChip,
-  resourceControls,
+  resources,
   compact,
 }: AssistantLauncherProps) {
   return (
@@ -56,12 +59,33 @@ export function AssistantLauncher({
           onSend={onSend}
           isSending={isSending}
           sendUnavailable={sendUnavailable}
-          scopeLabel={scopeLabel}
+          status={status}
           contextChip={contextChip}
-          resourceControls={resourceControls}
+          toolbar={resources?.toolbar}
+          attachments={resources?.attachments}
+          notices={resources?.notices}
         />
         <AssistantPromptRows onPickPrompt={onValueChange} compact={compact} />
       </div>
     </div>
   );
+}
+
+/**
+ * The launcher before any session exists: the message context is kept under a
+ * placeholder session key until the first send creates the real session.
+ * Shared by the full page and the floating panel.
+ */
+export function AssistantDraftLauncher({
+  draftKey,
+  workspaceId,
+  onUploadingChange,
+  ...launcher
+}: Omit<AssistantLauncherProps, "resources" | "status" | "contextChip"> & {
+  draftKey: string;
+  workspaceId: string | null;
+  onUploadingChange: (uploading: boolean) => void;
+}) {
+  const resources = useAssistantComposeResources({ sessionId: draftKey, workspaceId, onUploadingChange });
+  return <AssistantLauncher {...launcher} resources={resources} />;
 }

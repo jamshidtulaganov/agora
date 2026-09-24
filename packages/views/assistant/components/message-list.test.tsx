@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@agora/core/i18n/react";
 import type { AssistantMessage } from "@agora/core/types";
@@ -9,12 +10,15 @@ import { RESOURCES } from "../../locales";
 import { MessageList } from "./message-list";
 
 const writeText = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const getAssistantArtifact = vi.hoisted(() => vi.fn());
 
-function renderList(
-  messages: AssistantMessage[],
-  onOpenArtifact?: (id: string) => void,
-  onRegenerate?: () => void,
-) {
+vi.mock("@agora/core/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/api")>();
+  return { ...actual, api: { ...actual.api, getAssistantArtifact } };
+});
+
+function renderList(messages: AssistantMessage[], onRegenerate?: () => void) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const nav: NavigationAdapter = {
     push: vi.fn(),
     replace: vi.fn(),
@@ -25,13 +29,11 @@ function renderList(
   };
   return render(
     <I18nProvider locale="en" resources={RESOURCES}>
-      <NavigationProvider value={nav}>
-        <MessageList
-          messages={messages}
-          onOpenArtifact={onOpenArtifact}
-          onRegenerate={onRegenerate}
-        />
-      </NavigationProvider>
+      <QueryClientProvider client={client}>
+        <NavigationProvider value={nav}>
+          <MessageList messages={messages} onRegenerate={onRegenerate} />
+        </NavigationProvider>
+      </QueryClientProvider>
     </I18nProvider>,
   );
 }
@@ -58,78 +60,143 @@ afterEach(() => {
   cleanup();
 });
 
-describe("MessageList — artifact cards", () => {
-  it("renders an artifact card for a create_artifact tool row", async () => {
-    const onOpen = vi.fn();
-    renderList(
-      [
-        toolMessage({
-          id: "m1",
-          tool_name: "create_artifact",
-          tool_result: {
-            artifact_id: "art-1",
-            title: "Agent usage by day",
-            kind: "chart",
-            version: 1,
-          },
-        }),
-      ],
-      onOpen,
-    );
+function artifact(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "art-1",
+    session_id: "session-1",
+    title: "Sprint report",
+    kind: "markdown",
+    content: "## Done this week\n\nShipped the login fix.",
+    version: 1,
+    created_at: "2026-09-16T10:00:00Z",
+    updated_at: "2026-09-16T10:00:00Z",
+    ...overrides,
+  };
+}
 
-    const card = screen.getByRole("button", { name: /Agent usage by day/ });
-    expect(card).toBeInTheDocument();
-    // v1 carries no badge — the version only earns pixels once it changed.
-    expect(screen.queryByText("v1")).not.toBeInTheDocument();
-
-    await userEvent.click(card);
-    expect(onOpen).toHaveBeenCalledWith("art-1");
+describe("MessageList — inline artifacts", () => {
+  beforeEach(() => {
+    getAssistantArtifact.mockReset();
   });
 
-  it("shows a version badge once update_artifact has bumped it", () => {
-    renderList(
-      [
-        toolMessage({
-          id: "m1",
-          tool_name: "update_artifact",
-          tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 3 },
-        }),
-      ],
-      vi.fn(),
-    );
-
-    expect(screen.getByText("v3")).toBeInTheDocument();
-  });
-
-  it("falls back to the plain tool chip when the tool_result shape is unrecognised", () => {
-    // Exactly what an older/newer server that renamed the field ships.
-    renderList(
-      [
-        toolMessage({
-          id: "m1",
-          tool_name: "create_artifact",
-          tool_result: { id: "art-1", title: "Sprint report" },
-        }),
-      ],
-      vi.fn(),
-    );
-
-    expect(screen.queryByRole("button", { name: /Sprint report/ })).not.toBeInTheDocument();
-    // The generic chip humanizes the tool name and summarizes the result.
-    expect(screen.getByText("create artifact")).toBeInTheDocument();
-    expect(screen.getByText("Sprint report")).toBeInTheDocument();
-  });
-
-  it("renders the card without a click target when no open handler is provided", () => {
+  it("shows the artifact itself in the conversation, with Print and Download", async () => {
+    getAssistantArtifact.mockResolvedValue(artifact());
     renderList([
       toolMessage({
         id: "m1",
         tool_name: "create_artifact",
-        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown" },
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 1 },
       }),
     ]);
 
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(await screen.findByText("Shipped the login fix.")).toBeInTheDocument();
+    expect(screen.getByText("Sprint report")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Print or save as PDF" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+    // v1 carries no badge — the version only earns pixels once it changed.
+    expect(screen.queryByText("v1")).not.toBeInTheDocument();
+    expect(getAssistantArtifact).toHaveBeenCalledWith("art-1");
+  });
+
+  it("shows a revised artifact once, at its latest row, and keeps the earlier row as a note", async () => {
+    getAssistantArtifact.mockResolvedValue(artifact({ version: 2, content: "Second draft." }));
+    renderList([
+      toolMessage({
+        id: "m1",
+        tool_name: "create_artifact",
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 1 },
+      }),
+      toolMessage({
+        id: "m2",
+        tool_name: "update_artifact",
+        created_at: "2026-09-16T10:05:00Z",
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 2 },
+      }),
+    ]);
+
+    expect(await screen.findAllByText("Second draft.")).toHaveLength(1);
+    expect(screen.getByText("Created Sprint report")).toBeInTheDocument();
+    expect(screen.getByText("v2")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
+  });
+
+  it("says so, with a retry, when the artifact can't be read", async () => {
+    getAssistantArtifact.mockRejectedValue(new Error("404"));
+    renderList([
+      toolMessage({
+        id: "m1",
+        tool_name: "create_artifact",
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 1 },
+      }),
+    ]);
+
+    expect(await screen.findByText("This artifact isn't available.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download" })).toBeDisabled();
+    getAssistantArtifact.mockResolvedValue(artifact());
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Shipped the login fix.")).toBeInTheDocument();
+  });
+
+  it("prints from a sandboxed frame, never the app window", async () => {
+    getAssistantArtifact.mockResolvedValue(artifact());
+    renderList([
+      toolMessage({
+        id: "m1",
+        tool_name: "create_artifact",
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 1 },
+      }),
+    ]);
+    await screen.findByText("Shipped the login fix.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Print or save as PDF" }));
+
+    const frame = document.querySelector("iframe[sandbox]") as HTMLIFrameElement | null;
+    expect(frame).not.toBeNull();
+    expect(frame!.getAttribute("sandbox")).toBe("allow-scripts allow-modals");
+    expect(frame!.srcdoc).toContain("Content-Security-Policy");
+    expect(frame!.srcdoc).toContain("Sprint report");
+    expect(frame!.srcdoc).toContain("Shipped the login fix.");
+    expect(frame!.srcdoc).toContain("window.print()");
+  });
+
+  it("downloads the file the artifact is best opened as", async () => {
+    getAssistantArtifact.mockResolvedValue(artifact());
+    const createObjectURL = vi.fn(() => "blob:agora/1");
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    renderList([
+      toolMessage({
+        id: "m1",
+        tool_name: "create_artifact",
+        tool_result: { artifact_id: "art-1", title: "Sprint report", kind: "markdown", version: 1 },
+      }),
+    ]);
+    await screen.findByText("Shipped the login fix.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Download" }));
+
+    expect(clicked).toEqual(["Sprint report.md"]);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+
+  it("falls back to the plain tool chip when the tool_result shape is unrecognised", () => {
+    // Exactly what an older/newer server that renamed the field ships.
+    renderList([
+      toolMessage({
+        id: "m1",
+        tool_name: "create_artifact",
+        tool_result: { id: "art-1", title: "Sprint report" },
+      }),
+    ]);
+
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+    expect(getAssistantArtifact).not.toHaveBeenCalled();
+    expect(screen.getByText("Created an artifact")).toBeInTheDocument();
     expect(screen.getByText("Sprint report")).toBeInTheDocument();
   });
 });
@@ -251,7 +318,7 @@ describe("MessageList — regenerate", () => {
 
   it("offers the action on the last assistant row only", async () => {
     const onRegenerate = vi.fn();
-    renderList([assistantRow("m1", "first"), assistantRow("m2", "second")], undefined, onRegenerate);
+    renderList([assistantRow("m1", "first"), assistantRow("m2", "second")], onRegenerate);
 
     const buttons = screen.getAllByRole("button", { name: "Regenerate" });
     expect(buttons).toHaveLength(1);
@@ -261,11 +328,7 @@ describe("MessageList — regenerate", () => {
   });
 
   it("skips a trailing pure tool-call turn, which renders nothing", () => {
-    renderList(
-      [assistantRow("m1", "the answer"), assistantRow("m2", "")],
-      undefined,
-      vi.fn(),
-    );
+    renderList([assistantRow("m1", "the answer"), assistantRow("m2", "")], vi.fn());
 
     expect(screen.getAllByRole("button", { name: "Regenerate" })).toHaveLength(1);
   });

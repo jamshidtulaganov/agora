@@ -10,8 +10,9 @@ import { ArtifactChart } from "./artifact-chart";
 /**
  * The minimum an artifact renderer needs. Kept structural rather than tied to
  * `AssistantArtifact` so the same renderers serve BOTH surfaces that show an
- * artifact body: the owner's editable pane, and the read-only report viewer on
- * the project page (which reads a pin, not an artifact). One renderer, one
+ * artifact body: the chat, where the artifact appears inline, and the
+ * read-only report viewer on the project page (which reads a pin, not an
+ * artifact). One renderer, one
  * security posture, one set of downgrade paths — see the No-Duplication rule.
  */
 export interface ArtifactRenderable {
@@ -21,7 +22,14 @@ export interface ArtifactRenderable {
   title: string;
 }
 
-export function ArtifactBody({ artifact }: { artifact: ArtifactRenderable }) {
+export function ArtifactBody({
+  artifact,
+  frameClassName = "h-full min-h-[480px]",
+}: {
+  artifact: ArtifactRenderable;
+  /** Height of the sandboxed frame an HTML artifact runs in. */
+  frameClassName?: string;
+}) {
   const kind = toArtifactKind(artifact.kind);
 
   switch (kind) {
@@ -52,7 +60,7 @@ export function ArtifactBody({ artifact }: { artifact: ArtifactRenderable }) {
         <CodeBlockIframe
           html={artifact.content}
           title={artifact.title}
-          heightClassName="h-full min-h-[480px]"
+          heightClassName={frameClassName}
           // Model-generated HTML must not phone home: the sandbox blocks DOM
           // escape but not fetch(); this injects a no-network CSP (plan §7 +
           // final-plan amendment 2).

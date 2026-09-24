@@ -32,17 +32,15 @@ export function SessionRail({
 
   return (
     <div className="flex h-full w-64 shrink-0 flex-col border-r">
-      <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-sm font-medium text-foreground">{t(($) => $.session_rail.title)}</span>
+      <div className="px-2 pt-2 pb-1">
         <Button
           type="button"
-          size="icon-sm"
           variant="ghost"
+          className="w-full justify-start gap-2 px-2 text-sm font-normal"
           onClick={onCreate}
-          aria-label={t(($) => $.session_rail.new_session)}
-          title={t(($) => $.session_rail.new_session)}
         >
-          <Plus />
+          <Plus className="size-4" />
+          {t(($) => $.session_rail.new_session)}
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">

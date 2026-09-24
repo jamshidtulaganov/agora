@@ -92,7 +92,7 @@ vi.mock("@agora/core/assistant", async () => {
   };
 });
 
-vi.mock("./compose-resources", () => ({ AssistantComposeResources: () => null }));
+vi.mock("./compose-resources", () => ({ useAssistantComposeResources: () => ({ toolbar: null, attachments: null, notices: null }) }));
 
 import { ActiveConversation } from "./active-conversation";
 
@@ -381,7 +381,7 @@ describe("ActiveConversation — follow-up chips", () => {
 });
 
 describe("ActiveConversation — composer scope", () => {
-  it("sends to the picked workspace and says so above the composer", async () => {
+  it("sends to the picked workspace (the toolbar chip names it, not a status line)", async () => {
     assistantStoreState.composer = {
       s1: {
         workspace_id: "ws-2",
@@ -398,9 +398,9 @@ describe("ActiveConversation — composer scope", () => {
       ]);
     });
 
-    // The label is the user's last chance to notice the message is leaving
-    // the workspace they are looking at.
-    expect(await screen.findByText("Sending to Beta · Dana Ruiz")).toBeInTheDocument();
+    // The destination is the workspace chip in the composer toolbar (its own
+    // tests: compose-resources.test.tsx) — no duplicate "Sending to" line.
+    expect(screen.queryByText(/Sending to/)).not.toBeInTheDocument();
 
     const composer = screen.getByRole("textbox");
     await userEvent.type(composer, "assign the login bug to her");
@@ -411,12 +411,18 @@ describe("ActiveConversation — composer scope", () => {
     expect(sent.context).toMatchObject({ workspace_id: "ws-2", member_id: "user-7" });
   });
 
-  it("falls back to the page's workspace when nothing is pinned", async () => {
+  it("falls back to the page's workspace when nothing is pinned, without a status line", async () => {
     const { qc } = renderConversation();
     await screen.findByText("Three issues are waiting on you.");
     act(() => {
       qc.setQueryData(["workspaces", "list"], [{ id: "ws-1", slug: "acme", name: "Acme" }]);
     });
-    expect(await screen.findByText("Sending to Acme")).toBeInTheDocument();
+    const composer = screen.getByRole("textbox");
+    await userEvent.type(composer, "what's due today");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(mockSendMutate).toHaveBeenCalled());
+    const sent = mockSendMutate.mock.calls[0]?.[0] as { context?: Record<string, unknown> };
+    expect(sent.context).toMatchObject({ workspace_id: "ws-1" });
+    expect(screen.queryByText(/Sending to/)).not.toBeInTheDocument();
   });
 });

@@ -1905,8 +1905,8 @@ func ToolSpecs() []llm.Tool {
 		},
 		{
 			Name: ToolCreateArtifact,
-			Description: "Produce an ARTIFACT — a chart, table, report or small interactive page that opens " +
-				"in its own pane beside the conversation instead of being typed out as chat text. " +
+			Description: "Produce an ARTIFACT — a chart, table, report or small interactive page that appears " +
+				"right in the conversation (the user can print or download it) instead of being typed out as chat text. " +
 				"Use it whenever the user asks for a chart, graph, dashboard, report, comparison table or any " +
 				"visualization. Ground the data FIRST with the read/analytics tools and build the artifact from " +
 				"the numbers they returned — never from numbers you assembled yourself. " +

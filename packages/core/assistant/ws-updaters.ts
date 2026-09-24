@@ -21,7 +21,6 @@ export function onAssistantMessage(qc: QueryClient, payload: AssistantMessageEve
   qc.invalidateQueries({ queryKey: assistantKeys.messages(payload.session_id) });
   invalidateSessionRun(qc, payload.session_id, payload.run_id);
   qc.invalidateQueries({ queryKey: assistantKeys.artifacts() });
-  qc.invalidateQueries({ queryKey: assistantKeys.sessionArtifacts(payload.session_id) });
   qc.invalidateQueries({ queryKey: assistantKeys.all, predicate: (query) => query.queryKey[1] === "operation" || query.queryKey[1] === "operations" });
 }
 

@@ -18,8 +18,7 @@
     "mcp": "MCP servers",
     "bitrix": "Bitrix",
     "settings": "Settings",
-    "automations": "Automations",
-    "artifacts": "Artifacts"
+    "automations": "Automations"
   },
   "help": {
     "trigger": "Help",
@@ -57,26 +56,5 @@
     "header": "Working now",
     "queued": "{{count}} queued",
     "empty": "Nothing running right now"
-  },
-  "artifacts_library": {
-    "title": "Artifacts",
-    "description": "Your saved outputs across conversations. Open, inspect, and keep creating.",
-    "create": "New artifact",
-    "search": "Search loaded artifacts",
-    "filter": "Filter by type",
-    "all": "All",
-    "loading": "Loading artifacts…",
-    "error": "Could not load artifacts.",
-    "retry": "Try again",
-    "no_results": "No matching artifacts. Load more or change your search.",
-    "empty": "Ask the Assistant to create a report, table, chart, or interactive artifact.",
-    "version": "v{{version}}",
-    "untitled": "Untitled artifact",
-    "edit": "Edit in chat",
-    "more": "Load more",
-    "download": "Download",
-    "view": "Artifact view",
-    "preview": "Preview",
-    "code": "Code"
   }
 }

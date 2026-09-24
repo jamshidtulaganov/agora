@@ -47,7 +47,6 @@ vi.mock("@agora/core/realtime", () => ({
   },
 }));
 
-const mockSetOpenArtifact = vi.hoisted(() => vi.fn());
 const assistantStoreState = vi.hoisted(() => ({
   activeSessionId: null as string | null,
   draftsBySession: {} as Record<string, {content: string; request_id: string; context?: {workspace_id: string | null; timezone?: string}}>,
@@ -89,7 +88,6 @@ vi.mock("@agora/core/assistant", async () => {
     setActiveSession: mockSetActiveSession,
     setDraft,
     setComposerContext,
-    setOpenArtifact: mockSetOpenArtifact,
   });
   const useAssistantStore = Object.assign(
     (selector?: (s: ReturnType<typeof state>) => unknown) =>
@@ -150,7 +148,7 @@ vi.mock("@agora/core/assistant", async () => {
   };
 });
 
-vi.mock("./compose-resources", () => ({ AssistantComposeResources: () => null }));
+vi.mock("./compose-resources", () => ({ useAssistantComposeResources: () => ({ toolbar: null, attachments: null, notices: null }) }));
 
 import { AssistantPanel } from "./assistant-panel";
 import { AssistantFab } from "./assistant-fab";
@@ -445,52 +443,6 @@ describe("AssistantPanel — Escape", () => {
   });
 });
 
-// The pane doesn't fit a 380px popup: an artifact card here marks the
-// artifact open on the session and hands off to the full page (plan §6).
-describe("AssistantPanel — artifact hand-off", () => {
-  it("closes the panel and navigates to the full page with the artifact open", async () => {
-    panelStoreState.isOpen = true;
-    assistantStoreState.activeSessionId = "session-1";
-    mockGetSessions.mockResolvedValue([
-      {
-        id: "session-1",
-        title: "Usage",
-        focus_workspace_id: null,
-        created_at: "2026-09-16T10:00:00Z",
-        updated_at: "2026-09-16T10:00:00Z",
-      },
-    ]);
-    mockGetMessages.mockResolvedValue([
-      {
-        id: "m1",
-        session_id: "session-1",
-        role: "tool",
-        content: "{}",
-        tool_name: "create_artifact",
-        tool_result: {
-          artifact_id: "art-1",
-          title: "Agent usage by day",
-          kind: "chart",
-          version: 1,
-        },
-        created_at: "2026-09-16T10:00:00Z",
-      },
-    ]);
-
-    renderWithShell(<AssistantPanel />);
-
-    const card = await screen.findByRole("button", { name: /Agent usage by day/ });
-    await userEvent.click(card);
-
-    expect(mockSetOpenArtifact).toHaveBeenCalledWith("session-1", "art-1");
-    expect(mockSetOpen).toHaveBeenCalledWith(false);
-    expect(mockPush).toHaveBeenCalledWith("/acme/assistant");
-  });
-});
-
-// The plan requires a failed send to hand the user their words back: the
-// draft is written BEFORE the request and only cleared once the server
-// accepted it (docs/agora-assistant-final-plan.md §2, "persisted drafts").
 describe("AssistantPanel — draft preservation on a failed send", () => {
   beforeEach(() => {
     panelStoreState.isOpen = true;

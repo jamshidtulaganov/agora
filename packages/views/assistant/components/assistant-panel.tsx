@@ -27,12 +27,11 @@ import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { useHealActiveAssistantSession } from "../use-active-session";
 import { ActiveConversation } from "./active-conversation";
-import { AssistantLauncher } from "./launcher";
+import { AssistantDraftLauncher } from "./launcher";
 import { PanelResizeHandles } from "./panel-resize-handles";
 import { usePanelResize } from "./use-panel-resize";
 import { messageContext, targetWorkspaceId } from "../lib/message-context";
 import type { InitialAssistantMessage } from "./active-conversation";
-import { AssistantComposeResources } from "./compose-resources";
 
 const NEW_SESSION_COMPOSER = "__new__";
 
@@ -69,7 +68,6 @@ function AssistantPanelWindow() {
   const { data: sessions = [] } = useQuery(assistantSessionListOptions());
   const activeSessionId = useAssistantStore((s) => s.activeSessionId);
   const setActiveSession = useAssistantStore((s) => s.setActiveSession);
-  const setOpenArtifact = useAssistantStore((s) => s.setOpenArtifact);
   const setComposerContext = useAssistantStore((s) => s.setComposerContext);
   useHealActiveAssistantSession(sessions, true);
 
@@ -201,23 +199,17 @@ function AssistantPanelWindow() {
           initialMessage={pendingInitialMessage}
           onInitialMessageConsumed={() => setPendingInitialMessage(null)}
           compact
-          // The artifact pane does not fit this popup: mark the artifact as
-          // open on the session and hand off to the full page, reusing the
-          // same close-and-navigate the "Open full page" action does.
-          onOpenArtifact={(artifactId) => {
-            setOpenArtifact(activeSessionId, artifactId);
-            handleOpenFullPage();
-          }}
         />
       ) : (
-        <AssistantLauncher
+        <AssistantDraftLauncher
+          draftKey={NEW_SESSION_COMPOSER}
+          workspaceId={workspace?.id ?? null}
+          onUploadingChange={setUploading}
           value={draftValue}
           onValueChange={setDraftValue}
           onSend={handleSendFromDraft}
           isSending={createSession.isPending}
           sendUnavailable={isUploading}
-          scopeLabel={t(($) => $.composer.scope_workspace, { workspace: workspace?.name ?? t(($) => $.composer.scope_all) })}
-          resourceControls={<AssistantComposeResources sessionId={NEW_SESSION_COMPOSER} workspaceId={workspace?.id ?? null} onUploadingChange={setUploading} />}
           compact
         />
       )}
