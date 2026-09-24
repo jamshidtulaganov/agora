@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Agora issue statuses. Kept as plain strings (not an enum) because the
@@ -294,4 +295,37 @@ func HTMLToText(s string) string {
 	s = strings.Join(lines, "\n")
 	s = blankRunRe.ReplaceAllString(s, "\n\n")
 	return strings.TrimSpace(s)
+}
+
+// zohoSampleTasklists are the lists Zoho seeds into every new project; they
+// carry no meaning for the team.
+var zohoSampleTasklists = map[string]bool{
+	"general":                        true,
+	"a quick way to get started!":    true,
+	"basics of tasks and milestones": true,
+	"missing modules":                true,
+}
+
+// maxLabelBytes matches Agora's label-name limit (handler maxLabelNameLen).
+const maxLabelBytes = 32
+
+// TasklistLabel returns the Agora label a task list becomes, for teams that
+// use task lists as categories (Verification: "Preparing", "In Review"; Idea
+// Generation: "Sales", "Billing"). ok=false for Zoho's default/sample lists
+// and for sprint-named lists, which become sprints instead. Long names are cut
+// at a rune boundary to fit the label limit.
+func TasklistLabel(name string) (string, bool) {
+	name = strings.Join(strings.Fields(html.UnescapeString(name)), " ")
+	if name == "" || zohoSampleTasklists[strings.ToLower(name)] || nameDenotesSprint(name) {
+		return "", false
+	}
+	if len(name) <= maxLabelBytes {
+		return name, true
+	}
+	const ellipsis = "…"
+	cut := maxLabelBytes - len(ellipsis)
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(name[:cut]) + ellipsis, true
 }
