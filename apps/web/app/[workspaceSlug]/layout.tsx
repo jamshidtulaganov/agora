@@ -9,6 +9,7 @@ import { setCurrentWorkspace } from "@agora/core/platform";
 import { useAuthStore } from "@agora/core/auth";
 import { NoAccessPage } from "@agora/views/workspace/no-access-page";
 import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
+import { ProductTour } from "@agora/views/workspace/product-tour";
 import { AgoraLoader } from "@agora/ui/components/common/agora-loader";
 import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
 
@@ -104,6 +105,7 @@ export default function WorkspaceLayout({
        *  blocking Modal with Helper + starter cards. Skip path → Modal
        *  with two seeded issues. No signal → null. */}
       <WelcomeAfterOnboarding />
+      <ProductTour />
     </WorkspaceSlugProvider>
   );
 }

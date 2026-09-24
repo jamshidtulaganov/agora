@@ -145,7 +145,8 @@ function NavRow({
   const { t } = useT("layout");
 
   const row = (
-    <SidebarMenuItem>
+    // data-nav-key: a stable anchor for the first-login product tour.
+    <SidebarMenuItem data-nav-key={item.key}>
       <SidebarMenuButton
         isActive={isActive}
         render={<AppLink href={href} />}
@@ -538,7 +539,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         {/* Workspace Switcher */}
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
-            <SidebarMenuItem>
+            <SidebarMenuItem data-nav-key="workspace-switcher">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={

@@ -8,6 +8,7 @@ import { setCurrentWorkspace } from "@agora/core/platform";
 import { useAuthStore } from "@agora/core/auth";
 import {
   completeOnboarding,
+  isImportedWorkspace,
   ONBOARDING_STEP_ORDER,
   useWelcomeStore,
   type OnboardingStep,
@@ -18,6 +19,7 @@ import { StepWelcome } from "./steps/step-welcome";
 import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";
 import { StepPlatformFork } from "./steps/step-platform-fork";
+import { MemberSetupFlow } from "./member-setup/member-setup-flow";
 import { useT } from "../i18n";
 
 /**
@@ -175,6 +177,17 @@ export function OnboardingFlow({
     const prev = ONBOARDING_STEP_ORDER[idx - 1]!;
     setStep(prev);
   }, []);
+
+  // Someone who arrives already belonging to a workspace an importer made
+  // for them (the Zoho migration) has nothing to create or connect: they
+  // get the member setup instead. Decided once the workspace list is in, so
+  // they never see the create-a-workspace hero flash first.
+  if (step === "welcome" && !workspacesFetched) {
+    return <div className="h-full min-h-[640px]" aria-busy="true" />;
+  }
+  if (step === "welcome" && workspaces.some(isImportedWorkspace)) {
+    return <MemberSetupFlow workspaces={workspaces} onComplete={(ws) => onComplete(ws)} />;
+  }
 
   // Welcome and Workspace own full-bleed two-column layouts (hero / side
   // panel) with their own DragStrip + StepHeader. The runtime step owns

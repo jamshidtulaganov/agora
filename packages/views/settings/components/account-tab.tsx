@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Camera, Loader2, Save, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Save, Trash2 } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Label } from "@agora/ui/components/ui/label";
 import { Button } from "@agora/ui/components/ui/button";
@@ -10,10 +10,9 @@ import { Textarea } from "@agora/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useAuthStore } from "@agora/core/auth";
 import { api, ApiError } from "@agora/core/api";
-import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
-import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { useT } from "../../i18n";
 import { DeleteAccountDialog } from "./delete-account-dialog";
+import { ProfileAvatarPicker } from "./profile-avatar-picker";
 
 // Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in
 // JS String.length (UTF-16 code units) here while the server counts runes,
@@ -34,8 +33,6 @@ export function AccountTab() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
-  const { upload, uploading } = useFileUpload(api);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setProfileName(user?.name ?? "");
@@ -43,29 +40,6 @@ export function AccountTab() {
   }, [user]);
 
   const descriptionTooLong = profileDescription.length > MAX_PROFILE_DESCRIPTION_LEN;
-
-  const initials = (user?.name ?? "")
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset input so the same file can be re-selected
-    e.target.value = "";
-    try {
-      const result = await upload(file);
-      if (!result) return;
-      const updated = await api.updateMe({ avatar_url: result.link });
-      setUser(updated);
-      toast.success(t(($) => $.account.toast_avatar_updated));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t(($) => $.account.toast_avatar_failed));
-    }
-  };
 
   const handleProfileSave = async () => {
     if (descriptionTooLong) return;
@@ -128,38 +102,7 @@ export function AccountTab() {
           <CardContent className="space-y-4">
             {/* Avatar upload */}
             <div className="flex items-center gap-4">
-              <button
-                type="button"
-                className="group relative h-16 w-16 shrink-0 rounded-full bg-muted overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-              >
-                {user?.avatar_url ? (
-                  <img
-                    src={resolvePublicFileUrl(user.avatar_url) ?? undefined}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">
-                    {initials}
-                  </span>
-                )}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                  {uploading ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-white" />
-                  ) : (
-                    <Camera className="h-5 w-5 text-white" />
-                  )}
-                </div>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleAvatarUpload}
-              />
+              <ProfileAvatarPicker />
               <div className="text-xs text-muted-foreground">
                 {t(($) => $.account.click_avatar_hint)}
               </div>

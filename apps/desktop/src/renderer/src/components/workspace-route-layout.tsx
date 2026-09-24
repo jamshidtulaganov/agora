@@ -10,6 +10,7 @@ import { setCurrentWorkspace } from "@agora/core/platform";
 import { useAuthStore } from "@agora/core/auth";
 import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
 import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
+import { ProductTour } from "@agora/views/workspace/product-tour";
 import { WorkspacePresencePrefetch } from "@agora/views/layout";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
@@ -104,6 +105,7 @@ export function WorkspaceRouteLayout() {
        *  Modal — unless the store signal has already been consumed, in
        *  which case the hook renders null. */}
       {!overlayActive && <WelcomeAfterOnboarding />}
+      {!overlayActive && <ProductTour />}
     </WorkspaceSlugProvider>
   );
 }

@@ -21,3 +21,5 @@ export {
   useWelcomeStore,
   type WelcomeSignal,
 } from "./welcome-store";
+export { useProductTourStore } from "./tour-store";
+export { isImportedWorkspace } from "./imported-workspace";
