@@ -214,6 +214,17 @@ type zohoSyncState struct {
 	// baseline.
 	incremental bool
 
+	// backfillComments makes the update path import comments for issues whose
+	// comments were never mirrored (an earlier run hit the Zoho throttle). Only
+	// the workspace migration sets it; the poller stays cheap.
+	backfillComments bool
+
+	// provisionMember, when set, makes a Zoho person (task owner/creator) a
+	// member of the destination workspace before assignee resolution — the
+	// workspace migration sets it; the plain import and the poller leave it nil
+	// and only map people who already are members.
+	provisionMember func(ctx context.Context, wsID pgtype.UUID, u zohoprojects.User) (pgtype.UUID, bool)
+
 	// Tally for the import endpoint.
 	created int
 	updated int
@@ -555,6 +566,13 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 			}); err != nil {
 				slog.Warn("zoho import: link issue to sprint failed",
 					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
+			}
+		}
+		// Migration re-runs backfill comments a throttled earlier run skipped.
+		if st.backfillComments && st.importComments && !st.commentsThrottled && !task.NoComments &&
+			!h.zohoIssueHasFlag(ctx, existing.ID, zohoCommentsImportedMetaKey) {
+			if ownerID, err := h.zohoWorkspaceOwner(ctx, wsID); err == nil {
+				h.importZohoComments(ctx, wsID, existing.ID, ownerID, zohoProjectID, task.ID, st)
 			}
 		}
 		st.updated++
@@ -937,6 +955,13 @@ func (h *Handler) zohoResolveAssignee(ctx context.Context, wsID pgtype.UUID, own
 	email := strings.ToLower(strings.TrimSpace(owner.Email))
 	if email == "" {
 		return none, pgtype.UUID{}
+	}
+	// Migration mode: make the Zoho person a member of this workspace first, so
+	// every owner lands as a real assignee instead of a metadata chip.
+	if st.provisionMember != nil {
+		if userID, ok := st.provisionMember(ctx, wsID, *owner); ok {
+			st.userCache[email] = util.UUIDToString(userID)
+		}
 	}
 	if cached, ok := st.userCache[email]; ok {
 		if cached == "" {
@@ -1440,6 +1465,8 @@ func (h *Handler) runZohoIncrementalSweep(ctx context.Context) {
 		}
 		st := h.newZohoSyncState()
 		st.incremental = true
+		// A migrated workspace keeps adding new Zoho people as members.
+		st.provisionMember = h.zohoMigratedProvisioner(ctx, t.workspaceID)
 		tctx, cancel := context.WithTimeout(ctx, zohoSyncTimeout)
 		err := h.syncZohoProject(tctx, t.workspaceID, t.zohoProjectID, st)
 		cancel()
