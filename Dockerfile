@@ -31,7 +31,8 @@ FROM alpine:3.21
 # openssh-client lets the backend reach Remote Boxes over SSH for git-sync
 # (the box runs git; the backend only runs `ssh`). Soft dependency — only used
 # when AGORA_REMOTE_BOXES_ENABLED is on and a sync is fired.
-RUN apk add --no-cache ca-certificates tzdata ffmpeg openssh-client
+# poppler-utils: pdftotext, used to read knowledge-base PDFs.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg openssh-client poppler-utils
 
 WORKDIR /app
 

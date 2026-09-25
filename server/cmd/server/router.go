@@ -1235,6 +1235,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Task messages (user-facing, not daemon auth)
 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
 
+			// Workspace knowledge base — members read and search; the
+			// handlers restrict changes to human owners/admins.
+			r.Route("/api/knowledge", func(r chi.Router) {
+				r.Get("/", h.ListKnowledge)
+				r.Post("/", h.CreateKnowledge)
+				r.Get("/search", h.SearchKnowledge)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetKnowledge)
+					r.Patch("/", h.UpdateKnowledge)
+					r.Delete("/", h.DeleteKnowledge)
+					r.Post("/reprocess", h.ReprocessKnowledge)
+				})
+			})
+
 			// Labels
 			r.Route("/api/labels", func(r chi.Router) {
 				r.Get("/", h.ListLabels)

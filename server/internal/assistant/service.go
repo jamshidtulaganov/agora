@@ -69,11 +69,13 @@ type Service struct {
 	// owned by the HTTP layer, and the assistant package must not read env.
 	// When unset the prompt falls back to the provider's raw model id.
 	ModelLabel func() string
-	// Integrations adds per-person tools and a prompt note to one run —
-	// today the person's own Zoho (read-only), present only once they have
-	// connected it. Injected by the HTTP layer, which owns the credentials;
-	// nil means no integrations.
-	Integrations func(ctx context.Context, userID string) (tools []llm.Tool, note string)
+	// RunExtras adds per-run tools and prompt notes from the context layer
+	// (docs/workspace-knowledge-plan.md §3a) — the workspace knowledge base
+	// and the person's own Zoho — only when they have something to offer
+	// this person. It runs with the run's focus workspace on ctx
+	// (FocusWorkspaceFrom). Injected by the HTTP layer, which owns data and
+	// credentials; nil means none.
+	RunExtras func(ctx context.Context, userID string) (tools []llm.Tool, note string)
 
 	mu sync.Mutex
 	// runs maps run id -> cancel, so POST /runs/{id}/cancel can stop one.
@@ -310,15 +312,6 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 			systemText += "\n\n" + contextText
 		}
 	}
-	tools := ToolSpecs()
-	if s.Integrations != nil {
-		extra, note := s.Integrations(ctx, userID)
-		tools = append(tools, extra...)
-		if note != "" {
-			systemText += "\n\n" + note
-		}
-	}
-	system := llm.Message{Role: "system", Content: systemText}
 
 	// The timezone the client captured when this message was sent rides on the
 	// context every tool executes under. "Today" is the caller's day, not the
@@ -331,6 +324,16 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 	if focus.Valid {
 		ctx = WithFocusWorkspace(ctx, util.UUIDToString(focus))
 	}
+
+	tools := ToolSpecs()
+	if s.RunExtras != nil {
+		extra, note := s.RunExtras(ctx, userID)
+		tools = append(tools, extra...)
+		if note != "" {
+			systemText += "\n\n" + note
+		}
+	}
+	system := llm.Message{Role: "system", Content: systemText}
 
 	for round := 0; round < MaxToolRounds; round++ {
 		if status, done := terminalFromContext(ctx); done {
