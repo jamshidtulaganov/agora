@@ -187,6 +187,7 @@ import type {
   DecisionQueueResponse,
   RiskMapResponse,
   RiskMapEntry,
+  DepartmentSetupStatus,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -362,6 +363,7 @@ import {
   EMPTY_SQUAD_MEMBER_STATUS_LIST,
   EMPTY_TIMELINE_ENTRIES,
   EMPTY_USER,
+  EMPTY_WORKSPACE,
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
   AppConfigSchema,
@@ -379,6 +381,7 @@ import {
   SubscribersListSchema,
   TimelineEntriesSchema,
   UserSchema,
+  WorkspaceSchema,
   WebhookDeliveryResponseSchema,
   BillingBalanceSchema,
   BillingTransactionsPageSchema,
@@ -2139,6 +2142,40 @@ export class ApiClient {
     return this.fetch(`/api/workspaces/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * The sidebar members of this workspace get until they set their own
+   * (PUT /api/workspaces/{id}/team-sidebar, owner/admin). `hidden` is a list
+   * of nav keys; `settings` is rejected server-side, `[]` means "show all".
+   * Returns the whole workspace, or EMPTY_WORKSPACE (id "") on drift.
+   */
+  async updateTeamSidebar(workspaceId: string, hidden: string[]): Promise<Workspace> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/team-sidebar`, {
+      method: "PUT",
+      body: JSON.stringify({ hidden }),
+    });
+    return parseWithFallback(raw, WorkspaceSchema, EMPTY_WORKSPACE, {
+      endpoint: "PUT /api/workspaces/:id/team-sidebar",
+    });
+  }
+
+  /**
+   * Records that the department setup was finished or skipped, so owners and
+   * admins are not prompted again (POST /api/workspaces/{id}/department-setup).
+   * Returns the whole workspace, or EMPTY_WORKSPACE (id "") on drift.
+   */
+  async setDepartmentSetup(
+    workspaceId: string,
+    status: DepartmentSetupStatus,
+  ): Promise<Workspace> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/department-setup`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    });
+    return parseWithFallback(raw, WorkspaceSchema, EMPTY_WORKSPACE, {
+      endpoint: "POST /api/workspaces/:id/department-setup",
     });
   }
 

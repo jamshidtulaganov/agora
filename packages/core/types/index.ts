@@ -57,7 +57,7 @@ export type {
   RuntimeLocalSkillImportResult,
   IssueUsageSummary,
 } from "./agent";
-export type { Workspace, WorkspaceRepo, GitCredential, FigmaCredentialStatus, McpCredentialStatus, McpCredentialInput, WorkspaceMcpConfigResponse, ReleaseIntegration, ReleaseIntegrationInput, Member, MemberRole, User, MemberWithUser, ActorDirectoryEntry, Invitation, InvitationAuthInfo } from "./workspace";
+export type { Workspace, DepartmentSetupStatus, WorkspaceRepo, GitCredential, FigmaCredentialStatus, McpCredentialStatus, McpCredentialInput, WorkspaceMcpConfigResponse, ReleaseIntegration, ReleaseIntegrationInput, Member, MemberRole, User, MemberWithUser, ActorDirectoryEntry, Invitation, InvitationAuthInfo } from "./workspace";
 export type { InboxItem, InboxSeverity, InboxItemType } from "./inbox";
 export type {
   Escalation,

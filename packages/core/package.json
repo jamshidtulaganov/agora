@@ -32,6 +32,8 @@
     "./workspace/queries": "./workspace/queries.ts",
     "./workspace/mutations": "./workspace/mutations.ts",
     "./workspace/hooks": "./workspace/hooks.ts",
+    "./workspace/department-setup": "./workspace/department-setup.ts",
+    "./workspace/setup-prompt-store": "./workspace/setup-prompt-store.ts",
     "./workspace/avatar-url": "./workspace/avatar-url.ts",
     "./issues": "./issues/index.ts",
     "./issues/queries": "./issues/queries.ts",
