@@ -155,7 +155,7 @@ export function KnowledgePage() {
       </PageHeader>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-5 py-6">
+        <div className="w-full max-w-3xl space-y-6 px-5 py-6">
           <p className="text-sm text-muted-foreground">{t(($) => $.page.subtitle)}</p>
 
           {workspace && <InstructionsCard workspace={workspace} canManage={canManage} />}

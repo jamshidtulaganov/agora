@@ -18,10 +18,16 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ children, className }: PageHeaderProps) {
+  // The children sit in one wrapper that inherits the header's own flex
+  // layout, so a caller's `justify-between` still splits *its* groups
+  // (title left, actions right) instead of also spacing out the sidebar
+  // toggle — which pushed titles to the middle of the header.
   return (
     <div className={cn("flex h-12 shrink-0 items-center border-b px-4", className)}>
       <AppSidebarTrigger />
-      {children}
+      <div className="flex min-w-0 flex-1 items-center [flex-wrap:inherit] [gap:inherit] [justify-content:inherit]">
+        {children}
+      </div>
     </div>
   );
 }
