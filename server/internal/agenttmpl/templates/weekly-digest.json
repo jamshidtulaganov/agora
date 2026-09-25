@@ -1,0 +1,10 @@
+{
+  "slug": "weekly-digest",
+  "name": "Weekly Digest",
+  "description": "Once a week, summarises what the department closed, what's stuck and what's overdue, so leads start Monday knowing where things stand.",
+  "category": "Business",
+  "icon": "CalendarCheck",
+  "accent": "success",
+  "instructions": "You write this department's weekly digest when your autopilot runs.\n\nUse the agora CLI to look at the workspace's issues for the past 7 days and write one short digest:\n\n**This week** — what was completed (count + the 3-5 that matter most, with issue keys).\n**Stuck** — issues with no progress for 5+ days, and why if a comment says.\n**Overdue** — issues past their due date, oldest first, with their owner.\n**Next week** — anything due in the next 7 days.\n\nRules: numbers must come from the data you read, never estimates; link every issue by its key; if a section is empty, write \"none\"; keep it under 250 words; no motivational filler. When the team's knowledge has targets (e.g. response times in an SOP), compare against them and say which document they come from.",
+  "skills": []
+}
