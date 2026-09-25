@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@agora/core/api";
 import { AppSidebar } from "./app-sidebar";
 
-const { detail, deletePin, pins, hiddenNav, setHiddenNav, toastFn } = vi.hoisted(() => ({
+const { detail, deletePin, pins, hiddenNav, customized, teamSidebar, role, setHiddenNav, toastFn } = vi.hoisted(() => ({
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
   deletePin: vi.fn(),
+  // The person's own list (user.hidden_nav) and whether they ever set it.
   hiddenNav: { current: [] as string[] },
+  customized: { current: false },
+  // The workspace's team sidebar (settings.team_sidebar.hidden), or null.
+  teamSidebar: { current: null as string[] | null },
+  role: { current: "member" as "owner" | "admin" | "member" },
   setHiddenNav: vi.fn(),
   toastFn: vi.fn(),
   pins: {
@@ -102,11 +107,14 @@ vi.mock("../workspace/workspace-avatar", () => ({ WorkspaceAvatar: () => <span /
 vi.mock("@agora/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
 
 vi.mock("@agora/core/auth", () => ({
-  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) => selector({ user: { id: "user-1" } }),
+  useAuthStore: (
+    selector: (state: { user: { id: string; hidden_nav: string[]; hidden_nav_customized: boolean } }) => unknown,
+  ) => selector({ user: { id: "user-1", hidden_nav: hiddenNav.current, hidden_nav_customized: customized.current } }),
 }));
+const workspaceRef = vi.hoisted(() => ({ current: { id: "ws-1", name: "Acme", slug: "acme", settings: {} as Record<string, unknown> } }));
 vi.mock("@agora/core/paths", () => ({
   paths: { workspace: (slug: string) => ({ issues: () => `/${slug}/issues` }) },
-  useCurrentWorkspace: () => ({ id: "ws-1", name: "Acme", slug: "acme" }),
+  useCurrentWorkspace: () => workspaceRef.current,
   useWorkspacePaths: () => ({
     inbox: () => "/acme/inbox",
     myIssues: () => "/acme/my-issues",
@@ -157,13 +165,14 @@ vi.mock("@agora/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: de
 vi.mock("@agora/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
 vi.mock("@agora/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
 vi.mock("@agora/core/runtimes/hooks", () => ({ useMyRuntimesNeedUpdate: () => false }));
-vi.mock("@agora/core/sidebar", () => ({
-  useHiddenNav: () => hiddenNav.current,
+// The real effective-sidebar hook runs (auth, workspace and member list are
+// mocked around it); only the write is stubbed.
+vi.mock("@agora/core/sidebar", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@agora/core/sidebar")>()),
   useSetHiddenNav: () => ({ mutate: setHiddenNav }),
-  toggleHiddenNavKey: (current: string[], key: string, hidden: boolean) =>
-    hidden ? [...current, key] : current.filter((k) => k !== key),
 }));
 vi.mock("@agora/core/workspace/queries", () => ({
+  memberListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "members"] }),
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),
@@ -183,7 +192,11 @@ vi.mock("@agora/core/agents", () => ({
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useMutation: () => ({ isPending: false, mutate: vi.fn() }),
-  useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
+  useQuery: ({ queryKey, select }: { queryKey: readonly unknown[]; select?: (data: unknown) => unknown }) => {
+    if (queryKey[0] === "workspaces" && queryKey[2] === "members") {
+      const members = [{ user_id: "user-1", role: role.current }];
+      return { data: select ? select(members) : members };
+    }
     if (queryKey[0] === "pins") return { data: pins.current };
     if (queryKey[0] === "issue") return detail.current;
     return { data: [] };
@@ -238,9 +251,20 @@ function navHrefs(container: HTMLElement): string[] {
   );
 }
 
+function setTeamSidebar(hidden: string[] | null) {
+  teamSidebar.current = hidden;
+  workspaceRef.current = {
+    ...workspaceRef.current,
+    settings: hidden === null ? {} : { team_sidebar: { hidden } },
+  };
+}
+
 describe("per-user sidebar customization", () => {
   beforeEach(() => {
     hiddenNav.current = [];
+    customized.current = false;
+    role.current = "member";
+    setTeamSidebar(null);
     setHiddenNav.mockReset();
     toastFn.mockReset();
     detail.current = { isPending: false, isError: false, data: null, error: null };
@@ -323,5 +347,56 @@ describe("per-user sidebar customization", () => {
     expect(labelsAfter).toBe(labelsBefore - 1);
     // Configure is untouched, so its rows stay.
     expect(navHrefs(trimmed)).toContain("/acme/runtimes");
+  });
+});
+
+describe("team sidebar", () => {
+  beforeEach(() => {
+    hiddenNav.current = ["usage"];
+    customized.current = false;
+    role.current = "member";
+    setTeamSidebar(["agents", "squads", "runtimes"]);
+    setHiddenNav.mockReset();
+    toastFn.mockReset();
+    detail.current = { isPending: false, isError: false, data: null, error: null };
+  });
+
+  it("gives a member who never customized the team's sidebar", () => {
+    const { container } = render(<AppSidebar />);
+    const hrefs = navHrefs(container);
+    expect(hrefs).not.toContain("/acme/agents");
+    expect(hrefs).not.toContain("/acme/squads");
+    expect(hrefs).not.toContain("/acme/runtimes");
+    // Their own list doesn't apply while the team's does.
+    expect(hrefs).toContain("/acme/usage");
+    expect(hrefs).toContain("/acme/knowledge");
+    expect(hrefs).toContain("/acme/settings");
+  });
+
+  it("keeps a member's own sidebar once they customized it", () => {
+    customized.current = true;
+    const { container } = render(<AppSidebar />);
+    const hrefs = navHrefs(container);
+    expect(hrefs).toContain("/acme/agents");
+    expect(hrefs).not.toContain("/acme/usage");
+  });
+
+  it.each(["owner", "admin"] as const)("keeps the full sidebar for an %s", (r) => {
+    role.current = r;
+    const { container } = render(<AppSidebar />);
+    const hrefs = navHrefs(container);
+    expect(hrefs).toContain("/acme/agents");
+    expect(hrefs).toContain("/acme/runtimes");
+    expect(hrefs).not.toContain("/acme/usage");
+  });
+
+  it("hides one more item on top of the team's choices", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<AppSidebar />);
+    const usageRow = container.querySelector("[data-href='/acme/usage']");
+    await user.pointer({ keys: "[MouseRight]", target: usageRow as Element });
+    const [hide] = await screen.findAllByRole("menuitem");
+    await user.click(hide as HTMLElement);
+    expect(setHiddenNav).toHaveBeenCalledWith(["agents", "squads", "runtimes", "usage"]);
   });
 });

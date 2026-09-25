@@ -1,0 +1,99 @@
+{
+  "page": {
+    "title": "部门设置",
+    "steps_label": "设置步骤",
+    "step_of": "第 {{current}} 步，共 {{total}} 步"
+  },
+  "steps": {
+    "knowledge": "知识库",
+    "sidebar": "侧边栏",
+    "agents": "智能体"
+  },
+  "actions": {
+    "continue": "继续",
+    "back": "返回",
+    "finish": "完成",
+    "finishing": "正在设置...",
+    "use_default": "使用默认设置",
+    "default_failed": "无法保存你的选择，请重试。"
+  },
+  "knowledge": {
+    "title": "添加团队的知识",
+    "description": "助手和智能体会遵循你的指令和文档。之后也可以在知识库页面继续添加。",
+    "files_title": "文档",
+    "add_files": "添加文件",
+    "files_empty": "还没有文档。可以添加 SOP、制度或价目表，支持 PDF、Word、Excel 和 Markdown。"
+  },
+  "sidebar": {
+    "title": "选择团队能看到的内容",
+    "description": "成员会看到这个侧边栏。",
+    "presets_label": "成员的侧边栏",
+    "simple": {
+      "label": "精简",
+      "description": "收件箱、我的 issue、助手、Issues、项目和知识库。"
+    },
+    "everything": {
+      "label": "全部",
+      "description": "所有页面，包括智能体和配置页面。"
+    },
+    "note": "owner 和 admin 始终能看到全部内容。每个人仍可在设置中调整自己的侧边栏。",
+    "save_failed": "无法保存团队侧边栏"
+  },
+  "agents": {
+    "title": "添加现成的智能体",
+    "description": "选择合适的即可。它们开始工作前会先阅读团队的知识库。",
+    "added": "已添加",
+    "weekly_schedule": "每周一 9:00 运行",
+    "no_runtime": "智能体需要运行时才能工作，但目前还没有你可以使用的运行时。",
+    "no_runtime_link": "配置运行时",
+    "no_runtime_later": "你可以先完成设置，之后再添加智能体。",
+    "none": "目前没有可用的现成智能体。",
+    "load_failed": "无法加载智能体。"
+  },
+  "autopilot": {
+    "title": "每周摘要",
+    "description": "为团队撰写本周摘要：完成了什么、卡在哪里、哪些已逾期、下周有哪些到期。",
+    "issue_title": "每周摘要",
+    "schedule_label": "每周一 9:00"
+  },
+  "done": {
+    "title": "设置完成",
+    "description": "你的团队会得到这些。",
+    "instructions_set": "AI 指令已就绪",
+    "instructions_missing": "还没有 AI 指令",
+    "files_count_one": "已添加 {{count}} 个文档",
+    "files_count_few": "已添加 {{count}} 个文档",
+    "files_count_many": "已添加 {{count}} 个文档",
+    "files_count_other": "已添加 {{count}} 个文档",
+    "files_none": "还没有文档",
+    "sidebar_simple": "成员会看到精简侧边栏",
+    "sidebar_everything": "成员会看到所有页面",
+    "sidebar_custom": "成员会看到你选择的侧边栏",
+    "agent_added": "已添加 {{name}}",
+    "agent_scheduled": "已添加 {{name}}，每周一 9:00 运行。",
+    "agent_schedule_failed": "已添加 {{name}}，但无法设置周一的运行计划：{{reason}}",
+    "agent_failed": "无法添加 {{name}}：{{reason}}",
+    "no_agents": "没有添加智能体。你可以随时在智能体页面添加。",
+    "unknown_error": "出现未知错误",
+    "open_issues": "打开 Issues",
+    "open_knowledge": "打开知识库",
+    "save_failed": "无法将设置标记为完成"
+  },
+  "summary": {
+    "title": "你的团队将获得",
+    "preview_label": "成员看到的侧边栏",
+    "no_agents": "尚未选择"
+  },
+  "members": {
+    "title": "只有 owner 和 admin 可以进行此设置",
+    "description": "如需调整，请联系此工作区的 admin。",
+    "open_issues": "打开 Issues"
+  },
+  "prompt": {
+    "title": "为团队设置 Agora",
+    "description": "添加团队文档，选择成员能看到的内容，再添加几个现成的智能体。",
+    "start": "开始设置",
+    "use_default": "使用默认设置",
+    "dismiss": "稍后再说"
+  }
+}

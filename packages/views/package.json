@@ -25,6 +25,7 @@
     "./autopilots/components": "./autopilots/components/index.ts",
     "./automations/components": "./automations/components/index.ts",
     "./knowledge": "./knowledge/index.ts",
+    "./department-setup": "./department-setup/index.ts",
     "./modals/registry": "./modals/registry.tsx",
     "./modals/create-issue": "./modals/create-issue.tsx",
     "./my-issues": "./my-issues/index.ts",

@@ -2,15 +2,16 @@
 
 import { toast } from "sonner";
 import { Card, CardContent } from "@agora/ui/components/ui/card";
-import { Switch } from "@agora/ui/components/ui/switch";
 import { Button } from "@agora/ui/components/ui/button";
+import { useCurrentWorkspace } from "@agora/core/paths";
 import {
-  useHiddenNav,
+  useEffectiveHiddenNav,
   useSetHiddenNav,
   toggleHiddenNavKey,
 } from "@agora/core/sidebar";
-import { NAV_GROUPS, isNavKeyHideable, type NavKey } from "../../layout/nav-items";
+import type { NavKey } from "../../layout/nav-items";
 import { useT } from "../../i18n";
+import { NavVisibilityList } from "./nav-visibility-list";
 
 /**
  * Sidebar customization: one switch per nav item.
@@ -18,13 +19,16 @@ import { useT } from "../../i18n";
  * Deliberately a flat show/hide list rather than a drag-to-reorder editor —
  * the need this answers is "I never use Runtimes, stop showing it to me",
  * and every item stays one toggle away from coming back.
+ *
+ * The switches show what the person actually sees: for a member who never
+ * customized, that's the workspace's team sidebar. Any change is written to
+ * their own list starting from it, so they keep the team's choices plus
+ * their edit, and from then on the sidebar is theirs.
  */
 export function SidebarSection() {
   const { t } = useT("settings");
-  // Nav item labels live in the layout namespace alongside the sidebar that
-  // renders them, so this list can never drift from the real menu.
-  const { t: tLayout } = useT("layout");
-  const hiddenNav = useHiddenNav();
+  const workspace = useCurrentWorkspace();
+  const { hidden, fromTeam } = useEffectiveHiddenNav(workspace);
   const setHiddenNav = useSetHiddenNav();
 
   const persist = (next: string[]) => {
@@ -39,8 +43,8 @@ export function SidebarSection() {
   };
 
   const handleToggle = (key: NavKey, visible: boolean) => {
-    const next = toggleHiddenNavKey(hiddenNav, key, !visible);
-    if (next === hiddenNav) return;
+    const next = toggleHiddenNavKey(hidden, key, !visible);
+    if (next === hidden) return;
     persist(next);
   };
 
@@ -52,10 +56,12 @@ export function SidebarSection() {
             {t(($) => $.preferences.sidebar.title)}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t(($) => $.preferences.sidebar.hint)}
+            {fromTeam
+              ? t(($) => $.preferences.sidebar.team_hint)
+              : t(($) => $.preferences.sidebar.hint)}
           </p>
         </div>
-        {hiddenNav.length > 0 && (
+        {hidden.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
@@ -68,46 +74,8 @@ export function SidebarSection() {
       </div>
 
       <Card>
-        <CardContent className="space-y-5">
-          {NAV_GROUPS.filter((group) => group.items.length > 0).map((group) => (
-            <div key={group.id} className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">
-                {t(($) => $.preferences.sidebar.groups[group.id])}
-              </p>
-              <div className="divide-y">
-                {group.items.map((item) => {
-                  const hideable = isNavKeyHideable(item.key);
-                  const visible = !hiddenNav.includes(item.key);
-                  return (
-                    <div
-                      key={item.key}
-                      className="flex items-center justify-between gap-4 py-2.5"
-                    >
-                      <span className="flex min-w-0 items-center gap-2 text-sm">
-                        <item.icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">
-                          {tLayout(($) => $.nav[item.labelKey])}
-                        </span>
-                      </span>
-                      {hideable ? (
-                        <Switch
-                          checked={visible}
-                          aria-label={tLayout(($) => $.nav[item.labelKey])}
-                          onCheckedChange={(checked) =>
-                            handleToggle(item.key, checked)
-                          }
-                        />
-                      ) : (
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {t(($) => $.preferences.sidebar.always_visible)}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+        <CardContent>
+          <NavVisibilityList hidden={hidden} onToggle={handleToggle} />
         </CardContent>
       </Card>
     </section>

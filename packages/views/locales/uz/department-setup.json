@@ -1,0 +1,99 @@
+{
+  "page": {
+    "title": "Bo‘limni sozlash",
+    "steps_label": "Sozlash bosqichlari",
+    "step_of": "{{total}} tadan {{current}}-qadam"
+  },
+  "steps": {
+    "knowledge": "Bilimlar bazasi",
+    "sidebar": "Menyu",
+    "agents": "Agentlar"
+  },
+  "actions": {
+    "continue": "Davom etish",
+    "back": "Orqaga",
+    "finish": "Yakunlash",
+    "finishing": "Sozlanmoqda…",
+    "use_default": "Standart sozlamani qoldirish",
+    "default_failed": "Tanlovingizni saqlab bo‘lmadi. Qayta urinib ko‘ring."
+  },
+  "knowledge": {
+    "title": "Jamoangiz biladigan narsalarni qo‘shing",
+    "description": "Yordamchi va agentlar ko‘rsatmalaringiz va hujjatlaringizga amal qiladi. Keyinroq Bilimlar bazasi sahifasida yana qo‘shishingiz mumkin.",
+    "files_title": "Hujjatlar",
+    "add_files": "Fayl qo‘shish",
+    "files_empty": "Hozircha hujjat yo‘q. Reglamentlar, qoidalar yoki narxlar ro‘yxatini PDF, Word, Excel yoki Markdown formatida qo‘shing."
+  },
+  "sidebar": {
+    "title": "Jamoa nimani ko‘rishini tanlang",
+    "description": "A’zolar shu yon menyuni ko‘radi.",
+    "presets_label": "A’zolar uchun menyu",
+    "simple": {
+      "label": "Oddiy",
+      "description": "Kiruvchilar, Mening vazifalarim, Yordamchi, Vazifalar, Loyihalar va Bilimlar bazasi."
+    },
+    "everything": {
+      "label": "To‘liq",
+      "description": "Barcha sahifalar, jumladan agentlar va sozlamalar."
+    },
+    "note": "Egalar va adminlar har doim hammasini ko‘radi. Har kim o‘z menyusini Sozlamalarda o‘zgartira oladi.",
+    "save_failed": "Jamoa menyusini saqlab bo‘lmadi"
+  },
+  "agents": {
+    "title": "Tayyor agentlarni qo‘shing",
+    "description": "Mosini tanlang. Ular ishlashdan oldin jamoaning bilimlar bazasini o‘qiydi.",
+    "added": "Qo‘shilgan",
+    "weekly_schedule": "Har dushanba soat 9:00 da ishlaydi",
+    "no_runtime": "Agentlarga ishlash uchun runtime kerak, lekin sizda hali foydalanish mumkin bo‘lgan runtime yo‘q.",
+    "no_runtime_link": "Runtime sozlash",
+    "no_runtime_later": "Hozir yakunlab, agentlarni keyinroq qo‘shishingiz mumkin.",
+    "none": "Hozircha tayyor agentlar yo‘q.",
+    "load_failed": "Agentlarni yuklab bo‘lmadi."
+  },
+  "autopilot": {
+    "title": "Haftalik hisobot",
+    "description": "Jamoa uchun haftalik hisobot yoz: nima yopildi, nima to‘xtab qoldi, nimaning muddati o‘tdi va keyingi haftada nima qilinishi kerak.",
+    "issue_title": "Haftalik hisobot",
+    "schedule_label": "Har dushanba soat 9:00 da"
+  },
+  "done": {
+    "title": "Hammasi tayyor",
+    "description": "Jamoangiz mana bularni oladi.",
+    "instructions_set": "AI uchun ko‘rsatmalar berilgan",
+    "instructions_missing": "AI uchun ko‘rsatmalar hali yo‘q",
+    "files_count_one": "{{count}} ta hujjat qo‘shildi",
+    "files_count_few": "{{count}} ta hujjat qo‘shildi",
+    "files_count_many": "{{count}} ta hujjat qo‘shildi",
+    "files_count_other": "{{count}} ta hujjat qo‘shildi",
+    "files_none": "Hozircha hujjat yo‘q",
+    "sidebar_simple": "A’zolar oddiy menyuni ko‘radi",
+    "sidebar_everything": "A’zolar barcha sahifalarni ko‘radi",
+    "sidebar_custom": "A’zolar siz tanlagan menyuni ko‘radi",
+    "agent_added": "{{name}} agenti qo‘shildi",
+    "agent_scheduled": "{{name}} agenti qo‘shildi. U har dushanba soat 9:00 da ishlaydi.",
+    "agent_schedule_failed": "{{name}} agenti qo‘shildi, lekin dushanbalik jadvalni sozlab bo‘lmadi: {{reason}}",
+    "agent_failed": "{{name}} agentini qo‘shib bo‘lmadi: {{reason}}",
+    "no_agents": "Agent qo‘shilmadi. Ularni istalgan vaqtda Agentlar sahifasida qo‘shishingiz mumkin.",
+    "unknown_error": "nimadir xato ketdi",
+    "open_issues": "Vazifalarni ochish",
+    "open_knowledge": "Bilimlar bazasini ochish",
+    "save_failed": "Sozlashni yakunlangan deb belgilab bo‘lmadi"
+  },
+  "summary": {
+    "title": "Jamoa nima oladi",
+    "preview_label": "A’zolar nimani ko‘radi",
+    "no_agents": "Hali tanlanmagan"
+  },
+  "members": {
+    "title": "Buni faqat egalar va adminlar sozlay oladi",
+    "description": "Biror narsani o‘zgartirish kerak bo‘lsa, ish maydoni adminiga murojaat qiling.",
+    "open_issues": "Vazifalarni ochish"
+  },
+  "prompt": {
+    "title": "Agora’ni jamoangiz uchun sozlang",
+    "description": "Jamoa hujjatlarini qo‘shing, a’zolar nimani ko‘rishini tanlang va bir nechta tayyor agent qo‘shing.",
+    "start": "Sozlash",
+    "use_default": "Standart sozlamani qoldirish",
+    "dismiss": "Hozir emas"
+  }
+}

@@ -23,6 +23,7 @@
     "sidebar": {
       "title": "Sidebar",
       "hint": "Turn off the items you don't use. This applies to you only, in every workspace and on every device.",
+      "team_hint": "Your admin picked these for the team. Change any item to make this sidebar your own.",
       "always_visible": "Always visible",
       "show_all": "Show all",
       "sync_failed": "Failed to save your sidebar preference.",
@@ -229,7 +230,10 @@
     "deleting": "Deleting...",
     "toast_delete_failed": "Failed to delete workspace",
     "confirm_cancel": "Cancel",
-    "confirm_action": "Confirm"
+    "confirm_action": "Confirm",
+    "setup_title": "Department setup",
+    "setup_description": "Knowledge, what your team sees, and ready-made agents.",
+    "setup_open": "Open setup"
   },
   "delete_workspace_dialog": {
     "title": "Delete workspace",

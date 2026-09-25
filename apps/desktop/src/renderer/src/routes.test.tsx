@@ -42,7 +42,7 @@ describe("desktop router covers the shared sidebar", () => {
 
   // Guards specific regressions: these shared navigation destinations were
   // linked from desktop UI before the hand-maintained router served them.
-  it.each(["aiAccounts", "plugins", "mcp", "bitrix", "knowledge"])("serves /%s", (key) => {
+  it.each(["aiAccounts", "plugins", "mcp", "bitrix", "knowledge", "setup"])("serves /%s", (key) => {
     const url = (ws as unknown as Record<string, () => string>)[key]!();
     const matches = matchRoutes(appRoutes, url);
     expect(matches, `no route matched ${url}`).not.toBeNull();

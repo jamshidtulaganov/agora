@@ -26,6 +26,7 @@ import enSquads from "./en/squads.json";
 import enBilling from "./en/billing.json";
 import enAssistant from "./en/assistant.json";
 import enKnowledge from "./en/knowledge.json";
+import enDepartmentSetup from "./en/department-setup.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
 import zhHansSettings from "./zh-Hans/settings.json";
@@ -53,6 +54,7 @@ import zhHansSquads from "./zh-Hans/squads.json";
 import zhHansBilling from "./zh-Hans/billing.json";
 import zhHansAssistant from "./zh-Hans/assistant.json";
 import zhHansKnowledge from "./zh-Hans/knowledge.json";
+import zhHansDepartmentSetup from "./zh-Hans/department-setup.json";
 import uzCommon from "./uz/common.json";
 import uzAuth from "./uz/auth.json";
 import uzSettings from "./uz/settings.json";
@@ -80,6 +82,7 @@ import uzSquads from "./uz/squads.json";
 import uzBilling from "./uz/billing.json";
 import uzAssistant from "./uz/assistant.json";
 import uzKnowledge from "./uz/knowledge.json";
+import uzDepartmentSetup from "./uz/department-setup.json";
 import ruCommon from "./ru/common.json";
 import ruAuth from "./ru/auth.json";
 import ruSettings from "./ru/settings.json";
@@ -107,6 +110,7 @@ import ruSquads from "./ru/squads.json";
 import ruBilling from "./ru/billing.json";
 import ruAssistant from "./ru/assistant.json";
 import ruKnowledge from "./ru/knowledge.json";
+import ruDepartmentSetup from "./ru/department-setup.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
 // desktop App.tsx) import from here so adding a locale or namespace happens
@@ -140,6 +144,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     billing: enBilling,
     assistant: enAssistant,
     knowledge: enKnowledge,
+    "department-setup": enDepartmentSetup,
   },
   "zh-Hans": {
     common: zhHansCommon,
@@ -169,6 +174,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     billing: zhHansBilling,
     assistant: zhHansAssistant,
     knowledge: zhHansKnowledge,
+    "department-setup": zhHansDepartmentSetup,
   },
   uz: {
     common: uzCommon,
@@ -198,6 +204,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     billing: uzBilling,
     assistant: uzAssistant,
     knowledge: uzKnowledge,
+    "department-setup": uzDepartmentSetup,
   },
   ru: {
     common: ruCommon,
@@ -227,5 +234,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     billing: ruBilling,
     assistant: ruAssistant,
     knowledge: ruKnowledge,
+    "department-setup": ruDepartmentSetup,
   },
 };

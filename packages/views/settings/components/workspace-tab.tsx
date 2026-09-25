@@ -376,6 +376,31 @@ export function WorkspaceTab() {
         </Card>
       </section>
 
+      {/* Re-entry to the one-time department setup, so owners and admins can
+          redo it (the corner prompt stops showing once it's decided). */}
+      {canManageWorkspace && (
+        <section>
+          <Card>
+            <CardContent>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t(($) => $.workspace.setup_title)}</p>
+                  <p className="text-xs text-muted-foreground">{t(($) => $.workspace.setup_description)}</p>
+                </div>
+                <AppLink
+                  href={paths.workspace(workspace.slug).setup()}
+                  className="flex shrink-0 items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  data-testid="settings-open-setup"
+                >
+                  {t(($) => $.workspace.setup_open)}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </AppLink>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
       {/* Danger Zone — gated on the member query settling so the owner-only
           Delete button and the sole-owner Leave guidance don't flash in
           after mount. */}
