@@ -126,6 +126,12 @@ func (s *splitter) block(b extract.Block) {
 		if text == "" {
 			return
 		}
+		// A leading paragraph that only repeats the document's title (Word
+		// exports often carry it as a plain, bold first line) would become a
+		// section with nothing in it.
+		if len(s.out) == 0 && len(s.parts) == 0 && strings.EqualFold(text, s.title) {
+			return
+		}
 		levels := []splitFunc{splitSentences, splitLines, splitWords}
 		if b.Kind == extract.KindList {
 			levels = []splitFunc{splitListItems, splitSentences, splitWords}

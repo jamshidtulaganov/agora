@@ -312,3 +312,15 @@ func TestSplitDeterministic(t *testing.T) {
 		t.Errorf("table chunk = %q", first[4].Body)
 	}
 }
+
+func TestSplitDropsLeadingTitleParagraph(t *testing.T) {
+	doc := extract.Document{Title: "Collections SOP", Blocks: []extract.Block{
+		{Kind: extract.KindParagraph, Text: "Collections SOP"},
+		{Kind: extract.KindHeading, Level: 2, Text: "Write-offs"},
+		{Kind: extract.KindParagraph, Text: "Write-offs above $5,000 need approval."},
+	}}
+	chunks := Split(doc, Options{})
+	if len(chunks) != 1 || !strings.Contains(chunks[0].Body, "Write-offs above") {
+		t.Fatalf("chunks = %+v", chunks)
+	}
+}

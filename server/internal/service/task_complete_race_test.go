@@ -67,6 +67,11 @@ func (m *mockDBTX) Query(_ context.Context, _ string, _ ...interface{}) (pgx.Row
 	return nil, pgx.ErrNoRows
 }
 
+// CopyFrom satisfies db.DBTX (bulk inserts); the race tests never call it.
+func (m *mockDBTX) CopyFrom(_ context.Context, _ pgx.Identifier, _ []string, _ pgx.CopyFromSource) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockDBTX) QueryRow(_ context.Context, sql string, _ ...interface{}) pgx.Row {
 	// CompleteAgentTask and FailAgentTask SQL contain "SET status ="
 	if strings.Contains(sql, "SET status =") {
