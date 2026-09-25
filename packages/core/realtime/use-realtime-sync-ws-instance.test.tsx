@@ -102,12 +102,12 @@ describe("useRealtimeSync — ws instance change", () => {
     rerender({ ws: ws2 });
 
     // Should have called invalidateQueries for all workspace-scoped keys
-    // (17 workspace-scoped + 12 per-issue prefixes + 1 workspaceKeys.list()
-    // + 1 artifact prefix = 31 calls — automations and pinned reports joined
-    // the blanket sweep) + 1 assistant prefix: the assistant is user-scoped,
-    // so it is swept as one `["assistant"]` prefix alongside the workspace
-    // sweep.
-    expect(invalidateSpy).toHaveBeenCalledTimes(32);
+    // (18 workspace-scoped + 12 per-issue prefixes + 1 workspaceKeys.list()
+    // + 1 artifact prefix = 32 calls — automations, pinned reports and the
+    // knowledge base joined the blanket sweep) + 1 assistant prefix: the
+    // assistant is user-scoped, so it is swept as one `["assistant"]` prefix
+    // alongside the workspace sweep.
+    expect(invalidateSpy).toHaveBeenCalledTimes(33);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -140,7 +140,28 @@ describe("useRealtimeSync — ws instance change", () => {
     const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(["chat", "ws-1"]);
     expect(calls).toContainEqual(["labels", "ws-1"]);
+    expect(calls).toContainEqual(["knowledge", "ws-1"]);
     expect(calls).toContainEqual(["workspaces", "ws-1", "invitations"]);
+  });
+
+  it("invalidates the knowledge queries on knowledge:updated", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = createMockWs();
+      renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+      const onAny = (ws.onAny as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as (
+        msg: { type: string; payload: unknown },
+      ) => void;
+      expect(onAny).toBeTypeOf("function");
+
+      onAny({ type: "knowledge:updated", payload: { doc_id: "doc-1", status: "ready" } });
+      vi.advanceTimersByTime(150);
+
+      const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
+      expect(calls).toContainEqual(["knowledge", "ws-1"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("invalidates per-issue caches (no wsId in key) on ws instance change", () => {

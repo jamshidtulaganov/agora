@@ -156,7 +156,8 @@
       "confirm": "Подтверждено: {{object}}",
       "dry_run": "Предпросмотр: {{object}}",
       "propose": "Предложено: {{object}}",
-      "check": "Проверено: {{object}}"
+      "check": "Проверено: {{object}}",
+      "read": "Прочитано: {{object}}"
     },
     "object": {
       "workspaces": "рабочие пространства",
@@ -215,8 +216,15 @@
       "zoho_departments": "отделы Zoho Desk",
       "zoho_tickets": "тикеты Zoho Desk",
       "zoho_ticket": "тикет Zoho Desk",
-      "zoho_conversation": "переписка по тикету"
+      "zoho_conversation": "переписка по тикету",
+      "knowledge_base": "база знаний",
+      "knowledge_document": "документ из базы знаний"
     }
+  },
+  "citation": {
+    "open": "Открыть источник: {{source}}",
+    "source": "Источник",
+    "sources": "Источники"
   },
   "confirm": {
     "fallback_summary": "Подтвердите это действие",

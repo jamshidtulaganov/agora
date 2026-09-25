@@ -6,6 +6,7 @@ import {
   KeyRound,
   Settings,
   BookOpenText,
+  BookOpen,
   CircleUser,
   FolderKanban,
   BarChart3,
@@ -27,6 +28,7 @@ export type NavKey =
   | "policy"
   | "issues"
   | "projects"
+  | "knowledge"
   | "autopilots"
   | "automations"
   | "agents"
@@ -48,6 +50,7 @@ export type NavLabelKey =
   | "policy"
   | "issues"
   | "projects"
+  | "knowledge"
   | "autopilots"
   | "automations"
   | "agents"
@@ -80,6 +83,7 @@ export const personalNav: NavItem[] = [
 export const workspaceNav: NavItem[] = [
   { key: "issues", labelKey: "issues", icon: ListTodo },
   { key: "projects", labelKey: "projects", icon: FolderKanban },
+  { key: "knowledge", labelKey: "knowledge", icon: BookOpen },
   { key: "autopilots", labelKey: "autopilots", icon: Zap },
   { key: "automations", labelKey: "automations", icon: Workflow },
   { key: "agents", labelKey: "agents", icon: Bot },

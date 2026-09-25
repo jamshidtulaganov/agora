@@ -156,7 +156,8 @@
       "confirm": "Confirmed {{object}}",
       "dry_run": "Previewed {{object}}",
       "propose": "Proposed {{object}}",
-      "check": "Checked {{object}}"
+      "check": "Checked {{object}}",
+      "read": "Read {{object}}"
     },
     "object": {
       "workspaces": "workspaces",
@@ -215,8 +216,15 @@
       "zoho_departments": "Zoho Desk departments",
       "zoho_tickets": "Zoho Desk tickets",
       "zoho_ticket": "a Zoho Desk ticket",
-      "zoho_conversation": "a ticket conversation"
+      "zoho_conversation": "a ticket conversation",
+      "knowledge_base": "the knowledge base",
+      "knowledge_document": "a knowledge document"
     }
+  },
+  "citation": {
+    "open": "Open source: {{source}}",
+    "source": "Source",
+    "sources": "Sources"
   },
   "confirm": {
     "fallback_summary": "Confirm this action",

@@ -1,0 +1,96 @@
+{
+  "page": {
+    "title": "Bilimlar bazasi",
+    "subtitle": "Jamoa ishi tayanadigan hujjatlar. Yordamchi va agentlar shular asosida javob beradi va ishlaydi.",
+    "add_files": "Fayl qo‘shish",
+    "new_note": "Yangi eslatma",
+    "load_failed": "Hujjatlarni yuklab bo‘lmadi."
+  },
+  "instructions": {
+    "title": "AI uchun ko‘rsatmalar",
+    "hint": "Bu ish maydonidagi Yordamchi va agentlarga har doim beriladi.",
+    "empty": "Hozircha ko‘rsatma yo‘q.",
+    "placeholder": "Masalan: Biz undiruv bo‘limimiz. Xushmuomala bo‘ling va rahbar roziligisiz chegirma va’da qilmang.",
+    "edit": "Tahrirlash",
+    "save": "Saqlash",
+    "cancel": "Bekor qilish",
+    "save_failed": "Ko‘rsatmalarni saqlab bo‘lmadi"
+  },
+  "documents": {
+    "title": "Hujjatlar",
+    "empty": "Jamoangizning reglamentlari, qoidalari va narxlar ro‘yxatini qo‘shing. Yordamchi va agentlar shular asosida javob beradi va ishlaydi.",
+    "empty_member": "Hujjat qo‘shishni ish maydoni egasi yoki administratoridan so‘rang.",
+    "note": "Eslatma",
+    "pages_one": "{{count}} sahifa",
+    "pages_few": "{{count}} sahifa",
+    "pages_many": "{{count}} sahifa",
+    "pages_other": "{{count}} sahifa",
+    "sections_one": "{{count}} bo‘lim",
+    "sections_few": "{{count}} bo‘lim",
+    "sections_many": "{{count}} bo‘lim",
+    "sections_other": "{{count}} bo‘lim",
+    "added_by": "{{name}} qo‘shgan · {{date}}",
+    "added_on": "Qo‘shilgan: {{date}}",
+    "pin": "Har doim qo‘shish",
+    "actions": "Hujjat amallari",
+    "rename": "Nomini o‘zgartirish",
+    "reprocess": "Qayta o‘qish",
+    "remove": "O‘chirish",
+    "update_failed": "Hujjatni yangilab bo‘lmadi",
+    "reprocess_started": "\"{{title}}\" qayta o‘qilmoqda",
+    "reprocess_failed": "Faylni qayta o‘qib bo‘lmadi",
+    "remove_title": "\"{{title}}\" o‘chirilsinmi?",
+    "remove_description": "Yordamchi va agentlar undan foydalanishni to‘xtatadi. Buni ortga qaytarib bo‘lmaydi.",
+    "remove_confirm": "O‘chirish",
+    "remove_cancel": "Bekor qilish",
+    "removed": "\"{{title}}\" o‘chirildi",
+    "remove_failed": "Hujjatni o‘chirib bo‘lmadi",
+    "rename_title": "Hujjat nomini o‘zgartirish",
+    "rename_label": "Nomi",
+    "rename_save": "Saqlash",
+    "rename_cancel": "Bekor qilish"
+  },
+  "status": {
+    "processing": "O‘qilmoqda…",
+    "ready": "Tayyor",
+    "failed": "O‘qib bo‘lmadi",
+    "needs_ocr": "Skanerlangan PDF — matn kerak"
+  },
+  "upload": {
+    "adding": "{{name}} fayli qo‘shilmoqda…",
+    "added": "{{name}} fayli qo‘shildi",
+    "added_description": "Hozir o‘qilmoqda. Bir ozdan keyin tayyor bo‘ladi.",
+    "failed": "{{name}} faylini qo‘shib bo‘lmadi",
+    "unsupported_type": "Faqat PDF, Word (.docx), Excel (.xlsx), CSV, Markdown va matn fayllarini qo‘shish mumkin.",
+    "too_large": "Fayl hajmi 25 MB dan oshmasligi kerak.",
+    "empty": "Fayl bo‘sh."
+  },
+  "note": {
+    "title": "Yangi eslatma",
+    "description": "Jamoa ishi tayanadigan narsani yozib qo‘ying. Markdown, jadvallar ham ishlaydi.",
+    "title_label": "Nomi",
+    "title_placeholder": "Masalan: Pulni qaytarish qoidalari",
+    "body_label": "Matn",
+    "body_placeholder": "500 $ dan ortiq qaytarishlarni rahbar tasdiqlaydi…",
+    "save": "Eslatma qo‘shish",
+    "saving": "Qo‘shilmoqda…",
+    "cancel": "Bekor qilish",
+    "added": "Eslatma qo‘shildi",
+    "failed": "Eslatmani qo‘shib bo‘lmadi"
+  },
+  "search": {
+    "placeholder": "Hujjatlardan qidirish",
+    "label": "Hujjatlardan qidirish",
+    "no_results": "\"{{query}}\" bo‘yicha hech narsa topilmadi.",
+    "failed": "Qidiruv ishlamadi. Qayta urinib ko‘ring."
+  },
+  "viewer": {
+    "download": "Asl faylni yuklab olish",
+    "load_failed": "Bu hujjatni ochib bo‘lmadi.",
+    "hint": "Yordamchi va agentlar aynan shuni o‘qiydi.",
+    "processing": "Fayl o‘qilmoqda. Tugagach, bo‘limlari shu yerda ko‘rinadi.",
+    "failed": "Bu faylni o‘qib bo‘lmadi.",
+    "needs_ocr": "Bu skanerlangan PDF ga o‘xshaydi. Matnini belgilash mumkin bo‘lgan versiyasini yuklang.",
+    "no_sections": "Bu hujjatda matn topilmadi."
+  }
+}

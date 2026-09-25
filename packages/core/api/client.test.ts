@@ -1388,3 +1388,101 @@ describe("workspace Zoho connector API", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PUT");
   });
 });
+
+describe("workspace knowledge API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(status === 204 ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const client = new ApiClient("https://api.example.test");
+  const doc = {
+    id: "doc-1",
+    title: "Collections SOP",
+    source: "upload",
+    status: "processing",
+    pinned: false,
+    chunk_count: 0,
+    attachment_id: "att-1",
+    created_at: "2026-09-25T10:00:00Z",
+    updated_at: "2026-09-25T10:00:00Z",
+  };
+
+  it("lists documents and whether the caller can manage them", async () => {
+    const fetchMock = jsonFetch({ documents: [doc], can_manage: true });
+    const list = await client.listKnowledge();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/knowledge");
+    expect(list.can_manage).toBe(true);
+    expect(list.documents[0]?.attachment_id).toBe("att-1");
+  });
+
+  it("degrades a malformed list to an empty, read-only page", async () => {
+    jsonFetch({ documents: "oops", can_manage: null });
+    await expect(client.listKnowledge()).resolves.toEqual({ documents: [], can_manage: false });
+  });
+
+  it("creates from an uploaded attachment", async () => {
+    const fetchMock = jsonFetch(doc);
+    const created = await client.createKnowledgeDoc({ attachment_id: "att-1" });
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ attachment_id: "att-1" });
+    expect(created.status).toBe("processing");
+  });
+
+  it("surfaces the server's reason for a 413 / 415", async () => {
+    jsonFetch({ error: "only PDF, Word, Excel, CSV, Markdown and text files can be added" }, 415);
+    await expect(client.createKnowledgeDoc({ attachment_id: "att-1" })).rejects.toMatchObject({
+      status: 415,
+      message: "only PDF, Word, Excel, CSV, Markdown and text files can be added",
+    });
+  });
+
+  it("patches, reprocesses and deletes by id", async () => {
+    let fetchMock = jsonFetch({ ...doc, pinned: true });
+    await expect(client.updateKnowledgeDoc("doc 1", { pinned: true })).resolves.toMatchObject({
+      pinned: true,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/knowledge/doc%201");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PATCH");
+
+    fetchMock = jsonFetch(doc);
+    await client.reprocessKnowledgeDoc("doc-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/knowledge/doc-1/reprocess",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+
+    fetchMock = jsonFetch(null, 204);
+    await expect(client.deleteKnowledgeDoc("doc-1")).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+
+  it("reads a document with its sections, tolerating a drifted body", async () => {
+    jsonFetch({ document: doc, chunks: [{ id: "c1", ord: 0, heading_path: "SOP", location: "p. 1", body: "Hi" }] });
+    const detail = await client.getKnowledgeDoc("doc-1");
+    expect(detail.chunks).toHaveLength(1);
+
+    jsonFetch({ document: { title: "no id" }, chunks: null });
+    const drifted = await client.getKnowledgeDoc("doc-1");
+    expect(drifted.document.id).toBe("");
+    expect(drifted.chunks).toEqual([]);
+  });
+
+  it("searches with the query and limit in the URL", async () => {
+    const fetchMock = jsonFetch({ results: [{ doc_id: "doc-1", snippet: "write-off", cite: "kb:abcd1234" }] });
+    const found = await client.searchKnowledge("write off & approve", 5);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/knowledge/search?q=write+off+%26+approve&limit=5",
+    );
+    expect(found.results[0]?.cite).toBe("kb:abcd1234");
+
+    jsonFetch({ results: null });
+    await expect(client.searchKnowledge("x")).resolves.toEqual({ results: [] });
+  });
+});

@@ -23,6 +23,9 @@ function workspaceScoped(slug: string) {
     issueDetail: (id: string) => `${ws}/issues/${encode(id)}`,
     projects: () => `${ws}/projects`,
     projectDetail: (id: string) => `${ws}/projects/${encode(id)}`,
+    // The workspace knowledge base. The viewer deep-links with
+    // `?doc=<id>&section=<ord>` (see knowledge/types.ts knowledgeViewerHref).
+    knowledge: () => `${ws}/knowledge`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     automations: () => `${ws}/automations`,

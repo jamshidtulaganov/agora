@@ -7,6 +7,7 @@ import type { AssistantMessage } from "@agora/core/types";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";
 import { RESOURCES } from "../../locales";
+import { WorkspaceSlugProvider } from "@agora/core/paths";
 import { MessageList } from "./message-list";
 
 const writeText = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -17,10 +18,14 @@ vi.mock("@agora/core/api", async (importOriginal) => {
   return { ...actual, api: { ...actual.api, getAssistantArtifact } };
 });
 
-function renderList(messages: AssistantMessage[], onRegenerate?: () => void) {
+function renderList(
+  messages: AssistantMessage[],
+  onRegenerate?: () => void,
+  opts: { slug?: string; push?: (path: string) => void } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const nav: NavigationAdapter = {
-    push: vi.fn(),
+    push: opts.push ?? vi.fn(),
     replace: vi.fn(),
     back: vi.fn(),
     pathname: "/acme/assistant",
@@ -31,7 +36,9 @@ function renderList(messages: AssistantMessage[], onRegenerate?: () => void) {
     <I18nProvider locale="en" resources={RESOURCES}>
       <QueryClientProvider client={client}>
         <NavigationProvider value={nav}>
-          <MessageList messages={messages} onRegenerate={onRegenerate} />
+          <WorkspaceSlugProvider slug={opts.slug ?? null}>
+            <MessageList messages={messages} onRegenerate={onRegenerate} />
+          </WorkspaceSlugProvider>
         </NavigationProvider>
       </QueryClientProvider>
     </I18nProvider>,
@@ -337,5 +344,95 @@ describe("MessageList — regenerate", () => {
     renderList([assistantRow("m1", "the answer")]);
 
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MessageList — knowledge citations", () => {
+  const searchRow = toolMessage({
+    id: "t1",
+    tool_name: "search_knowledge",
+    tool_result: {
+      results: [
+        {
+          cite: "kb:1a2b3c4d",
+          doc_id: "doc-1",
+          doc_title: "Collections SOP",
+          heading_path: "Collections SOP › Write-offs",
+          location: "p. 4",
+          section: 3,
+          text: "Write-offs over $500 need a manager's approval.",
+        },
+      ],
+    },
+  });
+
+  const reply = (content: string): AssistantMessage =>
+    ({
+      id: "a1",
+      session_id: "session-1",
+      role: "assistant",
+      content,
+      created_at: "2026-09-16T10:01:00Z",
+    }) as AssistantMessage;
+
+  it("turns a cite the conversation returned into a chip that opens the viewer at the section", async () => {
+    const push = vi.fn();
+    renderList(
+      [searchRow, reply("Write-offs over $500 need approval [kb:1a2b3c4d].")],
+      undefined,
+      { slug: "acme", push },
+    );
+
+    const chip = screen.getByRole("link", { name: "Open source: Collections SOP · p. 4" });
+    expect(chip).toHaveAttribute("href", "/acme/knowledge?doc=doc-1&section=3");
+    expect(chip).toHaveTextContent("Collections SOP · p. 4");
+    expect(screen.queryByText(/kb:/)).not.toBeInTheDocument();
+
+    await userEvent.click(chip);
+    expect(push).toHaveBeenCalledWith("/acme/knowledge?doc=doc-1&section=3");
+  });
+
+  it("drops a cite no tool result backs, and lists the turn's real sources instead", () => {
+    renderList([searchRow, reply("Pay within 30 days [kb:deadbeef].")], undefined, { slug: "acme" });
+
+    expect(screen.getByText("Pay within 30 days.")).toBeInTheDocument();
+    expect(screen.queryByText(/deadbeef/)).not.toBeInTheDocument();
+    // No invented inline chip — only the "Sources" row built from what the
+    // search actually returned.
+    expect(screen.getByText("Sources")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Open source/ })).toHaveLength(1);
+  });
+
+  it("shows no Sources row when the reply cites inline", () => {
+    renderList([searchRow, reply("Needs approval [kb:1a2b3c4d].")], undefined, { slug: "acme" });
+    expect(screen.queryByText("Sources")).not.toBeInTheDocument();
+  });
+
+  it("drops every cite when the conversation never searched the knowledge base", () => {
+    renderList([reply("Pay within 30 days [kb:1a2b3c4d].")], undefined, { slug: "acme" });
+
+    expect(screen.getByText("Pay within 30 days.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open source/ })).not.toBeInTheDocument();
+  });
+
+  it("copies the reply with the source written out, not the raw token", async () => {
+    renderList([searchRow, reply("Needs approval [kb:1a2b3c4d].")], undefined, { slug: "acme" });
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Copy" })[0]!);
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Needs approval (Collections SOP · p. 4)."),
+    );
+  });
+
+  it("labels the knowledge tool rows in words", () => {
+    renderList([
+      searchRow,
+      toolMessage({ id: "t2", tool_name: "read_knowledge", tool_result: { sections: [] } }),
+      toolMessage({ id: "t3", tool_name: "list_knowledge", tool_result: { documents: [] } }),
+    ]);
+
+    expect(screen.getByText("Searched the knowledge base")).toBeInTheDocument();
+    expect(screen.getByText("Read a knowledge document")).toBeInTheDocument();
+    expect(screen.getByText("Looked up the knowledge base")).toBeInTheDocument();
   });
 });

@@ -294,6 +294,20 @@ import {
   parseAutomationsResponse,
   parseInstallRecipeResponse,
 } from "../automations/schema";
+import {
+  parseKnowledgeDocDetailResponse,
+  parseKnowledgeDocResponse,
+  parseKnowledgeListResponse,
+  parseKnowledgeSearchResponse,
+} from "../knowledge/schema";
+import type {
+  CreateKnowledgeDocRequest,
+  KnowledgeDoc,
+  KnowledgeDocDetail,
+  KnowledgeListResponse,
+  KnowledgeSearchResponse,
+  UpdateKnowledgeDocRequest,
+} from "../knowledge/types";
 import type {
   Automation,
   AutomationCatalog,
@@ -3565,6 +3579,59 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/labels/${labelId}`, {
       method: "DELETE",
     });
+  }
+
+  // Workspace knowledge base (docs/workspace-knowledge-plan.md §5). Scoped
+  // like labels by the ambient workspace header. Every response runs through a
+  // lenient schema: statuses and fields are server-driven, and the page has to
+  // keep rendering a list that a newer server extended.
+  async listKnowledge(): Promise<KnowledgeListResponse> {
+    return parseKnowledgeListResponse(await this.fetch<unknown>("/api/knowledge"));
+  }
+
+  async getKnowledgeDoc(id: string): Promise<KnowledgeDocDetail> {
+    return parseKnowledgeDocDetailResponse(
+      await this.fetch<unknown>(`/api/knowledge/${encodeURIComponent(id)}`),
+    );
+  }
+
+  /** An uploaded attachment (`attachment_id`) or a Markdown note. 413 / 415
+   *  carry the server's reason in the thrown ApiError's message. */
+  async createKnowledgeDoc(req: CreateKnowledgeDocRequest): Promise<KnowledgeDoc> {
+    return parseKnowledgeDocResponse(
+      await this.fetch<unknown>("/api/knowledge", { method: "POST", body: JSON.stringify(req) }),
+      "POST /api/knowledge",
+    );
+  }
+
+  async updateKnowledgeDoc(id: string, req: UpdateKnowledgeDocRequest): Promise<KnowledgeDoc> {
+    return parseKnowledgeDocResponse(
+      await this.fetch<unknown>(`/api/knowledge/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(req),
+      }),
+      "PATCH /api/knowledge/{id}",
+    );
+  }
+
+  async deleteKnowledgeDoc(id: string): Promise<void> {
+    await this.fetch<void>(`/api/knowledge/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async reprocessKnowledgeDoc(id: string): Promise<KnowledgeDoc> {
+    return parseKnowledgeDocResponse(
+      await this.fetch<unknown>(`/api/knowledge/${encodeURIComponent(id)}/reprocess`, {
+        method: "POST",
+      }),
+      "POST /api/knowledge/{id}/reprocess",
+    );
+  }
+
+  async searchKnowledge(query: string, limit = 10): Promise<KnowledgeSearchResponse> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    return parseKnowledgeSearchResponse(
+      await this.fetch<unknown>(`/api/knowledge/search?${params.toString()}`),
+    );
   }
 
   // Pins

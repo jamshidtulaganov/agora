@@ -20,6 +20,7 @@ import { ProjectsPage } from "@agora/views/projects/components";
 import { DashboardPage } from "@agora/views/dashboard";
 import { AutopilotsPage } from "@agora/views/autopilots/components";
 import { AutomationsPage } from "@agora/views/automations/components";
+import { KnowledgePage } from "@agora/views/knowledge";
 import { MyIssuesPage } from "@agora/views/my-issues";
 import { QAPage } from "@agora/views/qa";
 import { PolicyPage } from "@agora/views/policy";
@@ -145,6 +146,11 @@ export const appRoutes: RouteObject[] = [
             path: "projects/:id",
             element: <ProjectDetailPage />,
             handle: { title: "Project" },
+          },
+          {
+            path: "knowledge",
+            element: <KnowledgePage />,
+            handle: { title: "Knowledge" },
           },
           {
             path: "autopilots",

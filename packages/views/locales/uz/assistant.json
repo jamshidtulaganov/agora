@@ -156,7 +156,8 @@
       "confirm": "Tasdiqlandi: {{object}}",
       "dry_run": "Oldindan ko‘rildi: {{object}}",
       "propose": "Taklif qilindi: {{object}}",
-      "check": "Tekshirildi: {{object}}"
+      "check": "Tekshirildi: {{object}}",
+      "read": "O‘qildi: {{object}}"
     },
     "object": {
       "workspaces": "ish maydonlari",
@@ -215,8 +216,15 @@
       "zoho_departments": "Zoho Desk bo‘limlari",
       "zoho_tickets": "Zoho Desk tiketlari",
       "zoho_ticket": "Zoho Desk tiketi",
-      "zoho_conversation": "tiket yozishmasi"
+      "zoho_conversation": "tiket yozishmasi",
+      "knowledge_base": "bilimlar bazasi",
+      "knowledge_document": "bilimlar bazasidagi hujjat"
     }
+  },
+  "citation": {
+    "open": "Manbani ochish: {{source}}",
+    "source": "Manba",
+    "sources": "Manbalar"
   },
   "confirm": {
     "fallback_summary": "Bu amalni tasdiqlang",

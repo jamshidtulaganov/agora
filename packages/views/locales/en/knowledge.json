@@ -1,0 +1,96 @@
+{
+  "page": {
+    "title": "Knowledge",
+    "subtitle": "What this team runs on. The Assistant and agents answer and work from it.",
+    "add_files": "Add files",
+    "new_note": "New note",
+    "load_failed": "Couldn't load the documents."
+  },
+  "instructions": {
+    "title": "Instructions for AI",
+    "hint": "Always given to the Assistant and agents in this workspace.",
+    "empty": "No instructions yet.",
+    "placeholder": "For example: We are the Collections team. Be polite, and never promise a discount without a manager's approval.",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "save_failed": "Couldn't save the instructions"
+  },
+  "documents": {
+    "title": "Documents",
+    "empty": "Add your team's SOPs, policies and price lists. The Assistant and agents will answer and work from them.",
+    "empty_member": "Ask a workspace owner or admin to add documents.",
+    "note": "Note",
+    "pages_one": "{{count}} page",
+    "pages_few": "{{count}} pages",
+    "pages_many": "{{count}} pages",
+    "pages_other": "{{count}} pages",
+    "sections_one": "{{count}} section",
+    "sections_few": "{{count}} sections",
+    "sections_many": "{{count}} sections",
+    "sections_other": "{{count}} sections",
+    "added_by": "Added by {{name}} · {{date}}",
+    "added_on": "Added {{date}}",
+    "pin": "Always include",
+    "actions": "Document actions",
+    "rename": "Rename",
+    "reprocess": "Reprocess",
+    "remove": "Remove",
+    "update_failed": "Couldn't update the document",
+    "reprocess_started": "Reading \"{{title}}\" again",
+    "reprocess_failed": "Couldn't read the file again",
+    "remove_title": "Remove \"{{title}}\"?",
+    "remove_description": "The Assistant and agents will stop using it. This can't be undone.",
+    "remove_confirm": "Remove",
+    "remove_cancel": "Cancel",
+    "removed": "Removed \"{{title}}\"",
+    "remove_failed": "Couldn't remove the document",
+    "rename_title": "Rename document",
+    "rename_label": "Title",
+    "rename_save": "Save",
+    "rename_cancel": "Cancel"
+  },
+  "status": {
+    "processing": "Reading…",
+    "ready": "Ready",
+    "failed": "Couldn't read",
+    "needs_ocr": "Scanned PDF — needs text"
+  },
+  "upload": {
+    "adding": "Adding {{name}}…",
+    "added": "Added {{name}}",
+    "added_description": "Reading it now. It will be ready in a moment.",
+    "failed": "Couldn't add {{name}}",
+    "unsupported_type": "Only PDF, Word (.docx), Excel (.xlsx), CSV, Markdown and text files can be added.",
+    "too_large": "Files can be up to 25 MB.",
+    "empty": "The file is empty."
+  },
+  "note": {
+    "title": "New note",
+    "description": "Write down something the team runs on. Markdown works, tables too.",
+    "title_label": "Title",
+    "title_placeholder": "For example: Refund rules",
+    "body_label": "Text",
+    "body_placeholder": "Refunds over $500 need a manager's approval…",
+    "save": "Add note",
+    "saving": "Adding…",
+    "cancel": "Cancel",
+    "added": "Note added",
+    "failed": "Couldn't add the note"
+  },
+  "search": {
+    "placeholder": "Search documents",
+    "label": "Search documents",
+    "no_results": "Nothing found for \"{{query}}\".",
+    "failed": "Search didn't work. Try again."
+  },
+  "viewer": {
+    "download": "Download original",
+    "load_failed": "Couldn't open this document.",
+    "hint": "This is exactly what the Assistant and agents read.",
+    "processing": "Reading this file. Its sections will show up here when it's done.",
+    "failed": "Couldn't read this file.",
+    "needs_ocr": "This looks like a scanned PDF. Upload a version with selectable text.",
+    "no_sections": "No text was found in this document."
+  }
+}

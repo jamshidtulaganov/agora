@@ -1,0 +1,96 @@
+{
+  "page": {
+    "title": "知识库",
+    "subtitle": "团队赖以运转的资料。助手和智能体会据此回答问题、开展工作。",
+    "add_files": "添加文件",
+    "new_note": "新建笔记",
+    "load_failed": "无法加载文档。"
+  },
+  "instructions": {
+    "title": "AI 指令",
+    "hint": "始终提供给此工作区中的助手和智能体。",
+    "empty": "还没有指令。",
+    "placeholder": "例如：我们是催收团队。请保持礼貌，未经主管批准不要承诺任何折扣。",
+    "edit": "编辑",
+    "save": "保存",
+    "cancel": "取消",
+    "save_failed": "无法保存指令"
+  },
+  "documents": {
+    "title": "文档",
+    "empty": "添加团队的 SOP、制度和价目表。助手和智能体会据此回答问题、开展工作。",
+    "empty_member": "请工作区的 owner 或 admin 添加文档。",
+    "note": "笔记",
+    "pages_one": "{{count}} 页",
+    "pages_few": "{{count}} 页",
+    "pages_many": "{{count}} 页",
+    "pages_other": "{{count}} 页",
+    "sections_one": "{{count}} 个章节",
+    "sections_few": "{{count}} 个章节",
+    "sections_many": "{{count}} 个章节",
+    "sections_other": "{{count}} 个章节",
+    "added_by": "{{name}} 添加 · {{date}}",
+    "added_on": "添加于 {{date}}",
+    "pin": "始终包含",
+    "actions": "文档操作",
+    "rename": "重命名",
+    "reprocess": "重新读取",
+    "remove": "移除",
+    "update_failed": "无法更新文档",
+    "reprocess_started": "正在重新读取 \"{{title}}\"",
+    "reprocess_failed": "无法重新读取文件",
+    "remove_title": "移除 \"{{title}}\"？",
+    "remove_description": "助手和智能体将不再使用它。此操作无法撤销。",
+    "remove_confirm": "移除",
+    "remove_cancel": "取消",
+    "removed": "已移除 \"{{title}}\"",
+    "remove_failed": "无法移除文档",
+    "rename_title": "重命名文档",
+    "rename_label": "标题",
+    "rename_save": "保存",
+    "rename_cancel": "取消"
+  },
+  "status": {
+    "processing": "正在读取...",
+    "ready": "就绪",
+    "failed": "无法读取",
+    "needs_ocr": "扫描版 PDF — 需要文字"
+  },
+  "upload": {
+    "adding": "正在添加 {{name}}...",
+    "added": "已添加 {{name}}",
+    "added_description": "正在读取，稍后即可使用。",
+    "failed": "无法添加 {{name}}",
+    "unsupported_type": "只能添加 PDF、Word (.docx)、Excel (.xlsx)、CSV、Markdown 和文本文件。",
+    "too_large": "文件不能超过 25 MB。",
+    "empty": "文件为空。"
+  },
+  "note": {
+    "title": "新建笔记",
+    "description": "记下团队赖以运转的内容。支持 Markdown，包括表格。",
+    "title_label": "标题",
+    "title_placeholder": "例如：退款规则",
+    "body_label": "正文",
+    "body_placeholder": "超过 $500 的退款需要主管批准...",
+    "save": "添加笔记",
+    "saving": "正在添加...",
+    "cancel": "取消",
+    "added": "笔记已添加",
+    "failed": "无法添加笔记"
+  },
+  "search": {
+    "placeholder": "搜索文档",
+    "label": "搜索文档",
+    "no_results": "没有找到与 \"{{query}}\" 相关的内容。",
+    "failed": "搜索失败，请重试。"
+  },
+  "viewer": {
+    "download": "下载原文件",
+    "load_failed": "无法打开此文档。",
+    "hint": "这正是助手和智能体读取的内容。",
+    "processing": "正在读取此文件，完成后章节会显示在这里。",
+    "failed": "无法读取此文件。",
+    "needs_ocr": "这似乎是扫描版 PDF。请上传可选中文字的版本。",
+    "no_sections": "此文档中没有找到文字。"
+  }
+}

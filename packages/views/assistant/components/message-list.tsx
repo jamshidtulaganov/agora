@@ -1,18 +1,28 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Check, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { copyText } from "@agora/ui/lib/clipboard";
 import { cn } from "@agora/ui/lib/utils";
 import type { AssistantMessage } from "@agora/core/types";
-import { Markdown } from "../../common/markdown";
+import { Markdown, defaultRenderMention } from "../../common/markdown";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import { AssistantAvatar } from "./assistant-avatar";
 import { ArtifactHistoryRow, InlineArtifact } from "./inline-artifact";
 import { describeTool, humanizeToolName, isToolResultError, resultCount, summarizeToolResult } from "../lib/tool-summary";
+import {
+  KNOWLEDGE_CITE_MENTION_TYPE,
+  collectKnowledgeCites,
+  knowledgeCiteMarkdown,
+  knowledgeCitePlainText,
+  replaceKnowledgeCites,
+  turnKnowledgeSources,
+  type KnowledgeCite,
+} from "../lib/knowledge-cites";
+import { KnowledgeCiteChip } from "./knowledge-cite-chip";
 import { isArtifactToolName, parseArtifactToolResult } from "../lib/artifact";
 import { isDayBoundary, relativeDay } from "../lib/transcript-days";
 import {
@@ -70,6 +80,9 @@ export function MessageList({ messages, onRegenerate }: MessageListProps) {
 
   const regenerateId = onRegenerate ? lastSpokenAssistantId(messages) : null;
   const artifactRows = useMemo(() => latestArtifactRows(messages), [messages]);
+  // Sources the conversation's knowledge tool calls returned — the only cites
+  // a reply may turn into chips (lib/knowledge-cites.ts).
+  const knowledgeCites = useMemo(() => collectKnowledgeCites(messages), [messages]);
 
   const row = (message: AssistantMessage) => (
     <MessageRow
@@ -78,6 +91,7 @@ export function MessageList({ messages, onRegenerate }: MessageListProps) {
       messages={messages}
       index={indexById.get(message.id) ?? -1}
       artifactRows={artifactRows}
+      knowledgeCites={knowledgeCites}
       onRegenerate={message.id === regenerateId ? onRegenerate : undefined}
     />
   );
@@ -161,6 +175,7 @@ function MessageRow({
   messages,
   index,
   artifactRows,
+  knowledgeCites,
   onRegenerate,
 }: {
   message: AssistantMessage;
@@ -169,6 +184,8 @@ function MessageRow({
   index: number;
   /** artifact id → the row that shows it in full (latestArtifactRows). */
   artifactRows: Map<string, string>;
+  /** cite → source, from this conversation's knowledge tool results. */
+  knowledgeCites: Map<string, KnowledgeCite>;
   /** Set on the last assistant row only. */
   onRegenerate?: () => void;
 }) {
@@ -245,12 +262,61 @@ function MessageRow({
       <AssistantAvatar className="mt-0.5" />
       <div className="min-w-0 flex-1 rounded-2xl bg-transparent text-sm leading-relaxed">
         <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-          <Markdown>{message.content}</Markdown>
+          <AssistantMarkdown content={message.content} cites={knowledgeCites} />
         </div>
-        <MessageActions content={message.content} align="start" onRegenerate={onRegenerate} />
+        <KnowledgeSources sources={turnKnowledgeSources(messages, index, knowledgeCites)} />
+        <MessageActions
+          content={replaceKnowledgeCites(message.content, knowledgeCites, knowledgeCitePlainText)}
+          align="start"
+          onRegenerate={onRegenerate}
+        />
       </div>
     </div>
   );
+}
+
+/**
+ * "Sources" under a reply that used the knowledge base without citing it
+ * inline — where the answer came from, whatever the model remembered to do.
+ */
+function KnowledgeSources({ sources }: { sources: KnowledgeCite[] }) {
+  const { t } = useT("assistant");
+  if (sources.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      <span>{t(($) => $.citation.sources)}</span>
+      {sources.map((cite) => (
+        <KnowledgeCiteChip key={cite.cite} cite={cite} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * An assistant reply. `[kb:…]` citation tokens that match a source this
+ * conversation's knowledge tools returned become inline chips linking to the
+ * Knowledge viewer; any other token is dropped, so a raw id never shows.
+ */
+function AssistantMarkdown({
+  content,
+  cites,
+}: {
+  content: string;
+  cites: Map<string, KnowledgeCite>;
+}) {
+  const source = useMemo(
+    () => replaceKnowledgeCites(content, cites, knowledgeCiteMarkdown),
+    [content, cites],
+  );
+  const renderMention = useCallback(
+    ({ type, id }: { type: string; id: string }) => {
+      if (type !== KNOWLEDGE_CITE_MENTION_TYPE) return defaultRenderMention({ type, id });
+      const cite = cites.get(`kb:${id}`);
+      return cite ? <KnowledgeCiteChip cite={cite} /> : null;
+    },
+    [cites],
+  );
+  return <Markdown renderMention={renderMention}>{source}</Markdown>;
 }
 
 /**
