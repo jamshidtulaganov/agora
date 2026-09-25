@@ -79,10 +79,15 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, hidden_nav, welcome_sent_at, hidden_nav_customized_at FROM "user"
-WHERE email = $1
+SELECT u.id, u.name, u.email, u.avatar_url, u.created_at, u.updated_at, u.onboarded_at, u.onboarding_questionnaire, u.cloud_waitlist_email, u.cloud_waitlist_reason, u.starter_content_state, u.language, u.profile_description, u.timezone, u.hidden_nav, u.welcome_sent_at, u.hidden_nav_customized_at FROM "user" u
+WHERE u.email = $1
+   OR u.id IN (SELECT a.user_id FROM user_email_alias a WHERE a.email = $1)
+ORDER BY (u.email = $1) DESC
+LIMIT 1
 `
 
+// Matches the account's own email or one of its login aliases (an address
+// folded in by a merge). The account's own email wins if both match.
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
@@ -149,6 +154,32 @@ func (q *Queries) JoinCloudWaitlist(ctx context.Context, arg JoinCloudWaitlistPa
 		&i.HiddenNavCustomizedAt,
 	)
 	return i, err
+}
+
+const listUserEmailAliases = `-- name: ListUserEmailAliases :many
+SELECT email FROM user_email_alias
+WHERE user_id = $1
+ORDER BY created_at
+`
+
+func (q *Queries) ListUserEmailAliases(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUserEmailAliases, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markUserOnboarded = `-- name: MarkUserOnboarded :one

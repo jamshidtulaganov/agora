@@ -1500,6 +1500,12 @@ type UserEditorToken struct {
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
 }
 
+type UserEmailAlias struct {
+	Email     string             `json:"email"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type UserExternalIdentity struct {
 	UserID     pgtype.UUID        `json:"user_id"`
 	Provider   string             `json:"provider"`

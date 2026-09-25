@@ -3,8 +3,18 @@ SELECT * FROM "user"
 WHERE id = $1;
 
 -- name: GetUserByEmail :one
-SELECT * FROM "user"
-WHERE email = $1;
+-- Matches the account's own email or one of its login aliases (an address
+-- folded in by a merge). The account's own email wins if both match.
+SELECT u.* FROM "user" u
+WHERE u.email = $1
+   OR u.id IN (SELECT a.user_id FROM user_email_alias a WHERE a.email = $1)
+ORDER BY (u.email = $1) DESC
+LIMIT 1;
+
+-- name: ListUserEmailAliases :many
+SELECT email FROM user_email_alias
+WHERE user_id = $1
+ORDER BY created_at;
 
 -- name: CreateUser :one
 INSERT INTO "user" (name, email, avatar_url)

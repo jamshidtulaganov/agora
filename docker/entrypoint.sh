@@ -12,6 +12,12 @@ if [ -n "${AGORA_REMOTE_BOXES_SSH_KEY_B64:-}" ]; then
   echo "Remote Boxes SSH key materialized at /keys/agora_remote_boxes"
 fi
 
+# One-off commands (e.g. a Render job running ./admintool) run instead of the
+# server; the service itself has already applied migrations.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 echo "Running database migrations..."
 ./migrate up
 
