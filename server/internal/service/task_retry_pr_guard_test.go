@@ -43,6 +43,11 @@ func (m *mockPRAggDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows
 	return nil, pgx.ErrNoRows
 }
 
+// CopyFrom satisfies db.DBTX (bulk inserts); these tests never call it.
+func (m *mockPRAggDBTX) CopyFrom(_ context.Context, _ pgx.Identifier, _ []string, _ pgx.CopyFromSource) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockPRAggDBTX) QueryRow(_ context.Context, sql string, _ ...interface{}) pgx.Row {
 	if strings.Contains(sql, "merged_with_close_intent_count") {
 		return &aggRow{open: m.open}

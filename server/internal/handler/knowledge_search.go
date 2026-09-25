@@ -30,6 +30,9 @@ const (
 	knowledgeCatalogBudget   = 2000 // characters of the document list
 	knowledgeCatalogMaxDocs  = 40
 	knowledgeHitBodyMax      = 1500 // characters of one section in a tool result
+	// knowledgeBriefMinRelativeRank drops pushed sections that score below
+	// this share of the best match for the task.
+	knowledgeBriefMinRelativeRank = 0.25
 )
 
 // knowledgeHit is one ranked section.
@@ -235,9 +238,16 @@ func (h *Handler) knowledgeBriefBlock(ctx context.Context, wsUUID pgtype.UUID, t
 			slog.Warn("knowledge: brief search", "error", err)
 		}
 		h.logKnowledgeSearch(ctx, wsUUID, userUUID, "agent", q, hits)
+		pinnedDocs := h.knowledgePinnedDocIDs(ctx, wsUUID)
 		used := 0
 		var sections strings.Builder
 		for _, hit := range hits {
+			// Pinned documents are already in full above; and an agent can't
+			// weigh a loose match the way the Assistant can, so sections far
+			// below the best match are left out rather than padding the brief.
+			if pinnedDocs[hit.DocID] || (len(hits) > 0 && hit.Rank < hits[0].Rank*knowledgeBriefMinRelativeRank) {
+				continue
+			}
 			entry := fmt.Sprintf("#### %s — %s%s\n%s\n\n", hit.DocTitle, hit.HeadingPath, locationSuffix(hit.Location), strings.TrimSpace(hit.Text))
 			if used+len(entry) > knowledgeRetrievedBudget {
 				break
@@ -273,4 +283,19 @@ func (h *Handler) knowledgeTaskQuery(ctx context.Context, task db.AgentTaskQueue
 		}
 	}
 	return clipRunes(strings.Join(nonEmpty, "\n"), 4000)
+}
+
+// knowledgePinnedDocIDs is the set of the workspace's pinned document ids.
+func (h *Handler) knowledgePinnedDocIDs(ctx context.Context, wsUUID pgtype.UUID) map[string]bool {
+	docs, err := h.Queries.ListKnowledgeDocs(ctx, wsUUID)
+	if err != nil {
+		return nil
+	}
+	ids := map[string]bool{}
+	for _, d := range docs {
+		if d.Pinned {
+			ids[uuidToString(d.ID)] = true
+		}
+	}
+	return ids
 }
