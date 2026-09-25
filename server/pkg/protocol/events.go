@@ -181,6 +181,9 @@ const (
 
 	// Knowledge items changed / KB recompiled (structured knowledge flywheel).
 	EventKnowledgeChanged = "knowledge:changed"
+	// A workspace knowledge document was added, finished (or failed) reading,
+	// was renamed/pinned, or was removed. Payload: {doc_id, status}.
+	EventKnowledgeUpdated = "knowledge:updated"
 
 	// Pin events
 	EventPinCreated   = "pin:created"

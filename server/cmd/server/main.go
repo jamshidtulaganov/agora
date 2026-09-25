@@ -382,6 +382,8 @@ func main() {
 	// to stop. Started before the HTTP server accepts, so no event can arrive
 	// with nowhere to queue.
 	h.StartSlackDelivery(sweepCtx)
+	// Knowledge documents a previous process left half-read.
+	h.ResumeKnowledgeIngest(sweepCtx)
 	autopilotCtx, autopilotCancel := context.WithCancel(context.Background())
 	taskSvc := service.NewTaskService(queries, pool, hub, bus, daemonWakeup)
 	taskSvc.Analytics = analyticsClient

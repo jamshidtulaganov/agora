@@ -54,7 +54,7 @@ func runAssistantWith(t *testing.T, user, question string, chat *toolRecordingCh
 		return chat, "test-model", nil
 	})
 	svc.Exec = testHandler
-	svc.Integrations = testHandler.assistantIntegrations
+	svc.RunExtras = testHandler.assistantRunExtras
 	svc.Run(context.Background(), sessionID, "run-zoho-"+user, user)
 }
 

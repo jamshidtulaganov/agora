@@ -735,6 +735,40 @@ type IssueToSprint struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type KnowledgeChunk struct {
+	ID          pgtype.UUID `json:"id"`
+	DocID       pgtype.UUID `json:"doc_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Ord         int32       `json:"ord"`
+	HeadingPath string      `json:"heading_path"`
+	Location    string      `json:"location"`
+	Body        string      `json:"body"`
+	Search      interface{} `json:"search"`
+}
+
+type KnowledgeDoc struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	Title               string             `json:"title"`
+	Source              string             `json:"source"`
+	AttachmentID        pgtype.UUID        `json:"attachment_id"`
+	Filename            string             `json:"filename"`
+	ContentType         string             `json:"content_type"`
+	SizeBytes           int64              `json:"size_bytes"`
+	NoteBody            string             `json:"note_body"`
+	Status              string             `json:"status"`
+	Error               string             `json:"error"`
+	Pinned              bool               `json:"pinned"`
+	PageCount           int32              `json:"page_count"`
+	CharCount           int32              `json:"char_count"`
+	ChunkCount          int32              `json:"chunk_count"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	ProcessingStartedAt pgtype.Timestamptz `json:"processing_started_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+}
+
 type KnowledgeItem struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
@@ -753,6 +787,17 @@ type KnowledgeItem struct {
 	LastConfirmedAt pgtype.Timestamptz `json:"last_confirmed_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type KnowledgeSearchLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Source      string             `json:"source"`
+	Query       string             `json:"query"`
+	ResultCount int32              `json:"result_count"`
+	TopDocID    pgtype.UUID        `json:"top_doc_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type LarkBindingToken struct {

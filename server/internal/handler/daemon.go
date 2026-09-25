@@ -2300,6 +2300,18 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if ws.Context.Valid {
 			resp.WorkspaceContext = ws.Context.String
 		}
+		// Workspace knowledge base: pinned text, the sections most relevant
+		// to this task, and the document list — pushed, because agents rarely
+		// look things up on their own. Appended to the workspace context so
+		// every daemon version renders it, for every task kind.
+		actingUser, _, _ := h.zohoActingUserForTask(r.Context(), task.ID)
+		if block := h.knowledgeBriefBlock(r.Context(), ws.ID, h.knowledgeTaskQuery(r.Context(), *task, resp), actingUser); block != "" {
+			if strings.TrimSpace(resp.WorkspaceContext) != "" {
+				resp.WorkspaceContext = strings.TrimRight(resp.WorkspaceContext, " \t\r\n") + "\n\n" + block
+			} else {
+				resp.WorkspaceContext = block
+			}
+		}
 	} else {
 		slog.Warn("task claim: failed to load workspace for context injection",
 			"task_id", uuidToString(task.ID),

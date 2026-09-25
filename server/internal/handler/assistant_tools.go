@@ -309,6 +309,11 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 		return h.assistantProposePlan(ctx, caller, args)
 
 	default:
+		// The workspace knowledge base, read-only — offered to a run only when
+		// one of the person's workspaces has documents (assistant_knowledge.go).
+		if assistant.IsKnowledgeTool(name) {
+			return h.assistantKnowledgeTool(ctx, caller, name, args)
+		}
 		// The person's own Zoho, read-only — offered to a run only when they
 		// have connected it (assistant_zoho.go).
 		if assistant.IsZohoTool(name) {
