@@ -35,6 +35,7 @@ import type {
   TimelineEntry,
   User,
   WebhookDelivery,
+  Workspace,
   AssistantSession,
   AssistantRun,
   AssistantMessage,
@@ -999,6 +1000,9 @@ export const UserSchema = z.object({
   // drifted server must not blank the whole user object — catch() degrades to
   // "hide nothing" instead of failing the parse.
   hidden_nav: z.array(z.string()).catch([]).default([]),
+  // Newer than hidden_nav: false ("never customized") is the safe reading
+  // when an older or drifted server omits it or sends a non-boolean.
+  hidden_nav_customized: z.boolean().catch(false).default(false),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
 }).loose();
@@ -1015,6 +1019,44 @@ export const EMPTY_USER: User = {
   profile_description: "",
   timezone: null,
   hidden_nav: [],
+  hidden_nav_customized: false,
+  created_at: "",
+  updated_at: "",
+};
+
+// ---------------------------------------------------------------------------
+// Workspace (the body returned by the workspace write endpoints, e.g.
+// PUT /api/workspaces/{id}/team-sidebar). Only `id` is required: a body
+// without it can't be matched to a cached workspace, so the caller gets the
+// EMPTY_WORKSPACE sentinel (id "") and keeps its optimistic value instead.
+// `settings` degrades to {} rather than failing the whole parse — the
+// readers in workspace/department-setup.ts treat every key as untrusted.
+// ---------------------------------------------------------------------------
+
+export const WorkspaceSchema = z.object({
+  id: z.string(),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  description: z.string().nullable().catch(null).default(null),
+  context: z.string().nullable().catch(null).default(null),
+  settings: z.record(z.string(), z.unknown()).catch({}).default({}),
+  repos: z.array(z.object({ url: z.string() }).loose()).catch([]).default([]),
+  issue_prefix: z.string().default(""),
+  avatar_url: z.string().nullable().catch(null).default(null),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_WORKSPACE: Workspace = {
+  id: "",
+  name: "",
+  slug: "",
+  description: null,
+  context: null,
+  settings: {},
+  repos: [],
+  issue_prefix: "",
+  avatar_url: null,
   created_at: "",
   updated_at: "",
 };

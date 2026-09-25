@@ -1,5 +1,12 @@
 export type MemberRole = "owner" | "admin" | "member";
 
+/**
+ * Outcome of the one-time department setup an owner/admin runs for a
+ * workspace (workspace.settings.department_setup.status). Either value means
+ * "don't prompt again".
+ */
+export type DepartmentSetupStatus = "done" | "skipped";
+
 export interface WorkspaceRepo {
   url: string;
   description?: string;
@@ -177,6 +184,12 @@ export interface User {
    * devices. Server always returns an array — empty means "show everything".
    */
   hidden_nav: string[];
+  /**
+   * True once the person set their own sidebar (including "show all").
+   * Until then a workspace's team sidebar applies to them. Optional because
+   * older servers don't send it; the core schema defaults it to false.
+   */
+  hidden_nav_customized?: boolean;
   created_at: string;
   updated_at: string;
 }

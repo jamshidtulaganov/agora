@@ -320,6 +320,27 @@ describe("UserSchema hidden_nav drift", () => {
   it("degrades a null hidden_nav to []", () => {
     expect(UserSchema.parse({ ...base, hidden_nav: null }).hidden_nav).toEqual([]);
   });
+
+  // hidden_nav_customized decides whether a workspace's team sidebar applies;
+  // "never customized" is the safe reading for anything that isn't a boolean.
+  it("defaults hidden_nav_customized to false when absent", () => {
+    expect(UserSchema.parse(base).hidden_nav_customized).toBe(false);
+  });
+
+  it("preserves hidden_nav_customized: true", () => {
+    expect(UserSchema.parse({ ...base, hidden_nav_customized: true }).hidden_nav_customized).toBe(true);
+  });
+
+  it.each([null, "true", 1])("degrades hidden_nav_customized %j to false without failing the parse", (value) => {
+    const parsed = parseWithFallback(
+      { ...base, hidden_nav_customized: value },
+      UserSchema,
+      EMPTY_USER,
+      { endpoint: "GET /api/me" },
+    );
+    expect(parsed).not.toBe(EMPTY_USER);
+    expect(parsed.hidden_nav_customized).toBe(false);
+  });
 });
 
 describe("SquadListSchema member preview drift", () => {

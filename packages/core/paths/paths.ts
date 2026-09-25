@@ -26,6 +26,10 @@ function workspaceScoped(slug: string) {
     // The workspace knowledge base. The viewer deep-links with
     // `?doc=<id>&section=<ord>` (see knowledge/types.ts knowledgeViewerHref).
     knowledge: () => `${ws}/knowledge`,
+    // One-time department setup (knowledge, team sidebar, ready-made agents)
+    // for owners/admins; re-entered from Settings → Workspace. Workspace-
+    // scoped, so it needs no reserved slug.
+    setup: () => `${ws}/setup`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     automations: () => `${ws}/automations`,

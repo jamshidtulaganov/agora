@@ -1486,3 +1486,78 @@ describe("workspace knowledge API", () => {
     await expect(client.searchKnowledge("x")).resolves.toEqual({ results: [] });
   });
 });
+
+describe("department setup API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const client = new ApiClient("https://api.example.test");
+  const workspace = {
+    id: "ws-1",
+    name: "Collections",
+    slug: "collections",
+    description: null,
+    context: "We are the Collections team.",
+    settings: { team_sidebar: { hidden: ["agents"] } },
+    repos: [],
+    issue_prefix: "COL",
+    avatar_url: null,
+    created_at: "2026-09-25T10:00:00Z",
+    updated_at: "2026-09-25T10:00:00Z",
+  };
+
+  it("puts the team sidebar and returns the parsed workspace", async () => {
+    const fetchMock = jsonFetch(workspace);
+    const updated = await client.updateTeamSidebar("ws-1", ["agents"]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/workspaces/ws-1/team-sidebar");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PUT");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ hidden: ["agents"] });
+    expect(updated.settings).toEqual({ team_sidebar: { hidden: ["agents"] } });
+  });
+
+  it("posts the setup status", async () => {
+    const fetchMock = jsonFetch({ ...workspace, settings: { department_setup: { status: "skipped" } } });
+    const updated = await client.setDepartmentSetup("ws-1", "skipped");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/workspaces/ws-1/department-setup",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ status: "skipped" });
+    expect(updated.id).toBe("ws-1");
+  });
+
+  it.each([
+    ["a null body", null],
+    ["an array", [workspace]],
+    ["a missing id", { ...workspace, id: undefined }],
+    ["a numeric id", { ...workspace, id: 42 }],
+  ])("degrades %s to the empty workspace without throwing", async (_label, body) => {
+    jsonFetch(body);
+    await expect(client.updateTeamSidebar("ws-1", [])).resolves.toMatchObject({ id: "" });
+    jsonFetch(body);
+    await expect(client.setDepartmentSetup("ws-1", "done")).resolves.toMatchObject({ id: "" });
+  });
+
+  it("keeps the workspace when only secondary fields drift", async () => {
+    jsonFetch({ ...workspace, settings: "oops", repos: null, description: 7, name: undefined });
+    const updated = await client.updateTeamSidebar("ws-1", ["agents"]);
+    expect(updated.id).toBe("ws-1");
+    expect(updated.settings).toEqual({});
+    expect(updated.repos).toEqual([]);
+    expect(updated.description).toBeNull();
+    expect(updated.name).toBe("");
+  });
+
+  it("surfaces a 403 for members", async () => {
+    jsonFetch({ error: "forbidden" }, 403);
+    await expect(client.updateTeamSidebar("ws-1", ["agents"])).rejects.toMatchObject({ status: 403 });
+  });
+});

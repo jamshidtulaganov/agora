@@ -4,18 +4,6 @@ import { useAuthStore } from "../auth";
 import type { User } from "../types";
 
 /**
- * Stable empty array for users with no customization. Returning a fresh `[]`
- * from the selector on every call would give every subscriber a new reference
- * each render and re-run any memo that depends on it.
- */
-const EMPTY_HIDDEN_NAV: string[] = [];
-
-/** Nav keys the current user chose to hide. Empty = show everything. */
-export function useHiddenNav(): string[] {
-  return useAuthStore((s) => s.user?.hidden_nav ?? EMPTY_HIDDEN_NAV);
-}
-
-/**
  * Pure toggle over a hidden-key list. `hidden: true` hides the key, `false`
  * restores it; re-applying the same state is a no-op that returns the input
  * array unchanged, so callers can skip a redundant request.
@@ -44,7 +32,10 @@ export function useSetHiddenNav() {
     onMutate: (hidden) => {
       const prev = useAuthStore.getState().user;
       if (prev) {
-        useAuthStore.getState().setUser({ ...prev, hidden_nav: hidden });
+        // Any write makes the sidebar the person's own, so a workspace's team
+        // sidebar stops applying the moment they change something — the
+        // server sets the same flag on this PATCH.
+        useAuthStore.getState().setUser({ ...prev, hidden_nav: hidden, hidden_nav_customized: true });
       }
       return { prev };
     },
