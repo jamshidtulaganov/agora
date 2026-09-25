@@ -1278,7 +1278,7 @@ describe("personal Zoho account API", () => {
 
   const client = new ApiClient("https://api.example.test");
 
-  it("reads the account from the account-scoped endpoint", async () => {
+  it("reads the account as seen from one workspace", async () => {
     const fetchMock = jsonFetch({
       available: true,
       connected: true,
@@ -1286,8 +1286,10 @@ describe("personal Zoho account API", () => {
       email: "shohruh.a@octanefuel.com",
       desk_departments: null,
     });
-    const account = await client.getMyZohoAccount();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/me/zoho");
+    const account = await client.getMyZohoAccount("ws 1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/me/zoho?workspace_id=ws%201",
+    );
     expect(account.connected).toBe(true);
     expect(account.email).toBe("shohruh.a@octanefuel.com");
     expect(account.desk_departments).toEqual([]);
@@ -1295,34 +1297,94 @@ describe("personal Zoho account API", () => {
 
   it("falls back to unavailable on a malformed body", async () => {
     jsonFetch(["not", "an", "object"]);
-    const account = await client.getMyZohoAccount();
+    const account = await client.getMyZohoAccount("ws-1");
     expect(account.available).toBe(false);
     expect(account.connected).toBe(false);
   });
 
-  it("posts an empty body to connect and returns the sign-in url", async () => {
+  it("posts the workspace id to connect and returns the sign-in url", async () => {
     const url = "https://accounts.zoho.com/oauth/v2/auth?client_id=x";
     const fetchMock = jsonFetch({ url });
-    await expect(client.connectZohoAccount()).resolves.toEqual({ url });
+    await expect(client.connectZohoAccount("ws-1")).resolves.toEqual({ url });
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/api/me/zoho/connect",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe("{}");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ workspace_id: "ws-1" }),
+    );
   });
 
   it.each([{}, { url: null }, { url: "" }, { url: "javascript:alert(1)" }, null])(
     "rejects a connect response without a usable url (%j)",
     async (body) => {
       jsonFetch(body);
-      await expect(client.connectZohoAccount()).rejects.toThrow(/sign-in url/);
+      await expect(client.connectZohoAccount("ws-1")).rejects.toThrow(/sign-in url/);
     },
   );
+
+  it("surfaces the 409 when the workspace has no Zoho connector", async () => {
+    jsonFetch({ error: "zoho connector is not set up for this workspace" }, 409);
+    await expect(client.connectZohoAccount("ws-1")).rejects.toMatchObject({
+      status: 409,
+    });
+  });
 
   it("disconnects with DELETE and accepts 204", async () => {
     const fetchMock = jsonFetch(null, 204);
     await expect(client.disconnectZohoAccount()).resolves.toBeUndefined();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/me/zoho");
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+});
+
+describe("workspace Zoho connector API", () => {
+  function jsonFetch(body: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const client = new ApiClient("https://api.example.test");
+  const redirect = "https://agora.example.com/api/integrations/zoho/callback";
+
+  it("reads the redirect uri before the connector is set up", async () => {
+    jsonFetch({ configured: false, redirect_uri: redirect });
+    const status = await client.getZohoConnection("ws-1");
+    expect(status.configured).toBe(false);
+    expect(status.redirect_uri).toBe(redirect);
+    expect(status.has_sync_grant).toBe(false);
+  });
+
+  it("keeps the status when the new fields are drifted", async () => {
+    jsonFetch({
+      configured: true,
+      dc: "eu",
+      client_id: "1000.abc",
+      redirect_uri: null,
+      has_sync_grant: "true",
+    });
+    const status = await client.getZohoConnection("ws-1");
+    expect(status.configured).toBe(true);
+    expect(status.client_id).toBe("1000.abc");
+    expect(status.redirect_uri).toBeUndefined();
+    expect(status.has_sync_grant).toBe(false);
+  });
+
+  it("saves the connector without a refresh token", async () => {
+    const fetchMock = jsonFetch({ configured: true, dc: "us", client_id: "1000.abc" });
+    await client.putZohoConnection("ws-1", {
+      dc: "us",
+      client_id: "1000.abc",
+      client_secret: "shh",
+    });
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(sent).toEqual({ dc: "us", client_id: "1000.abc", client_secret: "shh" });
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PUT");
   });
 });

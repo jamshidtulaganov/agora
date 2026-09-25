@@ -73,19 +73,22 @@ export function zohoSyncConfigsOptions(wsId: string) {
 }
 
 // --- Personal Zoho account ----------------------------------------------------
-// Account-scoped (one per person, shared by every workspace), so the key is
-// deliberately NOT keyed on wsId.
+// The account is the person's own, but whether it can be connected depends on
+// the workspace's Zoho connector, so the read is keyed on wsId. `all` is the
+// prefix to invalidate: the account is shared by every workspace, so a change
+// made in one workspace must refresh the others too.
 
 export const zohoAccountKeys = {
-  mine: () => ["me", "zoho-account"] as const,
+  all: ["me", "zoho-account"] as const,
+  mine: (wsId: string) => [...zohoAccountKeys.all, wsId] as const,
 };
 
-/** The caller's own Zoho account. Connecting finishes in another window on
- * Zoho's page, so the account card refetches when this window regains
- * focus (see ZohoAccountCard). */
-export function myZohoAccountOptions() {
+/** The caller's own Zoho account, as seen from one workspace. Connecting
+ * finishes in another window on Zoho's page, so the account card refetches
+ * when this window regains focus (see ZohoAccountCard). */
+export function myZohoAccountOptions(wsId: string) {
   return queryOptions({
-    queryKey: zohoAccountKeys.mine(),
-    queryFn: () => api.getMyZohoAccount(),
+    queryKey: zohoAccountKeys.mine(wsId),
+    queryFn: () => api.getMyZohoAccount(wsId),
   });
 }

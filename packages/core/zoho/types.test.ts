@@ -75,6 +75,64 @@ describe("ZohoConnectionStatusSchema", () => {
     );
     expect(parsed).toEqual(EMPTY_ZOHO_CONNECTION_STATUS);
   });
+
+  it("reads the redirect uri and sync grant, even when not configured", () => {
+    const parsed = parseWithFallback(
+      {
+        configured: false,
+        redirect_uri: "https://agora.example.com/api/integrations/zoho/callback",
+        has_sync_grant: false,
+      },
+      ZohoConnectionStatusSchema,
+      EMPTY_ZOHO_CONNECTION_STATUS,
+      endpoint,
+    );
+    expect(parsed.configured).toBe(false);
+    expect(parsed.redirect_uri).toBe(
+      "https://agora.example.com/api/integrations/zoho/callback",
+    );
+    expect(parsed.has_sync_grant).toBe(false);
+
+    const withGrant = parseWithFallback(
+      { configured: true, has_sync_grant: true },
+      ZohoConnectionStatusSchema,
+      EMPTY_ZOHO_CONNECTION_STATUS,
+      endpoint,
+    );
+    expect(withGrant.has_sync_grant).toBe(true);
+  });
+
+  it("treats a missing redirect uri and sync grant as absent / off (older server)", () => {
+    const parsed = parseWithFallback(
+      { configured: true, dc: "eu", client_id: "1000.abc" },
+      ZohoConnectionStatusSchema,
+      EMPTY_ZOHO_CONNECTION_STATUS,
+      endpoint,
+    );
+    expect(parsed.configured).toBe(true);
+    expect(parsed.redirect_uri).toBeUndefined();
+    expect(parsed.has_sync_grant).toBe(false);
+  });
+
+  it.each([
+    { redirect_uri: null, has_sync_grant: null },
+    { redirect_uri: 42, has_sync_grant: "yes" },
+    { redirect_uri: "   ", has_sync_grant: 1 },
+  ])(
+    "degrades drifted redirect uri / sync grant without losing the rest (%j)",
+    (drift) => {
+      const parsed = parseWithFallback(
+        { configured: true, dc: "us", client_id: "1000.abc", ...drift },
+        ZohoConnectionStatusSchema,
+        EMPTY_ZOHO_CONNECTION_STATUS,
+        endpoint,
+      );
+      expect(parsed.configured).toBe(true);
+      expect(parsed.client_id).toBe("1000.abc");
+      expect(parsed.redirect_uri).toBeUndefined();
+      expect(parsed.has_sync_grant).toBe(false);
+    },
+  );
 });
 
 describe("ZohoCRMModulesResponseSchema", () => {

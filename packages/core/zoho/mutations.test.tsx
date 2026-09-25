@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 
 import { setApiInstance } from "../api";
 import type { ApiClient } from "../api/client";
-import { useDisconnectZohoAccount } from "./mutations";
+import { useConnectZohoAccount, useDisconnectZohoAccount } from "./mutations";
 import { zohoAccountKeys } from "./queries";
 import { EMPTY_ZOHO_ACCOUNT, type ZohoAccount } from "./types";
 
@@ -23,6 +23,9 @@ const CONNECTED: ZohoAccount = {
   desk_departments: ["Collections"],
   checked_at: "2026-09-25T10:00:00Z",
 };
+
+const WS = "ws-1";
+const OTHER_WS = "ws-2";
 
 function createWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -43,7 +46,7 @@ describe("useDisconnectZohoAccount", () => {
       disconnectZohoAccount,
       getMyZohoAccount,
     } as unknown as ApiClient);
-    qc.setQueryData(zohoAccountKeys.mine(), CONNECTED);
+    qc.setQueryData(zohoAccountKeys.mine(WS), CONNECTED);
   });
 
   afterEach(() => {
@@ -58,7 +61,7 @@ describe("useDisconnectZohoAccount", () => {
         resolve = r;
       }),
     );
-    const { result } = renderHook(() => useDisconnectZohoAccount(), {
+    const { result } = renderHook(() => useDisconnectZohoAccount(WS), {
       wrapper: createWrapper(qc),
     });
 
@@ -67,7 +70,7 @@ describe("useDisconnectZohoAccount", () => {
     });
 
     await waitFor(() =>
-      expect(qc.getQueryData(zohoAccountKeys.mine())).toEqual({
+      expect(qc.getQueryData(zohoAccountKeys.mine(WS))).toEqual({
         ...EMPTY_ZOHO_ACCOUNT,
         available: true,
       }),
@@ -82,7 +85,7 @@ describe("useDisconnectZohoAccount", () => {
 
   it("rolls back to the connected account when the request fails", async () => {
     disconnectZohoAccount.mockRejectedValue(new Error("boom"));
-    const { result } = renderHook(() => useDisconnectZohoAccount(), {
+    const { result } = renderHook(() => useDisconnectZohoAccount(WS), {
       wrapper: createWrapper(qc),
     });
 
@@ -91,13 +94,15 @@ describe("useDisconnectZohoAccount", () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(qc.getQueryData(zohoAccountKeys.mine())).toEqual(CONNECTED);
+    expect(qc.getQueryData(zohoAccountKeys.mine(WS))).toEqual(CONNECTED);
   });
 
-  it("invalidates the account query on settle", async () => {
+  it("invalidates the account in every workspace on settle", async () => {
     disconnectZohoAccount.mockResolvedValue(undefined);
+    getMyZohoAccount.mockResolvedValue({ ...EMPTY_ZOHO_ACCOUNT, available: true });
+    qc.setQueryData(zohoAccountKeys.mine(OTHER_WS), CONNECTED);
     const invalidate = vi.spyOn(qc, "invalidateQueries");
-    const { result } = renderHook(() => useDisconnectZohoAccount(), {
+    const { result } = renderHook(() => useDisconnectZohoAccount(WS), {
       wrapper: createWrapper(qc),
     });
 
@@ -106,7 +111,30 @@ describe("useDisconnectZohoAccount", () => {
     });
 
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: zohoAccountKeys.mine(),
+      queryKey: zohoAccountKeys.all,
     });
+    expect(qc.getQueryState(zohoAccountKeys.mine(OTHER_WS))?.isInvalidated).toBe(
+      true,
+    );
+  });
+});
+
+describe("useConnectZohoAccount", () => {
+  it("asks for the sign-in page with this workspace's connector", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const connectZohoAccount = vi
+      .fn()
+      .mockResolvedValue({ url: "https://accounts.zoho.com/x" });
+    setApiInstance({ connectZohoAccount } as unknown as ApiClient);
+    const { result } = renderHook(() => useConnectZohoAccount(WS), {
+      wrapper: createWrapper(qc),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+
+    expect(connectZohoAccount).toHaveBeenCalledWith(WS);
+    qc.clear();
   });
 });

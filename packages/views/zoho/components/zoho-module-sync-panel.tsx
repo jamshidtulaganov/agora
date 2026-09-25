@@ -101,7 +101,10 @@ export function ZohoModuleSyncPanel() {
     ...zohoConnectionOptions(wsId),
     enabled: !!wsId && canManage,
   });
-  const configured = connectionQuery.data?.configured === true;
+  // Module sync reads CRM with the connector's org-level grant, so it needs
+  // the refresh token, not just a connector.
+  const configured =
+    connectionQuery.data?.configured === true && connectionQuery.data?.has_sync_grant === true;
 
   const modulesQuery = useQuery({
     ...zohoCRMModulesOptions(wsId),

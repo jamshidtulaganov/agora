@@ -6,7 +6,8 @@
 // The dynamic-integration section below (workspace connection / CRM
 // discovery / sync configs) mirrors server/internal/handler/zoho_connection.go
 // and zohodyn_endpoints.go. The per-person Zoho account section at the end
-// mirrors the account-scoped `/api/me/zoho` endpoints.
+// mirrors the `/api/me/zoho` endpoints (the person's own account, read and
+// connected through a workspace's connector).
 
 import { z } from "zod";
 
@@ -76,6 +77,13 @@ export interface ZohoConnectionStatus {
   desk_org_id: string;
   probe_status: string;
   probed_at: string;
+  /** The exact redirect URI the admin registers in Zoho's API console.
+   * Sent whenever the server knows its public URL, even before the
+   * connector is configured; absent means "don't show it". */
+  redirect_uri?: string;
+  /** True when an org-level grant is stored. Only needed to sync Zoho CRM
+   * records into issues; personal reading works without it. */
+  has_sync_grant: boolean;
 }
 
 export const ZohoConnectionStatusSchema = z
@@ -88,6 +96,14 @@ export const ZohoConnectionStatusSchema = z
     desk_org_id: z.string().default(""),
     probe_status: z.string().default(""),
     probed_at: z.string().default(""),
+    // New fields degrade on their own (`.catch`) so an older server, or a
+    // drifted value, never sinks the whole status into the fallback.
+    redirect_uri: z
+      .string()
+      .nullish()
+      .transform((v) => (v ? v.trim() || undefined : undefined))
+      .catch(undefined),
+    has_sync_grant: z.boolean().catch(false),
   })
   .loose();
 
@@ -100,6 +116,7 @@ export const EMPTY_ZOHO_CONNECTION_STATUS: ZohoConnectionStatus = {
   desk_org_id: "",
   probe_status: "",
   probed_at: "",
+  has_sync_grant: false,
 };
 
 /** Zoho data centers accepted by the backend (zohocrm.KnownDC). */
@@ -110,7 +127,8 @@ export interface PutZohoConnectionRequest {
   dc: string;
   client_id: string;
   client_secret: string;
-  refresh_token: string;
+  /** Optional: only needed to sync Zoho CRM records into issues. */
+  refresh_token?: string;
   scopes?: string;
   crm_org_id?: string;
   desk_org_id?: string;
@@ -320,7 +338,8 @@ export type UpdateZohoSyncConfigRequest = Omit<
 //
 // One Zoho account per person, connected once through Zoho's sign-in page and
 // used in every workspace. Read-only: the person's own Zoho role decides what
-// Agora can see. Account-scoped, so nothing here carries a workspace id.
+// Agora can see. The sign-in client comes from the workspace's Zoho
+// connector, so reads and connects carry the workspace id.
 
 /** Wire status of a connected account. Anything the server sends that is not
  * "connected" is treated as "reconnect" (enum-drift downgrades, not crashes). */
@@ -328,7 +347,7 @@ export type ZohoAccountStatus = "connected" | "reconnect";
 
 /** The caller's own Zoho account (`GET /api/me/zoho`). */
 export interface ZohoAccount {
-  /** False when the server has no Zoho sign-in client configured. */
+  /** False when this workspace has no Zoho connector set up. */
   available: boolean;
   connected: boolean;
   status: ZohoAccountStatus;
@@ -404,8 +423,8 @@ export type ZohoAccountState =
   | "reconnect";
 
 /** Collapse the account payload into one UI state. A connected account is
- * shown even when the server can no longer start new connections, so the
- * person can still see and remove it. */
+ * shown even when this workspace has no connector (it may have been connected
+ * through another workspace), so the person can still see and remove it. */
 export function zohoAccountState(
   account: ZohoAccount | undefined,
 ): ZohoAccountState {

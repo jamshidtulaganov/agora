@@ -3251,10 +3251,15 @@ export class ApiClient {
     });
   }
 
-  // --- Personal Zoho account (account-scoped, not workspace-scoped) ---
+  // --- Personal Zoho account ---
+  // The account is the person's own and works in every workspace, but the
+  // sign-in client comes from a workspace's Zoho connector, so reads and
+  // connects name the workspace.
 
-  async getMyZohoAccount(): Promise<ZohoAccount> {
-    const raw = await this.fetch<unknown>("/api/me/zoho");
+  async getMyZohoAccount(workspaceId: string): Promise<ZohoAccount> {
+    const raw = await this.fetch<unknown>(
+      `/api/me/zoho?workspace_id=${encodeURIComponent(workspaceId)}`,
+    );
     return parseWithFallback(raw, ZohoAccountSchema, EMPTY_ZOHO_ACCOUNT, {
       endpoint: "GET /api/me/zoho",
     });
@@ -3262,10 +3267,10 @@ export class ApiClient {
 
   /** Returns the Zoho sign-in page to open. Throws when the server answers
    * without a usable http(s) url, so the caller never opens "undefined". */
-  async connectZohoAccount(): Promise<ZohoConnectResponse> {
+  async connectZohoAccount(workspaceId: string): Promise<ZohoConnectResponse> {
     const raw = await this.fetch<unknown>("/api/me/zoho/connect", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ workspace_id: workspaceId }),
     });
     const { url } = parseWithFallback(
       raw,

@@ -28,16 +28,20 @@ import { useT } from "../../i18n";
 import { openExternal } from "../../platform";
 
 /**
- * The person's own Zoho account, connected once and used in every workspace.
- * Connecting opens Zoho's sign-in page in the system browser; the card
- * refetches when the window regains focus, so it flips to "connected" as soon
- * as the person comes back.
+ * The person's own Zoho account, shown under the workspace's Zoho connector.
+ * Connected once and used in every workspace; connecting goes through this
+ * workspace's connector. It opens Zoho's sign-in page in the system browser;
+ * the card refetches when the window regains focus, so it flips to
+ * "connected" as soon as the person comes back.
  */
-export function ZohoAccountCard() {
+export function ZohoAccountCard({ wsId }: { wsId: string }) {
   const { t } = useT("settings");
-  const { data, isError, refetch } = useQuery(myZohoAccountOptions());
-  const connectMut = useConnectZohoAccount();
-  const disconnectMut = useDisconnectZohoAccount();
+  const { data, isError, refetch } = useQuery({
+    ...myZohoAccountOptions(wsId),
+    enabled: !!wsId,
+  });
+  const connectMut = useConnectZohoAccount(wsId);
+  const disconnectMut = useDisconnectZohoAccount(wsId);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // TanStack Query only listens for `visibilitychange`, which never fires on
@@ -52,7 +56,7 @@ export function ZohoAccountCard() {
   }, [refetch]);
 
   // A load that failed for good (e.g. a server without this endpoint) reads
-  // as "not set up here" instead of an empty card.
+  // as "not available yet" instead of an empty card.
   const account = data ?? (isError ? EMPTY_ZOHO_ACCOUNT : undefined);
   const state = account ? zohoAccountState(account) : null;
 
@@ -61,10 +65,17 @@ export function ZohoAccountCard() {
     connectMut.mutate(undefined, {
       onSuccess: ({ url }) => openExternal(url),
       onError: (e) => {
+        // 409: the workspace's connector went away since the card loaded.
+        // Say it in the person's language and refresh the card to match.
+        if (e instanceof ApiError && e.status === 409) {
+          toast.error(t(($) => $.zoho.account.not_available));
+          void refetch({ cancelRefetch: false });
+          return;
+        }
         toast.error(
           e instanceof ApiError && e.message
             ? e.message
-            : t(($) => $.account.zoho.error_connect_failed),
+            : t(($) => $.zoho.account.error_connect_failed),
         );
       },
     });
@@ -77,7 +88,7 @@ export function ZohoAccountCard() {
         toast.error(
           e instanceof ApiError && e.message
             ? e.message
-            : t(($) => $.account.zoho.error_disconnect_failed),
+            : t(($) => $.zoho.account.error_disconnect_failed),
         );
       },
     });
@@ -92,49 +103,49 @@ export function ZohoAccountCard() {
   const details: string[] = [];
   if (crmRole && crmProfile) {
     details.push(
-      t(($) => $.account.zoho.crm_role_and_profile, {
+      t(($) => $.zoho.account.crm_role_and_profile, {
         role: crmRole,
         profile: crmProfile,
       }),
     );
   } else if (crmRole || crmProfile) {
     details.push(
-      t(($) => $.account.zoho.crm_single, { value: crmRole || crmProfile }),
+      t(($) => $.zoho.account.crm_single, { value: crmRole || crmProfile }),
     );
   }
   if (departments.length > 0) {
     details.push(
-      t(($) => $.account.zoho.desk, { departments: departments.join(", ") }),
+      t(($) => $.zoho.account.desk, { departments: departments.join(", ") }),
     );
   }
 
-  // Reconnecting needs the server's Zoho sign-in to be set up; removing an
-  // existing connection does not.
+  // Connecting needs this workspace's Zoho connector; removing an existing
+  // connection does not.
   const showConnect =
     (state === "not_connected" || state === "reconnect") &&
     account?.available === true;
   const showDisconnect = state === "connected" || state === "reconnect";
   const connectLabel = connectMut.isPending
-    ? t(($) => $.account.zoho.connecting)
+    ? t(($) => $.zoho.account.connecting)
     : state === "reconnect"
-      ? t(($) => $.account.zoho.reconnect)
-      : t(($) => $.account.zoho.connect);
+      ? t(($) => $.zoho.account.reconnect)
+      : t(($) => $.zoho.account.connect);
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-medium">{t(($) => $.account.zoho.title)}</h3>
+          <h3 className="text-sm font-medium">{t(($) => $.zoho.account.title)}</h3>
 
           {state === "unavailable" && (
             <p className="text-xs text-muted-foreground">
-              {t(($) => $.account.zoho.not_available)}
+              {t(($) => $.zoho.account.not_available)}
             </p>
           )}
 
-          {state === "not_connected" && (
+          {state !== null && state !== "unavailable" && (
             <p className="max-w-2xl text-xs text-muted-foreground">
-              {t(($) => $.account.zoho.description)}
+              {t(($) => $.zoho.account.description)}
             </p>
           )}
 
@@ -142,8 +153,8 @@ export function ZohoAccountCard() {
             <>
               <p className="truncate text-sm">
                 {identity
-                  ? t(($) => $.account.zoho.connected_as, { email: identity })
-                  : t(($) => $.account.zoho.connected)}
+                  ? t(($) => $.zoho.account.connected_as, { email: identity })
+                  : t(($) => $.zoho.account.connected)}
               </p>
               {details.length > 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -159,7 +170,7 @@ export function ZohoAccountCard() {
                 className="mt-px size-3.5 shrink-0 text-warning"
                 aria-hidden="true"
               />
-              <span>{t(($) => $.account.zoho.reconnect_warning)}</span>
+              <span>{t(($) => $.zoho.account.reconnect_warning)}</span>
             </p>
           )}
         </div>
@@ -178,7 +189,7 @@ export function ZohoAccountCard() {
                 onClick={() => setConfirmOpen(true)}
                 disabled={disconnectMut.isPending}
               >
-                {t(($) => $.account.zoho.disconnect)}
+                {t(($) => $.zoho.account.disconnect)}
               </Button>
             )}
           </div>
@@ -188,18 +199,18 @@ export function ZohoAccountCard() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {t(($) => $.account.zoho.disconnect_confirm_title)}
+                {t(($) => $.zoho.account.disconnect_confirm_title)}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {t(($) => $.account.zoho.disconnect_confirm_description)}
+                {t(($) => $.zoho.account.disconnect_confirm_description)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>
-                {t(($) => $.account.zoho.cancel)}
+                {t(($) => $.zoho.account.cancel)}
               </AlertDialogCancel>
               <AlertDialogAction onClick={disconnect}>
-                {t(($) => $.account.zoho.disconnect)}
+                {t(($) => $.zoho.account.disconnect)}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

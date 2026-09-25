@@ -30,14 +30,23 @@ const mockDisconnect = vi.hoisted(() =>
   vi.fn<(vars: undefined, opts?: MutateOpts<void>) => void>(),
 );
 const mockRefetch = vi.hoisted(() => vi.fn());
+const mockConnectWsId = vi.hoisted(() => vi.fn());
+const mockDisconnectWsId = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 
 const queryRef = vi.hoisted(() => ({
   current: { data: undefined as unknown, isError: false },
 }));
 
+const queryOptsRef = vi.hoisted(() => ({
+  current: undefined as { queryKey?: unknown; enabled?: boolean } | undefined,
+}));
+
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ ...queryRef.current, refetch: mockRefetch }),
+  useQuery: (opts: { queryKey?: unknown; enabled?: boolean }) => {
+    queryOptsRef.current = opts;
+    return { ...queryRef.current, refetch: mockRefetch };
+  },
   queryOptions: <T,>(opts: T) => opts,
 }));
 
@@ -48,9 +57,17 @@ vi.mock("@agora/core/zoho", async (importOriginal) => {
   return {
     EMPTY_ZOHO_ACCOUNT: actual.EMPTY_ZOHO_ACCOUNT,
     zohoAccountState: actual.zohoAccountState,
-    myZohoAccountOptions: () => ({ queryKey: ["me", "zoho-account"] }),
-    useConnectZohoAccount: () => ({ mutate: mockConnect, isPending: false }),
-    useDisconnectZohoAccount: () => ({ mutate: mockDisconnect, isPending: false }),
+    myZohoAccountOptions: (wsId: string) => ({
+      queryKey: ["me", "zoho-account", wsId],
+    }),
+    useConnectZohoAccount: (wsId: string) => {
+      mockConnectWsId(wsId);
+      return { mutate: mockConnect, isPending: false };
+    },
+    useDisconnectZohoAccount: (wsId: string) => {
+      mockDisconnectWsId(wsId);
+      return { mutate: mockDisconnect, isPending: false };
+    },
   };
 });
 
@@ -63,7 +80,7 @@ vi.mock("sonner", () => ({
 import { ZohoAccountCard } from "./zoho-account-card";
 import { toast } from "sonner";
 
-const copy = enSettings.account.zoho;
+const copy = enSettings.zoho.account;
 
 const TEST_RESOURCES = {
   en: { common: enCommon, settings: enSettings },
@@ -78,7 +95,7 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 }
 
 function renderCard() {
-  return render(<ZohoAccountCard />, { wrapper: I18nWrapper });
+  return render(<ZohoAccountCard wsId="ws-1" />, { wrapper: I18nWrapper });
 }
 
 const CONNECTED = {
@@ -111,24 +128,34 @@ beforeEach(() => {
 });
 
 describe("ZohoAccountCard", () => {
+  it("reads and connects the account through this workspace", () => {
+    renderCard();
+    expect(queryOptsRef.current?.queryKey).toEqual(["me", "zoho-account", "ws-1"]);
+    expect(queryOptsRef.current?.enabled).toBe(true);
+    expect(mockConnectWsId).toHaveBeenCalledWith("ws-1");
+    expect(mockDisconnectWsId).toHaveBeenCalledWith("ws-1");
+  });
+
   it("shows only the title while the account is loading", () => {
     renderCard();
     expect(screen.getByText(copy.title)).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText(copy.not_available)).toBeNull();
+    expect(screen.queryByText(copy.description)).toBeNull();
   });
 
-  it("says Zoho is not set up when the server has no Zoho sign-in", () => {
+  it("waits for the connector when the workspace has none", () => {
     queryRef.current = {
       data: { ...NOT_CONNECTED, available: false },
       isError: false,
     };
     renderCard();
     expect(screen.getByText(copy.not_available)).toBeTruthy();
+    expect(screen.queryByText(copy.description)).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("treats a failed load as not set up", () => {
+  it("treats a failed load as not available yet", () => {
     queryRef.current = { data: undefined, isError: true };
     renderCard();
     expect(screen.getByText(copy.not_available)).toBeTruthy();
@@ -178,6 +205,7 @@ describe("ZohoAccountCard", () => {
     queryRef.current = { data: CONNECTED, isError: false };
     renderCard();
 
+    expect(screen.getByText(copy.description)).toBeTruthy();
     expect(screen.getByText("Connected as shohruh.a@octanefuel.com")).toBeTruthy();
     expect(
       screen.getByText("CRM: Collections Agent (Standard) · Desk: Collections"),
@@ -254,6 +282,46 @@ describe("ZohoAccountCard", () => {
     expect(mockOpenExternal).toHaveBeenCalledWith(url);
     // The broken connection can still be removed.
     expect(screen.getByRole("button", { name: copy.disconnect })).toBeTruthy();
+  });
+
+  it("still shows an account connected through another workspace", () => {
+    queryRef.current = {
+      data: { ...CONNECTED, available: false },
+      isError: false,
+    };
+    renderCard();
+
+    expect(screen.getByText("Connected as shohruh.a@octanefuel.com")).toBeTruthy();
+    expect(screen.queryByText(copy.not_available)).toBeNull();
+    expect(screen.getByRole("button", { name: copy.disconnect })).toBeTruthy();
+  });
+
+  it("does not offer Reconnect without this workspace's connector", () => {
+    queryRef.current = {
+      data: { ...CONNECTED, available: false, status: "reconnect" },
+      isError: false,
+    };
+    renderCard();
+
+    expect(screen.getByText(copy.reconnect_warning)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: copy.reconnect })).toBeNull();
+    expect(screen.getByRole("button", { name: copy.disconnect })).toBeTruthy();
+  });
+
+  it("says the connector is missing and refreshes on a 409", async () => {
+    queryRef.current = { data: NOT_CONNECTED, isError: false };
+    mockConnect.mockImplementation((_vars, opts) =>
+      opts?.onError?.(
+        new ApiError("zoho connector is not set up for this workspace", 409),
+      ),
+    );
+    renderCard();
+
+    await userEvent.click(screen.getByRole("button", { name: copy.connect }));
+
+    expect(toast.error).toHaveBeenCalledWith(copy.not_available);
+    expect(mockRefetch).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(mockOpenExternal).not.toHaveBeenCalled();
   });
 
   it("refetches when the window regains focus", () => {
