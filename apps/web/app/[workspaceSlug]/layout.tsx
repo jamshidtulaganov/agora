@@ -10,6 +10,7 @@ import { useAuthStore } from "@agora/core/auth";
 import { NoAccessPage } from "@agora/views/workspace/no-access-page";
 import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
 import { ProductTour } from "@agora/views/workspace/product-tour";
+import { DepartmentSetupPrompt } from "@agora/views/department-setup";
 import { AgoraLoader } from "@agora/ui/components/common/agora-loader";
 import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
 
@@ -106,6 +107,9 @@ export default function WorkspaceLayout({
        *  with two seeded issues. No signal → null. */}
       <WelcomeAfterOnboarding />
       <ProductTour />
+      {/* Offers owners/admins the department setup until someone decides;
+       *  stays out of the way while the welcome or the tour is showing. */}
+      <DepartmentSetupPrompt />
     </WorkspaceSlugProvider>
   );
 }

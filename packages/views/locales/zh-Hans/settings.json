@@ -23,6 +23,7 @@
     "sidebar": {
       "title": "侧边栏",
       "hint": "关闭你不用的条目。此设置仅对你生效，在所有工作区和所有设备上一致。",
+      "team_hint": "这是 admin 为团队选择的侧边栏。修改任意一项后，它就会变成你自己的侧边栏。",
       "always_visible": "始终显示",
       "show_all": "全部显示",
       "sync_failed": "保存侧边栏设置失败。",
@@ -229,7 +230,10 @@
     "deleting": "删除中...",
     "toast_delete_failed": "删除工作区失败",
     "confirm_cancel": "取消",
-    "confirm_action": "确认"
+    "confirm_action": "确认",
+    "setup_title": "部门设置",
+    "setup_description": "知识库、团队能看到的内容和现成的智能体。",
+    "setup_open": "打开部门设置"
   },
   "delete_workspace_dialog": {
     "title": "删除工作区",

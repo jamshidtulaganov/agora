@@ -76,6 +76,12 @@ vi.mock("@agora/views/workspace/welcome-after-onboarding", () => ({
   },
 }));
 
+// Same contract for the department-setup prompt: mounted next to the tour,
+// suppressed while a WindowOverlay is up.
+vi.mock("@agora/views/department-setup", () => ({
+  DepartmentSetupPrompt: () => <div data-testid="department-setup-prompt-marker" />,
+}));
+
 vi.mock("@agora/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
@@ -139,5 +145,15 @@ describe("WorkspaceRouteLayout", () => {
     const { queryByTestId } = renderLayout();
     expect(queryByTestId(state.modalAriaLabel)).toBeNull();
     expect(state.modalRenders).toBe(0);
+  });
+
+  it("mounts the department-setup prompt only when no WindowOverlay is active", () => {
+    const { queryByTestId, unmount } = renderLayout();
+    expect(queryByTestId("department-setup-prompt-marker")).not.toBeNull();
+    unmount();
+
+    state.overlay = { type: "new-workspace" };
+    const suppressed = renderLayout();
+    expect(suppressed.queryByTestId("department-setup-prompt-marker")).toBeNull();
   });
 });

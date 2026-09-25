@@ -1,0 +1,99 @@
+{
+  "page": {
+    "title": "Department setup",
+    "steps_label": "Setup steps",
+    "step_of": "Step {{current}} of {{total}}"
+  },
+  "steps": {
+    "knowledge": "Knowledge",
+    "sidebar": "Sidebar",
+    "agents": "Agents"
+  },
+  "actions": {
+    "continue": "Continue",
+    "back": "Back",
+    "finish": "Finish",
+    "finishing": "Setting up…",
+    "use_default": "Use the default setup",
+    "default_failed": "Couldn't save your choice. Try again."
+  },
+  "knowledge": {
+    "title": "Add what your team knows",
+    "description": "The Assistant and agents follow your instructions and documents. You can add more later on the Knowledge page.",
+    "files_title": "Documents",
+    "add_files": "Add files",
+    "files_empty": "No documents yet. Add SOPs, policies or price lists as PDF, Word, Excel or Markdown."
+  },
+  "sidebar": {
+    "title": "Choose what your team sees",
+    "description": "This is the sidebar members get.",
+    "presets_label": "Sidebar for members",
+    "simple": {
+      "label": "Simple",
+      "description": "Inbox, My Issues, Assistant, Issues, Projects and Knowledge."
+    },
+    "everything": {
+      "label": "Everything",
+      "description": "Every page, including agents and setup."
+    },
+    "note": "Owners and admins always see everything. Anyone can still change their own sidebar in Settings.",
+    "save_failed": "Couldn't save the team sidebar"
+  },
+  "agents": {
+    "title": "Add ready-made agents",
+    "description": "Pick any that fit. They read your team's knowledge before they work.",
+    "added": "Already added",
+    "weekly_schedule": "Runs every Monday at 9:00",
+    "no_runtime": "Agents need a runtime to work, and there isn't one you can use yet.",
+    "no_runtime_link": "Set up a runtime",
+    "no_runtime_later": "You can finish now and add agents later.",
+    "none": "No ready-made agents are available right now.",
+    "load_failed": "Couldn't load the agents."
+  },
+  "autopilot": {
+    "title": "Weekly digest",
+    "description": "Write this week's digest for the team: what closed, what's stuck, what's overdue and what's due next week.",
+    "issue_title": "Weekly digest",
+    "schedule_label": "Every Monday at 9:00"
+  },
+  "done": {
+    "title": "You're all set",
+    "description": "Here's what your team gets.",
+    "instructions_set": "Instructions for AI are in place",
+    "instructions_missing": "No instructions for AI yet",
+    "files_count_one": "{{count}} document added",
+    "files_count_few": "{{count}} documents added",
+    "files_count_many": "{{count}} documents added",
+    "files_count_other": "{{count}} documents added",
+    "files_none": "No documents yet",
+    "sidebar_simple": "Members see the simple sidebar",
+    "sidebar_everything": "Members see every page",
+    "sidebar_custom": "Members see the sidebar you picked",
+    "agent_added": "{{name}} added",
+    "agent_scheduled": "{{name}} added. It runs every Monday at 9:00.",
+    "agent_schedule_failed": "{{name}} added, but its Monday schedule couldn't be set: {{reason}}",
+    "agent_failed": "Couldn't add {{name}}: {{reason}}",
+    "no_agents": "No agents added. You can add them any time on the Agents page.",
+    "unknown_error": "something went wrong",
+    "open_issues": "Open Issues",
+    "open_knowledge": "Open Knowledge",
+    "save_failed": "Couldn't mark the setup as finished"
+  },
+  "summary": {
+    "title": "Your team gets",
+    "preview_label": "What members see",
+    "no_agents": "None picked yet"
+  },
+  "members": {
+    "title": "Only owners and admins can set this up",
+    "description": "Ask an admin of this workspace if something should change.",
+    "open_issues": "Open Issues"
+  },
+  "prompt": {
+    "title": "Set up Agora for your team",
+    "description": "Add your team's documents, choose what people see and add a few ready-made agents.",
+    "start": "Set up",
+    "use_default": "Use the default setup",
+    "dismiss": "Not now"
+  }
+}

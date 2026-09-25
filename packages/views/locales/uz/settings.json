@@ -23,6 +23,7 @@
     "sidebar": {
       "title": "Yon menyu",
       "hint": "Ishlatmaydigan bo'limlarni o'chirib qo'ying. Bu sozlama faqat sizga — barcha ish maydonlarida va barcha qurilmalarda amal qiladi.",
+      "team_hint": "Bularni jamoa uchun admin tanlagan. Istalgan bandni o‘zgartirsangiz, menyu sizniki bo‘ladi.",
       "always_visible": "Doim ko'rinadi",
       "show_all": "Hammasini ko'rsatish",
       "sync_failed": "Yon menyu sozlamasini saqlab bo'lmadi.",
@@ -229,7 +230,10 @@
     "deleting": "O‘chirilmoqda...",
     "toast_delete_failed": "Ish maydonini o‘chirishda xatolik",
     "confirm_cancel": "Bekor qilish",
-    "confirm_action": "Tasdiqlash"
+    "confirm_action": "Tasdiqlash",
+    "setup_title": "Bo‘limni sozlash",
+    "setup_description": "Bilimlar bazasi, jamoa nimani ko‘rishi va tayyor agentlar.",
+    "setup_open": "Sozlashni ochish"
   },
   "delete_workspace_dialog": {
     "title": "Ish maydonini o‘chirish",

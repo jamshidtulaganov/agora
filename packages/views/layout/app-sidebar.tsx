@@ -73,7 +73,7 @@ import { useDeletePin, useReorderPins } from "@agora/core/pins/mutations";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import type { PinnedItem } from "@agora/core/types";
-import { useHiddenNav, useSetHiddenNav, toggleHiddenNavKey } from "@agora/core/sidebar";
+import { useEffectiveHiddenNav, useSetHiddenNav, toggleHiddenNavKey } from "@agora/core/sidebar";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -402,8 +402,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
   // Per-user sidebar customization. Lives on the user record (not local
   // storage) so hiding an item here also hides it on desktop and on the
-  // user's other machines.
-  const hiddenNav = useHiddenNav();
+  // user's other machines. For a member who never customized, this is the
+  // workspace's team sidebar; hiding from it writes their own list starting
+  // from the team's, so they keep the team's choices.
+  const { hidden: hiddenNav } = useEffectiveHiddenNav(workspace);
   const setHiddenNav = useSetHiddenNav();
   const nav = React.useMemo(
     () => ({

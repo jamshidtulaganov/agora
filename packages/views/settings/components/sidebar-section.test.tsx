@@ -9,15 +9,27 @@ import enSettings from "../../locales/en/settings.json";
 
 const mockMutate = vi.hoisted(() => vi.fn());
 const hiddenNav = vi.hoisted(() => ({ current: [] as string[] }));
+// True when the effective list is the workspace's team sidebar (a member
+// who never customized); the hook itself is covered in @agora/core.
+const fromTeam = vi.hoisted(() => ({ current: false }));
+const workspaceArg = vi.hoisted(() => ({ current: undefined as unknown }));
+const WORKSPACE = vi.hoisted(() => ({ id: "ws-1", slug: "acme", settings: {} }));
 
 vi.mock("@agora/core/sidebar", () => ({
-  useHiddenNav: () => hiddenNav.current,
+  useEffectiveHiddenNav: (workspace: unknown) => {
+    workspaceArg.current = workspace;
+    return { hidden: hiddenNav.current, fromTeam: fromTeam.current };
+  },
   useSetHiddenNav: () => ({ mutate: mockMutate }),
   toggleHiddenNavKey: (current: string[], key: string, hidden: boolean) => {
     const isHidden = current.includes(key);
     if (isHidden === hidden) return current;
     return hidden ? [...current, key] : current.filter((k) => k !== key);
   },
+}));
+
+vi.mock("@agora/core/paths", () => ({
+  useCurrentWorkspace: () => WORKSPACE,
 }));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
@@ -41,6 +53,43 @@ describe("SidebarSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hiddenNav.current = [];
+    fromTeam.current = false;
+    workspaceArg.current = undefined;
+  });
+
+  it("reads the effective list for the current workspace", () => {
+    renderSection();
+    expect(workspaceArg.current).toBe(WORKSPACE);
+    expect(screen.getByText(/This applies to you only/)).toBeInTheDocument();
+  });
+
+  // A member who never customized sees the team's sidebar. The switches show
+  // exactly that, and an edit starts from it so the team's choices survive.
+  describe("with the team sidebar in effect", () => {
+    beforeEach(() => {
+      hiddenNav.current = ["agents", "squads"];
+      fromTeam.current = true;
+    });
+
+    it("says the admin picked these", () => {
+      renderSection();
+      expect(screen.getByText(/Your admin picked these for the team/)).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: "Agents" })).not.toBeChecked();
+    });
+
+    it("hides one more item on top of the team's choices", async () => {
+      const user = userEvent.setup();
+      renderSection();
+      await user.click(screen.getByRole("switch", { name: "Usage" }));
+      expect(mockMutate).toHaveBeenCalledWith(["agents", "squads", "usage"], expect.anything());
+    });
+
+    it("restores a team-hidden item into the person's own list", async () => {
+      const user = userEvent.setup();
+      renderSection();
+      await user.click(screen.getByRole("switch", { name: "Agents" }));
+      expect(mockMutate).toHaveBeenCalledWith(["squads"], expect.anything());
+    });
   });
 
   it("lists every nav item with its real label", () => {

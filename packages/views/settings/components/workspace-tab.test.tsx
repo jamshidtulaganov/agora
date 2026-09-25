@@ -37,7 +37,12 @@ vi.mock("@agora/core/hooks", () => ({
 }));
 
 vi.mock("@agora/core/paths", () => ({
-  paths: { workspace: (slug: string) => ({ knowledge: () => `/${slug}/knowledge` }) },
+  paths: {
+    workspace: (slug: string) => ({
+      knowledge: () => `/${slug}/knowledge`,
+      setup: () => `/${slug}/setup`,
+    }),
+  },
   useCurrentWorkspace: () => workspaceRef.current,
   useHasOnboarded: () => true,
   resolvePostAuthDestination: () => "/",
@@ -262,5 +267,28 @@ describe("WorkspaceTab — issue prefix editing", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     render(<WorkspaceTab />, { wrapper: I18nWrapper });
     expect(screen.getByPlaceholderText("TES")).toBeDisabled();
+  });
+});
+
+describe("WorkspaceTab — department setup re-entry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    membersRef.current = [{ user_id: "user-1", role: "owner" }];
+  });
+
+  it.each(["owner", "admin"] as const)("links a %s back to the setup", (role) => {
+    membersRef.current = [{ user_id: "user-1", role }];
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+    expect(screen.getByText("Department setup")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open setup" })).toHaveAttribute(
+      "href",
+      "/test-workspace/setup",
+    );
+  });
+
+  it("shows members no setup row", () => {
+    membersRef.current = [{ user_id: "user-1", role: "member" }];
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+    expect(screen.queryByRole("link", { name: "Open setup" })).toBeNull();
   });
 });
