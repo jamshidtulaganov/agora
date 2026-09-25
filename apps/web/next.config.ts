@@ -106,6 +106,15 @@ const nextConfig: NextConfig = {
           source: "/bitrix/:path*",
           destination: `${remoteApiUrl}/bitrix/:path*`,
         },
+        {
+          // Agora-hosted MCP servers (/mcp/zoho). Agents are handed
+          // <AGORA_PUBLIC_URL>/mcp/…, which is this web origin on deployments
+          // that front the API through Next — without this the request
+          // falls through to the [workspaceSlug] page. "mcp" is a reserved
+          // slug for the same reason.
+          source: "/mcp/:path*",
+          destination: `${remoteApiUrl}/mcp/:path*`,
+        },
       ],
       fallback: [],
     };
