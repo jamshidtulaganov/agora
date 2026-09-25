@@ -113,26 +113,27 @@ export function useDeleteZohoSyncConfig(wsId: string) {
 
 // --- Personal Zoho account ----------------------------------------------------
 
-/** Ask the server for the Zoho sign-in page. The caller opens the returned
- * url in the system browser; the account query refetches when the person
- * comes back, so nothing is invalidated here (connecting has not happened
- * yet when this settles). */
-export function useConnectZohoAccount() {
+/** Ask the server for the Zoho sign-in page, using this workspace's Zoho
+ * connector. The caller opens the returned url in the system browser; the
+ * account query refetches when the person comes back, so nothing is
+ * invalidated here (connecting has not happened yet when this settles). */
+export function useConnectZohoAccount(wsId: string) {
   return useMutation({
-    mutationFn: () => api.connectZohoAccount(),
+    mutationFn: () => api.connectZohoAccount(wsId),
   });
 }
 
 /** Disconnect the caller's Zoho account (the server also revokes it at Zoho).
  * Optimistic: the card flips to "not connected" at once and rolls back if
- * the request fails. */
-export function useDisconnectZohoAccount() {
+ * the request fails. The account is shared by every workspace, so settle
+ * invalidates the whole account prefix, not only this workspace's key. */
+export function useDisconnectZohoAccount(wsId: string) {
   const qc = useQueryClient();
-  const key = zohoAccountKeys.mine();
+  const key = zohoAccountKeys.mine(wsId);
   return useMutation({
     mutationFn: () => api.disconnectZohoAccount(),
     onMutate: async () => {
-      await qc.cancelQueries({ queryKey: key });
+      await qc.cancelQueries({ queryKey: zohoAccountKeys.all });
       const previous = qc.getQueryData<ZohoAccount>(key);
       qc.setQueryData<ZohoAccount>(key, {
         ...EMPTY_ZOHO_ACCOUNT,
@@ -144,7 +145,7 @@ export function useDisconnectZohoAccount() {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: key });
+      qc.invalidateQueries({ queryKey: zohoAccountKeys.all });
     },
   });
 }

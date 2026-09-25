@@ -16,7 +16,7 @@ const membersRef = vi.hoisted(() => ({
   current: [{ user_id: "user-1", role: "owner" as MemberRole }],
 }));
 const connectionRef = vi.hoisted(() => ({
-  current: { configured: true } as Record<string, unknown> | undefined,
+  current: { configured: true, has_sync_grant: true } as Record<string, unknown> | undefined,
 }));
 const modulesRef = vi.hoisted(() => ({
   current: [] as Record<string, unknown>[],
@@ -152,7 +152,7 @@ const ticketsConfig = {
 beforeEach(() => {
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
-  connectionRef.current = { configured: true };
+  connectionRef.current = { configured: true, has_sync_grant: true };
   modulesRef.current = [tasksModule, customModule];
   configsRef.current = [ticketsConfig];
 });
@@ -171,6 +171,15 @@ describe("ZohoModuleSyncPanel — gating", () => {
     expect(
       screen.getByText(enSettings.zoho.modules.requires_connection),
     ).toBeTruthy();
+  });
+
+  it("asks for the sync grant when the connector has none", () => {
+    connectionRef.current = { configured: true, has_sync_grant: false };
+    renderPanel();
+    expect(
+      screen.getByText(enSettings.zoho.modules.requires_connection),
+    ).toBeTruthy();
+    expect(screen.queryByText("Tasks")).toBeNull();
   });
 });
 
