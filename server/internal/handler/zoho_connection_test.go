@@ -221,3 +221,66 @@ func seedZohoConnection(t *testing.T, wsID string) {
 		t.Fatalf("seed connection: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// The connector works without an org-level grant: people connect their own
+// Zoho through its client; only CRM sync needs the refresh token.
+func TestZohoConnection_ConnectorWithoutSyncGrant(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	configureZohoConnEnv(t, "http://127.0.0.1:1") // nothing is probed
+	orig := testHandler.cfg.PublicURL
+	testHandler.cfg.PublicURL = "https://agora.example.test"
+	t.Cleanup(func() { testHandler.cfg.PublicURL = orig })
+	wsID := createMcpTestWorkspace(t, context.Background(), "handler-tests-zoho-connector-nosync", "owner")
+
+	// Before setup, the redirect URI to register is already shown.
+	w := httptest.NewRecorder()
+	req := withURLParam(newRequest("GET", "/api/workspaces/"+wsID+"/zoho-connection", nil), "id", wsID)
+	testHandler.GetZohoConnectionStatus(w, req)
+	var before zohoConnectionStatusResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &before)
+	if before.Configured || before.RedirectURI != "https://agora.example.test/api/integrations/zoho/callback" {
+		t.Fatalf("status before setup: %+v", before)
+	}
+
+	pw := putZohoConn(t, wsID, map[string]any{"dc": "us", "client_id": "1000.server", "client_secret": "s3cret"})
+	if pw.Code != http.StatusOK {
+		t.Fatalf("put without refresh token: %d %s", pw.Code, pw.Body.String())
+	}
+	var after zohoConnectionStatusResponse
+	_ = json.Unmarshal(pw.Body.Bytes(), &after)
+	if !after.Configured || after.HasSyncGrant || after.RedirectURI == "" || after.ClientID != "1000.server" {
+		t.Fatalf("status after setup: %+v", after)
+	}
+	if _, ok := testHandler.zohoCRMClientForWorkspace(context.Background(), parseUUID(wsID)); ok {
+		t.Fatal("a connector without a sync grant must not yield an org-level client")
+	}
+	mw := httptest.NewRecorder()
+	testHandler.ListZohoCRMModules(mw, withURLParam(newRequest("GET", "/api/workspaces/"+wsID+"/zoho/crm/modules", nil), "id", wsID))
+	if mw.Code != http.StatusBadRequest || !strings.Contains(mw.Body.String(), "CRM sync isn't set up") {
+		t.Fatalf("modules without sync grant: %d %s", mw.Code, mw.Body.String())
+	}
+	if w := putZohoConn(t, wsID, map[string]any{"dc": "us", "client_id": "1000.server"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("missing secret should be rejected, got %d", w.Code)
+	}
+
+	// An edit that leaves fields empty keeps them: the stored ids survive a
+	// secret rotation.
+	if _, err := testPool.Exec(context.Background(),
+		`UPDATE zoho_connection SET projects_portal_id = '886824090', refresh_token_encrypted = '\x01'::bytea WHERE workspace_id = $1`, wsID); err != nil {
+		t.Fatalf("seed ids: %v", err)
+	}
+	if w := putZohoConn(t, wsID, map[string]any{"dc": "us", "client_id": "1000.server", "client_secret": "rotated"}); w.Code != http.StatusOK {
+		t.Fatalf("rotate secret: %d %s", w.Code, w.Body.String())
+	}
+	var portal string
+	var grant []byte
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT projects_portal_id, refresh_token_encrypted FROM zoho_connection WHERE workspace_id = $1`, wsID).Scan(&portal, &grant); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if portal != "886824090" || len(grant) != 1 {
+		t.Fatalf("edit cleared stored fields: portal=%q grant=%d bytes", portal, len(grant))
+	}
+}

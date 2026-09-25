@@ -248,20 +248,19 @@ API 返回的 `download_url` 在未配置 CloudFront 签名时会指向 `GET /ap
 
 ## Zoho（按人连接，只读）
 
-每个人各自连接**自己的** Zoho 账号，只需一次（设置 → 个人资料 → 已连接的账号）。助手或 agent 替这个人读取 Zoho 时，一律用这个人的授权，所以能看到什么由 Zoho 自己的角色、配置文件和共享规则决定——谁都不会看到比在 Zoho 里更多的数据。授权只包含读取权限，Agora 从不在 Zoho 里新建或修改任何东西。
+Zoho 在产品里配置，不用环境变量：
+
+1. 工作区 owner 或 admin 打开**设置 → 集成 → Zoho**，配置 **Zoho 连接器**：在 api-console.zoho.com 创建一个 *Server-based application*，注册卡片上显示的重定向 URI（`<AGORA_PUBLIC_URL>/api/integrations/zoho/callback`），再填入 Client ID、Client secret 和数据中心。Refresh token 可选——只有要把 Zoho CRM 记录同步成 issue 时才需要。
+2. 之后每个人在下方的**你的 Zoho 账号**卡片里点**连接 Zoho**，用自己的身份登录 Zoho。助手或 agent 替这个人读取 Zoho 时，一律用这个人的授权，所以能看到什么由 Zoho 自己的角色、配置文件和共享规则决定。授权只包含读取权限，Agora 从不在 Zoho 里新建或修改任何东西。
+
+服务器本身只需要：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `AGORA_ZOHO_CLIENT_ID` | 空 | 在 api-console.zoho.com 注册的 **Server-based** 客户端的 Client ID。重定向 URI 填 `<AGORA_PUBLIC_URL>/api/integrations/zoho/callback`；如果成员分布在多个 Zoho 数据中心，要打开 multi-DC |
-| `AGORA_ZOHO_CLIENT_SECRET` | 空 | 该客户端的 secret |
-| `AGORA_ZOHO_SECRET_KEY` | 空 | 32 字节 base64 密钥，用于加密存储每个人的授权（与工作区 Zoho 连接共用）。不配置时不显示“连接 Zoho” |
-| `AGORA_ZOHO_SCOPES` | 只读的 CRM + Desk 列表 | 可选，覆盖申请的权限范围。默认是 `ZohoCRM.modules.READ`、`ZohoCRM.coql.READ`、`ZohoCRM.settings.READ`、`ZohoCRM.users.READ`、`Desk.tickets.READ`、`Desk.basic.READ`、`Desk.contacts.READ`、`Desk.search.READ`、`Desk.settings.READ` |
+| `AGORA_ZOHO_SECRET_KEY` | 空 | 32 字节 base64 密钥，用于加密存储连接器的 secret 和每个人的授权。不配置时无法保存连接器 |
+| `AGORA_PUBLIC_URL` | 空 | 重定向 URI 由它拼出，从不取自请求头。不配置时谁都无法连接 |
 
-还必须配置 `AGORA_PUBLIC_URL`：重定向 URI 由它拼出，从不取自请求头。
-
-**缺少必需变量时：** `GET /api/me/zoho` 返回 `available: false`（界面显示“此服务器尚未配置 Zoho”），`POST /api/me/zoho/connect` 返回 **503**。
-
-**本地开发：** `go run ./cmd/fakezoho` 会启动一个内存版 Zoho，内置两个人，各自能看到的交易和工单不同。后端配置 `AGORA_ZOHO_CLIENT_ID=1000.FAKEZOHOCLIENT`、`AGORA_ZOHO_CLIENT_SECRET=fake-zoho-secret`，并把 `ZOHO_DYN_ACCOUNTS_BASE` / `ZOHO_DYN_API_BASE` / `ZOHO_DYN_DESK_BASE` 指向它的地址即可。
+**本地开发：** `go run ./cmd/fakezoho` 会启动一个内存版 Zoho，内置两个人，各自能看到的交易和工单不同。把 `ZOHO_DYN_ACCOUNTS_BASE` / `ZOHO_DYN_API_BASE` / `ZOHO_DYN_DESK_BASE` 指向它，再用 Client ID `1000.FAKEZOHOCLIENT`、Client secret `fake-zoho-secret` 配置连接器即可。
 
 ## 用量统计
 

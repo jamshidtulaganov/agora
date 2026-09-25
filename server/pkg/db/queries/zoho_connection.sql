@@ -26,6 +26,11 @@ RETURNING *;
 -- Full row including sealed secrets — for server-side decryption only.
 SELECT * FROM zoho_connection WHERE workspace_id = $1;
 
+-- name: GetZohoConnectionByID :one
+-- The connector a person's Zoho grant was minted under (zoho_account.
+-- connection_id) — a refresh token only works with the client that issued it.
+SELECT * FROM zoho_connection WHERE id = $1;
+
 -- name: DeleteZohoConnection :execrows
 DELETE FROM zoho_connection WHERE workspace_id = $1;
 

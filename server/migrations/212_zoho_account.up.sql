@@ -5,9 +5,16 @@
 -- carries read scopes. Supersedes the per-workspace zoho_user_binding
 -- (pasted self-client codes); that table is left in place, unused, and
 -- dropped in a later migration.
+--
+-- The OAuth client is the workspace's Zoho connector (zoho_connection, set up
+-- by an owner/admin in Settings → Integrations → Zoho). A refresh token only
+-- works with the client that issued it, so the account remembers which
+-- connector minted it; if that connector is removed the account needs a
+-- reconnect.
 CREATE TABLE zoho_account (
     id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                 uuid NOT NULL UNIQUE REFERENCES "user"(id) ON DELETE CASCADE,
+    connection_id           uuid REFERENCES zoho_connection(id) ON DELETE SET NULL,
     dc                      text NOT NULL,
     refresh_token_encrypted bytea NOT NULL,
     scopes                  text NOT NULL DEFAULT '',
@@ -29,9 +36,10 @@ CREATE TABLE zoho_account (
 -- One pending "Connect Zoho" attempt: the random state sent to Zoho and back,
 -- single use, honoured for 15 minutes.
 CREATE TABLE zoho_oauth_state (
-    state      text PRIMARY KEY,
-    user_id    uuid NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-    created_at timestamptz NOT NULL DEFAULT now()
+    state         text PRIMARY KEY,
+    user_id       uuid NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    connection_id uuid NOT NULL REFERENCES zoho_connection(id) ON DELETE CASCADE,
+    created_at    timestamptz NOT NULL DEFAULT now()
 );
 
 -- One row per Zoho read, for audit: who, from where, what, how many — never

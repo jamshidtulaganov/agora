@@ -28,10 +28,13 @@ func (h *Handler) assistantIntegrations(ctx context.Context, userID string) ([]l
 	if clients, ok := h.zohoClientsForUser(ctx, uid); ok {
 		return assistant.ZohoToolSpecs(), zohoAssistantNote(clients.Me)
 	}
-	if _, available := h.zohoOAuth(); available {
-		return nil, "ZOHO: this person hasn't connected Zoho. If they ask about Zoho tickets, deals or other " +
-			"Zoho data, tell them to connect their own Zoho account in Settings → Profile → Connected accounts; " +
-			"you then read Zoho as them, with their own Zoho permissions, and never change anything in Zoho."
+	if h.zohoRedirectURI() != "" {
+		if _, err := zohoConnectionBox(); err == nil {
+			return nil, "ZOHO: this person hasn't connected Zoho. If they ask about Zoho tickets, deals or other " +
+				"Zoho data, tell them to connect their own Zoho account in Settings → Integrations → Zoho (a " +
+				"workspace owner or admin sets up the Zoho connector there first); you then read Zoho as them, " +
+				"with their own Zoho permissions, and never change anything in Zoho."
+		}
 	}
 	return nil, ""
 }
@@ -70,7 +73,7 @@ func zohoAssistantNote(me zohoread.Identity) string {
 func (h *Handler) assistantZohoTool(ctx context.Context, caller assistantCaller, name string, raw json.RawMessage) (json.RawMessage, error) {
 	clients, ok := h.zohoClientsForUser(ctx, caller.UUID)
 	if !ok {
-		return nil, errors.New("this person hasn't connected Zoho (or it needs reconnecting): they can do it in Settings → Profile → Connected accounts")
+		return nil, errors.New("this person hasn't connected Zoho (or it needs reconnecting): they can do it in Settings → Integrations → Zoho")
 	}
 	var args map[string]any
 	if len(raw) > 0 {

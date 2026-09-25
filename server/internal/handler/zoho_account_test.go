@@ -14,8 +14,13 @@ import (
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohofake"
 )
 
-// startFakeZoho serves the in-memory Zoho and points every Zoho host, the
-// OAuth client and the sealing key at it for this test.
+// zohoConnectorWS is the workspace whose Zoho connector the current test's
+// people connect through (set by startFakeZoho).
+var zohoConnectorWS string
+
+// startFakeZoho serves the in-memory Zoho, points every Zoho host and the
+// sealing key at it, and sets up a workspace Zoho connector (the fake's
+// client, no org-level sync grant) the way an admin would in Settings.
 func startFakeZoho(t *testing.T) *zohofake.Server {
 	t.Helper()
 	fake := zohofake.New("")
@@ -25,15 +30,19 @@ func startFakeZoho(t *testing.T) *zohofake.Server {
 
 	configureZohoConnEnv(t, srv.URL)
 	t.Setenv("ZOHO_DYN_DESK_BASE", srv.URL)
-	t.Setenv("AGORA_ZOHO_CLIENT_ID", zohofake.ClientID)
-	t.Setenv("AGORA_ZOHO_CLIENT_SECRET", zohofake.ClientSecret)
-	t.Setenv("AGORA_ZOHO_SCOPES", "")
 
 	orig := testHandler.cfg.PublicURL
 	testHandler.cfg.PublicURL = "https://api.example.test"
 	t.Cleanup(func() { testHandler.cfg.PublicURL = orig })
 
 	zohoClientCache.Range(func(k, _ any) bool { zohoClientCache.Delete(k); return true })
+
+	zohoConnectorWS = createMcpTestWorkspace(t, context.Background(), "handler-tests-zoho-connector", "owner")
+	if w := putZohoConn(t, zohoConnectorWS, map[string]any{
+		"dc": "us", "client_id": zohofake.ClientID, "client_secret": zohofake.ClientSecret,
+	}); w.Code != http.StatusOK {
+		t.Fatalf("set up connector: %d %s", w.Code, w.Body.String())
+	}
 	return fake
 }
 
@@ -51,17 +60,29 @@ func newZohoTestUser(t *testing.T, label string) string {
 	return id
 }
 
-func zohoMeRequest(method, path, userID string) *http.Request {
-	req := newRequest(method, path, map[string]any{})
+func zohoMeRequest(method, path, userID string, body any) *http.Request {
+	req := newRequest(method, path, body)
 	req.Header.Set("X-User-ID", userID)
 	return req
 }
 
-// startZohoConnect runs POST /api/me/zoho/connect and returns the consent URL.
+// joinZohoConnectorWS makes userID a member of the connector workspace.
+func joinZohoConnectorWS(t *testing.T, userID string) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(),
+		`INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
+		zohoConnectorWS, userID); err != nil {
+		t.Fatalf("join connector workspace: %v", err)
+	}
+}
+
+// startZohoConnect runs POST /api/me/zoho/connect for the connector
+// workspace and returns the consent URL.
 func startZohoConnect(t *testing.T, userID string) *url.URL {
 	t.Helper()
+	joinZohoConnectorWS(t, userID)
 	w := httptest.NewRecorder()
-	testHandler.ConnectMyZohoAccount(w, zohoMeRequest("POST", "/api/me/zoho/connect", userID))
+	testHandler.ConnectMyZohoAccount(w, zohoMeRequest("POST", "/api/me/zoho/connect", userID, map[string]any{"workspace_id": zohoConnectorWS}))
 	if w.Code != http.StatusOK {
 		t.Fatalf("connect: %d %s", w.Code, w.Body.String())
 	}
@@ -107,7 +128,7 @@ func connectZohoAs(t *testing.T, fake *zohofake.Server, userID, zohoKey string) 
 func getMyZoho(t *testing.T, userID string) zohoAccountResponse {
 	t.Helper()
 	w := httptest.NewRecorder()
-	testHandler.GetMyZohoAccount(w, zohoMeRequest("GET", "/api/me/zoho", userID))
+	testHandler.GetMyZohoAccount(w, zohoMeRequest("GET", "/api/me/zoho?workspace_id="+zohoConnectorWS, userID, nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("get: %d %s", w.Code, w.Body.String())
 	}
@@ -122,6 +143,7 @@ func TestZohoAccount_ConnectShowsZohoRoleAndProfile(t *testing.T) {
 	}
 	fake := startFakeZoho(t)
 	userID := newZohoTestUser(t, "connect")
+	joinZohoConnectorWS(t, userID)
 
 	if got := getMyZoho(t, userID); !got.Available || got.Connected {
 		t.Fatalf("before connect: %+v", got)
@@ -188,20 +210,60 @@ func TestZohoAccount_StateIsSingleUse(t *testing.T) {
 	}
 }
 
-func TestZohoAccount_UnsetClientMeansUnavailable(t *testing.T) {
+func TestZohoAccount_NoConnectorMeansUnavailable(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	startFakeZoho(t)
-	t.Setenv("AGORA_ZOHO_CLIENT_ID", "")
 	userID := newZohoTestUser(t, "unavailable")
+	joinZohoConnectorWS(t, userID)
+	if _, err := testPool.Exec(context.Background(), `DELETE FROM zoho_connection WHERE workspace_id = $1`, zohoConnectorWS); err != nil {
+		t.Fatalf("remove connector: %v", err)
+	}
 	if got := getMyZoho(t, userID); got.Available {
 		t.Fatalf("expected unavailable, got %+v", got)
 	}
 	w := httptest.NewRecorder()
-	testHandler.ConnectMyZohoAccount(w, zohoMeRequest("POST", "/api/me/zoho/connect", userID))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("connect without client: %d", w.Code)
+	testHandler.ConnectMyZohoAccount(w, zohoMeRequest("POST", "/api/me/zoho/connect", userID, map[string]any{"workspace_id": zohoConnectorWS}))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "connector isn't set up") {
+		t.Fatalf("connect without connector: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestZohoAccount_ConnectNeedsMembership(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	startFakeZoho(t)
+	outsider := newZohoTestUser(t, "outsider")
+	w := httptest.NewRecorder()
+	testHandler.ConnectMyZohoAccount(w, zohoMeRequest("POST", "/api/me/zoho/connect", outsider, map[string]any{"workspace_id": zohoConnectorWS}))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("outsider connect: %d %s", w.Code, w.Body.String())
+	}
+	if got := getMyZoho(t, outsider); got.Available {
+		t.Fatalf("outsider sees the connector as available: %+v", got)
+	}
+}
+
+// Removing the connector strands the grants minted under it: they show as
+// "reconnect" and are never used.
+func TestZohoAccount_RemovedConnectorNeedsReconnect(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	fake := startFakeZoho(t)
+	userID := newZohoTestUser(t, "stranded")
+	connectZohoAs(t, fake, userID, "shohruh")
+	if _, err := testPool.Exec(context.Background(), `DELETE FROM zoho_connection WHERE workspace_id = $1`, zohoConnectorWS); err != nil {
+		t.Fatalf("remove connector: %v", err)
+	}
+	zohoClientCache.Delete(userID)
+	if got := getMyZoho(t, userID); !got.Connected || got.Status != "reconnect" {
+		t.Fatalf("after connector removed: %+v", got)
+	}
+	if _, ok := testHandler.zohoClientsForUser(context.Background(), parseUUID(userID)); ok {
+		t.Fatal("a grant from a removed connector was still usable")
 	}
 }
 
@@ -219,7 +281,7 @@ func TestZohoAccount_AgentsCantManageIt(t *testing.T) {
 		{"DELETE", testHandler.DisconnectMyZohoAccount},
 	} {
 		w := httptest.NewRecorder()
-		req := zohoMeRequest(tc.method, "/api/me/zoho", testUserID)
+		req := zohoMeRequest(tc.method, "/api/me/zoho", testUserID, map[string]any{"workspace_id": zohoConnectorWS})
 		req.Header.Set("X-Actor-Source", "task_token")
 		tc.fn(w, req)
 		if w.Code != http.StatusForbidden {
@@ -237,7 +299,7 @@ func TestZohoAccount_DisconnectRevokesAtZoho(t *testing.T) {
 	connectZohoAs(t, fake, userID, "shohruh")
 
 	w := httptest.NewRecorder()
-	testHandler.DisconnectMyZohoAccount(w, zohoMeRequest("DELETE", "/api/me/zoho", userID))
+	testHandler.DisconnectMyZohoAccount(w, zohoMeRequest("DELETE", "/api/me/zoho", userID, nil))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("disconnect: %d %s", w.Code, w.Body.String())
 	}
