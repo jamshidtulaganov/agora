@@ -829,10 +829,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Zoho connection status is member-visible likewise; it
 					// never returns secret material (dc / client_id / probe).
 					r.Get("/zoho-connection", h.GetZohoConnectionStatus)
-					// Per-user Zoho identity binding is SELF-SERVICE: any
-					// member manages their own (and only their own) binding,
-					// so these live in the member group, not the admin group.
-					// Handlers reject agent actors and never return secrets.
 					// Release integrations listing is member-visible (same
 					// rationale as figma/lark: the Integrations tab must render
 					// for non-admins). The query never selects the sealed
@@ -855,6 +851,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// response; handlers additionally reject agent actors.
 					r.Get("/default-mcp-config", h.GetWorkspaceDefaultMcpConfig)
 					r.Put("/default-mcp-config", h.UpdateWorkspaceDefaultMcpConfig)
+					// Department setup (docs/workspace-knowledge-plan.md §9):
+					// the team's default sidebar and the one-time setup state,
+					// both key-scoped workspace.settings writes. Handlers
+					// additionally reject agent actors.
+					r.Put("/team-sidebar", h.PutTeamSidebar)
+					r.Post("/department-setup", h.PostDepartmentSetup)
 					// Dynamic Zoho integration: sealed per-workspace OAuth
 					// connection + runtime module/field discovery
 					// (docs/zoho-dynamic-integration.md). Handlers additionally

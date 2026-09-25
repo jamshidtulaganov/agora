@@ -998,3 +998,76 @@ func TestWebSocketIntegration(t *testing.T) {
 		t.Fatalf("expected type 'issue:deleted', got '%s'", deleteMsg["type"])
 	}
 }
+
+// TestDepartmentSetupRoutesRequireAdmin protects the route wiring: a plain
+// member can't set what the whole team's sidebar shows, or mark the setup
+// done; an admin can.
+func TestDepartmentSetupRoutesRequireAdmin(t *testing.T) {
+	ctx := context.Background()
+
+	const slug = "integration-tests-dept-setup"
+	_, _ = testPool.Exec(ctx, `DELETE FROM workspace WHERE slug = $1`, slug)
+
+	var wsID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO workspace (name, slug, description)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, "Integration Tests Dept Setup", slug, "Department setup permission test").Scan(&wsID); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM workspace WHERE id = $1`, wsID)
+	})
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO member (workspace_id, user_id, role)
+		VALUES ($1, $2, 'member')
+	`, wsID, testUserID); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	send := func(method, path string, body any) int {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		req, err := http.NewRequest(method, testServer.URL+path, bytes.NewReader(b))
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		req.Header.Set("X-Workspace-ID", wsID)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	sidebar := "/api/workspaces/" + wsID + "/team-sidebar"
+	setup := "/api/workspaces/" + wsID + "/department-setup"
+
+	if code := send("PUT", sidebar, map[string]any{"hidden": []string{"runtimes"}}); code != http.StatusForbidden {
+		t.Fatalf("member PUT team-sidebar: expected 403, got %d", code)
+	}
+	if code := send("POST", setup, map[string]any{"status": "done"}); code != http.StatusForbidden {
+		t.Fatalf("member POST department-setup: expected 403, got %d", code)
+	}
+
+	if _, err := testPool.Exec(ctx, `UPDATE member SET role = 'admin' WHERE workspace_id = $1 AND user_id = $2`, wsID, testUserID); err != nil {
+		t.Fatalf("promote to admin: %v", err)
+	}
+	if code := send("PUT", sidebar, map[string]any{"hidden": []string{"runtimes"}}); code != http.StatusOK {
+		t.Fatalf("admin PUT team-sidebar: expected 200, got %d", code)
+	}
+	if code := send("POST", setup, map[string]any{"status": "skipped"}); code != http.StatusOK {
+		t.Fatalf("admin POST department-setup: expected 200, got %d", code)
+	}
+
+	var status string
+	if err := testPool.QueryRow(ctx, `SELECT settings->'department_setup'->>'status' FROM workspace WHERE id = $1`, wsID).Scan(&status); err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if status != "skipped" {
+		t.Fatalf("department_setup.status = %q, want skipped", status)
+	}
+}

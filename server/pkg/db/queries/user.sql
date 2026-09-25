@@ -38,6 +38,12 @@ UPDATE "user" SET
         ELSE sqlc.narg('timezone')::text
     END,
     hidden_nav = COALESCE(sqlc.narg('hidden_nav'), hidden_nav),
+    -- Setting hidden_nav at all (even to []) is a personal choice that
+    -- outranks the workspace's team sidebar from then on.
+    hidden_nav_customized_at = CASE
+        WHEN sqlc.narg('hidden_nav')::jsonb IS NULL THEN hidden_nav_customized_at
+        ELSE now()
+    END,
     updated_at = now()
 WHERE id = $1
 RETURNING *;
