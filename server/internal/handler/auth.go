@@ -119,8 +119,11 @@ type UserResponse struct {
 	// Sidebar nav keys this user chose to hide. Always an array (never
 	// null) so clients can iterate without a nil guard.
 	HiddenNav []string `json:"hidden_nav"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	// HiddenNavCustomized is true once the person set their own sidebar;
+	// until then the workspace's team sidebar applies to them.
+	HiddenNavCustomized bool   `json:"hidden_nav_customized"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
 }
 
 // MaxProfileDescriptionLen caps the user-supplied profile_description body.
@@ -157,6 +160,7 @@ func userToResponse(u db.User) UserResponse {
 		StarterContentState:     textToPtr(u.StarterContentState),
 		ProfileDescription:      u.ProfileDescription,
 		HiddenNav:               hiddenNav,
+		HiddenNavCustomized:     u.HiddenNavCustomizedAt.Valid,
 		CreatedAt:               timestampToString(u.CreatedAt),
 		UpdatedAt:               timestampToString(u.UpdatedAt),
 	}
