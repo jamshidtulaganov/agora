@@ -14,7 +14,7 @@ export function humanizeToolName(name: string): string {
 export const TOOL_VERBS = [
   "list", "search", "get", "create", "update", "delete", "add", "remove", "archive",
   "comment", "move", "invite", "attach", "mark", "resolve", "pin", "subscribe", "run",
-  "set", "leave", "confirm", "dry_run", "propose", "check",
+  "set", "leave", "confirm", "dry_run", "propose", "check", "read",
 ] as const;
 export type ToolVerb = (typeof TOOL_VERBS)[number];
 
@@ -29,6 +29,7 @@ export const TOOL_OBJECTS = [
   "sidebar", "notification_preferences", "artifact", "plan", "usage", "activity", "qa_status",
   "zoho_account", "zoho_crm_modules", "zoho_crm_fields", "zoho_crm", "zoho_record",
   "zoho_departments", "zoho_tickets", "zoho_ticket", "zoho_conversation",
+  "knowledge_base", "knowledge_document",
 ] as const;
 export type ToolObject = (typeof TOOL_OBJECTS)[number];
 
@@ -39,6 +40,14 @@ const READ_ONLY_TOOLS: Record<string, ToolObject> = {
   inbox_summary: "inbox",
   qa_status: "qa_status",
   import_status: "import_status",
+};
+
+/** The workspace knowledge base: the tool names say "knowledge", the row
+ *  says what was read ("Searched the knowledge base"). */
+const KNOWLEDGE_TOOLS: Record<string, ToolDescription> = {
+  search_knowledge: { verb: "search", object: "knowledge_base" },
+  read_knowledge: { verb: "read", object: "knowledge_document" },
+  list_knowledge: { verb: "list", object: "knowledge_base" },
 };
 
 /** The person's own Zoho, read-only: names that don't start with a verb. */
@@ -69,6 +78,8 @@ export interface ToolDescription {
  * humanized raw name instead of a wrong sentence.
  */
 export function describeTool(name: string): ToolDescription | null {
+  const knowledge = KNOWLEDGE_TOOLS[name];
+  if (knowledge) return knowledge;
   const zoho = ZOHO_TOOLS[name];
   if (zoho) return zoho;
   const readOnly = READ_ONLY_TOOLS[name];

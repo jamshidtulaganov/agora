@@ -156,7 +156,8 @@
       "confirm": "确认了{{object}}",
       "dry_run": "预览了{{object}}",
       "propose": "提出了{{object}}",
-      "check": "检查了{{object}}"
+      "check": "检查了{{object}}",
+      "read": "读取了{{object}}"
     },
     "object": {
       "workspaces": "工作区",
@@ -215,8 +216,15 @@
       "zoho_departments": "Zoho Desk 部门",
       "zoho_tickets": "Zoho Desk 工单",
       "zoho_ticket": "一个 Zoho Desk 工单",
-      "zoho_conversation": "工单对话"
+      "zoho_conversation": "工单对话",
+      "knowledge_base": "知识库",
+      "knowledge_document": "一份知识库文档"
     }
+  },
+  "citation": {
+    "open": "打开来源：{{source}}",
+    "source": "来源",
+    "sources": "来源"
   },
   "confirm": {
     "fallback_summary": "确认这个操作",

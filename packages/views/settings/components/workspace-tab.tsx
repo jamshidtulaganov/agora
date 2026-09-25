@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, Loader2, Save, LogOut } from "lucide-react";
+import { ArrowRight, BookOpen, Camera, Loader2, Save, LogOut } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Label } from "@agora/ui/components/ui/label";
@@ -32,13 +32,14 @@ import { api } from "@agora/core/api";
 import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import {
+  paths,
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
 } from "@agora/core/paths";
 import { setCurrentWorkspace } from "@agora/core/platform";
 import type { Workspace } from "@agora/core/types";
-import { useNavigation } from "../../navigation";
+import { AppLink, useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import { useT } from "../../i18n";
 
@@ -100,7 +101,6 @@ export function WorkspaceTab() {
 
   const [name, setName] = useState(workspace?.name ?? "");
   const [description, setDescription] = useState(workspace?.description ?? "");
-  const [context, setContext] = useState(workspace?.context ?? "");
   const [issuePrefix, setIssuePrefix] = useState(workspace?.issue_prefix ?? "");
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -130,7 +130,6 @@ export function WorkspaceTab() {
   useEffect(() => {
     setName(workspace?.name ?? "");
     setDescription(workspace?.description ?? "");
-    setContext(workspace?.context ?? "");
     setIssuePrefix(workspace?.issue_prefix ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on id only; see comment above
   }, [workspace?.id]);
@@ -150,10 +149,12 @@ export function WorkspaceTab() {
     if (!workspace) return;
     setSaving(true);
     try {
+      // `context` (Instructions for AI) is edited on the Knowledge page and is
+      // deliberately not sent from here: the PATCH is partial, so leaving it
+      // out means a save on this tab can never overwrite newer instructions.
       const updated = await api.updateWorkspace(workspace.id, {
         name,
         description,
-        context,
         ...(includePrefix ? { issue_prefix: normalizedPrefix } : {}),
       });
       qc.setQueryData(workspaceKeys.list(), (old: Workspace[] | undefined) =>
@@ -163,7 +164,7 @@ export function WorkspaceTab() {
       // read time, not stored on each issue row. When the prefix changes,
       // every cached issue's rendered identifier is stale until refetched.
       // Limit invalidation to the prefix-changed branch so unrelated saves
-      // (name / description / context) stay cheap.
+      // (name / description) stay cheap.
       if (includePrefix) {
         qc.invalidateQueries({ queryKey: issueKeys.all(updated.id) });
       }
@@ -325,17 +326,14 @@ export function WorkspaceTab() {
                 placeholder={t(($) => $.workspace.description_placeholder)}
               />
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">{t(($) => $.workspace.context_label)}</Label>
-              <Textarea
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                rows={4}
-                disabled={!canManageWorkspace}
-                className="mt-1 resize-none"
-                placeholder={t(($) => $.workspace.context_placeholder)}
-              />
-            </div>
+            <AppLink
+              href={paths.workspace(workspace.slug).knowledge()}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{t(($) => $.workspace.instructions_moved)}</span>
+              <ArrowRight className="h-3 w-3 shrink-0" aria-hidden />
+            </AppLink>
             <div>
               <Label className="text-xs text-muted-foreground">{t(($) => $.workspace.slug_label)}</Label>
               <div className="mt-1 rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">

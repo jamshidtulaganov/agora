@@ -71,6 +71,7 @@
       "slugs": [
         "issues",
         "projects",
+        "knowledge",
         "autopilots",
         "automations",
         "agents",

@@ -115,6 +115,7 @@ vi.mock("@agora/core/paths", () => ({
     policy: () => "/acme/policy",
     issues: () => "/acme/issues",
     projects: () => "/acme/projects",
+    knowledge: () => "/acme/knowledge",
     autopilots: () => "/acme/autopilots",
     automations: () => "/acme/automations",
     agents: () => "/acme/agents",
@@ -223,6 +224,7 @@ describe("PinRow", () => {
 const WORKSPACE_NAV_KEYS = [
   "issues",
   "projects",
+  "knowledge",
   "autopilots",
   "automations",
   "agents",

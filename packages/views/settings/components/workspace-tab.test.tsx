@@ -37,6 +37,7 @@ vi.mock("@agora/core/hooks", () => ({
 }));
 
 vi.mock("@agora/core/paths", () => ({
+  paths: { workspace: (slug: string) => ({ knowledge: () => `/${slug}/knowledge` }) },
   useCurrentWorkspace: () => workspaceRef.current,
   useHasOnboarded: () => true,
   resolvePostAuthDestination: () => "/",
@@ -76,6 +77,11 @@ vi.mock("@agora/core/auth", () => {
 
 vi.mock("../../navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
+  AppLink: ({ children, href, className }: { children: ReactNode; href: string; className?: string }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("./delete-workspace-dialog", () => ({
@@ -122,6 +128,29 @@ describe("WorkspaceTab — issue prefix editing", () => {
         ...payload,
         issue_prefix: payload.issue_prefix ?? workspaceRef.current.issue_prefix,
       }),
+    );
+  });
+
+  it("points to the Knowledge page for Instructions for AI instead of editing them here", () => {
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+    const link = screen.getByRole("link", {
+      name: "Instructions for AI now live on the Knowledge page",
+    });
+    expect(link).toHaveAttribute("href", "/test-workspace/knowledge");
+    expect(screen.queryByText("Knowledge Base")).toBeNull();
+  });
+
+  it("never sends context, so a save here can't overwrite newer instructions", async () => {
+    const user = userEvent.setup();
+    workspaceRef.current = { ...workspaceRef.current, context: "Be polite." };
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+
+    await user.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1));
+    expect(mockUpdateWorkspace).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.not.objectContaining({ context: expect.anything() }),
     );
   });
 

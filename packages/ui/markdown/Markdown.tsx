@@ -179,9 +179,10 @@ function createComponents(
     },
     // Links: Make clickable with callbacks, or render as mention
     a: ({ href, children }) => {
-      // Mention links: mention://member/id, mention://agent/id, mention://issue/id, mention://project/id, mention://all/all
+      // Mention links: mention://member/id, mention://agent/id, mention://issue/id, mention://project/id, mention://all/all,
+      // and mention://kb/<cite> — a knowledge-base source the Assistant cited (the caller's renderMention draws the chip).
       if (href?.startsWith('mention://')) {
-        const mentionMatch = href.match(/^mention:\/\/(member|agent|issue|project|all)\/(.+)$/)
+        const mentionMatch = href.match(/^mention:\/\/(member|agent|issue|project|all|kb)\/(.+)$/)
         if (mentionMatch?.[1] && mentionMatch[2]) {
           const type = mentionMatch[1]
           const id = mentionMatch[2]

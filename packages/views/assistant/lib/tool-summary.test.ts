@@ -25,6 +25,12 @@ describe("describeTool", () => {
     expect(describeTool("zoho_whoami")).toEqual({ verb: "check", object: "zoho_account" });
   });
 
+  it("names the knowledge base tools in words", () => {
+    expect(describeTool("search_knowledge")).toEqual({ verb: "search", object: "knowledge_base" });
+    expect(describeTool("read_knowledge")).toEqual({ verb: "read", object: "knowledge_document" });
+    expect(describeTool("list_knowledge")).toEqual({ verb: "list", object: "knowledge_base" });
+  });
+
   it("returns null for a tool this build does not know, so the row falls back to the raw name", () => {
     expect(describeTool("list_widgets")).toBeNull();
     expect(describeTool("teleport_issue")).toBeNull();

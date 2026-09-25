@@ -17,6 +17,7 @@ import { autopilotKeys } from "../autopilots/queries";
 import { automationKeys } from "../automations/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import { labelKeys } from "../labels/queries";
+import { knowledgeKeys, onKnowledgeUpdated } from "../knowledge/queries";
 import {
   agentTaskSnapshotKeys,
   agentActivityKeys,
@@ -351,6 +352,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: agentRunCountsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: knowledgeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: reportKeys.all(wsId) });
   }
   // Per-issue caches are keyed without wsId, so the issueKeys.all(wsId)
@@ -498,6 +500,17 @@ export function useRealtimeSync(
           qc.invalidateQueries({ queryKey: ["labels", wsId] });
           qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });
         }
+      },
+      // knowledge:updated — a document was added, finished or failed
+      // reading, was pinned/renamed or removed. The payload's doc_id isn't
+      // needed: one prefix invalidation refreshes the list, the open viewer
+      // and any search results quoting it. The project-KB `knowledge:changed`
+      // event shares the prefix; it costs at most one extra list refetch while
+      // the Knowledge page is open, and the debounce folds bursts (a folder of
+      // SOPs finishing one by one) into a single refetch.
+      knowledge: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) onKnowledgeUpdated(qc, wsId);
       },
       pin: () => {
         const wsId = getCurrentWsId();

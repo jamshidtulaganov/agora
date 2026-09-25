@@ -46,7 +46,7 @@ function ProjectMentionCard({ projectId }: { projectId: string }): React.ReactNo
   );
 }
 
-function defaultRenderMention({
+export function defaultRenderMention({
   type,
   id,
 }: {

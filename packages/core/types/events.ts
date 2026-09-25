@@ -7,6 +7,7 @@ import type { TimelineEntry } from "./activity";
 import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
+import type { KnowledgeUpdatedPayload } from "../knowledge/types";
 
 // WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
@@ -74,6 +75,7 @@ export type WSEventType =
   | "label:created"
   | "label:updated"
   | "label:deleted"
+  | "knowledge:updated"
   | "issue_labels:changed"
   | "issue_metadata:changed"
   | "qa_evidence:ready"
@@ -570,6 +572,7 @@ export interface WSEventPayloadMap {
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;
+  "knowledge:updated": KnowledgeUpdatedPayload;
   "report:pinned": ReportPinEventPayload;
   "report:unpinned": ReportPinEventPayload;
   "report:updated": ReportPinEventPayload;
