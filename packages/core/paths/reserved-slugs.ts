@@ -104,6 +104,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "sdk",
   "tokens",
   "cli",
+  "mcp",
 
   // Backend ops / observability
   // `/health`, `/readyz`, `/healthz`, and `/ws` exist on the backend host;
