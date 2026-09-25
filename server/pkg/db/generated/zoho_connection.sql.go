@@ -23,6 +23,36 @@ func (q *Queries) DeleteZohoConnection(ctx context.Context, workspaceID pgtype.U
 	return result.RowsAffected(), nil
 }
 
+const getZohoConnectionByID = `-- name: GetZohoConnectionByID :one
+SELECT id, workspace_id, dc, client_id, client_secret_encrypted, refresh_token_encrypted, scopes, crm_org_id, desk_org_id, projects_portal_id, sprints_team_id, probe_status, probed_at, created_by, created_at, updated_at FROM zoho_connection WHERE id = $1
+`
+
+// The connector a person's Zoho grant was minted under (zoho_account.
+// connection_id) — a refresh token only works with the client that issued it.
+func (q *Queries) GetZohoConnectionByID(ctx context.Context, id pgtype.UUID) (ZohoConnection, error) {
+	row := q.db.QueryRow(ctx, getZohoConnectionByID, id)
+	var i ZohoConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Dc,
+		&i.ClientID,
+		&i.ClientSecretEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.Scopes,
+		&i.CrmOrgID,
+		&i.DeskOrgID,
+		&i.ProjectsPortalID,
+		&i.SprintsTeamID,
+		&i.ProbeStatus,
+		&i.ProbedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getZohoConnectionForWorkspace = `-- name: GetZohoConnectionForWorkspace :one
 SELECT id, workspace_id, dc, client_id, client_secret_encrypted, refresh_token_encrypted, scopes, crm_org_id, desk_org_id, projects_portal_id, sprints_team_id, probe_status, probed_at, created_by, created_at, updated_at FROM zoho_connection WHERE workspace_id = $1
 `

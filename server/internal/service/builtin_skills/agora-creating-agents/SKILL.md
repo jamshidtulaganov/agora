@@ -173,9 +173,10 @@ setting a same-named server on the agent overrides the default. The stored
 `agent.mcp_config` value is NOT modified by this merge — it happens per task.
 
 **Auto-provisioned "zoho" server.** When the person a claimed task works for
-has connected their own Zoho account (Settings → Profile → Connected
-accounts), the task also receives a `zoho` MCP server entry pointing at the
-Agora-hosted Zoho proxy (`/mcp/zoho`), authenticated with the task's own
+has connected their own Zoho account (Settings → Integrations → Zoho, through
+the workspace's Zoho connector), the task also receives a `zoho` MCP server
+entry pointing at the Agora-hosted Zoho proxy (`/mcp/zoho`), authenticated
+with the task's own
 token. Its tools are read-only — CRM: `zoho_whoami`, `zoho_crm_modules`,
 `zoho_crm_fields`, `zoho_crm_search` (one COQL `SELECT`),
 `zoho_crm_get_record`; Desk: `zoho_desk_departments`,

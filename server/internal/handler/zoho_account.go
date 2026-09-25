@@ -19,6 +19,7 @@ import (
 
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohocrm"
 	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohodesk"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 	"github.com/jamshidtulaganov/agora/server/internal/zohoread"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
@@ -29,57 +30,89 @@ import (
 // for every Zoho read made for that person — so their own Zoho role, profile
 // and sharing rules decide what the Assistant and their agents can see.
 //
-// Server configuration (all required for "Connect Zoho" to appear):
-//
-//	AGORA_ZOHO_CLIENT_ID / AGORA_ZOHO_CLIENT_SECRET  a server-based client
-//	    registered in api-console.zoho.com with the redirect URI
-//	    <AGORA_PUBLIC_URL>/api/integrations/zoho/callback
-//	AGORA_ZOHO_SECRET_KEY  sealing key (shared with the workspace connection)
-//	AGORA_PUBLIC_URL       the API's public base URL
-//
-// Optional: AGORA_ZOHO_SCOPES overrides the read-only scope list;
-// ZOHO_DYN_ACCOUNTS_BASE / ZOHO_DYN_API_BASE / ZOHO_DYN_DESK_BASE point every
-// Zoho host at a stand-in (tests, `go run ./cmd/fakezoho`).
+// The OAuth client is the workspace's Zoho connector: an owner/admin sets it
+// up in Settings → Integrations → Zoho (zoho_connection) with a server-based
+// client registered in api-console.zoho.com, whose redirect URI is
+// <AGORA_PUBLIC_URL>/api/integrations/zoho/callback. The server needs only
+// AGORA_ZOHO_SECRET_KEY and AGORA_PUBLIC_URL. ZOHO_DYN_ACCOUNTS_BASE /
+// ZOHO_DYN_API_BASE / ZOHO_DYN_DESK_BASE point every Zoho host at a
+// stand-in (tests, `go run ./cmd/fakezoho`).
 
-// defaultZohoScopes is read-only by construction: with these scopes the
-// token itself cannot create or change anything in Zoho.
-const defaultZohoScopes = "ZohoCRM.modules.READ,ZohoCRM.coql.READ,ZohoCRM.settings.READ,ZohoCRM.users.READ," +
+// zohoScopes is read-only by construction: with these scopes the token
+// itself cannot create or change anything in Zoho.
+const zohoScopes = "ZohoCRM.modules.READ,ZohoCRM.coql.READ,ZohoCRM.settings.READ,ZohoCRM.users.READ," +
 	"Desk.tickets.READ,Desk.basic.READ,Desk.contacts.READ,Desk.search.READ,Desk.settings.READ"
 
-type zohoOAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	Scopes       string
-	RedirectURL  string
-	AccountsBase string
-	APIBase      string
-	DeskBase     string
+// zohoHostOverrides are the test / local-fake host overrides; empty in
+// production, where hosts derive from the data center.
+type zohoHostOverrides struct {
+	Accounts string
+	API      string
+	Desk     string
 }
 
-// zohoOAuth reads the person-level Zoho configuration. ok=false when this
-// server can't offer "Connect Zoho".
-func (h *Handler) zohoOAuth() (zohoOAuthConfig, bool) {
-	cfg := zohoOAuthConfig{
-		ClientID:     strings.TrimSpace(os.Getenv("AGORA_ZOHO_CLIENT_ID")),
-		ClientSecret: strings.TrimSpace(os.Getenv("AGORA_ZOHO_CLIENT_SECRET")),
-		Scopes:       strings.TrimSpace(os.Getenv("AGORA_ZOHO_SCOPES")),
-		AccountsBase: os.Getenv("ZOHO_DYN_ACCOUNTS_BASE"),
-		APIBase:      os.Getenv("ZOHO_DYN_API_BASE"),
-		DeskBase:     os.Getenv("ZOHO_DYN_DESK_BASE"),
+func zohoHosts() zohoHostOverrides {
+	return zohoHostOverrides{
+		Accounts: os.Getenv("ZOHO_DYN_ACCOUNTS_BASE"),
+		API:      os.Getenv("ZOHO_DYN_API_BASE"),
+		Desk:     os.Getenv("ZOHO_DYN_DESK_BASE"),
 	}
-	if cfg.Scopes == "" {
-		cfg.Scopes = defaultZohoScopes
+}
+
+// zohoRedirectURI is where Zoho sends the browser back after consent — the
+// URI an admin registers for the connector's client. Empty when the server
+// doesn't know its public URL (then nobody can connect).
+func (h *Handler) zohoRedirectURI() string {
+	if h.cfg.PublicURL == "" {
+		return ""
 	}
-	if h.cfg.PublicURL != "" {
-		cfg.RedirectURL = strings.TrimRight(h.cfg.PublicURL, "/") + "/api/integrations/zoho/callback"
+	return strings.TrimRight(h.cfg.PublicURL, "/") + "/api/integrations/zoho/callback"
+}
+
+// zohoConnector is a workspace connector's OAuth client, decrypted.
+type zohoConnector struct {
+	ID           pgtype.UUID
+	DC           string
+	ClientID     string
+	ClientSecret string
+}
+
+func zohoConnectorFromRow(row db.ZohoConnection) (zohoConnector, bool) {
+	box, err := zohoConnectionBox()
+	if err != nil {
+		return zohoConnector{}, false
 	}
-	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURL == "" {
-		return cfg, false
+	secret, err := box.Open(row.ClientSecretEncrypted)
+	if err != nil {
+		return zohoConnector{}, false
 	}
-	if _, err := zohoConnectionBox(); err != nil {
-		return cfg, false
+	return zohoConnector{ID: row.ID, DC: row.Dc, ClientID: row.ClientID, ClientSecret: string(secret)}, true
+}
+
+// zohoWorkspaceConnector is the connector people connect through from this
+// workspace. ok=false when the workspace has none, or the server can't take
+// connections (no public URL for the redirect, no sealing key).
+func (h *Handler) zohoWorkspaceConnector(ctx context.Context, wsUUID pgtype.UUID) (zohoConnector, bool) {
+	if h.zohoRedirectURI() == "" {
+		return zohoConnector{}, false
 	}
-	return cfg, true
+	row, err := h.Queries.GetZohoConnectionForWorkspace(ctx, wsUUID)
+	if err != nil {
+		return zohoConnector{}, false
+	}
+	return zohoConnectorFromRow(row)
+}
+
+// zohoConnectorByID is the connector a person's grant was minted under.
+func (h *Handler) zohoConnectorByID(ctx context.Context, id pgtype.UUID) (zohoConnector, bool) {
+	if !id.Valid {
+		return zohoConnector{}, false
+	}
+	row, err := h.Queries.GetZohoConnectionByID(ctx, id)
+	if err != nil {
+		return zohoConnector{}, false
+	}
+	return zohoConnectorFromRow(row)
 }
 
 type zohoAccountResponse struct {
@@ -101,10 +134,15 @@ func deskDepartmentNames(raw []byte) []string {
 }
 
 func zohoAccountResponseFromRow(available bool, acc db.ZohoAccount) zohoAccountResponse {
+	status := acc.Status
+	if !acc.ConnectionID.Valid {
+		// The connector it was minted under was removed.
+		status = "reconnect"
+	}
 	resp := zohoAccountResponse{
 		Available:       available,
 		Connected:       true,
-		Status:          acc.Status,
+		Status:          status,
 		Email:           acc.ZohoEmail,
 		Name:            acc.ZohoName,
 		CRMRole:         acc.CrmRole,
@@ -134,7 +172,12 @@ func (h *Handler) GetMyZohoAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, available := h.zohoOAuth()
+	// available: this workspace has a connector the person can connect
+	// through (and they belong to it).
+	available := false
+	if wsUUID, err := util.ParseUUID(r.URL.Query().Get("workspace_id")); err == nil && h.isZohoWorkspaceMember(r.Context(), wsUUID, userID) {
+		_, available = h.zohoWorkspaceConnector(r.Context(), wsUUID)
+	}
 	acc, err := h.Queries.GetZohoAccountByUser(r.Context(), userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusOK, zohoAccountResponse{Available: available})
@@ -147,16 +190,31 @@ func (h *Handler) GetMyZohoAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, zohoAccountResponseFromRow(available, acc))
 }
 
-// ConnectMyZohoAccount — POST /api/me/zoho/connect. Returns the Zoho consent
-// URL; the browser goes there and Zoho sends it back to the callback.
+// ConnectMyZohoAccount — POST /api/me/zoho/connect {workspace_id}. Returns
+// the Zoho consent URL for the workspace's connector; the browser goes there
+// and Zoho sends it back to the callback.
 func (h *Handler) ConnectMyZohoAccount(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.zohoAccountCaller(w, r)
 	if !ok {
 		return
 	}
-	cfg, ok := h.zohoOAuth()
+	var req struct {
+		WorkspaceID string `json:"workspace_id"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.WorkspaceID), "workspace_id")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "Zoho isn't set up on this server")
+		return
+	}
+	if !h.isZohoWorkspaceMember(r.Context(), wsUUID, userID) {
+		writeError(w, http.StatusForbidden, "you are not a member of that workspace")
+		return
+	}
+	conn, ok := h.zohoWorkspaceConnector(r.Context(), wsUUID)
+	if !ok {
+		writeError(w, http.StatusConflict, "This workspace's Zoho connector isn't set up yet. Ask a workspace owner or admin to set it up in Settings → Integrations → Zoho.")
 		return
 	}
 	buf := make([]byte, 32)
@@ -168,19 +226,28 @@ func (h *Handler) ConnectMyZohoAccount(w http.ResponseWriter, r *http.Request) {
 	if err := h.Queries.PruneZohoOAuthStates(r.Context()); err != nil {
 		slog.Warn("zoho: prune oauth states", "error", err)
 	}
-	if err := h.Queries.CreateZohoOAuthState(r.Context(), db.CreateZohoOAuthStateParams{State: state, UserID: userID}); err != nil {
+	if err := h.Queries.CreateZohoOAuthState(r.Context(), db.CreateZohoOAuthStateParams{
+		State: state, UserID: userID, ConnectionID: conn.ID,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to start Zoho connection")
 		return
 	}
-	// Zoho's US accounts host serves every data center when the client has
-	// multi-DC enabled; the callback learns the person's DC from `location`.
-	url, err := zohocrm.AuthorizeURL("us", cfg.AccountsBase, cfg.ClientID, cfg.RedirectURL, cfg.Scopes, state)
+	// The connector's home DC hosts the consent screen; with multi-DC enabled
+	// on the client it serves people in every DC, and the callback learns the
+	// person's DC from `location`.
+	url, err := zohocrm.AuthorizeURL(conn.DC, zohoHosts().Accounts, conn.ClientID, h.zohoRedirectURI(), zohoScopes, state)
 	if err != nil {
 		slog.Error("zoho: build consent url", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to start Zoho connection")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+// isZohoWorkspaceMember reports whether userID belongs to wsUUID.
+func (h *Handler) isZohoWorkspaceMember(ctx context.Context, wsUUID, userID pgtype.UUID) bool {
+	_, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: userID, WorkspaceID: wsUUID})
+	return err == nil
 }
 
 // DisconnectMyZohoAccount — DELETE /api/me/zoho. Removes the account and
@@ -200,10 +267,9 @@ func (h *Handler) DisconnectMyZohoAccount(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "failed to disconnect Zoho")
 		return
 	}
-	cfg, _ := h.zohoOAuth()
 	if box, berr := zohoConnectionBox(); berr == nil {
 		if refresh, oerr := box.Open(acc.RefreshTokenEncrypted); oerr == nil {
-			if rerr := zohocrm.RevokeToken(r.Context(), acc.Dc, cfg.AccountsBase, string(refresh)); rerr != nil {
+			if rerr := zohocrm.RevokeToken(r.Context(), acc.Dc, zohoHosts().Accounts, string(refresh)); rerr != nil {
 				slog.Warn("zoho: revoke on disconnect", "user_id", uuidToString(userID), "error", rerr)
 			}
 		}
@@ -221,19 +287,21 @@ func (h *Handler) ZohoOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		zohoCallbackPage(w, http.StatusOK, "Zoho wasn't connected", "The connection was cancelled in Zoho. You can close this tab and try again from Agora.")
 		return
 	}
-	cfg, ok := h.zohoOAuth()
-	if !ok {
-		zohoCallbackPage(w, http.StatusServiceUnavailable, "Zoho isn't set up", "This Agora server isn't set up to connect Zoho accounts.")
-		return
-	}
+	hosts := zohoHosts()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
 		zohoCallbackPage(w, http.StatusBadRequest, "Zoho wasn't connected", "This link is incomplete. Go back to Agora and click Connect Zoho again.")
 		return
 	}
-	userID, err := h.Queries.ConsumeZohoOAuthState(r.Context(), state)
+	pending, err := h.Queries.ConsumeZohoOAuthState(r.Context(), state)
 	if err != nil {
 		zohoCallbackPage(w, http.StatusBadRequest, "This link has expired", "Go back to Agora and click Connect Zoho again.")
+		return
+	}
+	userID := pending.UserID
+	conn, ok := h.zohoConnectorByID(r.Context(), pending.ConnectionID)
+	if !ok || h.zohoRedirectURI() == "" {
+		zohoCallbackPage(w, http.StatusConflict, "Zoho wasn't connected", "The workspace's Zoho connector was removed or changed. Go back to Agora and try again.")
 		return
 	}
 	dc, ok := zohocrm.DCFromLocation(q.Get("location"))
@@ -243,7 +311,7 @@ func (h *Handler) ZohoOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// Never trust accounts-server blindly: without a test override it must be
 	// the known accounts host for that DC.
-	if cfg.AccountsBase == "" {
+	if hosts.Accounts == "" {
 		if as := strings.TrimRight(q.Get("accounts-server"), "/"); as != "" && as != zohocrm.DCHosts[dc].Accounts {
 			zohoCallbackPage(w, http.StatusBadRequest, "Zoho wasn't connected", "Zoho sent back an unexpected sign-in server.")
 			return
@@ -252,19 +320,19 @@ func (h *Handler) ZohoOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	grant, err := zohocrm.ExchangeCode(ctx, cfg.ClientID, cfg.ClientSecret, code, cfg.RedirectURL, dc, cfg.AccountsBase)
+	grant, err := zohocrm.ExchangeCode(ctx, conn.ClientID, conn.ClientSecret, code, h.zohoRedirectURI(), dc, hosts.Accounts)
 	if err != nil {
 		slog.Warn("zoho: code exchange", "user_id", uuidToString(userID), "error", err)
 		zohoCallbackPage(w, http.StatusBadGateway, "Zoho wasn't connected", "Zoho didn't accept the sign-in. Go back to Agora and try again.")
 		return
 	}
-	crm, err := zohocrm.New(cfg.ClientID, cfg.ClientSecret, grant.RefreshToken, dc, cfg.AccountsBase, cfg.APIBase)
+	crm, err := zohocrm.New(conn.ClientID, conn.ClientSecret, grant.RefreshToken, dc, hosts.Accounts, hosts.API)
 	if err != nil {
 		zohoCallbackPage(w, http.StatusInternalServerError, "Zoho wasn't connected", "Something went wrong on our side. Try again.")
 		return
 	}
 
-	params := db.UpsertZohoAccountParams{UserID: userID, Dc: dc, Scopes: grant.Scope, DeskDepartments: []byte("[]")}
+	params := db.UpsertZohoAccountParams{UserID: userID, ConnectionID: conn.ID, Dc: dc, Scopes: grant.Scope, DeskDepartments: []byte("[]")}
 	crmOK := false
 	if me, err := crm.GetCurrentUser(ctx); err == nil {
 		crmOK = true
@@ -274,7 +342,7 @@ func (h *Handler) ZohoOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Info("zoho: CRM not available for account", "user_id", uuidToString(userID), "error", err)
 	}
 	deskOK := false
-	if desk, err := zohodesk.New(crm, dc, cfg.DeskBase, ""); err == nil {
+	if desk, err := zohodesk.New(crm, dc, hosts.Desk, ""); err == nil {
 		if orgs, err := desk.ListOrganizations(ctx); err == nil && len(orgs) > 0 {
 			desk = desk.WithOrg(string(orgs[0].ID))
 			if agent, err := desk.MyInfo(ctx); err == nil {
@@ -375,7 +443,7 @@ func (h *Handler) zohoClientsForUser(ctx context.Context, userID pgtype.UUID) (z
 			return c.clients, true
 		}
 	}
-	cfg, ok := h.zohoOAuth()
+	conn, ok := h.zohoConnectorByID(ctx, acc.ConnectionID)
 	if !ok {
 		return zohoread.Clients{}, false
 	}
@@ -387,7 +455,8 @@ func (h *Handler) zohoClientsForUser(ctx context.Context, userID pgtype.UUID) (z
 	if err != nil {
 		return zohoread.Clients{}, false
 	}
-	crm, err := zohocrm.New(cfg.ClientID, cfg.ClientSecret, string(refresh), acc.Dc, cfg.AccountsBase, cfg.APIBase)
+	hosts := zohoHosts()
+	crm, err := zohocrm.New(conn.ClientID, conn.ClientSecret, string(refresh), acc.Dc, hosts.Accounts, hosts.API)
 	if err != nil {
 		return zohoread.Clients{}, false
 	}
@@ -399,7 +468,7 @@ func (h *Handler) zohoClientsForUser(ctx context.Context, userID pgtype.UUID) (z
 		clients.CRM = crm
 	}
 	if acc.DeskOrgID != "" {
-		if desk, err := zohodesk.New(crm, acc.Dc, cfg.DeskBase, acc.DeskOrgID); err == nil {
+		if desk, err := zohodesk.New(crm, acc.Dc, hosts.Desk, acc.DeskOrgID); err == nil {
 			clients.Desk = desk
 		}
 	}

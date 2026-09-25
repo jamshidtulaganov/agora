@@ -1530,6 +1530,7 @@ type WorkspaceInvitation struct {
 type ZohoAccount struct {
 	ID                    pgtype.UUID        `json:"id"`
 	UserID                pgtype.UUID        `json:"user_id"`
+	ConnectionID          pgtype.UUID        `json:"connection_id"`
 	Dc                    string             `json:"dc"`
 	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
 	Scopes                string             `json:"scopes"`
@@ -1581,9 +1582,10 @@ type ZohoConnection struct {
 }
 
 type ZohoOauthState struct {
-	State     string             `json:"state"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	State        string             `json:"state"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	ConnectionID pgtype.UUID        `json:"connection_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type ZohoSyncConfig struct {

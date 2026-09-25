@@ -6,11 +6,12 @@
 //
 // Then run the backend with:
 //
-//	AGORA_ZOHO_CLIENT_ID=1000.FAKEZOHOCLIENT
-//	AGORA_ZOHO_CLIENT_SECRET=fake-zoho-secret
 //	ZOHO_DYN_ACCOUNTS_BASE=http://127.0.0.1:18990
 //	ZOHO_DYN_API_BASE=http://127.0.0.1:18990
 //	ZOHO_DYN_DESK_BASE=http://127.0.0.1:18990
+//
+// and set up the workspace's Zoho connector (Settings → Integrations → Zoho)
+// with Client ID 1000.FAKEZOHOCLIENT and Client secret fake-zoho-secret.
 package main
 
 import (

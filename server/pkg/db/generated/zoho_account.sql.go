@@ -14,34 +14,42 @@ import (
 const consumeZohoOAuthState = `-- name: ConsumeZohoOAuthState :one
 DELETE FROM zoho_oauth_state
 WHERE state = $1 AND created_at > now() - interval '15 minutes'
-RETURNING user_id
+RETURNING user_id, connection_id
 `
+
+type ConsumeZohoOAuthStateRow struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
+}
 
 // Single use: the row is deleted as it is read, and only honoured within 15
 // minutes of the Connect click.
-func (q *Queries) ConsumeZohoOAuthState(ctx context.Context, state string) (pgtype.UUID, error) {
+func (q *Queries) ConsumeZohoOAuthState(ctx context.Context, state string) (ConsumeZohoOAuthStateRow, error) {
 	row := q.db.QueryRow(ctx, consumeZohoOAuthState, state)
-	var user_id pgtype.UUID
-	err := row.Scan(&user_id)
-	return user_id, err
+	var i ConsumeZohoOAuthStateRow
+	err := row.Scan(&i.UserID, &i.ConnectionID)
+	return i, err
 }
 
 const createZohoOAuthState = `-- name: CreateZohoOAuthState :exec
-INSERT INTO zoho_oauth_state (state, user_id) VALUES ($1, $2)
+INSERT INTO zoho_oauth_state (state, user_id, connection_id) VALUES ($1, $2, $3)
 `
 
 type CreateZohoOAuthStateParams struct {
-	State  string      `json:"state"`
-	UserID pgtype.UUID `json:"user_id"`
+	State        string      `json:"state"`
+	UserID       pgtype.UUID `json:"user_id"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
 }
 
+// connection_id is the workspace connector whose client the consent screen
+// was opened with; the callback must exchange the code with the same client.
 func (q *Queries) CreateZohoOAuthState(ctx context.Context, arg CreateZohoOAuthStateParams) error {
-	_, err := q.db.Exec(ctx, createZohoOAuthState, arg.State, arg.UserID)
+	_, err := q.db.Exec(ctx, createZohoOAuthState, arg.State, arg.UserID, arg.ConnectionID)
 	return err
 }
 
 const deleteZohoAccountByUser = `-- name: DeleteZohoAccountByUser :one
-DELETE FROM zoho_account WHERE user_id = $1 RETURNING id, user_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at
+DELETE FROM zoho_account WHERE user_id = $1 RETURNING id, user_id, connection_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at
 `
 
 func (q *Queries) DeleteZohoAccountByUser(ctx context.Context, userID pgtype.UUID) (ZohoAccount, error) {
@@ -50,6 +58,7 @@ func (q *Queries) DeleteZohoAccountByUser(ctx context.Context, userID pgtype.UUI
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ConnectionID,
 		&i.Dc,
 		&i.RefreshTokenEncrypted,
 		&i.Scopes,
@@ -70,7 +79,7 @@ func (q *Queries) DeleteZohoAccountByUser(ctx context.Context, userID pgtype.UUI
 }
 
 const getZohoAccountByUser = `-- name: GetZohoAccountByUser :one
-SELECT id, user_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at FROM zoho_account WHERE user_id = $1
+SELECT id, user_id, connection_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at FROM zoho_account WHERE user_id = $1
 `
 
 func (q *Queries) GetZohoAccountByUser(ctx context.Context, userID pgtype.UUID) (ZohoAccount, error) {
@@ -79,6 +88,7 @@ func (q *Queries) GetZohoAccountByUser(ctx context.Context, userID pgtype.UUID) 
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ConnectionID,
 		&i.Dc,
 		&i.RefreshTokenEncrypted,
 		&i.Scopes,
@@ -156,16 +166,17 @@ func (q *Queries) PruneZohoOAuthStates(ctx context.Context) error {
 
 const upsertZohoAccount = `-- name: UpsertZohoAccount :one
 INSERT INTO zoho_account (
-    user_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name,
+    user_id, connection_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name,
     crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id,
     desk_departments, status, checked_at
 )
 VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11,
-    $12, 'connected', now()
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12,
+    $13, 'connected', now()
 )
 ON CONFLICT (user_id) DO UPDATE SET
+    connection_id = EXCLUDED.connection_id,
     dc = EXCLUDED.dc,
     refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
     scopes = EXCLUDED.scopes,
@@ -180,11 +191,12 @@ ON CONFLICT (user_id) DO UPDATE SET
     status = 'connected',
     checked_at = now(),
     updated_at = now()
-RETURNING id, user_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at
+RETURNING id, user_id, connection_id, dc, refresh_token_encrypted, scopes, zoho_email, zoho_name, crm_user_id, crm_role, crm_profile, desk_org_id, desk_agent_id, desk_departments, status, checked_at, created_at, updated_at
 `
 
 type UpsertZohoAccountParams struct {
 	UserID                pgtype.UUID `json:"user_id"`
+	ConnectionID          pgtype.UUID `json:"connection_id"`
 	Dc                    string      `json:"dc"`
 	RefreshTokenEncrypted []byte      `json:"refresh_token_encrypted"`
 	Scopes                string      `json:"scopes"`
@@ -202,6 +214,7 @@ type UpsertZohoAccountParams struct {
 func (q *Queries) UpsertZohoAccount(ctx context.Context, arg UpsertZohoAccountParams) (ZohoAccount, error) {
 	row := q.db.QueryRow(ctx, upsertZohoAccount,
 		arg.UserID,
+		arg.ConnectionID,
 		arg.Dc,
 		arg.RefreshTokenEncrypted,
 		arg.Scopes,
@@ -218,6 +231,7 @@ func (q *Queries) UpsertZohoAccount(ctx context.Context, arg UpsertZohoAccountPa
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ConnectionID,
 		&i.Dc,
 		&i.RefreshTokenEncrypted,
 		&i.Scopes,

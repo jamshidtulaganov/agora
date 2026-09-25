@@ -52,14 +52,21 @@ const (
 )
 
 type zohoConnectionStatusResponse struct {
-	Configured  bool   `json:"configured"`
-	DC          string `json:"dc,omitempty"`
-	ClientID    string `json:"client_id,omitempty"`
-	Scopes      string `json:"scopes,omitempty"`
-	CrmOrgID    string `json:"crm_org_id,omitempty"`
-	DeskOrgID   string `json:"desk_org_id,omitempty"`
-	ProbeStatus string `json:"probe_status,omitempty"`
-	ProbedAt    string `json:"probed_at,omitempty"`
+	Configured bool `json:"configured"`
+	// RedirectURI is what the admin registers in Zoho's API console for the
+	// connector's client; present whenever the server knows its public URL.
+	RedirectURI string `json:"redirect_uri,omitempty"`
+	// HasSyncGrant reports whether an org-level refresh token is stored —
+	// needed only for syncing CRM records into issues, not for people
+	// connecting their own Zoho.
+	HasSyncGrant bool   `json:"has_sync_grant"`
+	DC           string `json:"dc,omitempty"`
+	ClientID     string `json:"client_id,omitempty"`
+	Scopes       string `json:"scopes,omitempty"`
+	CrmOrgID     string `json:"crm_org_id,omitempty"`
+	DeskOrgID    string `json:"desk_org_id,omitempty"`
+	ProbeStatus  string `json:"probe_status,omitempty"`
+	ProbedAt     string `json:"probed_at,omitempty"`
 }
 
 type putZohoConnectionRequest struct {
@@ -142,8 +149,11 @@ func (h *Handler) PutZohoConnection(w http.ResponseWriter, r *http.Request) {
 	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
 	req.RefreshToken = strings.TrimSpace(req.RefreshToken)
-	if req.ClientID == "" || req.ClientSecret == "" || req.RefreshToken == "" {
-		writeError(w, http.StatusBadRequest, "client_id, client_secret and refresh_token are required")
+	// The refresh token is optional: the connector's client is what people
+	// connect their own Zoho through; an org-level grant is only needed for
+	// syncing CRM records into issues.
+	if req.ClientID == "" || req.ClientSecret == "" {
+		writeError(w, http.StatusBadRequest, "client_id and client_secret are required")
 		return
 	}
 
@@ -153,22 +163,30 @@ func (h *Handler) PutZohoConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := newZohoCRMClientFromParts(req.ClientID, req.ClientSecret, req.RefreshToken, req.DC)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	// Probe via CurrentUser, not /org: the recommended scope superset grants
-	// ZohoCRM.users.READ but not ZohoCRM.org.READ, so an /org probe reports a
-	// perfectly valid grant as "unreachable" (OAUTH_SCOPE_MISMATCH is an HTTP
-	// 401, indistinguishable from an outage at this layer).
-	probeCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	_, probeErr := client.GetCurrentUser(probeCtx)
-	cancel()
-	probeStatus, credInvalid := classifyZohoProbe(probeErr)
-	if credInvalid {
-		writeError(w, http.StatusUnprocessableEntity, "zoho_credentials_invalid: Zoho rejected the grant (accounts token mint)")
-		return
+	// With a sync grant, probe it before sealing so a mistyped refresh token
+	// is rejected with 422 instead of silently breaking discovery + sync.
+	// Without one there is nothing to probe: the client is proven the first
+	// time someone connects their own Zoho through it.
+	probeStatus := ""
+	if req.RefreshToken != "" {
+		client, err := newZohoCRMClientFromParts(req.ClientID, req.ClientSecret, req.RefreshToken, req.DC)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// Probe via CurrentUser, not /org: the recommended scope superset grants
+		// ZohoCRM.users.READ but not ZohoCRM.org.READ, so an /org probe reports a
+		// perfectly valid grant as "unreachable" (OAUTH_SCOPE_MISMATCH is an HTTP
+		// 401, indistinguishable from an outage at this layer).
+		probeCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		_, probeErr := client.GetCurrentUser(probeCtx)
+		cancel()
+		var credInvalid bool
+		probeStatus, credInvalid = classifyZohoProbe(probeErr)
+		if credInvalid {
+			writeError(w, http.StatusUnprocessableEntity, "zoho_credentials_invalid: Zoho rejected the grant (accounts token mint)")
+			return
+		}
 	}
 
 	sealedSecret, err := box.Seal([]byte(req.ClientSecret))
@@ -176,11 +194,35 @@ func (h *Handler) PutZohoConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to seal client secret")
 		return
 	}
-	sealedRefresh, err := box.Seal([]byte(req.RefreshToken))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to seal refresh token")
-		return
+	// Fields left empty keep their current value on an edit — the form can't
+	// show the stored refresh token or the portal/team ids, so an empty field
+	// means "unchanged", not "clear". Removing the connector is how CRM sync
+	// is switched off. No sync grant is stored as an empty value (the column
+	// is NOT NULL).
+	prev, prevErr := h.Queries.GetZohoConnectionForWorkspace(r.Context(), wsUUID)
+	hasPrev := prevErr == nil
+	keep := func(v, old string) string {
+		if v == "" && hasPrev {
+			return old
+		}
+		return v
 	}
+	sealedRefresh := []byte{}
+	switch {
+	case req.RefreshToken != "":
+		if sealedRefresh, err = box.Seal([]byte(req.RefreshToken)); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to seal refresh token")
+			return
+		}
+	case hasPrev:
+		sealedRefresh = prev.RefreshTokenEncrypted
+		probeStatus = prev.ProbeStatus
+	}
+	req.Scopes = keep(strings.TrimSpace(req.Scopes), prev.Scopes)
+	req.CrmOrgID = keep(strings.TrimSpace(req.CrmOrgID), prev.CrmOrgID)
+	req.DeskOrgID = keep(strings.TrimSpace(req.DeskOrgID), prev.DeskOrgID)
+	req.ProjectsPortalID = keep(strings.TrimSpace(req.ProjectsPortalID), prev.ProjectsPortalID)
+	req.SprintsTeamID = keep(strings.TrimSpace(req.SprintsTeamID), prev.SprintsTeamID)
 	creator, ok := parseUUIDOrBadRequest(w, requestUserID(r), "user id")
 	if !ok {
 		return
@@ -234,7 +276,7 @@ func (h *Handler) PutZohoConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, zohoConnectionStatusFromRow(row))
+	writeJSON(w, http.StatusOK, h.zohoConnectionStatusFromRow(row))
 }
 
 // GetZohoConnectionStatus is member-visible (the integrations tab must render
@@ -247,24 +289,26 @@ func (h *Handler) GetZohoConnectionStatus(w http.ResponseWriter, r *http.Request
 	row, err := h.Queries.GetZohoConnectionForWorkspace(r.Context(), wsUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusOK, zohoConnectionStatusResponse{Configured: false})
+			writeJSON(w, http.StatusOK, zohoConnectionStatusResponse{Configured: false, RedirectURI: h.zohoRedirectURI()})
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to load zoho connection")
 		return
 	}
-	writeJSON(w, http.StatusOK, zohoConnectionStatusFromRow(row))
+	writeJSON(w, http.StatusOK, h.zohoConnectionStatusFromRow(row))
 }
 
-func zohoConnectionStatusFromRow(row db.ZohoConnection) zohoConnectionStatusResponse {
+func (h *Handler) zohoConnectionStatusFromRow(row db.ZohoConnection) zohoConnectionStatusResponse {
 	resp := zohoConnectionStatusResponse{
-		Configured:  true,
-		DC:          row.Dc,
-		ClientID:    row.ClientID,
-		Scopes:      row.Scopes,
-		CrmOrgID:    row.CrmOrgID,
-		DeskOrgID:   row.DeskOrgID,
-		ProbeStatus: row.ProbeStatus,
+		Configured:   true,
+		RedirectURI:  h.zohoRedirectURI(),
+		HasSyncGrant: len(row.RefreshTokenEncrypted) > 0,
+		DC:           row.Dc,
+		ClientID:     row.ClientID,
+		Scopes:       row.Scopes,
+		CrmOrgID:     row.CrmOrgID,
+		DeskOrgID:    row.DeskOrgID,
+		ProbeStatus:  row.ProbeStatus,
 	}
 	if row.ProbedAt.Valid {
 		resp.ProbedAt = row.ProbedAt.Time.UTC().Format(time.RFC3339)
@@ -300,13 +344,14 @@ func (h *Handler) DeleteZohoConnection(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// zohoCRMClientForWorkspace decrypts the workspace connection into a live CRM
-// client — the server-side consumer used by discovery (D1) and the sync
-// engine (D2). ok=false when no connection, sealing key unset, or decryption
-// fails.
+// zohoCRMClientForWorkspace decrypts the workspace connection's org-level
+// sync grant into a live CRM client — the server-side consumer used by
+// discovery (D1) and the sync engine (D2). ok=false when no connection, no
+// sync grant (the connector only serves people's own connections), sealing
+// key unset, or decryption fails. Never used to answer a person.
 func (h *Handler) zohoCRMClientForWorkspace(ctx context.Context, wsUUID pgtype.UUID) (*zohocrm.Client, bool) {
 	row, err := h.Queries.GetZohoConnectionForWorkspace(ctx, wsUUID)
-	if err != nil {
+	if err != nil || len(row.RefreshTokenEncrypted) == 0 {
 		return nil, false
 	}
 	box, err := zohoConnectionBox()
@@ -339,7 +384,7 @@ func (h *Handler) ListZohoCRMModules(w http.ResponseWriter, r *http.Request) {
 	}
 	client, ok := h.zohoCRMClientForWorkspace(r.Context(), wsUUID)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "zoho connection not configured for this workspace")
+		writeError(w, http.StatusBadRequest, "CRM sync isn't set up for this workspace: add a refresh token to the Zoho connector")
 		return
 	}
 	modules, err := client.ListModules(r.Context())
@@ -364,7 +409,7 @@ func (h *Handler) ListZohoCRMFields(w http.ResponseWriter, r *http.Request) {
 	}
 	client, ok := h.zohoCRMClientForWorkspace(r.Context(), wsUUID)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "zoho connection not configured for this workspace")
+		writeError(w, http.StatusBadRequest, "CRM sync isn't set up for this workspace: add a refresh token to the Zoho connector")
 		return
 	}
 	fields, err := client.ListFields(r.Context(), module)

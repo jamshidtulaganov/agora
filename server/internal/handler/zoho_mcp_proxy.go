@@ -66,7 +66,7 @@ func (h *Handler) zohoActingClients(ctx context.Context, r *http.Request) (zohoC
 	clients, ok := h.zohoClientsForUser(ctx, userID)
 	if !ok {
 		return call, zohoread.Clients{}, fmt.Errorf(
-			"no Zoho access for this task: the person who %s hasn't connected their Zoho account in Agora (Settings → Profile → Connected accounts), or it needs reconnecting", reason)
+			"no Zoho access for this task: the person who %s hasn't connected their Zoho account in Agora (Settings → Integrations → Zoho), or it needs reconnecting", reason)
 	}
 	clients.Me.ActingFor = "the person who " + reason
 	return call, clients, nil
