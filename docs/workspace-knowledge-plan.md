@@ -117,6 +117,53 @@ ready-made agents — or skip and keep the default Agora setup.
   ≤ ~1,500 tokens, pre-fetched hits ≤ 3 chunks. Caps are constants in one
   place and measured in the eval.
 
+## 3a. What the large systems do — and what Agora takes from them
+
+Every serious "AI inside the product" system converges on the same shape.
+None of these are secrets; they are the patterns that survived contact with
+real customers.
+
+| System | What it does | Pattern Agora adopts |
+|---|---|---|
+| Microsoft 365 Copilot (Graph + semantic index) | Answers only from content the asking user can already open; the index is "permission-trimmed" at query time | **Retrieval runs as the person.** Workspace knowledge is scoped by membership; Zoho is read with the person's own grant (Part B) |
+| Glean / Atlassian Rovo (connectors + knowledge / Teamwork graph) | Many connectors feed one index + graph; one search/answer surface over all of it; results link back to the source | **One context layer, many sources** (below) — knowledge docs, Zoho, and Agora's own issues/projects answer through one set of rules |
+| Intercom Fin / Zendesk AI | Answers only from approved content, shows sources, says "I don't know" instead of guessing, and reports the questions it couldn't answer so content owners fill the gaps | **Grounded answers with citations, an honesty rule, and a gaps list** (every search is logged; zero-result searches become Phase 4's "unanswered questions") |
+| Salesforce Einstein Trust Layer / Agentforce | Guardrails around the model: grounding, masking, audit, and agents defined as topics + allowed actions | **Documents are data, not instructions; destructive tools confirm-gated; every external read audited; agents get knowledge pushed in, actions allow-listed** |
+| Notion AI / Slack AI | AI lives where the work already is (pages, threads), not in a separate tool | **Knowledge lives in the workspace**, reachable from the Assistant, agent briefs and (later) issue pages — no separate "AI app" |
+| All of them | Hybrid search (keyword + vector) with reranking; evaluation sets; feedback buttons | **Keyword search first, measured by an eval; vectors and reranking added when the eval shows misses** (Phase 3) |
+
+What Agora deliberately does *differently*, because of its size and users:
+no separate search index service (Postgres is the index until the eval says
+otherwise), no model fine-tuning, and no background copying of external
+systems' data (Zoho stays live and permission-checked per call).
+
+### The Agora context layer
+
+```
+                 ┌─────────────── sources ───────────────┐
+                 │  workspace knowledge   (docs, pinned)  │
+                 │  person's Zoho         (live, as them) │
+                 │  Agora data            (issues, …)     │
+                 └───────────────────┬───────────────────┘
+                                     │ every source provides:
+                                     │  · a short catalog for prompts
+                                     │  · read tools (pull)
+                                     │  · retrieval for briefs (push)
+                                     │  · its own permission check
+                                     │  · an audit/search log
+                 ┌───────────────────┴───────────────────┐
+                 │  Assistant (pull + catalog)            │
+                 │  Agents    (push into the brief)       │
+                 │  Autopilot Assistant runs (Part C)     │
+                 └────────────────────────────────────────┘
+```
+
+New AI features plug in as a **source** (something the AI can know) or a
+**surface** (somewhere the AI works). Neither talks to a model provider or a
+credential directly; both go through the same per-run hook the Assistant
+already uses for Zoho (`Service.Integrations`, generalised into per-run
+context extras).
+
 ## 4. Data model (Phase 1)
 
 Names follow `conventions.mdx` (singular `snake_case`). The existing
