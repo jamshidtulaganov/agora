@@ -2589,7 +2589,9 @@ export class ApiClient {
     sessionId: string,
     input: SendAssistantMessageRequest,
   ): Promise<SendAssistantMessageResponse> {
-    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/messages`, {
+    const review = input.context?.mode === "review" || /^\/review(?:\s|$)/i.test(input.content.trim());
+    const endpoint = review ? "review-messages" : "messages";
+    const raw = await this.fetch<unknown>(`/api/assistant/sessions/${sessionId}/${endpoint}`, {
       method: "POST",
       body: JSON.stringify(input),
     });

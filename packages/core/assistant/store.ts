@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { StorageAdapter } from "../types";
 import { createLogger } from "../logger";
-import type { AssistantRunContext } from "../types";
+import type { AssistantRunContext, AssistantRunMode } from "../types";
 
 const logger = createLogger("assistant.store");
 
@@ -16,6 +16,7 @@ const DRAFT_STORAGE_KEY = "agora:assistant:drafts";
 const COMPOSER_CONTEXT_STORAGE_KEY = "agora:assistant:composerContext";
 
 export interface AssistantComposerContext {
+  mode?: AssistantRunMode;
   /**
    * The workspace this composer sends to. Normally a mirror of the page's
    * workspace; when `workspace_pinned` is true it is the one the user PICKED,
@@ -46,6 +47,7 @@ function validId(value: unknown): value is string {
 function validComposerContext(value: unknown): value is AssistantComposerContext {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const context = value as AssistantComposerContext;
+  if (context.mode !== undefined && context.mode !== "assist" && context.mode !== "review") return false;
   if (context.workspace_id !== null && !validId(context.workspace_id)) return false;
   if (context.project_id !== undefined && context.project_id !== null && !validId(context.project_id)) return false;
   if (context.project_id && !context.workspace_id) return false;
@@ -94,6 +96,7 @@ function readDrafts(raw: string | null): Record<string, AssistantDraft> {
       if (candidate.context === undefined) return true;
       const context = candidate.context;
       return !!context && typeof context === "object" && !Array.isArray(context) &&
+        (context.mode === undefined || context.mode === "assist" || context.mode === "review") &&
         (context.workspace_id === null || validId(context.workspace_id)) &&
         (context.timezone === undefined || typeof context.timezone === "string") &&
         (context.project_id === undefined || context.project_id === null || validId(context.project_id)) &&

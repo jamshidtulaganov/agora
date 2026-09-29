@@ -18,6 +18,7 @@ function ComposeResourcesHarness(props: Parameters<typeof useAssistantComposeRes
 
 interface TestSelection {
   workspace_id: string | null;
+  mode?: "assist" | "review";
   workspace_pinned?: boolean;
   project_id?: string | null;
   member?: { user_id: string; name: string } | null;
@@ -100,6 +101,21 @@ beforeEach(() => {
 });
 
 describe("useAssistantComposeResources", () => {
+  it("keeps read-only review selected when changing workspace and allows an explicit switch back", async () => {
+    renderControls();
+    await userEvent.click(screen.getByRole("button", { name: "Assist (can make changes)" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Review (read-only)" }));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.mode).toBe("review");
+    expect(screen.getByText(/Workspace changes are blocked by the server/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Acme" }));
+    await userEvent.click(await screen.findByText("Beta"));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]).toMatchObject({ workspace_id: "workspace-2", mode: "review" });
+    await userEvent.click(screen.getByRole("button", { name: "Review (read-only)" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Assist (can make changes)" }));
+    expect(useAssistantStore.getState().composerContextBySession["session-1"]?.mode).toBe("assist");
+    expect(screen.queryByText(/Workspace changes are blocked by the server/)).not.toBeInTheDocument();
+  });
+
   it("selects a project and shows linked resource names without claiming contents are loaded", async () => {
     renderControls();
     await userEvent.click(screen.getByRole("button", { name: "Project" }));

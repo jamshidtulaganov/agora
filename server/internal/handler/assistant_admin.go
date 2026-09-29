@@ -468,6 +468,9 @@ func (h *Handler) assistantDeleteWorkspace(ctx context.Context, caller assistant
 	if err := h.assistantAuthorize(ctx, caller.ID, uuidToString(ws.ID), "owner"); err != nil {
 		return nil, err
 	}
+	if err := checkAssistantWorkspaceDeletion(ctx, h.DB, ws.ID); err != nil {
+		return nil, err
+	}
 	out, err := h.assistantAwaitConfirmation(ctx, caller, raw, assistantOperationPlan{
 		Tool: assistant.ToolDeleteWorkspace,
 		Summary: "Permanently delete the whole workspace " + name + " (" + slug + ") — every issue, project, " +

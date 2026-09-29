@@ -28,14 +28,22 @@ func TestReviewModeToolPolicy(t *testing.T) {
 }
 
 func TestResolveRunMode(t *testing.T) {
-	for _, tc := range []struct{ mode RunMode; content string; want RunMode }{
+	for _, tc := range []struct {
+		mode    RunMode
+		content string
+		want    RunMode
+	}{
 		{"", "create a task", RunModeAssist},
 		{"", "/review inspect this feature", RunModeReview},
 		{RunModeAssist, " /review inspect this feature", RunModeReview},
 		{RunModeReview, "create a task", RunModeReview},
 	} {
 		got, err := ResolveRunMode(tc.mode, tc.content)
-		if err != nil || got != tc.want { t.Fatalf("%+v: %q, %v", tc, got, err) }
+		if err != nil || got != tc.want {
+			t.Fatalf("%+v: %q, %v", tc, got, err)
+		}
 	}
-	if _, err := ResolveRunMode("invalid", "hello"); err == nil { t.Fatal("invalid mode accepted") }
+	if _, err := ResolveRunMode("invalid", "hello"); err == nil {
+		t.Fatal("invalid mode accepted")
+	}
 }

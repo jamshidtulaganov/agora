@@ -608,6 +608,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Patch("/api/assistant/sessions/{id}", h.PatchAssistantSession)
 		r.Delete("/api/assistant/sessions/{id}", h.DeleteAssistantSession)
 		r.With(handler.RequireHumanActor).Post("/api/assistant/sessions/{id}/messages", h.SendAssistantMessage)
+		r.With(handler.RequireHumanActor).Post("/api/assistant/sessions/{id}/review-messages", h.SendAssistantReviewMessage)
 		r.Get("/api/assistant/sessions/{id}/messages", h.ListAssistantMessages)
 		r.Get("/api/assistant/sessions/{id}/runs", h.ListAssistantRuns)
 		r.Get("/api/assistant/runs/{id}", h.GetAssistantRun)

@@ -2,6 +2,10 @@
 
 Date: 2026-09-17
 
+Safety amendment, 2026-09-30: server-enforced Review mode and Assistant-only
+issue-deletion restrictions supersede full parity for these actions. See the
+[current safety contract](agora-assistant-plan.md#safety-amendment-owner-2026-09-30--supersedes-parity-for-these-actions).
+
 Status: **ADOPTED 2026-09-17** (owner + Fable session) with three amendments, in implementation. Amendments: (1) confirmation is TIERED — model-boolean confirm suffices for reversible ops and single-user local dev; persisted-operation binding (below) is the gate before deletes/invites/role-changes reach multi-user rollout; (2) the HTML-artifact srcdoc CSP fix ships immediately, not phase-gated; (3) Phase 0 is compressed to commit-split + parity matrix.
 
 ### Pinned wire contract — confirmation binding & receipts (both sides build against this)

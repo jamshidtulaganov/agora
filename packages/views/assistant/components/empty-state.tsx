@@ -57,6 +57,7 @@ export function AssistantHero({ compact }: { compact?: boolean } = {}) {
 }
 
 interface PromptRowsProps {
+  onReviewMode?: () => void;
   /** Prefills the composer with the example — does not send it. */
   onPickPrompt: (content: string) => void;
   /** Single column + smaller type for the floating panel. */
@@ -74,11 +75,11 @@ interface PromptRowsProps {
  * subset. The launcher already scrolls, which is cheaper than the chrome any
  * segmentation would cost.
  */
-export function AssistantPromptRows({ onPickPrompt, compact }: PromptRowsProps) {
+export function AssistantPromptRows({ onPickPrompt, onReviewMode, compact }: PromptRowsProps) {
   const { t } = useT("assistant");
 
   const prompts = [
-    { icon: ScanSearch, text: t(($) => $.empty_state.prompts.review_feature) },
+    { icon: ScanSearch, text: t(($) => $.empty_state.prompts.review_feature), review: true },
     { icon: Plus, text: t(($) => $.empty_state.prompts.create_issue) },
     { icon: ListTodo, text: t(($) => $.empty_state.prompts.my_plate) },
     { icon: BarChart3, text: t(($) => $.empty_state.prompts.usage_this_week) },
@@ -96,11 +97,14 @@ export function AssistantPromptRows({ onPickPrompt, compact }: PromptRowsProps) 
         !compact && "sm:grid-cols-2",
       )}
     >
-      {prompts.map(({ icon: Icon, text }) => (
+      {prompts.map(({ icon: Icon, text, review }) => (
         <button
           key={text}
           type="button"
-          onClick={() => onPickPrompt(text)}
+          onClick={() => {
+            if (review) onReviewMode?.();
+            onPickPrompt(review ? `/review ${text}` : text);
+          }}
           className={cn(
             "flex min-w-0 items-center gap-2.5 rounded-lg text-left text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             compact ? "px-2.5 py-2 text-xs" : "px-3 py-2.5 text-sm",

@@ -464,7 +464,7 @@ func TestAssistantConfirmPlanRefusesOutOfRangeSkips(t *testing.T) {
 	}
 	// The same body on a SINGLE operation is a 400 too: skipping rows means
 	// nothing there, and silently ignoring it would hide a client bug.
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	single := assistantOperationID(t, assistantAsk(t, user, session, assistant.ToolDeleteIssue,
 		`{"workspace_id":"`+ws+`","ref":"PRG-2"}`))
 	if w := postAssistantOperationWithBody(t, user, single, "confirm", `{"skipped_items":[0]}`); w.Code != http.StatusBadRequest {

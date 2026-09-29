@@ -160,6 +160,12 @@ type AssistantArtifactRevision struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type AssistantIssueCreation struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type AssistantMessage struct {
 	ID         pgtype.UUID        `json:"id"`
 	SessionID  pgtype.UUID        `json:"session_id"`

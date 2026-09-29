@@ -57,6 +57,7 @@ export function AssistantLauncher({
           value={value}
           onValueChange={onValueChange}
           onSend={onSend}
+          onReviewMode={resources?.onReviewMode}
           isSending={isSending}
           sendUnavailable={sendUnavailable}
           status={status}
@@ -65,7 +66,7 @@ export function AssistantLauncher({
           attachments={resources?.attachments}
           notices={resources?.notices}
         />
-        <AssistantPromptRows onPickPrompt={onValueChange} compact={compact} />
+        <AssistantPromptRows onPickPrompt={onValueChange} onReviewMode={resources?.onReviewMode} compact={compact} />
       </div>
     </div>
   );

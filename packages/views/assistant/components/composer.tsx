@@ -13,6 +13,7 @@ import type { SlashCommandItem } from "./slash-menu";
 export const ASSISTANT_MESSAGE_MAX_LENGTH = 8000;
 
 interface ComposerProps {
+  onReviewMode?: () => void;
   onSend: (content: string) => void;
   onStop?: () => void;
   /** A run is active on this session — input locks, button becomes Stop. */
@@ -59,6 +60,7 @@ interface ComposerProps {
 const NEAR_LIMIT_THRESHOLD = 200;
 
 export function Composer({
+  onReviewMode,
   onSend,
   onStop,
   isRunning,
@@ -126,6 +128,7 @@ export function Composer({
 
   const handlePickCommand = (command: SlashCommandItem) => {
     setSlashActive(false);
+    if (command.id === "review") onReviewMode?.();
     if (command.action === "send") {
       if (isRunning || isSending || sendUnavailable) return;
       onValueChange(command.payload);

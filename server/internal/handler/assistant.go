@@ -465,11 +465,11 @@ type SendAssistantMessageRequest struct {
 	Content   string `json:"content"`
 	RequestID string `json:"request_id"`
 	Context   *struct {
-		Mode assistant.RunMode `json:"mode,omitempty"`
-		WorkspaceID   json.RawMessage `json:"workspace_id"`
-		Timezone      string          `json:"timezone"`
-		ProjectID     json.RawMessage `json:"project_id"`
-		AttachmentIDs []string        `json:"attachment_ids"`
+		Mode          assistant.RunMode `json:"mode,omitempty"`
+		WorkspaceID   json.RawMessage   `json:"workspace_id"`
+		Timezone      string            `json:"timezone"`
+		ProjectID     json.RawMessage   `json:"project_id"`
+		AttachmentIDs []string          `json:"attachment_ids"`
 		// MemberID is the teammate picked in the composer for this message.
 		// RawMessage rather than *string for the same reason project_id is:
 		// an explicit JSON null is how the client says "cleared", and that has
@@ -488,6 +488,12 @@ type SendAssistantMessageResponse struct {
 // returning 202 immediately. The reply itself arrives over the websocket
 // (assistant:message / assistant:tool_activity / assistant:run_finished);
 // GET messages is the polling fallback.
+func (h *Handler) SendAssistantReviewMessage(w http.ResponseWriter, r *http.Request) {
+	// A separate endpoint fails safely (404) on older servers rather than
+	// letting an ignored JSON field silently turn a review into an editable run.
+	h.SendAssistantMessage(w, r.WithContext(assistant.WithRunMode(r.Context(), assistant.RunModeReview)))
+}
+
 func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
@@ -521,9 +527,17 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	requestedMode := assistant.RunMode("")
-	if req.Context != nil { requestedMode = req.Context.Mode }
+	if req.Context != nil {
+		requestedMode = req.Context.Mode
+	}
 	mode, modeErr := assistant.ResolveRunMode(requestedMode, content)
-	if modeErr != nil { writeError(w, http.StatusBadRequest, modeErr.Error()); return }
+	if modeErr != nil {
+		writeError(w, http.StatusBadRequest, modeErr.Error())
+		return
+	}
+	if assistant.RunModeFrom(r.Context()) == assistant.RunModeReview {
+		mode = assistant.RunModeReview
+	}
 	var requestID *string
 	if req.RequestID != "" {
 		if _, err := uuid.Parse(req.RequestID); err != nil {
@@ -538,7 +552,7 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 		requestContext = string(raw)
 	}
 	if requestID != nil {
-		previous, err := h.Assistant.FindRequest(r.Context(), uuidToString(session.ID), *requestID, content, requestContext)
+		previous, err := h.Assistant.FindRequest(r.Context(), uuidToString(session.ID), *requestID, content, requestContext, mode)
 		if errors.Is(err, assistant.ErrRequestConflict) {
 			writeError(w, http.StatusConflict, "request_id was already used with different content or context")
 			return

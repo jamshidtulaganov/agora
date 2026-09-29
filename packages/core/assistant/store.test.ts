@@ -62,6 +62,19 @@ describe("createAssistantStore identity scoping", () => {
 });
 
 describe("createAssistantStore drafts and artifact state", () => {
+  it("persists review mode in selections and retry drafts across reloads", () => {
+    const storage = memoryStorage();
+    const first = createAssistantStore({ storage });
+    first.getState().setIdentity("user");
+    first.getState().setComposerContext("session", { workspace_id: "ws-1", mode: "review" });
+    first.getState().setDraft("session", { content: "inspect", request_id: "request", context: { workspace_id: "ws-1", mode: "review" } });
+    const second = createAssistantStore({ storage });
+    second.getState().setIdentity("user");
+    expect(second.getState().composerContextBySession.session?.mode).toBe("review");
+    expect(second.getState().draftsBySession.session?.context?.mode).toBe("review");
+    second.getState().setComposerContext("session", { workspace_id: "ws-2", mode: "review" });
+    expect(second.getState().composerContextBySession.session?.mode).toBe("review");
+  });
   it("persists drafts per identity with retry context", () => {
     const storage = memoryStorage();
     const store = createAssistantStore({ storage });

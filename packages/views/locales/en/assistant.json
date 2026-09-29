@@ -320,6 +320,9 @@
     "what_needs_me": "What needs me today?"
   },
   "resources": {
+    "mode_review": "Review (read-only)",
+    "mode_assist": "Assist (can make changes)",
+    "review_hint": "Recommendations only. Workspace changes are blocked by the server. Switch to Assist in a new message to request changes.",
     "choose_workspace": "Workspace",
     "no_workspaces": "No workspaces",
     "remove_workspace": "Use the current workspace",

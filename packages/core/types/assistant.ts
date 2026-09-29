@@ -12,7 +12,11 @@ export interface AssistantSession {
   latest_run?: AssistantRun | null;
 }
 
+export type AssistantRunMode = "assist" | "review";
+
 export interface AssistantRunContext {
+	/** Review permits evidence reads and private artifacts, never workspace edits. */
+	mode?: AssistantRunMode;
   workspace_id: string | null;
   timezone?: string;
   project_id?: string | null;
@@ -196,4 +200,3 @@ export interface AssistantArtifactSummary {
 export interface AssistantArtifact extends AssistantArtifactSummary {
   content: string;
 }
-

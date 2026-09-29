@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { messageContext, targetWorkspaceId } from "./message-context";
 
 describe("messageContext", () => {
+  it("preserves read-only policy even when the workspace changes", () => {
+    expect(messageContext("new-workspace", { workspace_id: "old-workspace", mode: "review" }).mode).toBe("review");
+  });
   it("captures project and attachment IDs only for the selected workspace", () => {
     const selection = {
       workspace_id: "workspace-1",

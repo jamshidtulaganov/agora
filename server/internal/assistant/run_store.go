@@ -32,7 +32,7 @@ type runDB interface {
 }
 
 type RunContext struct {
-	Mode RunMode `json:"mode,omitempty"`
+	Mode          RunMode  `json:"mode,omitempty"`
 	WorkspaceID   *string  `json:"workspace_id"`
 	Timezone      string   `json:"timezone,omitempty"`
 	ProjectID     *string  `json:"project_id,omitempty"`
@@ -68,7 +68,7 @@ type AcceptedRun struct {
 	Duplicate bool
 }
 
-func (s *Service) FindRequest(ctx context.Context, sessionID, requestID, content, requestContext string) (*AcceptedRun, error) {
+func (s *Service) FindRequest(ctx context.Context, sessionID, requestID, content, requestContext string, mode RunMode) (*AcceptedRun, error) {
 	var runID, messageID, oldContent, oldContext string
 	var createdAt time.Time
 	err := s.Store.QueryRow(ctx, `SELECT r.id::text,r.message_id::text,m.created_at,r.request_content,r.request_context FROM assistant_run r JOIN assistant_message m ON m.id=r.message_id WHERE r.session_id=$1 AND r.request_id=$2`, sessionID, requestID).Scan(&runID, &messageID, &createdAt, &oldContent, &oldContext)
@@ -84,6 +84,9 @@ func (s *Service) FindRequest(ctx context.Context, sessionID, requestID, content
 	r, err := scanRun(s.Store.QueryRow(ctx, `SELECT `+runColumns+` FROM assistant_run WHERE id=$1`, runID))
 	if err != nil {
 		return nil, err
+	}
+	if r.Context.Mode != mode {
+		return nil, ErrRequestConflict
 	}
 	return &AcceptedRun{Run: r, Message: db.AssistantMessage{ID: util.MustParseUUID(messageID), CreatedAt: pgtype.Timestamptz{Time: createdAt, Valid: true}}, Duplicate: true}, nil
 }
@@ -190,15 +193,21 @@ func (s *Service) ListRuns(ctx context.Context, sessionID, userID string) ([]Run
 // message/run insertion have one commit point across server processes.
 func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, userID, content string, requestID *string, requestContext string, context RunContext, snapshot []byte) (AcceptedRun, error) {
 	mode, err := ResolveRunMode(context.Mode, content)
-	if err != nil { return AcceptedRun{}, err }
+	if err != nil {
+		return AcceptedRun{}, err
+	}
 	context.Mode = mode
 	var captured ContextSnapshot
 	if len(snapshot) > 0 {
-		if err := json.Unmarshal(snapshot, &captured); err != nil { return AcceptedRun{}, errors.New("invalid assistant context snapshot") }
+		if err := json.Unmarshal(snapshot, &captured); err != nil {
+			return AcceptedRun{}, errors.New("invalid assistant context snapshot")
+		}
 	}
 	captured.Mode = mode
 	snapshot, err = json.Marshal(captured)
-	if err != nil { return AcceptedRun{}, err }
+	if err != nil {
+		return AcceptedRun{}, err
+	}
 	if s.TxStarter == nil || s.Store == nil {
 		return AcceptedRun{}, errors.New("assistant run store unavailable")
 	}
@@ -223,6 +232,9 @@ func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, us
 			run, err := scanRun(tx.QueryRow(ctx, `SELECT `+runColumns+` FROM assistant_run WHERE id=$1`, oldRunID))
 			if err != nil {
 				return AcceptedRun{}, err
+			}
+			if run.Context.Mode != mode {
+				return AcceptedRun{}, ErrRequestConflict
 			}
 			if err := tx.Commit(ctx); err != nil {
 				return AcceptedRun{}, err

@@ -20,7 +20,9 @@ const assistantConfirmCardPreviewChars = 80
 
 // The assistant's DELETE tools.
 //
-// These exist because of the MAIN RULE (docs/agora-assistant-plan.md §0): the
+// Issue deletion additionally obeys the 2026-09-30 safety amendment: immutable
+// Assistant creation provenance for this human and no children at execution.
+// Other deletes exist because of the MAIN RULE (docs/agora-assistant-plan.md §0): the
 // assistant does what the user can do, and a user can delete an issue. The
 // earlier catalog refused outright and told people to go and click it
 // themselves, which is not a safety property — it is a worse product with the
@@ -69,7 +71,9 @@ func (h *Handler) assistantDeleteIssue(ctx context.Context, caller assistantCall
 	if err != nil {
 		return nil, err
 	}
-	if err := checkAssistantIssueDeletion(ctx, h.DB, caller.ID, issue.ID, ws.ID); err != nil { return nil, err }
+	if err := checkAssistantIssueDeletion(ctx, h.DB, caller.ID, issue.ID, ws.ID); err != nil {
+		return nil, err
+	}
 	// Read the identifier BEFORE the row goes, so the answer can name what was
 	// deleted. After the DELETE there is nothing left to derive it from.
 	identifier := h.getIssuePrefix(ctx, ws.ID) + "-" + strconv.Itoa(int(issue.Number))
@@ -159,12 +163,15 @@ func (h *Handler) assistantDeleteSprint(ctx context.Context, caller assistantCal
 	if err != nil {
 		return nil, err
 	}
+	if err := checkAssistantSprintDeletion(ctx, h.DB, sprint.ID); err != nil {
+		return nil, err
+	}
 
 	sprintID := uuidToString(sprint.ID)
 	out, err := h.assistantAwaitConfirmation(ctx, caller, raw, assistantOperationPlan{
 		Tool: assistant.ToolDeleteSprint,
 		Summary: "Permanently delete sprint “" + sprint.Name + "” in " + ws.Name +
-			". Its issues survive but lose this sprint and its history. This cannot be undone.",
+			". This empty sprint and its history will be removed. This cannot be undone.",
 		Workspace: ws,
 		Target:    assistantOperationTarget{Type: "sprint", Identifier: sprintID, Title: sprint.Name},
 	})

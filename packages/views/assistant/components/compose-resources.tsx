@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, ChevronDown, FolderKanban, Loader2, UserRound, X } from "lucide-react";
+import { Building2, ChevronDown, FolderKanban, Loader2, ShieldCheck, UserRound, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useAssistantStore, type AssistantComposerContext } from "@agora/core/assistant";
@@ -56,6 +56,7 @@ interface ComposeResourcesOptions {
 
 /** The three places the composer draws its message context. */
 export interface ComposeResources {
+  onReviewMode: () => void;
   /** Destination + project + person pickers and the attach button — the
    *  composer's bottom toolbar, inside the input box. */
   toolbar: ReactNode;
@@ -116,9 +117,9 @@ export function useAssistantComposeResources({
     // the next render.
     if (selection?.workspace_pinned) return;
     if (selection?.workspace_id !== workspaceId) {
-      setSelection(sessionId, { workspace_id: workspaceId });
+      setSelection(sessionId, { workspace_id: workspaceId, ...(selection?.mode ? { mode: selection.mode } : {}) });
     }
-  }, [selection?.workspace_id, selection?.workspace_pinned, workspaceId, sessionId, setSelection]);
+  }, [selection?.workspace_id, selection?.workspace_pinned, selection?.mode, workspaceId, sessionId, setSelection]);
 
   useEffect(() => {
     onUploadingChange?.(uploadCount > 0);
@@ -133,6 +134,7 @@ export function useAssistantComposeResources({
   // The selection as it stands, so changing one chip never drops another.
   // The store clears project/member/files by itself when the workspace moves.
   const current = (): AssistantComposerContext => ({
+    ...(selection?.mode ? { mode: selection.mode } : {}),
     workspace_id: targetWorkspaceId,
     ...(pinnedWorkspaceId ? { workspace_pinned: true } : {}),
     project_id: projectId,
@@ -188,6 +190,19 @@ export function useAssistantComposeResources({
 
   const toolbar = (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+      <Picker
+        icon={ShieldCheck}
+        label={selection?.mode === "review" ? t(($) => $.resources.mode_review) : t(($) => $.resources.mode_assist)}
+        filled={selection?.mode === "review"}
+        clearLabel=""
+      >
+        <DropdownMenuItem onClick={() => update({ ...current(), mode: "review" })}>
+          {t(($) => $.resources.mode_review)}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => update({ ...current(), mode: "assist" })}>
+          {t(($) => $.resources.mode_assist)}
+        </DropdownMenuItem>
+      </Picker>
       <Picker
         icon={Building2}
         label={targetWorkspace?.name ?? t(($) => $.resources.choose_workspace)}
@@ -273,9 +288,10 @@ export function useAssistantComposeResources({
     </div>
   ) : null;
 
-  const hasNotices = !!project || !!member || !!uploadError;
+  const hasNotices = selection?.mode === "review" || !!project || !!member || !!uploadError;
   const notices = hasNotices ? (
     <div className="space-y-1 text-xs text-muted-foreground">
+      {selection?.mode === "review" && <p>{t(($) => $.resources.review_hint)}</p>}
       {project && (
         <p aria-label={t(($) => $.resources.inventory_label, { project: project.title })}>
           {t(($) => $.resources.inventory)}: {resources.length > 0 ? resources.map(readableResource).join(", ") : t(($) => $.resources.no_resources)}
@@ -287,7 +303,7 @@ export function useAssistantComposeResources({
     </div>
   ) : null;
 
-  return { toolbar, attachments: attachmentPills, notices };
+  return { toolbar, attachments: attachmentPills, notices, onReviewMode: () => update({ ...current(), mode: "review" }) };
 }
 
 /**

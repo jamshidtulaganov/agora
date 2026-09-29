@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/analytics"
 	"github.com/jamshidtulaganov/agora/server/internal/logger"
@@ -783,12 +784,39 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
+	queries := h.Queries
+	var deleteTx pgx.Tx
+	if exec := assistantExecutionFrom(r.Context()); exec != nil {
+		if !exec.authorized {
+			writeError(w, http.StatusForbidden, "this action needs confirmation")
+			return
+		}
+		var err error
+		deleteTx, err = h.TxStarter.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not check deletion safety")
+			return
+		}
+		defer deleteTx.Rollback(r.Context())
+		var lockedID pgtype.UUID
+		// New issue inserts take a FK lock on this row. Keep it locked through
+		// commit so a workspace cannot acquire tasks after the safety check.
+		if err := deleteTx.QueryRow(r.Context(), `SELECT id FROM workspace WHERE id=$1 FOR UPDATE`, requester.WorkspaceID).Scan(&lockedID); err != nil {
+			writeError(w, http.StatusConflict, "workspace is no longer available")
+			return
+		}
+		if err := checkAssistantWorkspaceDeletion(r.Context(), deleteTx, requester.WorkspaceID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		queries = h.Queries.WithTx(deleteTx)
+	}
 
 	// Invalidate membership cache for all workspace members before deletion.
 	// After CASCADE deletes the member rows, cache entries become harmless
 	// orphans (downstream lookups for the deleted workspace will fail), but
 	// proactive invalidation prevents any stale-access window up to TTL.
-	if members, err := h.Queries.ListMembers(r.Context(), requester.WorkspaceID); err == nil {
+	if members, err := queries.ListMembers(r.Context(), requester.WorkspaceID); err == nil {
 		for _, m := range members {
 			h.MembershipCache.Invalidate(r.Context(), uuidToString(m.UserID), workspaceID)
 		}
@@ -796,10 +824,16 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	// At this point workspaceMember has resolved → workspaceID is a valid UUID
 	// (the lookup would have errored otherwise), so reuse the resolved value.
-	if err := h.Queries.DeleteWorkspace(r.Context(), requester.WorkspaceID); err != nil {
+	if err := queries.DeleteWorkspace(r.Context(), requester.WorkspaceID); err != nil {
 		slog.Warn("delete workspace failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", workspaceID)...)
 		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
+	}
+	if deleteTx != nil {
+		if err := deleteTx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to commit workspace deletion")
+			return
+		}
 	}
 
 	slog.Info("workspace deleted", append(logger.RequestAttrs(r), "workspace_id", workspaceID)...)

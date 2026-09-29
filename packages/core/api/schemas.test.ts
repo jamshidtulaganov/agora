@@ -1712,6 +1712,10 @@ describe("ProjectDevServersSchema", () => {
 
 // Agora Assistant — user-scoped session/message/availability contracts.
 describe("AssistantRunSchema drift", () => {
+  it("retains review mode and fails closed on unknown policy", () => {
+    expect(AssistantRunSchema.parse({ context: { workspace_id: null, mode: "review" } }).context.mode).toBe("review");
+    expect(AssistantRunSchema.parse({ context: { workspace_id: null, mode: "future-mode" } }).context.mode).toBe("review");
+  });
   const run = {
     id: "run-1", session_id: "session-1", message_id: "message-1",
     status: "running", active_tool: "search_issues", error: null,
@@ -1731,16 +1735,16 @@ describe("AssistantRunSchema drift", () => {
   });
 
   it("degrades malformed optional run fields", () => {
-    expect(AssistantRunSchema.parse({ ...run, active_tool: 42, context: null }).context).toEqual({ workspace_id: null });
+    expect(AssistantRunSchema.parse({ ...run, active_tool: 42, context: null }).context).toEqual({ workspace_id: null, mode: "review" });
   });
 
   it("preserves project and file IDs while safely dropping malformed optional fields", () => {
     expect(AssistantRunSchema.parse({ ...run, context: {
       workspace_id: "ws-1", project_id: "project-1", attachment_ids: ["file-1", "file-2"],
-    } }).context).toEqual({ workspace_id: "ws-1", project_id: "project-1", attachment_ids: ["file-1", "file-2"] });
+    } }).context).toEqual({ workspace_id: "ws-1", mode: "review", project_id: "project-1", attachment_ids: ["file-1", "file-2"] });
     expect(AssistantRunSchema.parse({ ...run, context: {
       workspace_id: "ws-1", project_id: 7, attachment_ids: "bad",
-    } }).context).toEqual({ workspace_id: "ws-1", project_id: null, attachment_ids: [] });
+    } }).context).toEqual({ workspace_id: "ws-1", mode: "review", project_id: null, attachment_ids: [] });
   });
 });
 

@@ -156,7 +156,7 @@ func TestAssistantDeleteIssueAfterConfirmation(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-delissue-ws", "DIS")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "doomed", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	deleted := recordBusEvents(t, protocol.EventIssueDeleted)
 
 	result := assistantAskAndConfirm(t, user, session, assistant.ToolDeleteIssue,

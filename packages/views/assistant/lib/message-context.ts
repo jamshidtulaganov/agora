@@ -1,13 +1,10 @@
-export interface MessageContext {
-  workspace_id: string | null;
-  timezone?: string;
-  project_id?: string | null;
-  member_id?: string | null;
-  attachment_ids?: string[];
-}
+import type { AssistantRunContext, AssistantRunMode } from "@agora/core/types";
+
+export type MessageContext = AssistantRunContext;
 
 /** The subset of the composer selection that resolves a message's scope. */
 interface ComposerSelection {
+  mode?: AssistantRunMode;
   workspace_id: string | null;
   workspace_pinned?: boolean;
   project_id?: string | null;
@@ -44,6 +41,7 @@ export function messageContext(
   // resolve — the server would refuse it, and the refusal would be confusing.
   const applies = !!selection && selection.workspace_id === target;
   return {
+    ...(selection?.mode ? { mode: selection.mode } : {}),
     workspace_id: target,
     ...(timezone ? { timezone } : {}),
     ...(applies && selection?.project_id ? { project_id: selection.project_id } : {}),

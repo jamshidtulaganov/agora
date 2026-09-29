@@ -307,6 +307,22 @@ func (h *Handler) assistantUpdateArtifact(ctx context.Context, caller assistantC
 	// the UPDATE locks the row and RETURNS the version Postgres computed, and
 	// the INSERT files this body under exactly that number while the lock is
 	// still held. A concurrent updater cannot be between them.
+	if assistant.RunModeFrom(ctx) != assistant.RunModeAssist {
+		// Pinned reports expose the current body to a workspace. They are not
+		// private review outputs, so updating them is a workspace mutation.
+		// The artifact row lock also blocks a new pin's FK insert until commit.
+		var lockedID pgtype.UUID
+		if err := tx.QueryRow(ctx, `SELECT id FROM assistant_artifact WHERE id=$1 AND user_id=$2 FOR UPDATE`, artifact.ID, caller.UUID).Scan(&lockedID); err != nil {
+			return nil, errAssistantArtifactNotFound
+		}
+		var pinned bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assistant_artifact_pin WHERE artifact_id=$1)`, artifact.ID).Scan(&pinned); err != nil {
+			return nil, errors.New("could not verify that this review output is private")
+		}
+		if pinned {
+			return nil, errors.New("review mode cannot update a published report; create a new private review output instead")
+		}
+	}
 	updated, err := qtx.UpdateAssistantArtifact(ctx, params)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Nothing matched. Roll back first, then read the row again to find out

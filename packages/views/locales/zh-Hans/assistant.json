@@ -320,6 +320,9 @@
     "what_needs_me": "今天有什么需要我处理？"
   },
   "resources": {
+    "mode_review": "审查（只读）",
+    "mode_assist": "协助（可修改）",
+    "review_hint": "仅提供建议。服务器禁止修改工作区。需要修改时，请在新消息中切换到协助模式。",
     "choose_workspace": "工作区",
     "no_workspaces": "没有工作区",
     "remove_workspace": "使用当前工作区",

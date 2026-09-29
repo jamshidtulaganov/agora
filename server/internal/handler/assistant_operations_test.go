@@ -180,7 +180,9 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 	addAssistantTestMember(t, ws, victim, "member")
 	session := newAssistantTestSession(t, user)
 
-	issueID := newAssistantTestIssue(t, ws, "still here", user, user)
+	emptyWS := newAssistantTestWorkspace(t, "assistant-park-empty", "EMP")
+	addAssistantTestMember(t, emptyWS, user, "owner")
+	issueID := newAssistantCreatedTestIssue(t, ws, "still here", user, user)
 	projectID := newAssistantTestProject(t, ws, "Keep me")
 	labelID := newAssistantTestLabel(t, ws, "keep", "#64748b")
 	sprintID := newAssistantTestSprint(t, ws, projectID, "Keep sprint")
@@ -205,7 +207,7 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 		assistant.ToolDeleteComment:    {`{"workspace_id":"` + ws + `","comment_id":"` + commentID + `"}`, "comment", commentID},
 		assistant.ToolRemoveMember:     {`{"workspace_id":"` + ws + `","user_id":"` + victim + `"}`, "member", ""},
 		assistant.ToolLeaveWorkspace:   {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
-		assistant.ToolDeleteWorkspace:  {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
+		assistant.ToolDeleteWorkspace:  {`{"workspace_id":"` + emptyWS + `"}`, "workspace", emptyWS},
 		assistant.ToolDeleteAutomation: {`{"workspace_id":"` + ws + `","automation":"Keep rule"}`, "automation", automationID},
 		// An import destroys nothing, but it writes thousands of rows on one
 		// click — so it parks a card exactly like the deletes above, and the
@@ -231,7 +233,11 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 			if summary == "" {
 				t.Fatalf("%s parked without a summary: %v", name, op)
 			}
-			if op["workspace_slug"] != "assistant-park-ws" {
+			wantSlug := "assistant-park-ws"
+			if name == assistant.ToolDeleteWorkspace {
+				wantSlug = "assistant-park-empty"
+			}
+			if op["workspace_slug"] != wantSlug {
 				t.Fatalf("%s workspace_slug = %v", name, op["workspace_slug"])
 			}
 			target, _ := op["target"].(map[string]any)
@@ -273,7 +279,7 @@ func TestAssistantParkedOperationIsNotAnError(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-parkok-ws", "PKO")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "asked about", user, user)
+	newAssistantCreatedTestIssue(t, ws, "asked about", user, user)
 
 	result, err := executeAssistantSessionTool(t, user, session, assistant.ToolDeleteIssue,
 		`{"workspace_id":"`+ws+`","ref":"PKO-1"}`)
@@ -300,7 +306,7 @@ func TestAssistantDestructiveToolRefusesOutsideASession(t *testing.T) {
 	user := newAssistantTestUser(t, "assistant-nosession@agora.dev")
 	ws := newAssistantTestWorkspace(t, "assistant-nosession-ws", "NSS")
 	addAssistantTestMember(t, ws, user, "owner")
-	issueID := newAssistantTestIssue(t, ws, "safe", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "safe", user, user)
 
 	_, err := executeAssistantTool(t, user, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"NSS-1"}`)
 	if err == nil {
@@ -318,7 +324,7 @@ func TestAssistantConfirmExecutesTheStoredCall(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-confirmexec-ws", "CEX")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "doomed", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	deleted := recordBusEvents(t, protocol.EventIssueDeleted)
 	announced := recordBusEvents(t, protocol.EventAssistantMessage)
 
@@ -362,7 +368,7 @@ func TestAssistantConfirmationRoundTripThroughARun(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-roundtrip-ws", "RTP")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "doomed", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	runID := newAssistantTestRun(t, session, user)
 
 	script := &scriptedToolChat{replies: []llm.Message{
@@ -408,7 +414,7 @@ func TestAssistantConfirmedDeleteCarriesAReceipt(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-delreceipt-ws", "DRC")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 
 	receipt := assistantAskAndConfirm(t, user, session, assistant.ToolDeleteIssue,
 		`{"workspace_id":"`+ws+`","ref":"DRC-1"}`)
@@ -431,7 +437,7 @@ func TestAssistantRejectLeavesTheRowStanding(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-reject-ws", "REJ")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "spared", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "spared", user, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"REJ-1"}`)
 	operationID := assistantOperationID(t, asked)
@@ -462,7 +468,7 @@ func TestAssistantConfirmTwiceIsAConflict(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-twice-ws", "TWC")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	deleted := recordBusEvents(t, protocol.EventIssueDeleted)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"TWC-1"}`)
@@ -492,7 +498,7 @@ func TestAssistantConfirmByAnotherUserIsNotFound(t *testing.T) {
 	addAssistantTestMember(t, ws, owner, "owner")
 	addAssistantTestMember(t, ws, other, "owner")
 	session := newAssistantTestSession(t, owner)
-	issueID := newAssistantTestIssue(t, ws, "not yours", owner, owner)
+	issueID := newAssistantCreatedTestIssue(t, ws, "not yours", owner, owner)
 
 	asked := assistantAsk(t, owner, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"OTU-1"}`)
 	operationID := assistantOperationID(t, asked)
@@ -516,7 +522,7 @@ func TestAssistantExpiredConfirmationIsRefused(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-expired-ws", "EXP")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "outlived it", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "outlived it", user, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"EXP-1"}`)
 	operationID := assistantOperationID(t, asked)
@@ -594,7 +600,7 @@ func TestAssistantConfirmRefusesAChangedTarget(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-changed-ws", "CHG")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	issueID := newAssistantTestIssue(t, ws, "original title", user, user)
+	issueID := newAssistantCreatedTestIssue(t, ws, "original title", user, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"CHG-1"}`)
 	operationID := assistantOperationID(t, asked)
@@ -626,7 +632,7 @@ func TestAssistantConfirmWritesTheDurableExecutionReceipt(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-durable-ws", "DUR")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 	runID := newAssistantTestRun(t, session, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue, `{"workspace_id":"`+ws+`","ref":"DUR-1"}`)
@@ -727,7 +733,7 @@ func TestAssistantReadsCarryNoReceipt(t *testing.T) {
 	user := newAssistantTestUser(t, "assistant-noreceipt@agora.dev")
 	ws := newAssistantTestWorkspace(t, "assistant-noreceipt-ws", "NRC")
 	addAssistantTestMember(t, ws, user, "owner")
-	newAssistantTestIssue(t, ws, "just looking", user, user)
+	newAssistantCreatedTestIssue(t, ws, "just looking", user, user)
 
 	result, err := executeAssistantTool(t, user, assistant.ToolListIssues, `{"workspace_id":"`+ws+`"}`)
 	if err != nil {

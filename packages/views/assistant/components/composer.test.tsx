@@ -192,7 +192,7 @@ describe("Composer slash menu — picking", () => {
     await user.keyboard("review{Enter}");
 
     expect(textarea).toHaveValue(
-      "Review this feature for bugs, requirement gaps, and impact on other parts. Recommend only; do not create or modify tasks. Feature or issue: ",
+      "/review Review this feature for bugs, requirement gaps, and impact on other parts. Recommend only; do not create or modify tasks. Feature or issue: ",
     );
     expect(onSend).not.toHaveBeenCalled();
   });

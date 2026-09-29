@@ -33,7 +33,7 @@ async function mockAssistant(page: Page, initialFailure: boolean) {
     updated_at: timestamp,
     finished_at: timestamp,
     version: 2,
-    context: { workspace_id: previousWorkspaceId, timezone: "UTC" },
+    context: { workspace_id: previousWorkspaceId, timezone: "UTC", mode: "assist" },
   });
   const session = () => ({
     id: sessionId,

@@ -2159,18 +2159,20 @@ export const AssistantRunSchema = z.object({
   finished_at: z.string().nullable().catch(null).default(null),
   version: z.number().int().nonnegative().catch(0).default(0),
   context: z.object({
+    // Unknown policy must not silently become an editable retry.
+    mode: z.enum(["assist", "review"]).catch("review").default("review"),
     workspace_id: z.string().nullable().catch(null).default(null),
     timezone: z.string().optional(),
     project_id: z.string().nullable().catch(null).optional(),
     member_id: z.string().nullable().catch(null).optional(),
     attachment_ids: z.array(z.string()).catch([]).optional(),
-  }).catch({ workspace_id: null }).default({ workspace_id: null }),
+  }).catch({ workspace_id: null, mode: "review" }).default({ workspace_id: null, mode: "review" }),
 }).loose();
 
 export const EMPTY_ASSISTANT_RUN: AssistantRun = {
   id: "", session_id: "", message_id: "", status: "interrupted",
   active_tool: null, error: null, created_at: "", updated_at: "",
-  finished_at: null, version: 0, context: { workspace_id: null },
+  finished_at: null, version: 0, context: { workspace_id: null, mode: "review" },
 };
 
 export const AssistantRunListSchema = z.array(AssistantRunSchema).catch([]);

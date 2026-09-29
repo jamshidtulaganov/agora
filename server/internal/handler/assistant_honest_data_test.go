@@ -306,7 +306,7 @@ func TestConfirmedOperationWithNoOutcomeReadsAsUncertain(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-lostoutcome-ws", "LST")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue,
 		`{"workspace_id":"`+ws+`","ref":"LST-1"}`)
@@ -343,7 +343,7 @@ func TestConfirmedOperationWithAnOutcomeStaysConfirmed(t *testing.T) {
 	ws := newAssistantTestWorkspace(t, "assistant-oldoutcome-ws", "OLD")
 	addAssistantTestMember(t, ws, user, "owner")
 	session := newAssistantTestSession(t, user)
-	newAssistantTestIssue(t, ws, "doomed", user, user)
+	newAssistantCreatedTestIssue(t, ws, "doomed", user, user)
 
 	asked := assistantAsk(t, user, session, assistant.ToolDeleteIssue,
 		`{"workspace_id":"`+ws+`","ref":"OLD-1"}`)

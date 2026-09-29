@@ -104,6 +104,7 @@ export type {
   AssistantSession,
   AssistantRun,
   AssistantRunStatus,
+  AssistantRunMode,
   AssistantRunContext,
   SendAssistantMessageRequest,
   AssistantToolCall,

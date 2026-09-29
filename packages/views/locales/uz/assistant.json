@@ -320,6 +320,9 @@
     "what_needs_me": "Bugun mendan nima talab qilinadi?"
   },
   "resources": {
+    "mode_review": "Ko‘rib chiqish (faqat o‘qish)",
+    "mode_assist": "Yordam (o‘zgartirish mumkin)",
+    "review_hint": "Faqat tavsiyalar. Server ish maydonini o‘zgartirishni bloklaydi. O‘zgartirish uchun yangi xabarda Yordam rejimini tanlang.",
     "choose_workspace": "Ish maydoni",
     "no_workspaces": "Ish maydonlari yo'q",
     "remove_workspace": "Joriy ish maydonidan foydalanish",

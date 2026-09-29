@@ -28,6 +28,17 @@ describe("Bitrix import API", () => {
 });
 
 describe("ApiClient", () => {
+  it.each([
+    { content: "inspect this feature", context: { workspace_id: null, mode: "review" as const } },
+    { content: "/review inspect this feature", context: { workspace_id: null, mode: "assist" as const } },
+  ])("uses the enforced review endpoint without falling back to editable messages", async (input) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "not found" }), { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.sendAssistantMessage("session", { ...input, request_id: "request" })).rejects.toMatchObject({ status: 404 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/assistant/sessions/session/review-messages");
+  });
   it("sends the rendered orchestration question identity with an answer", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response("null", {

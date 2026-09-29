@@ -28,7 +28,9 @@ func ResolveRunMode(mode RunMode, content string) (RunMode, error) {
 	if len(words) > 0 && strings.EqualFold(words[0], "/review") {
 		return RunModeReview, nil
 	}
-	if mode == "" { return RunModeAssist, nil }
+	if mode == "" {
+		return RunModeAssist, nil
+	}
 	return mode, nil
 }
 
@@ -40,7 +42,9 @@ func WithRunMode(ctx context.Context, mode RunMode) context.Context {
 
 func RunModeFrom(ctx context.Context) RunMode {
 	mode, _ := ctx.Value(runModeKey{}).(RunMode)
-	if mode == "" { return RunModeAssist }
+	if mode == "" {
+		return RunModeAssist
+	}
 	return mode
 }
 
@@ -65,10 +69,14 @@ func ReviewToolAllowed(name string) bool {
 }
 
 func ToolsForRunMode(tools []llm.Tool, mode RunMode) []llm.Tool {
-	if mode == RunModeAssist { return tools }
+	if mode == RunModeAssist {
+		return tools
+	}
 	out := make([]llm.Tool, 0, len(tools))
 	for _, tool := range tools {
-		if ReviewToolAllowed(tool.Name) { out = append(out, tool) }
+		if ReviewToolAllowed(tool.Name) {
+			out = append(out, tool)
+		}
 	}
 	return out
 }

@@ -2,6 +2,36 @@
 
 Status: PLAN (2026-09-16). Owner: Jamshid.
 
+## Safety amendment (owner, 2026-09-30 — supersedes parity for these actions)
+
+- The composer has **Review (read-only)** and **Assist (can make changes)** modes.
+  `/review` and the review starter select Review. The server captures the mode
+  per run in `context_snapshot`; retries retain it. `/review` cannot be downgraded
+  by a client sending `context.mode: "assist"`. Plain-language requests use the
+  selected mode; their wording is not a security boundary.
+  Review clients use `POST /api/assistant/sessions/{id}/review-messages`, which
+  forces Review even when the body says Assist. An older server returns 404;
+  clients never fall back to the editable message endpoint.
+- Review exposes only an explicit read-tool allowlist plus private artifact
+  creation/update. Updates to published (pinned) reports are blocked under a
+  row lock. Workspace edits, plans, import previews, and confirmations
+  are rejected by the executor even if the model calls a hidden tool. Creating
+  recommended tasks requires a **new** Assist-mode message.
+- Assistant issue deletion requires immutable creation provenance for the
+  requesting human and **no subtasks**, including archived/hidden children.
+  `via_assistant` metadata is not proof of creation. Existing issues without
+  provenance remain protected. The checks run before a card is offered and
+  again at confirmation; a parent-row lock protects the check/delete interval.
+- Assistant workspace and sprint deletion is blocked while any tasks remain,
+  including archived tasks. A container-row lock protects the final check, preventing
+  cascading deletion from bypassing the issue protections.
+- Eligible deletions still require an out-of-band human confirmation. These
+  restrictions apply to the Assistant; ordinary human issue deletion is unchanged.
+
+Sources: `server/internal/assistant/review_mode.go`, `run_store.go`,
+`server/internal/handler/assistant_safety.go`, `assistant_deletes.go`, `issue.go`,
+`server/internal/service/issue.go`, migration `216_assistant_issue_creation`.
+
 ## 0. MAIN RULE (owner, 2026-09-16 — supersedes every exclusion list below)
 
 **The assistant can do everything a user can do manually in Agora.** Full

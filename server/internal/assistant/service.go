@@ -311,7 +311,9 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 		}
 		var modeErr error
 		runMode, modeErr = ResolveRunMode(snapshot.Mode, "")
-		if modeErr != nil { return RunStatusFailed, "this message's mode is invalid" }
+		if modeErr != nil {
+			return RunStatusFailed, "this message's mode is invalid"
+		}
 		if contextText := snapshot.Prompt(); contextText != "" {
 			systemText += "\n\n" + contextText
 		}
@@ -637,7 +639,9 @@ func (s *Service) insertOperation(ctx context.Context, runID, toolCallID, toolNa
 }
 
 func (s *Service) execute(ctx context.Context, userID, sessionID string, call llm.ToolCall) (json.RawMessage, error) {
-	if err := CheckRunTool(ctx, call.Name); err != nil { return toolError(err.Error()), err }
+	if err := CheckRunTool(ctx, call.Name); err != nil {
+		return toolError(err.Error()), err
+	}
 	if s.Exec == nil {
 		return toolError("this tool is unavailable"), errors.New("tool unavailable")
 	}

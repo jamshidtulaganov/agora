@@ -93,7 +93,9 @@ const (
 	ToolAddSkill           = "add_skill"
 	ToolAttachSkillToAgent = "attach_skill_to_agent"
 
-	// Deleting. Parity with the ⋯ → Delete menu the UI puts on every one of
+	// Deleting. Issue deletion is narrower than the UI: only proven Assistant
+	// creations for this caller, with no subtasks, are eligible. Other deletes
+	// mirror the ⋯ → Delete menu the UI puts on every one of
 	// these — including the dialog: each one parks a pending operation and
 	// waits for the user's Confirm click. See DestructiveTools.
 	ToolDeleteIssue   = "delete_issue"
@@ -1220,7 +1222,7 @@ func ToolSpecs() []llm.Tool {
 		},
 		{
 			Name: ToolDeleteIssue,
-			Description: "Permanently delete an issue, with its comments and attachments. DESTRUCTIVE AND " +
+			Description: "Permanently delete only an issue the Assistant created for this requesting user, and only if it has no subtasks (including archived subtasks). Existing issues and other people's issues are protected. With its comments and attachments. DESTRUCTIVE AND " +
 				"IRREVERSIBLE — there is no undo and no trash. Prefer archive_issue when the user just wants it " +
 				"out of the way. " +
 				"Calling this changes nothing by itself — it returns a confirmation card, and the action runs only when the user presses Confirm on it. Say what would happen and that you are waiting for their click; never report it as done.",
@@ -1251,8 +1253,8 @@ func ToolSpecs() []llm.Tool {
 		},
 		{
 			Name: ToolDeleteSprint,
-			Description: "Permanently delete a sprint. DESTRUCTIVE AND IRREVERSIBLE — the issues survive, but " +
-				"they lose this sprint and its history. " +
+			Description: "Permanently delete an empty sprint and its history. DESTRUCTIVE AND IRREVERSIBLE. " +
+				"Refused if the sprint contains any tasks, including archived tasks; task-deletion protections cannot be bypassed. " +
 				"Calling this changes nothing by itself — it returns a confirmation card, and the action runs only when the user presses Confirm on it. Say what would happen and that you are waiting for their click; never report it as done.",
 			Parameters: json.RawMessage(`{
   "type": "object",
@@ -1486,7 +1488,8 @@ func ToolSpecs() []llm.Tool {
 		},
 		{
 			Name: ToolDeleteWorkspace,
-			Description: "Permanently delete a whole workspace — every issue, project, agent and member in it. " +
+			Description: "Permanently delete a workspace only if it contains no tasks (including archived tasks). " +
+				"Workspace deletion cannot bypass task-deletion protections. Deletes its projects, agents and members. " +
 				"THE MOST DESTRUCTIVE ACTION IN THE PRODUCT, and it cannot be undone. Owner-only. " +
 				"Calling this changes nothing by itself — it returns a confirmation card, and the action runs only when the user presses Confirm on it. Say what would happen and that you are waiting for their click; never report it as done.",
 			Parameters: json.RawMessage(`{

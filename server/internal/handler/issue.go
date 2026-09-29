@@ -2349,9 +2349,9 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		AllowDuplicate: req.AllowDuplicate,
 	}, service.IssueCreateOpts{
 		AssistantCreatorID: assistantIssueCreator(r.Context(), actualCreatorID),
-		ActorID:          actualCreatorID,
-		AnalyticsAgentID: analyticsAgentID,
-		Platform:         clientPlatform,
+		ActorID:            actualCreatorID,
+		AnalyticsAgentID:   analyticsAgentID,
+		Platform:           clientPlatform,
 		BroadcastPayload: func(issue db.Issue, atts []db.Attachment) map[string]any {
 			payload := issueToResponse(issue, prefix)
 			payload.Attachments = buildAttachmentResponses(atts)
@@ -3254,17 +3254,25 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	// between the final safety check and DELETE.
 	var deleteTx pgx.Tx
 	if exec := assistantExecutionFrom(r.Context()); exec != nil && exec.tool == assistant.ToolDeleteIssue {
-		if !exec.authorized { writeError(w, http.StatusForbidden, "this action needs confirmation"); return }
+		if !exec.authorized {
+			writeError(w, http.StatusForbidden, "this action needs confirmation")
+			return
+		}
 		var err error
 		deleteTx, err = h.TxStarter.Begin(r.Context())
-		if err != nil { writeError(w, http.StatusInternalServerError, "could not check deletion safety"); return }
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not check deletion safety")
+			return
+		}
 		defer deleteTx.Rollback(r.Context())
 		var lockedID pgtype.UUID
 		if err := deleteTx.QueryRow(r.Context(), `SELECT id FROM issue WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, issue.ID, issue.WorkspaceID).Scan(&lockedID); err != nil {
-			writeError(w, http.StatusConflict, "issue is no longer available"); return
+			writeError(w, http.StatusConflict, "issue is no longer available")
+			return
 		}
 		if err := checkAssistantIssueDeletion(r.Context(), deleteTx, requestUserID(r), issue.ID, issue.WorkspaceID); err != nil {
-			writeError(w, http.StatusForbidden, err.Error()); return
+			writeError(w, http.StatusForbidden, err.Error())
+			return
 		}
 		queries = h.Queries.WithTx(deleteTx)
 	}
@@ -3285,7 +3293,10 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if deleteTx != nil {
-		if err := deleteTx.Commit(r.Context()); err != nil { writeError(w, http.StatusInternalServerError, "failed to commit issue deletion"); return }
+		if err := deleteTx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to commit issue deletion")
+			return
+		}
 	}
 
 	h.deleteS3Objects(r.Context(), attachmentURLs)

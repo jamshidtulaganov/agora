@@ -459,7 +459,34 @@ func (h *Handler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 	// they are not orphaned to the backlog. Child rows (comments, tasks, labels,
 	// qa_evidence, ...) cascade via their FKs. Runs before the sprint delete so
 	// the issue_to_sprint join is still intact.
-	deleted, derr := h.Queries.DeleteIssuesInSprint(r.Context(), db.DeleteIssuesInSprintParams{
+	queries := h.Queries
+	var deleteTx pgx.Tx
+	if exec := assistantExecutionFrom(r.Context()); exec != nil {
+		if !exec.authorized {
+			writeError(w, http.StatusForbidden, "this action needs confirmation")
+			return
+		}
+		var err error
+		deleteTx, err = h.TxStarter.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not check deletion safety")
+			return
+		}
+		defer deleteTx.Rollback(r.Context())
+		var lockedID pgtype.UUID
+		// Issue-to-sprint inserts/reassignments take a FK lock on the sprint.
+		// Holding its row lock makes the final empty check and delete atomic.
+		if err := deleteTx.QueryRow(r.Context(), `SELECT id FROM sprint WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, sprint.ID, sprint.WorkspaceID).Scan(&lockedID); err != nil {
+			writeError(w, http.StatusConflict, "sprint is no longer available")
+			return
+		}
+		if err := checkAssistantSprintDeletion(r.Context(), deleteTx, sprint.ID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		queries = h.Queries.WithTx(deleteTx)
+	}
+	deleted, derr := queries.DeleteIssuesInSprint(r.Context(), db.DeleteIssuesInSprintParams{
 		SprintID: sprint.ID, WorkspaceID: sprint.WorkspaceID,
 	})
 	if derr != nil {
@@ -467,12 +494,18 @@ func (h *Handler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete sprint")
 		return
 	}
-	if err := h.Queries.DeleteSprint(r.Context(), db.DeleteSprintParams{
+	if err := queries.DeleteSprint(r.Context(), db.DeleteSprintParams{
 		ID: sprint.ID, WorkspaceID: sprint.WorkspaceID,
 	}); err != nil {
 		slog.Error("DeleteSprint failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to delete sprint")
 		return
+	}
+	if deleteTx != nil {
+		if err := deleteTx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to commit sprint deletion")
+			return
+		}
 	}
 	slog.Info("sprint deleted with its tasks", "sprint_id", uuidToString(sprint.ID), "issues_deleted", deleted)
 	h.publish(protocol.EventSprintDeleted, workspaceID, "member", userID, map[string]any{"sprint_id": uuidToString(sprint.ID)})

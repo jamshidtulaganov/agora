@@ -343,6 +343,7 @@ export function ActiveConversation({
         )}
       </div>
       <Composer
+        onReviewMode={resources.onReviewMode}
         value={value}
         onValueChange={handleValueChange}
         onSend={handleSend}

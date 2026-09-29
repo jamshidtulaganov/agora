@@ -114,7 +114,7 @@ export function useSlashCommands(): SlashCommandItem[] {
     review: {
       label: t(($) => $.composer.slash.review.label),
       description: t(($) => $.composer.slash.review.description),
-      payload: t(($) => $.empty_state.prompts.review_feature),
+      payload: `/review ${t(($) => $.empty_state.prompts.review_feature)}`,
     },
     plan_sprint: {
       label: t(($) => $.composer.slash.plan_sprint.label),
