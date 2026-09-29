@@ -81,7 +81,28 @@ const (
 	ToolCreateProject     = "create_project"
 	ToolUpdateProject     = "update_project"
 	ToolCreateSprint      = "create_sprint"
+	ToolUpdateSprint      = "update_sprint"
 	ToolCreateLabel       = "create_label"
+
+	// Squads. The UI lets a human build one from Settings → Squads, and a
+	// squad is how work gets decomposed and delegated — so "set one up for
+	// this project" must not be answered with directions to a page.
+	ToolCreateSquad = "create_squad"
+	ToolUpdateSquad = "update_squad"
+	ToolDeleteSquad = "delete_squad"
+
+	// Automations. create/delete/toggle were here from the start; editing a
+	// flow was the one thing that sent the user back to the page.
+	ToolUpdateAutomation = "update_automation"
+
+	// The workspace knowledge base. Reading it was already here
+	// (list/search/read_knowledge); this is the other half of the page an
+	// owner or admin sees. The handlers keep the owner/admin restriction, so
+	// a member asking for these gets the same refusal the UI gives them.
+	ToolCreateKnowledge    = "create_knowledge"
+	ToolUpdateKnowledge    = "update_knowledge"
+	ToolDeleteKnowledge    = "delete_knowledge"
+	ToolReprocessKnowledge = "reprocess_knowledge"
 
 	// Setting Agora up (write). A workspace with no agent cannot do the thing
 	// the product exists for, so "add an agent and give it a skill" is exactly
@@ -226,6 +247,15 @@ var MutatingTools = map[string]bool{
 	ToolCreateProject:        true,
 	ToolUpdateProject:        true,
 	ToolCreateSprint:         true,
+	ToolUpdateSprint:         true,
+	ToolCreateSquad:          true,
+	ToolUpdateSquad:          true,
+	ToolDeleteSquad:          true,
+	ToolUpdateAutomation:     true,
+	ToolCreateKnowledge:      true,
+	ToolUpdateKnowledge:      true,
+	ToolDeleteKnowledge:      true,
+	ToolReprocessKnowledge:   true,
 	ToolCreateLabel:          true,
 	ToolCreateAgent:          true,
 	ToolUpdateAgent:          true,
@@ -313,6 +343,11 @@ var DestructiveTools = map[string]bool{
 	ToolLeaveWorkspace:   true,
 	ToolDeleteWorkspace:  true,
 	ToolDeleteAutomation: true,
+	// A squad's members and its history go with it, and there is no restore.
+	ToolDeleteSquad: true,
+	// The document's extracted sections go too; the original file is only
+	// recoverable if it still exists as an attachment.
+	ToolDeleteKnowledge: true,
 	// An import destroys nothing. It is here because the confirmation-binding
 	// path is this product's ONE mechanism for "a human read this and pressed
 	// a button", and a job that writes thousands of rows into a workspace
@@ -368,6 +403,7 @@ var PlanAllowedTools = map[string]bool{
 	ToolMoveIssueToSprint: true,
 	ToolCreateLabel:       true,
 	ToolCreateSprint:      true,
+	ToolUpdateSprint:      true,
 	ToolCreateProject:     true,
 	ToolUpdateProject:     true,
 	ToolSubscribeIssue:    true,
@@ -1199,6 +1235,153 @@ func ToolSpecs() []llm.Tool {
     "end_date": {"type": "string", "description": "Optional end date as YYYY-MM-DD."}
   },
   "required": ["workspace_id", "project_id", "name"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateSprint,
+			Description: "Rename a sprint, change its goal, dates or status. WRITE — ground sprint_id with " +
+				"list_sprints first. Only the fields you pass change; the rest are left alone.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the sprint lives in."},
+    "sprint": {"type": "string", "description": "Sprint UUID, or its name (case-insensitive)."},
+    "name": {"type": "string", "description": "New sprint name."},
+    "goal": {"type": "string", "description": "New one-line goal."},
+    "status": {"type": "string", "enum": ["planned", "active", "completed"], "description": "New status."},
+    "start_date": {"type": "string", "description": "New start date as YYYY-MM-DD."},
+    "end_date": {"type": "string", "description": "New end date as YYYY-MM-DD."}
+  },
+  "required": ["workspace_id", "sprint"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolCreateSquad,
+			Description: "Create a squad — a named group of agents and people that work an issue together. " +
+				"WRITE, owners and admins only. Every squad needs a LEADER, which must be an agent that " +
+				"already exists in the workspace: call list_agents first and pass one. Other members are " +
+				"added afterwards; this creates the squad and its leader.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace to create the squad in."},
+    "name": {"type": "string", "description": "Squad name, e.g. \"Platform\"."},
+    "leader": {"type": "string", "description": "The squad's leader: an agent UUID or agent name from list_agents. Required — a squad cannot exist without one."},
+    "description": {"type": "string", "description": "Optional one-line description of what the squad does."}
+  },
+  "required": ["workspace_id", "name", "leader"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name:        ToolUpdateSquad,
+			Description: "Rename a squad or change its description. WRITE — ground the squad with list_squads first.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the squad lives in."},
+    "squad": {"type": "string", "description": "Squad UUID, or its name (case-insensitive)."},
+    "name": {"type": "string", "description": "New squad name."},
+    "leader": {"type": "string", "description": "New leader: an agent UUID or agent name from list_agents."},
+    "description": {"type": "string", "description": "New description."}
+  },
+  "required": ["workspace_id", "squad"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolDeleteSquad,
+			Description: "Permanently delete a squad. DESTRUCTIVE AND IRREVERSIBLE — its membership and its " +
+				"history go with it; the agents and people themselves are untouched. " +
+				"Calling this changes nothing by itself — it returns a confirmation card, and the action runs only when the user presses Confirm on it. Say what would happen and that you are waiting for their click; never report it as done.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the squad lives in."},
+    "squad": {"type": "string", "description": "Squad UUID, or its name (case-insensitive)."}
+  },
+  "required": ["workspace_id", "squad"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateAutomation,
+			Description: "Change an automation's name, or its WHEN/IF/THEN definition. WRITE — call " +
+				"list_automations first and send the whole definition you want, not a fragment: the " +
+				"definition is replaced, not merged. Use set_automation_enabled to pause one instead.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the automation lives in."},
+    "automation": {"type": "string", "description": "Automation UUID, or its name (case-insensitive)."},
+    "name": {"type": "string", "description": "New automation name."},
+    "definition": {"type": "object", "description": "The complete replacement definition (trigger, conditions, actions), in the shape list_automations returns."}
+  },
+  "required": ["workspace_id", "automation"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolCreateKnowledge,
+			Description: "Add a note to the workspace knowledge base — the team's SOPs, policies and reference " +
+				"material that the assistant and agents search. WRITE, owners and admins only. This adds a " +
+				"written note; uploading a PDF, Word or Excel file is done from the Knowledge page.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace to add the note to."},
+    "title": {"type": "string", "description": "Title of the note, e.g. \"Refund policy\"."},
+    "body": {"type": "string", "description": "The note itself, in Markdown."},
+    "pinned": {"type": "boolean", "description": "Pin it so every prompt and agent brief always includes it. Use sparingly."}
+  },
+  "required": ["workspace_id", "title", "body"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolUpdateKnowledge,
+			Description: "Rename a knowledge document or pin/unpin it. WRITE, owners and admins only — ground " +
+				"the document with list_knowledge or search_knowledge first.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the document lives in."},
+    "doc_id": {"type": "string", "description": "UUID of the document, from list_knowledge or search_knowledge."},
+    "title": {"type": "string", "description": "New title."},
+    "pinned": {"type": "boolean", "description": "Pin or unpin it."}
+  },
+  "required": ["workspace_id", "doc_id"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolReprocessKnowledge,
+			Description: "Read a knowledge document again from its file. WRITE, owners and admins only — use " +
+				"when a document failed to process or its sections look wrong.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the document lives in."},
+    "doc_id": {"type": "string", "description": "UUID of the document, from list_knowledge."}
+  },
+  "required": ["workspace_id", "doc_id"],
+  "additionalProperties": false
+}`),
+		},
+		{
+			Name: ToolDeleteKnowledge,
+			Description: "Permanently delete a knowledge document. DESTRUCTIVE AND IRREVERSIBLE — its extracted " +
+				"sections go with it and the assistant and agents stop being able to cite it. Owners and admins only. " +
+				"Calling this changes nothing by itself — it returns a confirmation card, and the action runs only when the user presses Confirm on it. Say what would happen and that you are waiting for their click; never report it as done.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "workspace_id": {"type": "string", "description": "UUID of the workspace the document lives in."},
+    "doc_id": {"type": "string", "description": "UUID of the document, from list_knowledge."}
+  },
+  "required": ["workspace_id", "doc_id"],
   "additionalProperties": false
 }`),
 		},

@@ -53,7 +53,13 @@ func TestToolSpecsIsTheFullCatalog(t *testing.T) {
 		// Writes: the everyday work.
 		ToolCreateIssue, ToolUpdateIssue, ToolCommentIssue, ToolArchiveIssue,
 		ToolAddIssueLabel, ToolRemoveIssueLabel, ToolMoveIssueToSprint,
-		ToolCreateProject, ToolUpdateProject, ToolCreateSprint, ToolCreateLabel,
+		ToolCreateProject, ToolUpdateProject, ToolCreateSprint, ToolUpdateSprint,
+		// Squads, automations and the knowledge base: the other half of pages
+		// the assistant could already read but not change.
+		ToolCreateSquad, ToolUpdateSquad, ToolDeleteSquad,
+		ToolUpdateAutomation,
+		ToolCreateKnowledge, ToolUpdateKnowledge, ToolReprocessKnowledge, ToolDeleteKnowledge,
+		ToolCreateLabel,
 		// Deletes — every one of them confirm-gated.
 		ToolDeleteIssue, ToolDeleteProject, ToolDeleteSprint, ToolDeleteLabel, ToolDeleteComment,
 		// The one-click parity items.
@@ -319,6 +325,17 @@ func TestMutatingToolsMatchTheCatalog(t *testing.T) {
 		ToolCreateAutomation:     true,
 		ToolSetAutomationEnabled: true,
 		ToolDeleteAutomation:     true,
+		ToolUpdateAutomation:     true,
+		// Editing a sprint, and running a squad.
+		ToolUpdateSprint: true,
+		ToolCreateSquad:  true,
+		ToolUpdateSquad:  true,
+		ToolDeleteSquad:  true,
+		// The owner/admin half of the Knowledge page.
+		ToolCreateKnowledge:    true,
+		ToolUpdateKnowledge:    true,
+		ToolReprocessKnowledge: true,
+		ToolDeleteKnowledge:    true,
 		// Personal settings. Writes, but reversible ones: they are deliberately
 		// absent from DestructiveTools.
 		ToolUpdateMySettings:              true,

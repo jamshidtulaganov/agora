@@ -229,6 +229,24 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 		return h.assistantDeleteProject(ctx, caller, args)
 	case assistant.ToolDeleteSprint:
 		return h.assistantDeleteSprint(ctx, caller, args)
+	case assistant.ToolUpdateSprint:
+		return h.assistantUpdateSprint(ctx, caller, args)
+	case assistant.ToolCreateSquad:
+		return h.assistantCreateSquad(ctx, caller, args)
+	case assistant.ToolUpdateSquad:
+		return h.assistantUpdateSquad(ctx, caller, args)
+	case assistant.ToolDeleteSquad:
+		return h.assistantDeleteSquad(ctx, caller, args)
+	case assistant.ToolUpdateAutomation:
+		return h.assistantUpdateAutomation(ctx, caller, args)
+	case assistant.ToolCreateKnowledge:
+		return h.assistantCreateKnowledge(ctx, caller, args)
+	case assistant.ToolUpdateKnowledge:
+		return h.assistantUpdateKnowledge(ctx, caller, args)
+	case assistant.ToolReprocessKnowledge:
+		return h.assistantReprocessKnowledge(ctx, caller, args)
+	case assistant.ToolDeleteKnowledge:
+		return h.assistantDeleteKnowledge(ctx, caller, args)
 	case assistant.ToolDeleteLabel:
 		return h.assistantDeleteLabel(ctx, caller, args)
 	case assistant.ToolDeleteComment:

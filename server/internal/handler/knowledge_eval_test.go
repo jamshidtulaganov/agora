@@ -84,10 +84,10 @@ One late fee per year may be waived by a team lead if the customer asks.`,
 }
 
 type knowledgeEvalCase struct {
-	question string
-	doc      string // expected document title
-	heading  string // expected heading (substring of the heading path)
-	crossLang bool  // asked in a different language than the document
+	question  string
+	doc       string // expected document title
+	heading   string // expected heading (substring of the heading path)
+	crossLang bool   // asked in a different language than the document
 }
 
 var knowledgeEvalCases = []knowledgeEvalCase{

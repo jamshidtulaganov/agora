@@ -75,8 +75,8 @@ func TestSliceActionPriorHumanResultsContext(t *testing.T) {
 	// The human's checklist walk — failed at step 2 with a note.
 	if _, err := testHandler.Queries.CreateTestRun(ctx, db.CreateTestRunParams{
 		WorkspaceID: issue.WorkspaceID, TestCaseID: humanCase.ID, IssueID: issue.ID,
-		Status: "fail",
-		Output: "Manual step run — 1/2 passed, failed at step 2\n```step-results\n[{\"step\":1,\"status\":\"pass\"},{\"step\":2,\"status\":\"fail\",\"note\":\"save button stays disabled\"}]\n```",
+		Status:    "fail",
+		Output:    "Manual step run — 1/2 passed, failed at step 2\n```step-results\n[{\"step\":1,\"status\":\"pass\"},{\"step\":2,\"status\":\"fail\",\"note\":\"save button stays disabled\"}]\n```",
 		RunSource: "human", RunByType: "member",
 	}); err != nil {
 		t.Fatalf("CreateTestRun human: %v", err)
