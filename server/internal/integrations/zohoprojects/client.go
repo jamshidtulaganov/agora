@@ -366,6 +366,39 @@ func (s *flexInt) UnmarshalJSON(b []byte) error {
 
 func (s flexInt) String() string { return string(s) }
 
+// flexBool decodes the many shapes Zoho uses for a yes/no field: a JSON bool,
+// a number (1/0) or a string ("true", "yes", "active", "enabled"). Zoho is not
+// consistent across endpoints, and a strict *bool fails the decode of the
+// whole users listing, which silently downgrades the caller to "activity
+// unknown" for everyone. Absent and unrecognised both decode to unknown
+// (Set=false) so the caller decides, rather than this type guessing "active".
+type flexBool struct {
+	Set   bool
+	Value bool
+}
+
+func (f *flexBool) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	var raw string
+	if b[0] == '"' {
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return err
+		}
+	} else {
+		raw = string(b)
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "yes", "y", "1", "active", "enabled", "confirmed":
+		f.Set, f.Value = true, true
+	case "false", "no", "n", "0", "inactive", "disabled", "deleted", "deactivated", "expired", "unconfirmed":
+		f.Set, f.Value = true, false
+	}
+	return nil
+}
+
 // Portal is the subset of a Zoho Projects portal Agora cares about. The numeric
 // ZSOID id is what the rest of the API paths key on.
 type Portal struct {
@@ -863,11 +896,16 @@ const maxCommentsPerTask = 50
 // Zoho's raw label ("admin", "manager", "employee", "contractor", "client");
 // MapRole turns it into an Agora workspace role.
 type ProjectUser struct {
-	ID     string
-	Name   string
-	Email  string
-	Role   string
-	Active bool
+	ID    string
+	Name  string
+	Email string
+	Role  string
+	// Active is Zoho's activity flag. ActiveKnown is false when the response
+	// carried no usable flag at all — the caller must not read Active then,
+	// because "no flag" is not "active": treating it as active is how a
+	// portal's ex-employees end up as workspace members.
+	Active      bool
+	ActiveKnown bool
 }
 
 type listProjectUsersResponse struct {
@@ -878,8 +916,25 @@ type listProjectUsersResponse struct {
 		Email   flexInt `json:"email"`
 		Role    flexInt `json:"role"`
 		Profile flexInt `json:"profile_type"`
-		Active  *bool   `json:"active"`
+		// Zoho spells this differently per endpoint and per portal edition,
+		// and sends bool, number or string. Every spelling we have seen is
+		// read; the first one that decodes to a known value wins.
+		Active       flexBool `json:"active"`
+		ActiveStatus flexBool `json:"active_status"`
+		IsActive     flexBool `json:"is_active"`
+		Status       flexBool `json:"status"`
+		UserStatus   flexBool `json:"user_status"`
 	} `json:"users"`
+}
+
+// firstKnownBool returns the first flag Zoho actually answered with.
+func firstKnownBool(vals ...flexBool) (value bool, known bool) {
+	for _, v := range vals {
+		if v.Set {
+			return v.Value, true
+		}
+	}
+	return false, false
 }
 
 // ListProjectUsers returns a project's members with their project role. It
@@ -900,9 +955,15 @@ func (c *Client) ListProjectUsers(ctx context.Context, portalID, projectID strin
 	if emptyJSONBody(body) {
 		return nil, nil
 	}
+	return decodeProjectUsers(body, "project users")
+}
+
+// decodeProjectUsers parses a Zoho users listing. what names the endpoint in
+// the error so a scope problem points at the call that hit it.
+func decodeProjectUsers(body []byte, what string) ([]ProjectUser, error) {
 	var parsed listProjectUsersResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("zohoprojects: decode project users: %w", err)
+		return nil, fmt.Errorf("zohoprojects: decode %s: %w", what, err)
 	}
 	out := make([]ProjectUser, 0, len(parsed.Users))
 	for _, u := range parsed.Users {
@@ -910,15 +971,39 @@ func (c *Client) ListProjectUsers(ctx context.Context, portalID, projectID strin
 		if email == "" {
 			continue
 		}
+		active, known := firstKnownBool(u.Active, u.ActiveStatus, u.IsActive, u.Status, u.UserStatus)
 		out = append(out, ProjectUser{
-			ID:     firstNonEmpty(u.ZPUID, u.ID),
-			Name:   u.Name.String(),
-			Email:  email,
-			Role:   firstNonEmpty(u.Role, u.Profile),
-			Active: u.Active == nil || *u.Active,
+			ID:          firstNonEmpty(u.ZPUID, u.ID),
+			Name:        u.Name.String(),
+			Email:       email,
+			Role:        firstNonEmpty(u.Role, u.Profile),
+			Active:      active,
+			ActiveKnown: known,
 		})
 	}
 	return out, nil
+}
+
+// --- ListPortalUsers --------------------------------------------------------
+
+// ListPortalUsers returns every person in the portal with their activity flag.
+// One call covers all projects, which is what makes it usable as the roster
+// that gates membership: a project's task history names people who left the
+// company years ago, and a task owner/creator carries no activity flag of its
+// own, so the portal roster is the only place the answer exists.
+//
+// Same shape as ListProjectUsers; it needs the ZohoProjects.users.READ scope
+// too, and answers with an "Invalid OAuth scope" error without it.
+func (c *Client) ListPortalUsers(ctx context.Context, portalID string) ([]ProjectUser, error) {
+	portalID = strings.TrimSpace(portalID)
+	if portalID == "" {
+		return nil, errors.New("zohoprojects: empty portal id")
+	}
+	body, err := c.get(ctx, "/portal/"+url.PathEscape(portalID)+"/users/", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodeProjectUsers(body, "portal users")
 }
 
 // GetTaskComments returns a task's comment feed (author, date, content). It

@@ -2,6 +2,7 @@ package zohoprojects
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -162,5 +163,78 @@ func TestTasklistLabel(t *testing.T) {
 		if len(got) > maxLabelBytes {
 			t.Errorf("TasklistLabel(%q) = %d bytes, over the label limit", c.in, len(got))
 		}
+	}
+}
+
+// TestFlexBoolShapes: Zoho sends a yes/no field as a bool, a number or a
+// string, and a strict *bool would fail the decode of the whole listing.
+func TestFlexBoolShapes(t *testing.T) {
+	cases := map[string]struct {
+		value string
+		known bool
+	}{
+		"bool true":       {"true", true},
+		"bool false":      {"false", true},
+		"string yes":      {`"yes"`, true},
+		"string no":       {`"no"`, true},
+		"string active":   {`"active"`, true},
+		"string disabled": {`"disabled"`, true},
+		"number 1":        {"1", true},
+		"number 0":        {"0", true},
+		"null":            {"null", false},
+		"unknown word":    {`"pending"`, false},
+	}
+	want := map[string]bool{
+		"bool true": true, "string yes": true, "string active": true, "number 1": true,
+	}
+	for name, tc := range cases {
+		var f flexBool
+		if err := json.Unmarshal([]byte(tc.value), &f); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if f.Set != tc.known {
+			t.Errorf("%s: Set = %v, want %v", name, f.Set, tc.known)
+		}
+		if f.Value != want[name] {
+			t.Errorf("%s: Value = %v, want %v", name, f.Value, want[name])
+		}
+	}
+}
+
+// TestUsersListingCarriesActivity: an activity flag Zoho does not send leaves
+// the person unknown rather than active — the caller must not read "no flag"
+// as "still works here".
+func TestUsersListingCarriesActivity(t *testing.T) {
+	c := newFieldsServer(t, http.StatusOK)
+	for _, tc := range []struct {
+		name string
+		call func() ([]ProjectUser, error)
+	}{
+		{"portal", func() ([]ProjectUser, error) { return c.ListPortalUsers(context.Background(), "1") }},
+		{"project", func() ([]ProjectUser, error) { return c.ListProjectUsers(context.Background(), "1", "2494") }},
+	} {
+		users, err := tc.call()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		// The third fixture user has no email and is dropped.
+		if len(users) != 2 {
+			t.Fatalf("%s: users = %+v", tc.name, users)
+		}
+		if !users[0].ActiveKnown || !users[0].Active {
+			t.Errorf("%s: %+v should be known-active", tc.name, users[0])
+		}
+		if !users[1].ActiveKnown || users[1].Active {
+			t.Errorf("%s: %+v should be known-inactive", tc.name, users[1])
+		}
+	}
+}
+
+// TestUsersListingWithoutScope: no users scope is an error, not an empty
+// roster — an empty roster would read as "nobody is active".
+func TestUsersListingWithoutScope(t *testing.T) {
+	c := newFieldsServer(t, http.StatusUnauthorized)
+	if _, err := c.ListPortalUsers(context.Background(), "1"); err == nil {
+		t.Error("ListPortalUsers should surface the scope error")
 	}
 }
