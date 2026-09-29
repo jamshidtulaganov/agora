@@ -5,6 +5,56 @@ description: 通过共享 mcp.json 或智能体专用覆盖，将智能体连接
 
 import { Callout } from "fumadocs-ui/components/callout";
 
+## 将 Claude Code 等客户端连接到 Agora
+
+`agora mcp serve` 通过本地 stdio 将当前工作区的 issue、项目、评论和知识库提供给 MCP 客户端。它与下方的外部连接器方向相反：客户端读取 Agora，而不是 Agora 智能体调用外部工具。
+
+使用包含此命令的 CLI 版本（先检查 `agora mcp serve --help`），在连接前完成登录，并明确指定工作区 UUID：
+
+```bash
+agora login
+claude mcp add --transport stdio agora -- agora mcp serve --workspace-id YOUR_WORKSPACE_UUID
+claude mcp get agora
+```
+
+在 Claude Code 中打开 `/mcp` 检查连接，详见 [Claude Code stdio 配置](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server)。如果客户端的 `PATH` 中没有 CLI，请把启动命令换成可执行文件的绝对路径。
+
+Claude Desktop、Cursor 等支持 `mcpServers` JSON 的客户端使用：
+
+```json
+{
+  "mcpServers": {
+    "agora": {
+      "command": "agora",
+      "args": ["mcp", "serve", "--workspace-id", "YOUR_WORKSPACE_UUID"]
+    }
+  }
+}
+```
+
+CLI 复用已保存的登录和服务器 URL。`--profile` 可选择独立配置；也支持 `--server-url`、`AGORA_SERVER_URL`、`AGORA_WORKSPACE_ID` 和 `AGORA_TOKEN`。不要把 token 放进提交到仓库的 JSON 或命令参数，也不要在 MCP 协议流中执行交互式登录。
+
+默认提供 **14 个只读工具**：
+
+| 范围 | 工具 |
+| --- | --- |
+| 工作区与项目 | `get_workspace`、`list_projects`、`get_project` |
+| Issue 与讨论 | `list_issues`、`search_issues`、`get_issue`、`list_comments` |
+| 知识与需求 | `list_knowledge`、`search_knowledge`、`get_knowledge`、`list_project_knowledge` |
+| 分配信息 | `list_labels`、`list_members`、`list_agents` |
+
+只读模式会在服务端拒绝写入，即使客户端猜到了工具名。明确添加 `--allow-writes` 并重新连接后，才会提供 `create_issue`、`update_issue`、`comment_issue`。创建 issue 时若不指定状态，默认使用 `backlog`。
+
+<Callout type="warning">
+写入沿用登录用户的 Agora 权限，可能触发工作区自动化、智能体执行和通知。`--allow-writes` 授权整个 MCP 会话，不是逐次确认；请在客户端配置操作审批。写入失败后不要自动重试，应先查看 Agora，避免重复操作。服务不提供删除、凭据管理、shell 或任意 HTTP 请求工具。
+</Callout>
+
+仅需审查建议时保留只读默认值，例如：“对照 Agora 知识库检查此行为，区分已确认的 bug、回归风险和缺失证据，建议 issue 但不要创建。”`list_project_knowledge` 仅返回已审核的 `active` 知识；搜索结果含来源 ID 和引用，确认需求前请阅读原文。智能体列表仅包含分配信息，不返回运行时配置或 MCP 凭据。
+
+此服务使用本地 stdio 连接 Agora REST API，不是托管的 HTTP/OAuth MCP 端点；支持初始化、工具发现与调用、ping、取消和请求超时。`agora mcp qa` 仍是独立的测试运行器。
+
+## 将 Agora 智能体连接到外部工具
+
 Agora 接受 Claude Desktop 和 Cursor 使用的同一种顶层 `mcpServers` JSON 结构。在 **工作区 → MCP 服务器** 中粘贴或导入 `mcp.json` 文件。
 
 ```json

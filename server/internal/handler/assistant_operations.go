@@ -516,6 +516,17 @@ func (h *Handler) ConfirmAssistantOperation(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusConflict, assistantOperationStateMessage(assistantOperationDisplayStatus(op, time.Now())))
 		return
 	}
+	// A stored review run cannot be turned into a write by clicking an old or
+	// malformed card. Apply the origin run's policy BEFORE claiming any action.
+	if op.RunID.Valid {
+		var mode assistant.RunMode
+		if err := h.DB.QueryRow(r.Context(), `SELECT COALESCE(context_snapshot->>'mode','assist') FROM assistant_run WHERE id=$1 AND user_id=$2 AND session_id=$3`, op.RunID, userID, op.SessionID).Scan(&mode); err != nil {
+			writeError(w, http.StatusConflict, "could not verify this action's originating run"); return
+		}
+		if err := assistant.CheckRunTool(assistant.WithRunMode(r.Context(), mode), op.ToolName); err != nil {
+			writeError(w, http.StatusForbidden, err.Error()); return
+		}
+	}
 
 	// STEP 0 — the OPTIONAL body, read before the claim so a request the server
 	// cannot make sense of never spends the authorization. An absent or empty

@@ -102,10 +102,31 @@ WHERE id = $1 AND workspace_id = $2;
 -- directly (member), to an agent they own, or to a squad they (or an agent they
 -- own) belong to / lead. Gates issue detail for non-owner members (mirrors
 -- issueOwnershipClause).
+--
+-- Ownership is inherited from ANCESTORS. A subtask of an issue you own is
+-- yours to open: the board and the parent's subtask list show it either way
+-- (ListChildIssues is deliberately unfiltered), so without this the UI offers
+-- a row that answers 404 when clicked — which is what a person reads as the
+-- task being broken.
+--
+-- The walk is capped at 16 levels. The create/update paths already reject a
+-- circular parent, but a recursive CTE over cyclic rows does not terminate,
+-- and a visibility gate is the wrong place to discover that data drifted.
+WITH RECURSIVE chain AS (
+  SELECT i.id, i.parent_issue_id, i.creator_type, i.creator_id,
+         i.assignee_type, i.assignee_id, 0 AS depth
+    FROM issue i
+   WHERE i.id = @issue_id AND i.workspace_id = @workspace_id
+  UNION ALL
+  SELECT p.id, p.parent_issue_id, p.creator_type, p.creator_id,
+         p.assignee_type, p.assignee_id, c.depth + 1
+    FROM issue p
+    JOIN chain c ON p.id = c.parent_issue_id
+   WHERE p.workspace_id = @workspace_id AND c.depth < 16
+)
 SELECT EXISTS (
-  SELECT 1 FROM issue i
-  WHERE i.id = @issue_id AND i.workspace_id = @workspace_id
-    AND (
+  SELECT 1 FROM chain i
+  WHERE (
       (i.creator_type = 'member' AND i.creator_id = @user_id)
       OR (i.assignee_type = 'member' AND i.assignee_id = @user_id)
       OR (i.assignee_type = 'agent' AND i.assignee_id IN (

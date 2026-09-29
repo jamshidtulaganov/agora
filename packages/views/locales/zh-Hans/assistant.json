@@ -21,6 +21,7 @@
     "title": "问 Agora 任何问题",
     "subtitle": "它能看到你所在的每个工作区 —— issue、项目、用量。",
     "prompts": {
+      "review_feature": "检查这个功能是否有 bug、需求缺口，以及会不会影响其他部分。只给建议，不要创建或修改 task。功能或 issue：",
       "create_issue": "创建一个 issue，更新定价页文案",
       "my_plate": "我在所有工作区里手头都有什么？",
       "usage_this_week": "我这周用了多少？",
@@ -94,6 +95,10 @@
       "release_notes": {
         "label": "发布说明",
         "description": "上线了什么，用人话讲清楚"
+      },
+      "review": {
+        "label": "检查功能",
+        "description": "根据证据查找 bug、缺口和回归风险"
       },
       "plan_sprint": {
         "label": "规划 Sprint",

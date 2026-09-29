@@ -21,6 +21,7 @@
     "title": "Agora’dan xohlagan narsangizni so‘rang",
     "subtitle": "U barcha ish maydonlaringizni ko‘radi — vazifalar, loyihalar, sarf.",
     "prompts": {
+      "review_feature": "Bu funksiyani xatolar, talab kamchiliklari va boshqa qismlarga ta’siri bo‘yicha tekshir. Faqat tavsiya ber; vazifalarni yaratma yoki o‘zgartirma. Funksiya yoki vazifa: ",
       "create_issue": "Narxlar sahifasi matnini yangilash uchun vazifa yarat",
       "my_plate": "Barcha ish maydonlarimda mening zimmamda nima bor?",
       "usage_this_week": "Bu hafta qancha sarfladim?",
@@ -94,6 +95,10 @@
       "release_notes": {
         "label": "Reliz eslatmalari",
         "description": "Nima chiqdi — odam tilida"
+      },
+      "review": {
+        "label": "Funksiyani tekshirish",
+        "description": "Dalillarga asoslangan xatolar, kamchiliklar va regressiya xavflarini topish"
       },
       "plan_sprint": {
         "label": "Sprintni rejalash",

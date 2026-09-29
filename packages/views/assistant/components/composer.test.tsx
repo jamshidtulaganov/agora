@@ -40,7 +40,7 @@ describe("Composer slash menu — opening", () => {
     await openMenu();
 
     expect(screen.getByRole("listbox")).toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(13);
+    expect(screen.getAllByRole("option")).toHaveLength(14);
   });
 
   it('does NOT open for a "/" typed mid-sentence', async () => {
@@ -182,6 +182,19 @@ describe("Composer slash menu — picking", () => {
     expect(onSend).toHaveBeenCalledWith(
       "Plan the next sprint from the backlog and propose it as a plan.",
     );
+  });
+
+  it("prefills the read-only feature review template", async () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    const { user, textarea } = await openMenu();
+
+    await user.keyboard("review{Enter}");
+
+    expect(textarea).toHaveValue(
+      "Review this feature for bugs, requirement gaps, and impact on other parts. Recommend only; do not create or modify tasks. Feature or issue: ",
+    );
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("picks with the mouse without stealing focus from the textarea", async () => {

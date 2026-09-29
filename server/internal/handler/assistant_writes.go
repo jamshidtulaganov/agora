@@ -99,6 +99,10 @@ func (h *Handler) assistantInvokeAs(
 	urlParams map[string]string,
 	roles ...string,
 ) (int, []byte) {
+	if exec := assistantExecutionFrom(ctx); assistant.RunModeFrom(ctx) != assistant.RunModeAssist &&
+		(exec == nil || assistant.CheckRunTool(ctx, exec.tool) != nil) {
+		return http.StatusForbidden, []byte(`{"error":"review mode is read-only"}`)
+	}
 	// An absolute URL keeps the request well-formed; the host is never read by
 	// any handler on this path (workspace resolution is header-based).
 	req, err := http.NewRequestWithContext(ctx, method, "http://assistant.internal"+path, strings.NewReader(body))

@@ -69,6 +69,7 @@ func (h *Handler) assistantDeleteIssue(ctx context.Context, caller assistantCall
 	if err != nil {
 		return nil, err
 	}
+	if err := checkAssistantIssueDeletion(ctx, h.DB, caller.ID, issue.ID, ws.ID); err != nil { return nil, err }
 	// Read the identifier BEFORE the row goes, so the answer can name what was
 	// deleted. After the DELETE there is nothing left to derive it from.
 	identifier := h.getIssuePrefix(ctx, ws.ID) + "-" + strconv.Itoa(int(issue.Number))

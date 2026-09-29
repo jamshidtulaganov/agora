@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jamshidtulaganov/agora/server/internal/agoramcp"
 	"github.com/jamshidtulaganov/agora/server/internal/qamcp"
 )
 
@@ -30,7 +31,28 @@ var mcpQACmd = &cobra.Command{
 	},
 }
 
+var mcpServeCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Expose Agora tasks and knowledge to Claude Code and other MCP clients (stdio)",
+	Long:  "Serve the configured Agora workspace over MCP stdio. Read-only by default.\nUse --allow-writes to expose task creation, updates, and comments.\nAuthenticate with 'agora login' before connecting; stdout is reserved for MCP.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := newAPIClient(cmd)
+		if err != nil {
+			return err
+		}
+		writes, _ := cmd.Flags().GetBool("allow-writes")
+		server, err := agoramcp.New(client, version, writes)
+		if err != nil {
+			return err
+		}
+		return server.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+	},
+}
+
 func init() {
+	mcpServeCmd.Flags().Bool("allow-writes", false, "Enable create_issue, update_issue, and comment_issue (may trigger automations and notifications)")
+	mcpCmd.AddCommand(mcpServeCmd)
 	mcpCmd.AddCommand(mcpQACmd)
 	rootCmd.AddCommand(mcpCmd)
 }

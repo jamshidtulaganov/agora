@@ -177,6 +177,29 @@ func TestPromptCarriesTheReportRecipes(t *testing.T) {
 	}
 }
 
+// A review is deliberately a different product action from task creation: it
+// reads evidence, labels uncertainty, and leaves task-shaped drafts for the
+// human. Pin the distinctions that prevent plausible concerns being reported
+// as confirmed bugs or silently written into the tracker.
+func TestPromptCarriesTheReadOnlyReviewRecipe(t *testing.T) {
+	prompt := buildSystemPrompt(UserContext{Name: "Ann"}, "")
+	for _, want := range []string{
+		"Feature and bug reviews",
+		"recommendations only",
+		"CONFIRMED BUG",
+		"POSSIBLE BUG",
+		"REGRESSION RISK",
+		"MISSING REQUIREMENT",
+		"repository behavior was NOT inspected",
+		"proposed task drafts",
+		"not a create_issue or propose_plan call",
+	} {
+		if !containsFold(prompt, want) {
+			t.Fatalf("the prompt never mentions %q — the review contract is missing", want)
+		}
+	}
+}
+
 // The management layer is the WRITE half of the domain layer, and it only works
 // if the model reaches for propose_plan instead of a chain of single writes.
 // This pins the primitive, the four recipes that end in a plan, the rule that

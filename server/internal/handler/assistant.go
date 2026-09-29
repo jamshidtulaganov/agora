@@ -465,6 +465,7 @@ type SendAssistantMessageRequest struct {
 	Content   string `json:"content"`
 	RequestID string `json:"request_id"`
 	Context   *struct {
+		Mode assistant.RunMode `json:"mode,omitempty"`
 		WorkspaceID   json.RawMessage `json:"workspace_id"`
 		Timezone      string          `json:"timezone"`
 		ProjectID     json.RawMessage `json:"project_id"`
@@ -519,6 +520,10 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "context.workspace_id is required (use null for no workspace)")
 		return
 	}
+	requestedMode := assistant.RunMode("")
+	if req.Context != nil { requestedMode = req.Context.Mode }
+	mode, modeErr := assistant.ResolveRunMode(requestedMode, content)
+	if modeErr != nil { writeError(w, http.StatusBadRequest, modeErr.Error()); return }
 	var requestID *string
 	if req.RequestID != "" {
 		if _, err := uuid.Parse(req.RequestID); err != nil {
@@ -547,7 +552,7 @@ func (h *Handler) SendAssistantMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	runContext := assistant.RunContext{WorkspaceID: uuidToPtr(session.FocusWorkspaceID)}
+	runContext := assistant.RunContext{WorkspaceID: uuidToPtr(session.FocusWorkspaceID), Mode: mode}
 	if req.Context != nil {
 		if req.Context.WorkspaceID != nil {
 			if bytes.Equal(bytes.TrimSpace(req.Context.WorkspaceID), []byte("null")) {

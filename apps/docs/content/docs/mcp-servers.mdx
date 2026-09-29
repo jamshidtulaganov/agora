@@ -5,6 +5,61 @@ description: Connect agents to tools and data sources with a shared mcp.json or 
 
 import { Callout } from "fumadocs-ui/components/callout";
 
+## Connect Claude Code and other clients to Agora
+
+Agora also provides its own workspace MCP server: **`agora mcp serve`**. This is the opposite direction from the workspace's external MCP connectors below: a client such as Claude Code can read Agora tasks, projects, comments, and knowledge through your authenticated CLI.
+
+Use a CLI build that includes `mcp serve` (`agora mcp serve --help`). Authenticate before connecting, then bind the server to an explicit workspace UUID:
+
+```bash
+agora login
+claude mcp add --transport stdio agora -- agora mcp serve --workspace-id YOUR_WORKSPACE_UUID
+claude mcp get agora
+```
+
+Inside Claude Code, open `/mcp` to verify the connection. The command follows [Claude Code's stdio setup](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server). If the CLI is not on the client's `PATH`, replace the second `agora` with its absolute executable path.
+
+For Claude Desktop, Cursor, and other clients that accept `mcpServers` JSON:
+
+```json
+{
+  "mcpServers": {
+    "agora": {
+      "command": "agora",
+      "args": ["mcp", "serve", "--workspace-id", "YOUR_WORKSPACE_UUID"]
+    }
+  }
+}
+```
+
+The CLI reuses your saved login and server URL. `--profile` selects an isolated CLI profile; `--server-url`, `AGORA_SERVER_URL`, `AGORA_WORKSPACE_ID`, and `AGORA_TOKEN` work as with other Agora commands. Keep tokens out of committed MCP JSON and command arguments. Log in separately rather than trying to perform interactive authentication on the MCP protocol stream.
+
+### Available Agora tools
+
+| Area | Tools |
+| --- | --- |
+| Workspace and projects | `get_workspace`, `list_projects`, `get_project` |
+| Tasks and discussion | `list_issues`, `search_issues`, `get_issue`, `list_comments` |
+| Knowledge and requirements | `list_knowledge`, `search_knowledge`, `get_knowledge`, `list_project_knowledge` |
+| Assignment metadata | `list_labels`, `list_members`, `list_agents` |
+| Optional writes | `create_issue`, `update_issue`, `comment_issue` |
+
+The default exposes **14 read-only tools** and rejects write calls even if a client guesses their names. To enable the three task-writing tools, deliberately add `--allow-writes` to the command or JSON `args` and reconnect:
+
+```bash
+agora mcp serve --workspace-id YOUR_WORKSPACE_UUID --allow-writes
+```
+
+<Callout type="warning">
+Writes use your existing Agora permissions and may trigger normal workspace automations, agent execution, and notifications. The flag enables writes for the entire MCP session; it is not per-action confirmation. Configure approvals in your MCP client. Never automatically retry a failed write: inspect Agora first because the request may already have succeeded. No delete, credential-management, shell, or arbitrary-HTTP tools are exposed.
+</Callout>
+
+For recommendation-only reviews, keep the default and ask: "Check this behavior against Agora knowledge. Separate confirmed bugs, regression risks, and missing evidence. Recommend tasks without creating them." `list_project_knowledge` returns only reviewed, active knowledge items. `search_knowledge` returns source IDs and citation references; read the document before treating a snippet as a requirement. Agent listings contain only assignment metadata, never runtime configuration or MCP credentials.
+
+This is a local **stdio** connection to the Agora REST API, not a hosted HTTP/OAuth MCP endpoint. It implements MCP tool discovery/calls, initialization, ping, cancellation, and bounded request deadlines. The existing `agora mcp qa` command remains a separate test-runner server.
+
+## Connect Agora agents to external tools
+
 Agora accepts the same top-level `mcpServers` JSON shape used by Claude Desktop and Cursor. Open **Workspace → MCP servers** to paste or import an `mcp.json` file.
 
 ```json
