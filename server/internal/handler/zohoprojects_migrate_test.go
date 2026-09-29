@@ -77,7 +77,10 @@ func TestZohoWorkspaceSlug(t *testing.T) {
 // (Cancelled). Project users answer with Zoho's scope error unless
 // usersReadable is set.
 type migrateMock struct {
-	srv           *httptest.Server
+	srv *httptest.Server
+	// usersReadable mirrors the ZohoProjects.users.READ scope. Off, Zoho
+	// answers the users listing with its scope error and the migration has no
+	// way to tell who still works here.
 	usersReadable bool
 }
 
@@ -107,8 +110,9 @@ func newMigrateMock(t *testing.T) *migrateMock {
 			}
 			io.WriteString(w, `{"users":[
 				{"id":"1","name":"Owner","email":"`+migOwnerEmail+`","role":"admin","active":true},
-				{"id":"2","name":"Carol","email":"`+migCarolEmail+`","role":"manager","active":true},
-				{"id":"3","name":"Alice","email":"`+migAliceEmail+`","role":"employee","active":true}]}`)
+				{"id":"2","name":"Carol","email":"`+migCarolEmail+`","role":"manager","active":"yes"},
+				{"id":"3","name":"Alice","email":"`+migAliceEmail+`","role":"employee","active":true},
+				{"id":"4","name":"Bob","email":"`+migBobEmail+`","role":"employee","active":false}]}`)
 		case strings.HasSuffix(path, "/comments/"):
 			io.WriteString(w, `{"comments":[{"id":9,"id_string":"9","content":"first note","added_person":"Alice","created_time":"09-01-2026"}]}`)
 		case strings.HasSuffix(path, "/subtasks/"), strings.HasSuffix(path, "/tasklists/"):
@@ -195,6 +199,7 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 		t.Skip("no database")
 	}
 	mock := newMigrateMock(t)
+	mock.usersReadable = true
 	configureZohoEnv(t, mock.srv.URL)
 	t.Setenv("AGORA_ZOHO_MIGRATE", "1")
 	cleanupMigrateFixtures(t)
@@ -213,20 +218,29 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 	if len(plan.Skipped) != 1 || plan.Skipped[0].ZohoProjectID != "212" {
 		t.Fatalf("skipped = %+v, want 212", plan.Skipped)
 	}
-	if !strings.HasPrefix(plan.MembershipSource, "tasks") {
-		t.Errorf("membership_source = %q, want tasks fallback", plan.MembershipSource)
+	if plan.MembershipSource != "project_users" {
+		t.Errorf("membership_source = %q", plan.MembershipSource)
+	}
+	// Four people in the portal, one of them (Bob) no longer active.
+	if plan.ActivePeople != 3 || plan.RosterSource != "portal users (3 of 4 still active)" {
+		t.Errorf("roster = %q / %d active, want 3 of the 4 portal people", plan.RosterSource, plan.ActivePeople)
 	}
 	p := plan.Projects[0]
 	if p.Action != "create" || p.WorkspaceSlug != "migration-test-dept" || p.Tasks != 2 || p.OpenTasks != 1 {
 		t.Errorf("plan = action %q slug %q tasks %d open %d", p.Action, p.WorkspaceSlug, p.Tasks, p.OpenTasks)
 	}
-	for email, role := range map[string]string{migOwnerEmail: "owner", handlerTestEmail: "owner", migAliceEmail: "member", migBobEmail: "member"} {
+	for email, role := range map[string]string{migOwnerEmail: "owner", handlerTestEmail: "owner", migAliceEmail: "member", migCarolEmail: "admin"} {
 		if got := personByEmail(p.People, email); got == nil || got.Role != role || got.Skipped != "" {
 			t.Errorf("person %s = %+v, want role %s", email, got, role)
 		}
 	}
 	if eve := personByEmail(p.People, migEveEmail); eve == nil || eve.Skipped == "" {
 		t.Errorf("gmail person should be planned as skipped, got %+v", eve)
+	}
+	// Bob created task 9101 but left the company: Zoho lists him inactive, so
+	// the plan keeps him out even though the task history still names him.
+	if bob := personByEmail(p.People, migBobEmail); bob == nil || bob.Skipped != "inactive in Zoho" {
+		t.Errorf("inactive task creator = %+v, want skipped as inactive", bob)
 	}
 	var n int
 	testPool.QueryRow(ctx, `SELECT count(*) FROM workspace WHERE settings->>'zoho_project_id' = '211'`).Scan(&n)
@@ -256,7 +270,7 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 		roles[e] = r
 	}
 	rows.Close()
-	want := map[string]string{migOwnerEmail: "owner", handlerTestEmail: "owner", migAliceEmail: "member", migBobEmail: "member"}
+	want := map[string]string{migOwnerEmail: "owner", handlerTestEmail: "owner", migAliceEmail: "member", migCarolEmail: "admin"}
 	for e, r := range want {
 		if roles[e] != r {
 			t.Errorf("member %s role = %q, want %q (all: %v)", e, roles[e], r, roles)
@@ -264,6 +278,9 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 	}
 	if _, ok := roles[migEveEmail]; ok {
 		t.Errorf("gmail person must not become a member")
+	}
+	if _, ok := roles[migBobEmail]; ok {
+		t.Errorf("person inactive in Zoho must not become a member (all: %v)", roles)
 	}
 	// A created account starts NOT onboarded, so its first sign-in lands in
 	// the member setup rather than straight in a workspace.
@@ -297,8 +314,11 @@ func TestZohoMigrateWorkspaces(t *testing.T) {
 	).Scan(&title, &status, &priority, &desc, &assignee, &creator, &due); err != nil {
 		t.Fatalf("issue 9101: %v", err)
 	}
+	// Bob created this task in Zoho but no longer works here, so he is not
+	// provisioned and the import falls back to the workspace owner as the
+	// creator (the integration is a system importer).
 	if title != "Chase overdue & escalate" || status != "in_progress" || priority != "high" ||
-		assignee != migAliceEmail || creator != migBobEmail || due != "2026-09-30" {
+		assignee != migAliceEmail || creator != migOwnerEmail || due != "2026-09-30" {
 		t.Errorf("issue 9101 = %q %s %s assignee=%s creator=%s due=%s", title, status, priority, assignee, creator, due)
 	}
 	if desc != "Call daily\nsee [doc](https://x.io/d)" {
@@ -386,6 +406,64 @@ func TestZohoMigrateUsesProjectRoles(t *testing.T) {
 	}
 }
 
+// TestZohoMigrateRefusesWithoutRoster: with no users scope the run cannot tell
+// a colleague from someone who left, so it refuses rather than provisioning
+// everyone a project's task history names.
+func TestZohoMigrateRefusesWithoutRoster(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newMigrateMock(t)
+	mock.usersReadable = false
+	configureZohoEnv(t, mock.srv.URL)
+	t.Setenv("AGORA_ZOHO_MIGRATE", "1")
+	cleanupMigrateFixtures(t)
+
+	w := httptest.NewRecorder()
+	testHandler.MigrateZohoWorkspaces(w, newRequest("POST", "/api/zoho-projects/migrate-workspaces",
+		map[string]any{"dry_run": false, "allowed_email_domains": []string{migDomain}}))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("code = %d, want 502 (body %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "ZohoProjects.users.READ") {
+		t.Errorf("error should name the missing scope: %s", w.Body.String())
+	}
+	var n int
+	testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM workspace WHERE settings->>'zoho_project_id' = '211'`).Scan(&n)
+	if n != 0 {
+		t.Errorf("a refused run created %d workspaces", n)
+	}
+}
+
+// TestZohoMigrateAllowUnknownOverride: the operator can still run without the
+// roster, but only by asking for it.
+func TestZohoMigrateAllowUnknownOverride(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newMigrateMock(t)
+	mock.usersReadable = false
+	configureZohoEnv(t, mock.srv.URL)
+	t.Setenv("AGORA_ZOHO_MIGRATE", "1")
+	cleanupMigrateFixtures(t)
+
+	code, plan := runMigrate(t, map[string]any{
+		"dry_run":                        true,
+		"allowed_email_domains":          []string{migDomain},
+		"allow_people_missing_from_zoho": true,
+	})
+	if code != http.StatusOK || len(plan.Projects) != 1 {
+		t.Fatalf("dry run = %d %+v", code, plan.Projects)
+	}
+	if !strings.Contains(plan.RosterSource, "unavailable") {
+		t.Errorf("roster_source = %q, want it to say the roster was unavailable", plan.RosterSource)
+	}
+	if bob := personByEmail(plan.Projects[0].People, migBobEmail); bob == nil || bob.Skipped != "" {
+		t.Errorf("override should plan the task creator = %+v", bob)
+	}
+}
+
 // TestZohoMigrateEmailAliases: an aliased address folds into the main account —
 // it is not planned as its own person and its tasks resolve to the main user.
 func TestZohoMigrateEmailAliases(t *testing.T) {
@@ -393,6 +471,7 @@ func TestZohoMigrateEmailAliases(t *testing.T) {
 		t.Skip("no database")
 	}
 	mock := newMigrateMock(t)
+	mock.usersReadable = true
 	configureZohoEnv(t, mock.srv.URL)
 	t.Setenv("AGORA_ZOHO_MIGRATE", "1")
 	cleanupMigrateFixtures(t)
