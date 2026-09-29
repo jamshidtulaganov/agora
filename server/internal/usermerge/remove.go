@@ -41,6 +41,12 @@ type RemoveMembersOptions struct {
 	// a member whose login alias is on the roster is kept (the account may
 	// have been merged under a different address).
 	KeepEmails []string
+	// AllowOwner lets an owner be removed — but only from a workspace that
+	// still has another owner afterwards. Removing the last owner leaves a
+	// workspace nobody can administer: no one to invite, change roles, or
+	// delete it. That is unrecoverable from the product, so the check is not
+	// something this flag can switch off.
+	AllowOwner bool
 	Apply      bool
 }
 
@@ -160,7 +166,7 @@ func RemoveMembers(ctx context.Context, db DB, opts RemoveMembersOptions) ([]Rem
 		}
 
 		for _, m := range found {
-			res, err := removeOneMembership(ctx, tx, email, userID, m)
+			res, err := removeOneMembership(ctx, tx, email, userID, m, opts.AllowOwner)
 			if err != nil {
 				return nil, err
 			}
@@ -198,12 +204,26 @@ type membership struct{ memberID, wsID, slug, role string }
 // an owner (a workspace with no owner cannot be administered) and anyone who
 // owns an agent runtime, whose daemons, agents and running tasks need the
 // server's revokeAndRemoveMember cascade rather than raw SQL.
-func removeOneMembership(ctx context.Context, tx pgx.Tx, email, userID string, m membership) (RemoveMemberResult, error) {
+func removeOneMembership(ctx context.Context, tx pgx.Tx, email, userID string, m membership, allowOwner bool) (RemoveMemberResult, error) {
 	if m.role == "owner" {
-		return RemoveMemberResult{
-			Email: email, WorkspaceSlug: m.slug, Role: m.role,
-			Outcome: "kept: owner, remove by hand if intended",
-		}, nil
+		if !allowOwner {
+			return RemoveMemberResult{
+				Email: email, WorkspaceSlug: m.slug, Role: m.role,
+				Outcome: "kept: owner, pass --allow-owner to remove",
+			}, nil
+		}
+		var others int
+		if err := tx.QueryRow(ctx,
+			`SELECT count(*) FROM member WHERE workspace_id = $1 AND role = 'owner' AND id <> $2`,
+			m.wsID, m.memberID).Scan(&others); err != nil {
+			return RemoveMemberResult{}, err
+		}
+		if others == 0 {
+			return RemoveMemberResult{
+				Email: email, WorkspaceSlug: m.slug, Role: m.role,
+				Outcome: "kept: the only owner, give someone else owner first",
+			}, nil
+		}
 	}
 
 	var runtimes int
@@ -298,7 +318,7 @@ func removeMembersNotOnRoster(ctx context.Context, tx pgx.Tx, opts RemoveMembers
 		if vouched {
 			continue
 		}
-		res, err := removeOneMembership(ctx, tx, email, c.userID, c.m)
+		res, err := removeOneMembership(ctx, tx, email, c.userID, c.m, opts.AllowOwner)
 		if err != nil {
 			return nil, err
 		}

@@ -147,7 +147,7 @@ func TestRemoveMembersKeepsOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveMembers: %v", err)
 	}
-	if len(results) != 1 || results[0].Outcome != "kept: owner, remove by hand if intended" {
+	if len(results) != 1 || results[0].Outcome != "kept: owner, pass --allow-owner to remove" {
 		t.Fatalf("result = %+v", results)
 	}
 	var members int
@@ -344,5 +344,57 @@ func TestRemoveMembersLeavesATrail(t *testing.T) {
 	pool.QueryRow(ctx, `SELECT count(*) FROM activity_log WHERE issue_id = $1`, f.untouchedIssue).Scan(&n)
 	if n != 0 {
 		t.Errorf("another person's issue got %d activity row(s)", n)
+	}
+}
+
+// TestRemoveMembersAllowOwnerNeedsAnother: --allow-owner removes an owner only
+// where another owner remains. A workspace with no owner has nobody who can
+// invite, change roles or delete it, and the product offers no way back.
+func TestRemoveMembersAllowOwnerNeedsAnother(t *testing.T) {
+	f, ctx := newRemoveFixture(t)
+	pool := testPool(t)
+	if _, err := pool.Exec(ctx, `UPDATE member SET role = 'owner' WHERE user_id = $1 AND workspace_id = $2`,
+		f.userID, f.migratedWS); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sole owner: refused even with the flag.
+	pool.Exec(ctx, `DELETE FROM member WHERE workspace_id = $1 AND user_id <> $2`, f.migratedWS, f.userID)
+	results, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		Emails: []string{f.email}, WorkspaceSlug: f.migratedSlug, AllowOwner: true, Apply: true,
+	})
+	if err != nil {
+		t.Fatalf("RemoveMembers: %v", err)
+	}
+	if len(results) != 1 || results[0].Outcome != "kept: the only owner, give someone else owner first" {
+		t.Fatalf("sole owner should be kept: %+v", results)
+	}
+
+	// A second owner exists: now it goes.
+	var otherID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO "user" (name, email) VALUES ('Co Owner', $1) RETURNING id::text`,
+		"co-"+f.email).Scan(&otherID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, otherID) })
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`, f.migratedWS, otherID); err != nil {
+		t.Fatal(err)
+	}
+	results, err = RemoveMembers(ctx, pool, RemoveMembersOptions{
+		Emails: []string{f.email}, WorkspaceSlug: f.migratedSlug, AllowOwner: true, Apply: true,
+	})
+	if err != nil {
+		t.Fatalf("RemoveMembers: %v", err)
+	}
+	if len(results) != 1 || !results[0].Removed {
+		t.Fatalf("owner should be removed when another remains: %+v", results)
+	}
+	var left int
+	pool.QueryRow(ctx, `SELECT count(*) FROM member WHERE workspace_id = $1 AND role = 'owner'`,
+		f.migratedWS).Scan(&left)
+	if left != 1 {
+		t.Errorf("owners left = %d, want 1", left)
 	}
 }
