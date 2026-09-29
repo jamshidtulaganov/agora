@@ -125,6 +125,8 @@ func removeMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error
 	apply := fs.Bool("apply", false, "commit (default: dry run)")
 	slug := fs.String("workspace", "", "limit to one workspace slug")
 	all := fs.Bool("all-workspaces", false, "every workspace, not just the Zoho-migrated ones")
+	allowOwner := fs.Bool("allow-owner", false,
+		"also remove owners, but only where another owner remains")
 	keepFile := fs.String("keep-file", "",
 		"file of addresses (one per line) of the people who still work here; "+
 			"every other member in scope is removed")
@@ -152,7 +154,8 @@ func removeMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error
 	}
 
 	results, err := usermerge.RemoveMembers(ctx, pool, usermerge.RemoveMembersOptions{
-		Emails: fs.Args(), KeepEmails: keep, WorkspaceSlug: *slug, AllWorkspaces: *all, Apply: *apply,
+		Emails: fs.Args(), KeepEmails: keep, WorkspaceSlug: *slug, AllWorkspaces: *all,
+		AllowOwner: *allowOwner, Apply: *apply,
 	})
 	if err != nil {
 		return err
