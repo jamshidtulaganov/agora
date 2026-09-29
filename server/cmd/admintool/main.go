@@ -4,6 +4,7 @@
 //	admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...
 //	admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...
 //	admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...
+//	admintool remove-members [--apply] --keep-file ROSTER.txt
 package main
 
 import (
@@ -124,12 +125,34 @@ func removeMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error
 	apply := fs.Bool("apply", false, "commit (default: dry run)")
 	slug := fs.String("workspace", "", "limit to one workspace slug")
 	all := fs.Bool("all-workspaces", false, "every workspace, not just the Zoho-migrated ones")
+	keepFile := fs.String("keep-file", "",
+		"file of addresses (one per line) of the people who still work here; "+
+			"every other member in scope is removed")
 	_ = fs.Parse(args)
-	if fs.NArg() == 0 {
-		return errors.New("give at least one email")
+
+	var keep []string
+	if *keepFile != "" {
+		raw, err := os.ReadFile(*keepFile)
+		if err != nil {
+			return fmt.Errorf("keep file: %w", err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			// "#" starts a comment so a roster can say where it came from.
+			if i := strings.IndexByte(line, '#'); i >= 0 {
+				line = line[:i]
+			}
+			if line = strings.TrimSpace(line); line != "" {
+				keep = append(keep, line)
+			}
+		}
+		fmt.Printf("keep list: %d addresses from %s\n", len(keep), *keepFile)
 	}
+	if len(keep) == 0 && fs.NArg() == 0 {
+		return errors.New("give at least one email, or --keep-file")
+	}
+
 	results, err := usermerge.RemoveMembers(ctx, pool, usermerge.RemoveMembersOptions{
-		Emails: fs.Args(), WorkspaceSlug: *slug, AllWorkspaces: *all, Apply: *apply,
+		Emails: fs.Args(), KeepEmails: keep, WorkspaceSlug: *slug, AllWorkspaces: *all, Apply: *apply,
 	})
 	if err != nil {
 		return err
@@ -166,7 +189,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:\n"+
 		"  admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...\n"+
 		"  admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...\n"+
-		"  admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...")
+		"  admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...\n"+
+		"  admintool remove-members [--apply] --keep-file ROSTER.txt")
 	os.Exit(2)
 }
 

@@ -3,6 +3,7 @@ package usermerge
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -168,5 +169,126 @@ func TestRemoveMembersUnknownEmail(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Outcome != "no account" {
 		t.Errorf("result = %+v", results)
+	}
+}
+
+// roster pads a keep list up to KeepEmailsMinimum with addresses that belong
+// to nobody, so a test can exercise keep mode without tripping the guard.
+func roster(emails ...string) []string {
+	out := append([]string{}, emails...)
+	for i := len(out); i < KeepEmailsMinimum; i++ {
+		out = append(out, fmt.Sprintf("filler-%d@company.example.com", i))
+	}
+	return out
+}
+
+// TestRemoveMembersKeepListRemovesTheAbsent: the roster names who stays;
+// everyone else in a migrated workspace goes, including people no explicit
+// list would have named.
+func TestRemoveMembersKeepListRemovesTheAbsent(t *testing.T) {
+	f, ctx := newRemoveFixture(t)
+	pool := testPool(t)
+
+	// "Stayed" is on the roster; the fixture's own user is not.
+	var stayedEmail string
+	pool.QueryRow(ctx, `SELECT email FROM "user" WHERE email LIKE 'stayed-%'`).Scan(&stayedEmail)
+	if stayedEmail == "" {
+		t.Fatal("fixture user missing")
+	}
+
+	// Scoped to this test's own workspace: keep mode otherwise sweeps every
+	// migrated workspace in the database, which in a shared test database
+	// means whatever another test happens to have left lying around.
+	results, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		KeepEmails: roster(stayedEmail), WorkspaceSlug: f.migratedSlug, Apply: true,
+	})
+	if err != nil {
+		t.Fatalf("RemoveMembers: %v", err)
+	}
+	var removed []string
+	for _, r := range results {
+		if strings.HasPrefix(r.Outcome, "removed") {
+			removed = append(removed, r.Email)
+		}
+	}
+	if len(removed) != 1 || removed[0] != f.email {
+		t.Fatalf("removed = %v, want only %s", removed, f.email)
+	}
+
+	var n int
+	pool.QueryRow(ctx, `SELECT count(*) FROM member WHERE user_id = $1 AND workspace_id = $2`,
+		f.userID, f.migratedWS).Scan(&n)
+	if n != 0 {
+		t.Errorf("absent member survived")
+	}
+	// The ordinary workspace is out of scope and keeps them.
+	pool.QueryRow(ctx, `SELECT count(*) FROM member WHERE user_id = $1 AND workspace_id = $2`,
+		f.userID, f.plainWS).Scan(&n)
+	if n != 1 {
+		t.Errorf("a workspace outside the scope must be left alone")
+	}
+	var assigneeType *string
+	pool.QueryRow(ctx, `SELECT assignee_type FROM issue WHERE id = $1`, f.assignedIssue).Scan(&assigneeType)
+	if assigneeType != nil {
+		t.Errorf("issue should have been unassigned")
+	}
+}
+
+// TestRemoveMembersKeepListHonoursAliases: an account merged under a second
+// address is kept when the roster names either address. Without this, every
+// merged account would be removed the first time the tool runs.
+func TestRemoveMembersKeepListHonoursAliases(t *testing.T) {
+	f, ctx := newRemoveFixture(t)
+	pool := testPool(t)
+
+	alias := "former-" + f.email
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO user_email_alias (user_id, email) VALUES ($1, $2)`, f.userID, alias); err != nil {
+		t.Fatalf("add alias: %v", err)
+	}
+
+	// The roster knows only the alias, never the account's own address.
+	results, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		KeepEmails: roster(alias), WorkspaceSlug: f.migratedSlug, Apply: true,
+	})
+	if err != nil {
+		t.Fatalf("RemoveMembers: %v", err)
+	}
+	for _, r := range results {
+		if r.Email == f.email && strings.HasPrefix(r.Outcome, "removed") {
+			t.Fatalf("an account whose alias is on the roster must be kept: %+v", r)
+		}
+	}
+	var n int
+	pool.QueryRow(ctx, `SELECT count(*) FROM member WHERE user_id = $1 AND workspace_id = $2`,
+		f.userID, f.migratedWS).Scan(&n)
+	if n != 1 {
+		t.Errorf("membership was removed despite the alias being on the roster")
+	}
+}
+
+// TestRemoveMembersKeepListRefusesShortRoster: a truncated roster would empty
+// every workspace, and nothing else in the call would look wrong.
+func TestRemoveMembersKeepListRefusesShortRoster(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+	_, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		KeepEmails: []string{"someone@company.example.com"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "refusing") {
+		t.Fatalf("err = %v, want a refusal", err)
+	}
+}
+
+// TestRemoveMembersKeepListRejectsBothModes: removing the named and removing
+// the unnamed are opposite instructions.
+func TestRemoveMembersKeepListRejectsBothModes(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+	_, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		Emails: []string{"a@b.test"}, KeepEmails: roster("c@d.test"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("err = %v, want a rejection", err)
 	}
 }
