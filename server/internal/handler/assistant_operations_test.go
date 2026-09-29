@@ -186,6 +186,10 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 	sprintID := newAssistantTestSprint(t, ws, projectID, "Keep sprint")
 	commentID := newAssistantTestComment(t, ws, issueID, user, "keep this comment")
 	automationID := newAssistantTestAutomation(t, ws, user, "Keep rule")
+	leaderRuntimeID := newAssistantTestRuntime(t, ws)
+	leaderAgentID := newAssistantTestAgent(t, ws, leaderRuntimeID, "Squad leader", "workspace", user)
+	squadID := newAssistantTestSquad(t, ws, user, leaderAgentID, "Keep squad")
+	knowledgeDocID := newAssistantTestKnowledgeDoc(t, ws, user, "Keep doc")
 	// An import needs a sealed connection and a job with a plan on it before
 	// confirm_import has anything to bind to — the card names the plan's own
 	// counts, so there has to be a plan.
@@ -207,6 +211,8 @@ func TestAssistantDestructiveToolsParkAPendingOperation(t *testing.T) {
 		assistant.ToolLeaveWorkspace:   {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
 		assistant.ToolDeleteWorkspace:  {`{"workspace_id":"` + ws + `"}`, "workspace", ws},
 		assistant.ToolDeleteAutomation: {`{"workspace_id":"` + ws + `","automation":"Keep rule"}`, "automation", automationID},
+		assistant.ToolDeleteSquad:      {`{"workspace_id":"` + ws + `","squad":"Keep squad"}`, "squad", squadID},
+		assistant.ToolDeleteKnowledge:  {`{"workspace_id":"` + ws + `","doc_id":"` + knowledgeDocID + `"}`, "knowledge_doc", knowledgeDocID},
 		// An import destroys nothing, but it writes thousands of rows on one
 		// click — so it parks a card exactly like the deletes above, and the
 		// job must still be waiting when the card is raised.
@@ -789,6 +795,32 @@ func newAssistantTestAutomation(t *testing.T, workspaceID, creatorID, name strin
 		t.Fatalf("insert automation: %v", err)
 	}
 	return automationID
+}
+
+func newAssistantTestSquad(t *testing.T, workspaceID, creatorID, leaderID, name string) string {
+	t.Helper()
+	var squadID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, $2, '', $3, $4)
+		RETURNING id
+	`, workspaceID, name, leaderID, creatorID).Scan(&squadID); err != nil {
+		t.Fatalf("insert squad: %v", err)
+	}
+	return squadID
+}
+
+func newAssistantTestKnowledgeDoc(t *testing.T, workspaceID, creatorID, title string) string {
+	t.Helper()
+	var docID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO knowledge_doc (workspace_id, title, source, note_body, status, created_by)
+		VALUES ($1, $2, 'note', 'keep this', 'ready', $3)
+		RETURNING id
+	`, workspaceID, title, creatorID).Scan(&docID); err != nil {
+		t.Fatalf("insert knowledge doc: %v", err)
+	}
+	return docID
 }
 
 // newAssistantTestRun is the run a pending operation is filed against — the one

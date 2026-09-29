@@ -53,9 +53,9 @@ func TestBrowserProxyPathAllowed(t *testing.T) {
 		"/editor/fs/listx",
 		"/editor/fs/write",
 		"/editor/fslist",
-		"/editor/changes",    // exact artifact endpoint replaces mutable worktree diff
-		"/editor/open-pr",    // release is owned by orchestration
-		"/editor/discard",    // correction is owned by versioned orchestration
+		"/editor/changes", // exact artifact endpoint replaces mutable worktree diff
+		"/editor/open-pr", // release is owned by orchestration
+		"/editor/discard", // correction is owned by versioned orchestration
 	}
 	for _, p := range denied {
 		if browserProxyPathAllowed(p) {

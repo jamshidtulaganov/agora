@@ -883,3 +883,30 @@ func TestAssistantExcludedCapabilityNamesItsSettingsDestination(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryCatalogToolIsDispatched: the inverse of
+// TestExecutorRefusesToolsOutsideTheCatalog. That one pins what must NOT be
+// reachable; this pins that everything advertised IS.
+//
+// A tool is declared in three places — the constant, ToolSpecs (what the model
+// is told it can call) and the Execute switch (what actually runs). Miss the
+// third and the model confidently calls a tool that answers "unknown tool",
+// which reads to the user as the assistant refusing to do its job. Nothing
+// else in the build catches it: both halves compile perfectly on their own.
+//
+// The call is expected to FAIL here — no workspace_id resolves, arguments are
+// empty — so the assertion is only about which failure comes back.
+func TestEveryCatalogToolIsDispatched(t *testing.T) {
+	user := newAssistantTestUser(t, "assistant-dispatch@agora.dev")
+	ws := newAssistantTestWorkspace(t, "assistant-dispatch-ws", "DSP")
+	addAssistantTestMember(t, ws, user, "owner")
+
+	for _, spec := range assistant.ToolSpecs() {
+		_, err := testHandler.Execute(context.Background(), user, "", spec.Name,
+			json.RawMessage(`{"workspace_id":"`+ws+`"}`))
+		if err != nil && strings.Contains(err.Error(), "unknown tool") {
+			t.Errorf("%q is in the catalog but the Execute switch has no case for it — "+
+				"the model would be told it can call this and then be refused", spec.Name)
+		}
+	}
+}

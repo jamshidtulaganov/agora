@@ -112,9 +112,9 @@ func TestAutonomyAggregationMath(t *testing.T) {
 // Every focused automation prompt must forbid delegation/fan-out.
 func TestAutomationPromptsForbidDelegation(t *testing.T) {
 	prompts := map[string]string{
-		"base-suite":  baseSuitePromptTmpl + soloAutomationDirective,
-		"triage":      bitrixTriagePrompt + soloAutomationDirective,
-		"kb-study":    buildProjectStudyPrompt("p"),
+		"base-suite": baseSuitePromptTmpl + soloAutomationDirective,
+		"triage":     bitrixTriagePrompt + soloAutomationDirective,
+		"kb-study":   buildProjectStudyPrompt("p"),
 	}
 	for name, p := range prompts {
 		if !strings.Contains(p, "do NOT delegate") || !strings.Contains(p, "do NOT @mention") {
