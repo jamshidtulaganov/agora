@@ -3,6 +3,7 @@
 //
 //	admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...
 //	admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...
+//	admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...
 package main
 
 import (
@@ -39,6 +40,8 @@ func main() {
 		err = mergeUsers(ctx, pool, os.Args[2:])
 	case "add-members":
 		err = addMembers(ctx, pool, os.Args[2:])
+	case "remove-members":
+		err = removeMembers(ctx, pool, os.Args[2:])
 	default:
 		usage()
 	}
@@ -113,8 +116,57 @@ func addMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error {
 	return nil
 }
 
+// removeMembers takes people out of workspaces the Zoho migration added them
+// to. It defaults to the migrated workspaces because that is the mistake it
+// exists to undo; --all-workspaces is the wider, deliberate form.
+func removeMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error {
+	fs := flag.NewFlagSet("remove-members", flag.ExitOnError)
+	apply := fs.Bool("apply", false, "commit (default: dry run)")
+	slug := fs.String("workspace", "", "limit to one workspace slug")
+	all := fs.Bool("all-workspaces", false, "every workspace, not just the Zoho-migrated ones")
+	_ = fs.Parse(args)
+	if fs.NArg() == 0 {
+		return errors.New("give at least one email")
+	}
+	results, err := usermerge.RemoveMembers(ctx, pool, usermerge.RemoveMembersOptions{
+		Emails: fs.Args(), WorkspaceSlug: *slug, AllWorkspaces: *all, Apply: *apply,
+	})
+	if err != nil {
+		return err
+	}
+	mode := "APPLIED"
+	if !*apply {
+		mode = "DRY RUN (rolled back)"
+	}
+	scope := "Zoho-migrated workspaces"
+	switch {
+	case *slug != "":
+		scope = *slug
+	case *all:
+		scope = "every workspace"
+	}
+	fmt.Printf("\n== %s: remove members from %s\n", mode, scope)
+	var removed, unassigned int
+	for _, r := range results {
+		fmt.Printf("   %-36s %-24s %s", r.Email, r.WorkspaceSlug, r.Outcome)
+		if r.Unassigned > 0 {
+			fmt.Printf(", unassigned %d issue(s)", r.Unassigned)
+		}
+		fmt.Println()
+		if strings.HasPrefix(r.Outcome, "removed") {
+			removed++
+			unassigned += r.Unassigned
+		}
+	}
+	fmt.Printf("   -- %d membership(s) removed, %d issue(s) unassigned\n", removed, unassigned)
+	return nil
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage:\n  admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...\n  admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...")
+	fmt.Fprintln(os.Stderr, "usage:\n"+
+		"  admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...\n"+
+		"  admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...\n"+
+		"  admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...")
 	os.Exit(2)
 }
 
