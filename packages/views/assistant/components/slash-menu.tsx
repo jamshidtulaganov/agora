@@ -12,6 +12,7 @@ import {
   Plus,
   Rocket,
   Search,
+  ScanSearch,
   ShieldCheck,
   Sunrise,
 } from "lucide-react";
@@ -43,6 +44,7 @@ const ICONS: Record<SlashCommandId, LucideIcon> = {
   standup: Sunrise,
   qa_health: ShieldCheck,
   release_notes: Rocket,
+  review: ScanSearch,
   plan_sprint: CalendarRange,
   triage_inbox: Inbox,
   new_agent: Bot,
@@ -108,6 +110,11 @@ export function useSlashCommands(): SlashCommandItem[] {
       label: t(($) => $.composer.slash.release_notes.label),
       description: t(($) => $.composer.slash.release_notes.description),
       payload: t(($) => $.empty_state.prompts.release_notes),
+    },
+    review: {
+      label: t(($) => $.composer.slash.review.label),
+      description: t(($) => $.composer.slash.review.description),
+      payload: t(($) => $.empty_state.prompts.review_feature),
     },
     plan_sprint: {
       label: t(($) => $.composer.slash.plan_sprint.label),

@@ -7,6 +7,7 @@ import {
   ListTodo,
   Plus,
   Rocket,
+  ScanSearch,
   ShieldCheck,
   Sunrise,
 } from "lucide-react";
@@ -65,7 +66,8 @@ interface PromptRowsProps {
 /**
  * Example prompts below the hero composer — quiet, left-aligned rows a user
  * scans like a menu. Each is a real task with the glyph of the surface it
- * touches, not a uniform pill. The last four are the domain report recipes,
+ * touches, not a uniform pill. The review row is the read-only path for
+ * checking a feature before creating work. The last four are report recipes,
  * mirroring their slash commands so both entry points send the same request.
  *
  * One flat list, same rows in both forms — no persona grouping, no compact
@@ -76,6 +78,7 @@ export function AssistantPromptRows({ onPickPrompt, compact }: PromptRowsProps) 
   const { t } = useT("assistant");
 
   const prompts = [
+    { icon: ScanSearch, text: t(($) => $.empty_state.prompts.review_feature) },
     { icon: Plus, text: t(($) => $.empty_state.prompts.create_issue) },
     { icon: ListTodo, text: t(($) => $.empty_state.prompts.my_plate) },
     { icon: BarChart3, text: t(($) => $.empty_state.prompts.usage_this_week) },

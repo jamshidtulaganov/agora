@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,7 @@ type runDB interface {
 }
 
 type RunContext struct {
+	Mode RunMode `json:"mode,omitempty"`
 	WorkspaceID   *string  `json:"workspace_id"`
 	Timezone      string   `json:"timezone,omitempty"`
 	ProjectID     *string  `json:"project_id,omitempty"`
@@ -127,12 +129,12 @@ func (s *Service) StartRecovery(ctx context.Context) {
 func scanRun(row pgx.Row) (RunRecord, error) {
 	var r RunRecord
 	var workspace, tool, runErr *string
-	err := row.Scan(&r.ID, &r.SessionID, &r.MessageID, &r.Status, &tool, &runErr, &r.CreatedAt, &r.UpdatedAt, &r.FinishedAt, &r.Version, &workspace, &r.Context.Timezone, &r.Context.ProjectID, &r.Context.AttachmentIDs)
+	err := row.Scan(&r.ID, &r.SessionID, &r.MessageID, &r.Status, &tool, &runErr, &r.CreatedAt, &r.UpdatedAt, &r.FinishedAt, &r.Version, &workspace, &r.Context.Timezone, &r.Context.ProjectID, &r.Context.AttachmentIDs, &r.Context.Mode)
 	r.Context.WorkspaceID, r.ActiveTool, r.Error = workspace, tool, runErr
 	return r, err
 }
 
-const runColumns = `id::text, session_id::text, message_id::text, status, active_tool, error, created_at, updated_at, finished_at, version, context_workspace_id::text, context_timezone, context_project_id::text, context_attachment_ids::text[]`
+const runColumns = `id::text, session_id::text, message_id::text, status, active_tool, error, created_at, updated_at, finished_at, version, context_workspace_id::text, context_timezone, context_project_id::text, context_attachment_ids::text[], COALESCE(context_snapshot->>'mode','assist')`
 
 func (s *Service) GetRun(ctx context.Context, runID, userID string) (RunRecord, error) {
 	if err := s.recoverExpired(ctx); err != nil {
@@ -187,6 +189,16 @@ func (s *Service) ListRuns(ctx context.Context, sessionID, userID string) ([]Run
 // AcceptRun locks the session row so request replay, active-run exclusion, and
 // message/run insertion have one commit point across server processes.
 func (s *Service) AcceptRun(ctx context.Context, session db.AssistantSession, userID, content string, requestID *string, requestContext string, context RunContext, snapshot []byte) (AcceptedRun, error) {
+	mode, err := ResolveRunMode(context.Mode, content)
+	if err != nil { return AcceptedRun{}, err }
+	context.Mode = mode
+	var captured ContextSnapshot
+	if len(snapshot) > 0 {
+		if err := json.Unmarshal(snapshot, &captured); err != nil { return AcceptedRun{}, errors.New("invalid assistant context snapshot") }
+	}
+	captured.Mode = mode
+	snapshot, err = json.Marshal(captured)
+	if err != nil { return AcceptedRun{}, err }
 	if s.TxStarter == nil || s.Store == nil {
 		return AcceptedRun{}, errors.New("assistant run store unavailable")
 	}

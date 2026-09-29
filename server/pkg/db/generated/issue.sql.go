@@ -815,38 +815,59 @@ func (q *Queries) GetIssueInWorkspace(ctx context.Context, arg GetIssueInWorkspa
 }
 
 const issueBelongsToUser = `-- name: IssueBelongsToUser :one
+WITH RECURSIVE chain AS (
+  SELECT i.id, i.parent_issue_id, i.creator_type, i.creator_id,
+         i.assignee_type, i.assignee_id, 0 AS depth
+    FROM issue i
+   WHERE i.id = $3 AND i.workspace_id = $2
+  UNION ALL
+  SELECT p.id, p.parent_issue_id, p.creator_type, p.creator_id,
+         p.assignee_type, p.assignee_id, c.depth + 1
+    FROM issue p
+    JOIN chain c ON p.id = c.parent_issue_id
+   WHERE p.workspace_id = $2 AND c.depth < 16
+)
 SELECT EXISTS (
-  SELECT 1 FROM issue i
-  WHERE i.id = $1 AND i.workspace_id = $2
-    AND (
-      (i.creator_type = 'member' AND i.creator_id = $3)
-      OR (i.assignee_type = 'member' AND i.assignee_id = $3)
+  SELECT 1 FROM chain i
+  WHERE (
+      (i.creator_type = 'member' AND i.creator_id = $1)
+      OR (i.assignee_type = 'member' AND i.assignee_id = $1)
       OR (i.assignee_type = 'agent' AND i.assignee_id IN (
-            SELECT a.id FROM agent a WHERE a.workspace_id = $2 AND a.owner_id = $3))
+            SELECT a.id FROM agent a WHERE a.workspace_id = $2 AND a.owner_id = $1))
       OR (i.assignee_type = 'squad' AND i.assignee_id IN (
             SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
-             WHERE s.workspace_id = $2 AND sm.member_type = 'member' AND sm.member_id = $3
+             WHERE s.workspace_id = $2 AND sm.member_type = 'member' AND sm.member_id = $1
             UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
-             WHERE s.workspace_id = $2 AND a.owner_id = $3
+             WHERE s.workspace_id = $2 AND a.owner_id = $1
             UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
               JOIN agent a ON a.id = sm.member_id
-             WHERE s.workspace_id = $2 AND sm.member_type = 'agent' AND a.owner_id = $3))
+             WHERE s.workspace_id = $2 AND sm.member_type = 'agent' AND a.owner_id = $1))
     )
 )
 `
 
 type IssueBelongsToUserParams struct {
-	IssueID     pgtype.UUID `json:"issue_id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	UserID      pgtype.UUID `json:"user_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
 }
 
 // Whether the issue is owned by the user: created by them, assigned to them
 // directly (member), to an agent they own, or to a squad they (or an agent they
 // own) belong to / lead. Gates issue detail for non-owner members (mirrors
 // issueOwnershipClause).
+//
+// Ownership is inherited from ANCESTORS. A subtask of an issue you own is
+// yours to open: the board and the parent's subtask list show it either way
+// (ListChildIssues is deliberately unfiltered), so without this the UI offers
+// a row that answers 404 when clicked — which is what a person reads as the
+// task being broken.
+//
+// The walk is capped at 16 levels. The create/update paths already reject a
+// circular parent, but a recursive CTE over cyclic rows does not terminate,
+// and a visibility gate is the wrong place to discover that data drifted.
 func (q *Queries) IssueBelongsToUser(ctx context.Context, arg IssueBelongsToUserParams) (bool, error) {
-	row := q.db.QueryRow(ctx, issueBelongsToUser, arg.IssueID, arg.WorkspaceID, arg.UserID)
+	row := q.db.QueryRow(ctx, issueBelongsToUser, arg.UserID, arg.WorkspaceID, arg.IssueID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

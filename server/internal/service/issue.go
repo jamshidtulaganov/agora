@@ -88,6 +88,9 @@ type IssueCreateParams struct {
 // IssueCreateOpts groups optional knobs for IssueService.Create. Most
 // callers leave it zero-valued.
 type IssueCreateOpts struct {
+	// AssistantCreatorID is server-only provenance, persisted in the SAME
+	// transaction as creation. Never derive it from request JSON or metadata.
+	AssistantCreatorID pgtype.UUID
 	// BroadcastPayload, if non-nil, is invoked after the issue row is
 	// created and attachments are linked. Its return value is sent as
 	// the EventIssueCreated payload via the event bus. The HTTP handler
@@ -288,6 +291,14 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("create issue: %w", err)
+	}
+	if opts.AssistantCreatorID.Valid {
+		if p.CreatorType != "member" || opts.AssistantCreatorID != p.CreatorID {
+			return IssueCreateResult{}, errors.New("invalid assistant creation provenance")
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO assistant_issue_creation (issue_id,user_id) VALUES ($1,$2)`, issue.ID, opts.AssistantCreatorID); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("record assistant creation: %w", err)
+		}
 	}
 
 	// A sub-task joins its parent's sprint (see inheritSprintID above) so the

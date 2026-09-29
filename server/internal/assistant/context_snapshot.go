@@ -8,6 +8,8 @@ import (
 // ContextSnapshot is captured at send time. File contents and project facts
 // are untrusted data, never instructions or a grant to execute a repository.
 type ContextSnapshot struct {
+	// Mode is trusted accept-time policy, not part of the untrusted prompt data.
+	Mode RunMode `json:"mode,omitempty"`
 	Project *ProjectSnapshot `json:"project,omitempty"`
 	Member  *MemberSnapshot  `json:"member,omitempty"`
 	Files   []FileSnapshot   `json:"files,omitempty"`

@@ -21,6 +21,7 @@
     "title": "Ask Agora anything",
     "subtitle": "It can see every workspace you're in — issues, projects, usage.",
     "prompts": {
+      "review_feature": "Review this feature for bugs, requirement gaps, and impact on other parts. Recommend only; do not create or modify tasks. Feature or issue: ",
       "create_issue": "Create an issue to update the pricing page copy",
       "my_plate": "What's on my plate across all my workspaces?",
       "usage_this_week": "How much have I used this week?",
@@ -94,6 +95,10 @@
       "release_notes": {
         "label": "Release notes",
         "description": "What shipped, written for humans"
+      },
+      "review": {
+        "label": "Review feature",
+        "description": "Find evidence-backed bugs, gaps, and regression risks"
       },
       "plan_sprint": {
         "label": "Plan sprint",

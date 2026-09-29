@@ -16,6 +16,7 @@ export type SlashCommandId =
   | "standup"
   | "qa_health"
   | "release_notes"
+  | "review"
   | "plan_sprint"
   | "triage_inbox"
   | "new_agent";
@@ -47,9 +48,12 @@ export const SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { id: "standup", trigger: "/standup", action: "send" },
   { id: "qa_health", trigger: "/qa-health", action: "send" },
   { id: "release_notes", trigger: "/release-notes", action: "send" },
+  // Read-only review: the template leaves room for a feature, issue key, or
+  // expected behavior and can be combined with attached diffs/test output.
+  { id: "review", trigger: "/review", action: "template" },
   // Management recipes (docs/assistant-domain-plan.md §3b). Unlike the report
   // recipes above, these have no launcher row to borrow a prompt from — the
-  // launcher deliberately stays at 8 rows — so their payload lives beside
+  // launcher deliberately stays compact — so their payload lives beside
   // their own label under `composer.slash.<id>.prompt`.
   { id: "plan_sprint", trigger: "/plan-sprint", action: "send" },
   { id: "triage_inbox", trigger: "/triage-inbox", action: "send" },

@@ -16,7 +16,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/assistant"
 	"github.com/jamshidtulaganov/agora/server/internal/issueguard"
 	"github.com/jamshidtulaganov/agora/server/internal/logger"
 	"github.com/jamshidtulaganov/agora/server/internal/middleware"
@@ -2346,6 +2348,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		AttachmentIDs:  attachmentIDs,
 		AllowDuplicate: req.AllowDuplicate,
 	}, service.IssueCreateOpts{
+		AssistantCreatorID: assistantIssueCreator(r.Context(), actualCreatorID),
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,
 		Platform:         clientPlatform,
@@ -3245,21 +3248,44 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	queries := h.Queries
+	// Assistant deletion is narrower than the human UI. Hold the parent row
+	// lock until deletion commits: FK inserts/reparents cannot add a child
+	// between the final safety check and DELETE.
+	var deleteTx pgx.Tx
+	if exec := assistantExecutionFrom(r.Context()); exec != nil && exec.tool == assistant.ToolDeleteIssue {
+		if !exec.authorized { writeError(w, http.StatusForbidden, "this action needs confirmation"); return }
+		var err error
+		deleteTx, err = h.TxStarter.Begin(r.Context())
+		if err != nil { writeError(w, http.StatusInternalServerError, "could not check deletion safety"); return }
+		defer deleteTx.Rollback(r.Context())
+		var lockedID pgtype.UUID
+		if err := deleteTx.QueryRow(r.Context(), `SELECT id FROM issue WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, issue.ID, issue.WorkspaceID).Scan(&lockedID); err != nil {
+			writeError(w, http.StatusConflict, "issue is no longer available"); return
+		}
+		if err := checkAssistantIssueDeletion(r.Context(), deleteTx, requestUserID(r), issue.ID, issue.WorkspaceID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error()); return
+		}
+		queries = h.Queries.WithTx(deleteTx)
+	}
 
 	h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 	// Fail any linked autopilot runs before delete (ON DELETE SET NULL clears issue_id).
-	h.Queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
+	queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
 
 	// Collect all attachment URLs (issue-level + comment-level) before CASCADE delete.
-	attachmentURLs, _ := h.Queries.ListAttachmentURLsByIssueOrComments(r.Context(), issue.ID)
+	attachmentURLs, _ := queries.ListAttachmentURLsByIssueOrComments(r.Context(), issue.ID)
 
-	err := h.Queries.DeleteIssue(r.Context(), db.DeleteIssueParams{
+	err := queries.DeleteIssue(r.Context(), db.DeleteIssueParams{
 		ID:          issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete issue")
 		return
+	}
+	if deleteTx != nil {
+		if err := deleteTx.Commit(r.Context()); err != nil { writeError(w, http.StatusInternalServerError, "failed to commit issue deletion"); return }
 	}
 
 	h.deleteS3Objects(r.Context(), attachmentURLs)

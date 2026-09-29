@@ -77,6 +77,7 @@ type assistantCaller struct {
 // rather than a ctx value so the compiler, not a code review, is what stops a
 // future caller from dropping it.
 func (h *Handler) Execute(ctx context.Context, userID, sessionID, name string, args json.RawMessage) (json.RawMessage, error) {
+	if err := assistant.CheckRunTool(ctx, name); err != nil { return nil, err }
 	userUUID, err := util.ParseUUID(userID)
 	if err != nil {
 		return nil, errors.New("could not identify the requesting user")
