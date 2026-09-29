@@ -165,16 +165,107 @@ type ZohoMigrateRequest struct {
 	// ({"jamshidjon.t@octanefuel.com": "jamshidjon.t1@tsst.ai"}): the alias gets
 	// no account of its own and its tasks are assigned to the main account.
 	EmailAliases map[string]string `json:"email_aliases"`
+	// AllowPeopleMissingFromZoho provisions people the portal roster does not
+	// vouch for. Off by default: the roster is what keeps a project's former
+	// employees, who still own tasks in its history, out of the workspace.
+	AllowPeopleMissingFromZoho bool `json:"allow_people_missing_from_zoho"`
 }
 
 // zohoMigratePolicy is who may be provisioned and under which address.
 type zohoMigratePolicy struct {
 	Domains []string          `json:"domains"`
 	Aliases map[string]string `json:"aliases"`
+
+	// roster is the portal's people, keyed by canonical email. A person the
+	// roster does not vouch for is not provisioned: see zohoRoster.
+	roster zohoRoster
+}
+
+// zohoRoster is the portal's list of people who still work here, the only
+// authority on activity the migration has. Zoho reports activity on the
+// portal/project user listing and nowhere else — a task's owner or creator is
+// just a name and an address — so without the roster the migration would take
+// every person who ever touched a task in the project's history, which is
+// exactly where a company's former employees live.
+//
+// loaded is false when the listing could not be read (most often a missing
+// ZohoProjects.users.READ scope). The migration then refuses to provision
+// anyone rather than falling back to "import everybody"; allowUnknown is the
+// operator's conscious override.
+type zohoRoster struct {
+	loaded       bool
+	allowUnknown bool
+	active       map[string]bool // canonical email -> still active
+}
+
+// activeCount is how many people the roster says still work here. The map
+// also holds the ones it says are gone, so its length is not the answer.
+func (r zohoRoster) activeCount() int {
+	n := 0
+	for _, active := range r.active {
+		if active {
+			n++
+		}
+	}
+	return n
+}
+
+// verdict reports whether the roster vouches for email. The reason is empty
+// when the person may be provisioned.
+func (r zohoRoster) verdict(email string) string {
+	if r.allowUnknown {
+		return ""
+	}
+	if !r.loaded {
+		return "portal roster unavailable"
+	}
+	active, listed := r.active[email]
+	switch {
+	case !listed:
+		return "not in the Zoho portal"
+	case !active:
+		return "inactive in Zoho"
+	}
+	return ""
+}
+
+// loadZohoRoster reads the portal's people once per run and records who is
+// still active. A person Zoho lists without a usable activity flag counts as
+// unknown, not as active.
+func loadZohoRoster(ctx context.Context, client *zohoprojects.Client, portalID string, policy zohoMigratePolicy, allowUnknown bool) (zohoRoster, error) {
+	roster := zohoRoster{allowUnknown: allowUnknown, active: map[string]bool{}}
+	users, err := client.ListPortalUsers(ctx, portalID)
+	if err != nil {
+		return roster, err
+	}
+	for _, u := range users {
+		if !u.ActiveKnown {
+			continue
+		}
+		email := policy.canonical(u.Email)
+		if email == "" {
+			continue
+		}
+		// A person can appear more than once across portal profiles; any
+		// active appearance keeps them.
+		roster.active[email] = roster.active[email] || u.Active
+	}
+	roster.loaded = true
+	return roster, nil
+}
+
+// allow is the single membership gate: the email policy first (a company
+// address, not personal mail), then the portal roster (someone who still
+// works here). Returns an empty reason when the person may be provisioned.
+func (p zohoMigratePolicy) allow(email string) string {
+	if reason := zohoEmailAllowed(email, p.Domains); reason != "" {
+		return reason
+	}
+	return p.roster.verdict(email)
 }
 
 func newZohoMigratePolicy(domains []string, aliases map[string]string) zohoMigratePolicy {
-	p := zohoMigratePolicy{Domains: []string{}, Aliases: map[string]string{}}
+	p := zohoMigratePolicy{Domains: []string{}, Aliases: map[string]string{}, roster: zohoRoster{active: map[string]bool{}}}
 	for _, d := range domains {
 		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
 			p.Domains = append(p.Domains, d)
@@ -236,11 +327,15 @@ type ZohoMigrateSkip struct {
 }
 
 type ZohoMigrateResponse struct {
-	DryRun           bool                 `json:"dry_run"`
-	MembershipSource string               `json:"membership_source"`
-	Projects         []ZohoMigrateProject `json:"projects"`
-	Skipped          []ZohoMigrateSkip    `json:"skipped"`
-	Totals           struct {
+	DryRun           bool   `json:"dry_run"`
+	MembershipSource string `json:"membership_source"`
+	// RosterSource says where the activity check came from, so a run that
+	// provisioned nobody explains itself.
+	RosterSource string               `json:"roster_source"`
+	ActivePeople int                  `json:"active_people"`
+	Projects     []ZohoMigrateProject `json:"projects"`
+	Skipped      []ZohoMigrateSkip    `json:"skipped"`
+	Totals       struct {
 		Workspaces    int `json:"workspaces"`
 		NewWorkspaces int `json:"new_workspaces"`
 		Tasks         int `json:"tasks"`
@@ -285,11 +380,32 @@ func (h *Handler) MigrateZohoWorkspaces(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, "failed to resolve zoho portal: "+err.Error())
 		return
 	}
+	// The roster is read before anything is planned: without it the run has no
+	// way to tell a colleague from someone who left, and a migration that
+	// guesses is how a workspace fills with former employees.
+	policy.roster, err = loadZohoRoster(ctx, st.client, portalID, policy, req.AllowPeopleMissingFromZoho)
+	rosterSource := fmt.Sprintf("portal users (%d of %d still active)",
+		policy.roster.activeCount(), len(policy.roster.active))
+	switch {
+	case err != nil && req.AllowPeopleMissingFromZoho:
+		rosterSource = "unavailable, provisioning anyway: " + err.Error()
+		slog.Warn("zoho migrate: portal roster unavailable, override in effect", "error", err)
+	case err != nil:
+		writeError(w, http.StatusBadGateway,
+			"cannot read the Zoho portal's people ("+err.Error()+"). The migration needs the "+
+				"ZohoProjects.users.READ scope to tell who still works here; without it every "+
+				"person in a project's task history would be added. Grant the scope, or re-run "+
+				"with allow_people_missing_from_zoho to provision them anyway.")
+		return
+	}
+
 	resp, err := h.planZohoMigration(ctx, st, portalID, req.ProjectIDs, operator, policy)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	resp.RosterSource = rosterSource
+	resp.ActivePeople = policy.roster.activeCount()
 	resp.DryRun = req.DryRun
 	if req.DryRun {
 		writeJSON(w, http.StatusOK, resp)
@@ -425,8 +541,10 @@ func (h *Handler) planZohoMigration(ctx context.Context, st *zohoSyncState, port
 			if _, err := h.Queries.GetUserByEmail(ctx, email); err == nil {
 				p.Exists = true
 			}
+			// The operator runs the migration, so they are active by
+			// definition and never checked against the roster.
 			if email != strings.ToLower(operator.Email) {
-				p.Skipped = zohoEmailAllowed(email, policy.Domains)
+				p.Skipped = policy.allow(email)
 			}
 			seen[email] = len(plan.People)
 			plan.People = append(plan.People, p)
@@ -444,7 +562,11 @@ func (h *Handler) planZohoMigration(ctx context.Context, st *zohoSyncState, port
 				resp.MembershipSource = "tasks (project users unreadable: " + err.Error() + ")"
 			} else {
 				for _, u := range users {
-					if !u.Active {
+					// Activity is the roster's call (policy.allow): this
+					// listing is read for the project role. Skipping an
+					// inactive person here too keeps the plan quiet about
+					// people who are no longer anyone's colleague.
+					if u.ActiveKnown && !u.Active {
 						continue
 					}
 					add(zohoprojects.User{ID: u.ID, Name: u.Name, Email: u.Email}, zohoprojects.MapRole(u.Role), "project_user", u.Role)
@@ -675,7 +797,8 @@ func (h *Handler) zohoEnsureMembership(ctx context.Context, wsID, userID pgtype.
 func (h *Handler) zohoMemberProvisioner(policy zohoMigratePolicy) func(context.Context, pgtype.UUID, zohoprojects.User) (pgtype.UUID, bool) {
 	return func(ctx context.Context, wsID pgtype.UUID, u zohoprojects.User) (pgtype.UUID, bool) {
 		email := policy.canonical(u.Email)
-		if zohoEmailAllowed(email, policy.Domains) != "" {
+		if reason := policy.allow(email); reason != "" {
+			slog.Info("zoho migrate: person not provisioned", "email", email, "reason", reason)
 			return pgtype.UUID{}, false
 		}
 		userID, _, err := h.zohoEnsureUser(ctx, email, u.Name)
@@ -706,5 +829,21 @@ func (h *Handler) zohoMigratedProvisioner(ctx context.Context, wsID pgtype.UUID)
 		Aliases map[string]string `json:"zoho_migrate_aliases"`
 	}
 	_ = json.Unmarshal(raw, &settings)
-	return h.zohoMemberProvisioner(newZohoMigratePolicy(settings.Domains, settings.Aliases))
+	policy := newZohoMigratePolicy(settings.Domains, settings.Aliases)
+
+	// Every later poll re-reads the roster, so someone who leaves the company
+	// after the migration stops being added back by the next task they are
+	// named on. An unreadable roster provisions nobody (zohoRoster.verdict) —
+	// the poll still imports tasks, their owner just stays a metadata chip.
+	st := h.newZohoSyncState()
+	portalID, err := h.resolveZohoPortalID(ctx, st)
+	if err != nil {
+		slog.Warn("zoho migrate: no portal for roster, provisioning paused", "error", err)
+		return h.zohoMemberProvisioner(policy)
+	}
+	policy.roster, err = loadZohoRoster(ctx, st.client, portalID, policy, false)
+	if err != nil {
+		slog.Warn("zoho migrate: portal roster unavailable, provisioning paused", "error", err)
+	}
+	return h.zohoMemberProvisioner(policy)
 }
