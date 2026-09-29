@@ -676,6 +676,13 @@ func (h *Handler) applyZohoWorkspace(ctx context.Context, p *ZohoMigrateProject,
 			return pgtype.UUID{}, err
 		}
 		wsID = id
+		// The persisted policy is what the poller provisions by, long after
+		// this run. Refresh it, or a workspace keeps the domains and aliases
+		// of the first migration forever — a company that later adds a second
+		// mail domain would find its people silently refused.
+		if err := h.stampZohoPolicy(ctx, wsID, policy); err != nil {
+			return pgtype.UUID{}, err
+		}
 	} else {
 		ownerID, _, err := h.zohoEnsureUser(ctx, owner.Email, owner.Name)
 		if err != nil {
@@ -702,6 +709,27 @@ func (h *Handler) applyZohoWorkspace(ctx context.Context, p *ZohoMigrateProject,
 		}
 	}
 	return wsID, nil
+}
+
+// zohoSettingsMergeSQL merges keys into workspace.settings without disturbing
+// its siblings.
+const zohoSettingsMergeSQL = `UPDATE workspace SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb WHERE id = $1`
+
+// stampZohoPolicy writes the run's email policy onto an existing migrated
+// workspace, so the poller keeps provisioning by the rule the operator last
+// gave rather than the one the workspace was born with.
+func (h *Handler) stampZohoPolicy(ctx context.Context, wsID pgtype.UUID, policy zohoMigratePolicy) error {
+	marker, err := json.Marshal(map[string]any{
+		zohoWorkspaceDomainsKey: policy.Domains,
+		zohoWorkspaceAliasesKey: policy.Aliases,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := h.DB.Exec(ctx, zohoSettingsMergeSQL, wsID, marker); err != nil {
+		return fmt.Errorf("refresh zoho policy: %w", err)
+	}
+	return nil
 }
 
 func (h *Handler) createZohoWorkspace(ctx context.Context, p *ZohoMigrateProject, ownerID pgtype.UUID, policy zohoMigratePolicy) (pgtype.UUID, error) {
@@ -735,10 +763,7 @@ func (h *Handler) createZohoWorkspace(ctx context.Context, p *ZohoMigrateProject
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE workspace SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
-		ws.ID, marker,
-	); err != nil {
+	if _, err := tx.Exec(ctx, zohoSettingsMergeSQL, ws.ID, marker); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("stamp zoho marker: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

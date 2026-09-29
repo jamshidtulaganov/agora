@@ -406,6 +406,56 @@ func TestZohoMigrateUsesProjectRoles(t *testing.T) {
 	}
 }
 
+// TestZohoMigrateReuseRefreshesPolicy: a second run with a wider domain list
+// updates the workspace the first run created, so the poller provisions by the
+// rule the operator last gave. Without this the domains a workspace was born
+// with would refuse a second company mail domain forever.
+func TestZohoMigrateReuseRefreshesPolicy(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newMigrateMock(t)
+	mock.usersReadable = true
+	configureZohoEnv(t, mock.srv.URL)
+	t.Setenv("AGORA_ZOHO_MIGRATE", "1")
+	cleanupMigrateFixtures(t)
+	ctx := context.Background()
+
+	if code, _ := runMigrate(t, map[string]any{"allowed_email_domains": []string{migDomain}}); code != http.StatusAccepted {
+		t.Fatalf("first run = %d", code)
+	}
+	var domains []string
+	if err := testPool.QueryRow(ctx,
+		`SELECT ARRAY(SELECT jsonb_array_elements_text(settings->'zoho_migrate_domains'))
+		   FROM workspace WHERE settings->>'zoho_project_id' = '211'`).Scan(&domains); err != nil {
+		t.Fatalf("read domains: %v", err)
+	}
+	if len(domains) != 1 || domains[0] != migDomain {
+		t.Fatalf("after first run domains = %v", domains)
+	}
+
+	// Second run, same project, an extra company domain.
+	second := "tsst-mig.test"
+	if code, _ := runMigrate(t, map[string]any{"allowed_email_domains": []string{migDomain, second}}); code != http.StatusAccepted {
+		t.Fatalf("second run = %d", code)
+	}
+	if err := testPool.QueryRow(ctx,
+		`SELECT ARRAY(SELECT jsonb_array_elements_text(settings->'zoho_migrate_domains'))
+		   FROM workspace WHERE settings->>'zoho_project_id' = '211'`).Scan(&domains); err != nil {
+		t.Fatalf("read domains: %v", err)
+	}
+	if len(domains) != 2 || domains[1] != second {
+		t.Errorf("reused workspace kept the old policy: %v", domains)
+	}
+	// The zoho marker itself must survive the refresh.
+	var projectID string
+	testPool.QueryRow(ctx,
+		`SELECT settings->>'zoho_project_id' FROM workspace WHERE settings->>'zoho_project_id' = '211'`).Scan(&projectID)
+	if projectID != "211" {
+		t.Errorf("refresh clobbered sibling settings")
+	}
+}
+
 // TestZohoMigrateRefusesWithoutRoster: with no users scope the run cannot tell
 // a colleague from someone who left, so it refuses rather than provisioning
 // everyone a project's task history names.
