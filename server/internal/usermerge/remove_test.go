@@ -79,7 +79,7 @@ func TestRemoveMembersDefaultsToMigratedWorkspaces(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("results = %+v, want only the migrated workspace", results)
 	}
-	if got := results[0]; got.WorkspaceSlug != f.migratedSlug || got.Unassigned != 1 || got.Outcome != "removed (member)" {
+	if got := results[0]; got.WorkspaceSlug != f.migratedSlug || got.Unassigned != 1 || !got.Removed || got.Role != "member" {
 		t.Errorf("result = %+v", got)
 	}
 
@@ -207,7 +207,7 @@ func TestRemoveMembersKeepListRemovesTheAbsent(t *testing.T) {
 	}
 	var removed []string
 	for _, r := range results {
-		if strings.HasPrefix(r.Outcome, "removed") {
+		if r.Removed {
 			removed = append(removed, r.Email)
 		}
 	}
@@ -255,7 +255,7 @@ func TestRemoveMembersKeepListHonoursAliases(t *testing.T) {
 		t.Fatalf("RemoveMembers: %v", err)
 	}
 	for _, r := range results {
-		if r.Email == f.email && strings.HasPrefix(r.Outcome, "removed") {
+		if r.Email == f.email && r.Removed {
 			t.Fatalf("an account whose alias is on the roster must be kept: %+v", r)
 		}
 	}
@@ -290,5 +290,59 @@ func TestRemoveMembersKeepListRejectsBothModes(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("err = %v, want a rejection", err)
+	}
+}
+
+// TestRemoveMembersLeavesATrail: nulling the assignee is the only record that
+// the person held the issue, and raw SQL bypasses the application's activity
+// listener. Both the metadata stamp and the timeline row must survive, or a
+// removal silently erases who owned 112 issues.
+func TestRemoveMembersLeavesATrail(t *testing.T) {
+	f, ctx := newRemoveFixture(t)
+	pool := testPool(t)
+
+	if _, err := RemoveMembers(ctx, pool, RemoveMembersOptions{
+		Emails: []string{f.email}, WorkspaceSlug: f.migratedSlug, Apply: true,
+	}); err != nil {
+		t.Fatalf("RemoveMembers: %v", err)
+	}
+
+	var from, reason string
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(metadata->>'unassigned_from',''), COALESCE(metadata->>'unassigned_reason','')
+		   FROM issue WHERE id = $1`, f.assignedIssue).Scan(&from, &reason); err != nil {
+		t.Fatalf("read metadata: %v", err)
+	}
+	if from != f.email {
+		t.Errorf("metadata.unassigned_from = %q, want %q", from, f.email)
+	}
+	if reason == "" {
+		t.Errorf("metadata.unassigned_reason is empty")
+	}
+
+	var action, fromType, fromID, fromEmail, actorType string
+	if err := pool.QueryRow(ctx, `
+		SELECT action, COALESCE(details->>'from_type',''), COALESCE(details->>'from_id',''),
+		       COALESCE(details->>'from_email',''), COALESCE(actor_type,'')
+		  FROM activity_log WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		f.assignedIssue).Scan(&action, &fromType, &fromID, &fromEmail, &actorType); err != nil {
+		t.Fatalf("read activity: %v", err)
+	}
+	if action != "assignee_changed" || fromType != "member" || fromID != f.userID ||
+		fromEmail != f.email || actorType != "system" {
+		t.Errorf("activity row = %s actor=%s from=%s/%s/%s", action, actorType, fromType, fromID, fromEmail)
+	}
+
+	// Somebody else's issue gets neither stamp nor timeline row.
+	var otherFrom string
+	pool.QueryRow(ctx, `SELECT COALESCE(metadata->>'unassigned_from','') FROM issue WHERE id = $1`,
+		f.untouchedIssue).Scan(&otherFrom)
+	if otherFrom != "" {
+		t.Errorf("another person's issue was stamped: %q", otherFrom)
+	}
+	var n int
+	pool.QueryRow(ctx, `SELECT count(*) FROM activity_log WHERE issue_id = $1`, f.untouchedIssue).Scan(&n)
+	if n != 0 {
+		t.Errorf("another person's issue got %d activity row(s)", n)
 	}
 }

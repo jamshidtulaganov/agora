@@ -169,19 +169,34 @@ func removeMembers(ctx context.Context, pool *pgxpool.Pool, args []string) error
 		scope = "every workspace"
 	}
 	fmt.Printf("\n== %s: remove members from %s\n", mode, scope)
+	// A dry run is written in the conditional: nothing has happened yet, and
+	// an operator reading "removed" on a run that rolls back cannot tell
+	// whether it did.
+	verb, unassignedVerb, summary, summaryUnassigned := "removed", "unassigned", "removed", "unassigned"
+	if !*apply {
+		verb, unassignedVerb = "WOULD REMOVE", "would unassign"
+		summary, summaryUnassigned = "would be removed", "would be unassigned"
+	}
 	var removed, unassigned int
 	for _, r := range results {
-		fmt.Printf("   %-36s %-24s %s", r.Email, r.WorkspaceSlug, r.Outcome)
+		outcome := r.Outcome
+		if r.Removed {
+			outcome = fmt.Sprintf("%s (%s)", verb, r.Role)
+		}
+		fmt.Printf("   %-36s %-24s %s", r.Email, r.WorkspaceSlug, outcome)
 		if r.Unassigned > 0 {
-			fmt.Printf(", unassigned %d issue(s)", r.Unassigned)
+			fmt.Printf(", %s %d issue(s)", unassignedVerb, r.Unassigned)
 		}
 		fmt.Println()
-		if strings.HasPrefix(r.Outcome, "removed") {
+		if r.Removed {
 			removed++
 			unassigned += r.Unassigned
 		}
 	}
-	fmt.Printf("   -- %d membership(s) removed, %d issue(s) unassigned\n", removed, unassigned)
+	fmt.Printf("   -- %d membership(s) %s, %d issue(s) %s\n", removed, summary, unassigned, summaryUnassigned)
+	if !*apply {
+		fmt.Println("   -- nothing was written; re-run with --apply to make these changes")
+	}
 	return nil
 }
 

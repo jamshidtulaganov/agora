@@ -2,6 +2,7 @@ package usermerge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -57,7 +58,12 @@ type RemoveMemberResult struct {
 	Role          string
 	Unassigned    int // issues that were assigned to them
 	Runtimes      int // agent runtimes they own here (see RemoveMembers)
-	Outcome       string
+	// Removed is true when this membership was deleted (or, on a dry run,
+	// would have been). The caller phrases it: a dry run must not tell the
+	// operator that something "was removed" when the transaction is about to
+	// roll back. Outcome carries the reason a person was NOT removed.
+	Removed bool
+	Outcome string
 }
 
 // RemoveMembers unassigns a person's issues and then drops their membership,
@@ -213,9 +219,7 @@ func removeOneMembership(ctx context.Context, tx pgx.Tx, email, userID string, m
 		}, nil
 	}
 
-	tag, err := tx.Exec(ctx, `
-		UPDATE issue SET assignee_type = NULL, assignee_id = NULL, updated_at = now()
-		 WHERE workspace_id = $1 AND assignee_type = 'member' AND assignee_id = $2`, m.wsID, userID)
+	unassigned, err := unassignIssuesOf(ctx, tx, email, userID, m)
 	if err != nil {
 		return RemoveMemberResult{}, err
 	}
@@ -224,8 +228,8 @@ func removeOneMembership(ctx context.Context, tx pgx.Tx, email, userID string, m
 		return RemoveMemberResult{}, err
 	}
 	return RemoveMemberResult{
-		Email: email, WorkspaceSlug: m.slug, Role: m.role, Unassigned: int(tag.RowsAffected()),
-		Outcome: fmt.Sprintf("removed (%s)", m.role),
+		Email: email, WorkspaceSlug: m.slug, Role: m.role, Unassigned: unassigned,
+		Removed: true,
 	}, nil
 }
 
@@ -301,4 +305,71 @@ func removeMembersNotOnRoster(ctx context.Context, tx pgx.Tx, opts RemoveMembers
 		results = append(results, res)
 	}
 	return results, nil
+}
+
+// unassignIssuesOf clears the person's assignments in one workspace and leaves
+// a trail of who held each issue.
+//
+// Nulling the assignee alone loses the answer to "whose was this?" — the
+// column is the only record, and a tool writing raw SQL bypasses the
+// application's activity listener, so the change would not even appear in the
+// issue's timeline. For work handed over because someone left, that answer is
+// the useful part: it is what lets whoever triages the issue next find the
+// context, and it is what makes the removal undoable.
+//
+// So each issue keeps metadata.unassigned_from (the address, readable in the
+// Metadata panel without a join to a member row that no longer exists) and
+// gains an activity_log row in the same shape the application writes for an
+// assignee change, actor 'system', so the timeline reads normally.
+func unassignIssuesOf(ctx context.Context, tx pgx.Tx, email, userID string, m membership) (int, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE issue
+		   SET assignee_type = NULL,
+		       assignee_id   = NULL,
+		       metadata      = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+		                         'unassigned_from', $3::text,
+		                         'unassigned_reason', 'member removed from workspace'),
+		       updated_at    = now()
+		 WHERE workspace_id = $1 AND assignee_type = 'member' AND assignee_id = $2
+		 RETURNING id`, m.wsID, userID, email)
+	if err != nil {
+		return 0, err
+	}
+	var issueIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		issueIDs = append(issueIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(issueIDs) == 0 {
+		return 0, nil
+	}
+
+	// Same details keys the application's assignee_changed listener writes
+	// (from_type/from_id, no to_*), so existing timeline readers need no
+	// special case for these rows.
+	details, err := json.Marshal(map[string]string{
+		"from_type":  "member",
+		"from_id":    userID,
+		"from_email": email,
+		"reason":     "member removed from workspace",
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range issueIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO activity_log (workspace_id, issue_id, actor_type, action, details)
+			VALUES ($1, $2, 'system', 'assignee_changed', $3)`, m.wsID, id, details); err != nil {
+			return 0, err
+		}
+	}
+	return len(issueIDs), nil
 }
