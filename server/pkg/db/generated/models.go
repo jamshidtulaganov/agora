@@ -1351,15 +1351,17 @@ type TaskUsageHourlyRollupState struct {
 }
 
 type TelegramAssistantDelivery struct {
-	RunID       pgtype.UUID        `json:"run_id"`
-	ChatID      string             `json:"chat_id"`
-	Lang        string             `json:"lang"`
-	DeliveredAt pgtype.Timestamptz `json:"delivered_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	RunID            pgtype.UUID        `json:"run_id"`
+	ChatID           string             `json:"chat_id"`
+	ReplyToMessageID int64              `json:"reply_to_message_id"`
+	Lang             string             `json:"lang"`
+	DeliveredAt      pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type TelegramAssistantSession struct {
 	UserID    pgtype.UUID        `json:"user_id"`
+	ChatID    string             `json:"chat_id"`
 	SessionID pgtype.UUID        `json:"session_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
@@ -1372,6 +1374,15 @@ type TelegramBindingToken struct {
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	ConsumedAt  pgtype.Timestamptz `json:"consumed_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type TelegramChatMessage struct {
+	ChatID     int64              `json:"chat_id"`
+	MessageID  int64              `json:"message_id"`
+	SenderID   int64              `json:"sender_id"`
+	SenderName string             `json:"sender_name"`
+	Text       string             `json:"text"`
+	SentAt     pgtype.Timestamptz `json:"sent_at"`
 }
 
 type TelegramChatSession struct {
@@ -1436,6 +1447,15 @@ type TelegramTaskDelivery struct {
 	DeliveryStartedAt pgtype.Timestamptz `json:"delivery_started_at"`
 	DeliveredAt       pgtype.Timestamptz `json:"delivered_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type TelegramTrackedChat struct {
+	ChatID      int64              `json:"chat_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Title       string             `json:"title"`
+	Role        string             `json:"role"`
+	EnabledBy   pgtype.UUID        `json:"enabled_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type TestCase struct {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,9 @@ import (
 //     event is replayed;
 //   - a parked action is confirmed through the SAME handler the web card uses,
 //     as the bound member, so a tap cannot do more than a click.
+
+// telegramTestMembership is what the mock Bot API answers getChatMember with.
+var telegramTestMembership atomic.Value
 
 type telegramAssistantCall struct {
 	method string
@@ -53,9 +57,13 @@ func telegramAssistantBot(t *testing.T) <-chan telegramAssistantCall {
 			chatID: body.ChatID, text: body.Text, markup: string(body.ReplyMarkup),
 		}
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+		// One body serves every method: sendMessage reads message_id,
+		// getChatMember reads status.
+		io.WriteString(w, `{"ok":true,"result":{"message_id":1,"status":"`+telegramTestMembership.Load().(string)+`"}}`)
 	}))
 	t.Cleanup(srv.Close)
+	telegramTestMembership.Store("member")
+	t.Setenv("TELEGRAM_BOT_USERNAME", "agora_test_bot")
 
 	bot := telegram.NewBotClient("ASSISTANTTOKEN")
 	bot.BaseURL = srv.URL

@@ -689,3 +689,56 @@ func (c *BotClient) GetMe(ctx context.Context) (BotUser, error) {
 	}
 	return BotUser{ID: parsed.Result.ID, Username: parsed.Result.Username}, nil
 }
+
+// IsChatMember reports whether a Telegram user is currently in a chat.
+//
+// Used as an authorization check before group history is shown to someone, so
+// any failure is an error rather than a "no": the caller must be able to tell
+// "not a member" from "could not ask".
+func (c *BotClient) IsChatMember(ctx context.Context, chatID string, userID int64) (bool, error) {
+	if c.token == "" {
+		return false, ErrNoToken
+	}
+	buf, err := json.Marshal(map[string]any{"chat_id": chatID, "user_id": userID})
+	if err != nil {
+		return false, fmt.Errorf("telegram: marshal getChatMember: %w", err)
+	}
+	url := fmt.Sprintf("%s/bot%s/getChatMember", c.baseURL(), c.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(buf))
+	if err != nil {
+		return false, fmt.Errorf("telegram: new getChatMember request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return false, fmt.Errorf("telegram: getChatMember http: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("telegram: read getChatMember response: %w", err)
+	}
+	var parsed struct {
+		OK          bool   `json:"ok"`
+		ErrorCode   int    `json:"error_code"`
+		Description string `json:"description"`
+		Result      struct {
+			Status   string `json:"status"`
+			IsMember bool   `json:"is_member"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return false, fmt.Errorf("telegram: decode getChatMember response: %w", err)
+	}
+	if !parsed.OK {
+		return false, fmt.Errorf("telegram: getChatMember failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+	}
+	switch parsed.Result.Status {
+	case "creator", "administrator", "member":
+		return true, nil
+	case "restricted":
+		// A restricted user may or may not still be in the chat.
+		return parsed.Result.IsMember, nil
+	}
+	return false, nil
+}
