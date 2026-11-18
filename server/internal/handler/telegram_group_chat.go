@@ -11,8 +11,12 @@ package handler
 // what was recorded.
 //
 // The bot never acts as itself. A message addressed to it runs the Assistant
-// as the Agora member who wrote it, with that member's permissions, and the
-// answer is posted as a reply. Someone who has not linked Telegram to Agora,
+// as the Agora member who wrote it, and the answer is posted as a reply. A
+// group turn runs in room mode (assistant.RunModeRoom): read-only, this
+// group's workspace only, nothing personal. The room is full of text the asker
+// did not write and of readers who are not the asker, so a turn there must not
+// be able to change anything or to carry in data from elsewhere. Creating and
+// changing things is done in a private chat with the bot. Someone who has not linked Telegram to Agora,
 // or is not in the group's workspace, gets a refusal instead of an answer.
 //
 // Telegram delivers ordinary group messages to a bot only when its privacy
@@ -30,6 +34,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jamshidtulaganov/agora/server/internal/assistant"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -98,6 +103,7 @@ func (h *Handler) processTelegramGroupMessage(ctx context.Context, update telegr
 	if msg.Date > 0 {
 		sent = time.Unix(msg.Date, 0)
 	}
+	h.telegramSeeParticipant(ctx, g, sent)
 	name := strings.TrimSpace(msg.From.FirstName + " " + msg.From.LastName)
 	if name == "" {
 		name = msg.From.Username
@@ -134,7 +140,18 @@ func (h *Handler) processTelegramGroupMessage(ctx context.Context, update telegr
 	h.telegramAssistantStart(ctx, telegramAssistantRequest{
 		UserID: userID, ChatID: g.Chat, ReplyTo: g.MessageID, Lang: g.Lang,
 		Text: telegramGroupPreamble(chat) + question, Title: telegramGroupTitle(chat.Title), Workspace: chat.WorkspaceID,
+		Mode: assistant.RunModeRoom,
 	})
+}
+
+// telegramSeeParticipant notes the first time the bot saw someone in a tracked
+// group. It bounds how far back that person may read (assistant_telegram.go).
+func (h *Handler) telegramSeeParticipant(ctx context.Context, g telegramGroupMessage, at time.Time) {
+	if err := h.Queries.SeeTelegramChatParticipant(ctx, db.SeeTelegramChatParticipantParams{
+		ChatID: g.ChatID, TelegramUserID: g.FromID, FirstSeenAt: pgtype.Timestamptz{Time: at, Valid: true},
+	}); err != nil {
+		slog.Warn("telegram group: note participant failed", "chat_id", g.ChatID, "error", err)
+	}
 }
 
 type telegramGroupMessage struct {
@@ -339,6 +356,7 @@ func (h *Handler) telegramSummaryCommand(ctx context.Context, g telegramGroupMes
 		h.telegramGroupSay(ctx, g, "grp.nottracked")
 		return
 	}
+	h.telegramSeeParticipant(ctx, g, time.Now())
 	userID, ok := h.telegramGroupMember(ctx, g, chat.WorkspaceID)
 	if !ok {
 		return
@@ -353,10 +371,11 @@ func (h *Handler) telegramSummaryCommand(ctx context.Context, g telegramGroupMes
 	}
 	prompt := fmt.Sprintf("%sSummarize this group's conversation over the last %d hours. Read it with read_telegram_chat "+
 		"(chat_id %s, hours %d). Give: what was decided, what is still open, and who agreed to do what. "+
-		"Do not create or change anything. Answer in the language the group writes in.",
+		"Answer in the language the group writes in.",
 		telegramGroupPreamble(chat), hours, g.Chat, hours)
 	h.telegramAssistantStart(ctx, telegramAssistantRequest{
 		UserID: userID, ChatID: g.Chat, ReplyTo: g.MessageID, Lang: g.Lang,
 		Text: prompt, Title: telegramGroupTitle(chat.Title), Workspace: chat.WorkspaceID,
+		Mode: assistant.RunModeRoom,
 	})
 }
