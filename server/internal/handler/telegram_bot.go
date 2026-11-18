@@ -16,10 +16,11 @@ import (
 	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
-// Telegram bot beyond OTP login: command menu (/start /new /tasks /help) and a
-// guided "create a task" wizard. Typing a task (or /new <text>) captures the
-// title, then inline buttons walk the user through workspace → project → type
-// (label) → create. Webhook-only (callback_query isn't delivered to the
+// Telegram bot beyond OTP login: command menu (/start /new /tasks /reset /help),
+// the Agora Assistant for plain messages (telegram_assistant.go) and a guided
+// "create a task" wizard. /new <text> captures the title, then inline buttons
+// walk the user through workspace → project → type (label) → create. Plain text
+// reaches the wizard only where the Assistant is not available. Webhook-only (callback_query isn't delivered to the
 // long-poll login path). All replies are localized to the user's Telegram
 // language (ru default for this SalesDoctor fork).
 
@@ -30,6 +31,7 @@ var telegramBotCommands = []telegram.BotCommand{
 	{Command: "start", Description: "Начать"},
 	{Command: "new", Description: "Новая задача"},
 	{Command: "tasks", Description: "Мои задачи"},
+	{Command: "reset", Description: "Новый диалог"},
 	{Command: "help", Description: "Помощь"},
 }
 
@@ -95,7 +97,7 @@ func (h *Handler) processBotMessage(ctx context.Context, update telegramUpdate) 
 	case "/start":
 		h.botSendStart(ctx, tgID, lang)
 	case "/help":
-		h.botSend(ctx, tgID, botT(lang, "help"))
+		h.botSend(ctx, tgID, h.botHelp(lang))
 	case "/tasks":
 		h.botSendOpen(ctx, tgID, botT(lang, "tasks.text"), botT(lang, "tasks.btn"))
 	case "/new":
@@ -104,13 +106,20 @@ func (h *Handler) processBotMessage(ctx context.Context, update telegramUpdate) 
 			return
 		}
 		h.startCreateWizard(ctx, tgID, lang, rest)
+	case "/reset":
+		h.telegramAssistantReset(ctx, tgID, lang)
 	default:
-		// Any other plain text in a DM is captured as a new task title.
 		if text != "" && !strings.HasPrefix(text, "/") {
+			// Plain text is a message to the Assistant. Where it is not
+			// available (not configured, or Telegram not linked yet) the text
+			// is captured as a new task title, as before.
+			if h.telegramAssistantTurn(ctx, tgID, lang, text) {
+				return
+			}
 			h.startCreateWizard(ctx, tgID, lang, text)
 			return
 		}
-		h.botSend(ctx, tgID, botT(lang, "help"))
+		h.botSend(ctx, tgID, h.botHelp(lang))
 	}
 }
 
@@ -177,6 +186,10 @@ func (h *Handler) processBotCallback(ctx context.Context, update telegramUpdate)
 	// NOT wizard state: a decision DM outlives any wizard, so the wizard lookup
 	// below must not be allowed to swallow one as "a stale button tap".
 	if h.handleTelegramDecisionCallback(ctx, update) {
+		return
+	}
+	// Confirm / reject under an action the Assistant parked ("ao:").
+	if h.handleTelegramAssistantCallback(ctx, update) {
 		return
 	}
 
@@ -523,6 +536,15 @@ var botStrings = map[string]map[string]string{
 		"new.openBtn":     "Open",
 		"new.failed":      "Couldn’t create the task. Try again.",
 		"new.noworkspace": "You’re not a member of any workspace yet.",
+		"ai.help":         "Write to me in plain words, for example:\n• What is assigned to me?\n• Create a task: fix the invoice export\n• Summarize MUL-12\n\n/new <text> — new task step by step\n/tasks — open my tasks\n/reset — start a new conversation\n/help — this help",
+		"ai.busy":         "I’m still answering your previous message.",
+		"ai.failed":       "I couldn’t do that. Try again.",
+		"ai.toolong":      "That message is too long. Send a shorter one.",
+		"ai.reset":        "New conversation started.",
+		"ai.confirm":      "✅ Confirm",
+		"ai.reject":       "✖️ Cancel",
+		"ai.confirmed":    "✅ Done.",
+		"ai.rejected":     "Cancelled. Nothing was changed.",
 	},
 	"ru": {
 		"start.text":      "👋 Добро пожаловать в Agora. Отправьте задачу — я её создам, или нажмите /new. Кнопка ниже открывает приложение.",
@@ -539,6 +561,15 @@ var botStrings = map[string]map[string]string{
 		"new.openBtn":     "Открыть",
 		"new.failed":      "Не удалось создать задачу. Повторите попытку.",
 		"new.noworkspace": "Вы пока не состоите ни в одном пространстве.",
+		"ai.help":         "Пишите обычными словами, например:\n• Что назначено на меня?\n• Создай задачу: починить экспорт счетов\n• Кратко перескажи MUL-12\n\n/new <текст> — новая задача по шагам\n/tasks — мои задачи\n/reset — начать новый диалог\n/help — помощь",
+		"ai.busy":         "Я ещё отвечаю на предыдущее сообщение.",
+		"ai.failed":       "Не получилось. Повторите попытку.",
+		"ai.toolong":      "Сообщение слишком длинное. Отправьте короче.",
+		"ai.reset":        "Начат новый диалог.",
+		"ai.confirm":      "✅ Подтвердить",
+		"ai.reject":       "✖️ Отмена",
+		"ai.confirmed":    "✅ Готово.",
+		"ai.rejected":     "Отменено. Ничего не изменено.",
 	},
 	"uz": {
 		"start.text":      "👋 Agora’ga xush kelibsiz. Vazifa yuboring — men uni yarataman, yoki /new bosing. Quyidagi tugma ilovani ochadi.",
@@ -555,7 +586,24 @@ var botStrings = map[string]map[string]string{
 		"new.openBtn":     "Ochish",
 		"new.failed":      "Vazifa yaratilmadi. Qayta urinib ko‘ring.",
 		"new.noworkspace": "Siz hali birorta ish maydoniga a’zo emassiz.",
+		"ai.help":         "Oddiy so‘zlar bilan yozing, masalan:\n• Menga nima biriktirilgan?\n• Vazifa yarat: hisob-faktura eksportini tuzatish\n• MUL-12 ni qisqacha aytib ber\n\n/new <matn> — bosqichma-bosqich yangi vazifa\n/tasks — vazifalarim\n/reset — yangi suhbat boshlash\n/help — yordam",
+		"ai.busy":         "Oldingi xabaringizga hali javob beryapman.",
+		"ai.failed":       "Bajarib bo‘lmadi. Qayta urinib ko‘ring.",
+		"ai.toolong":      "Xabar juda uzun. Qisqaroq yuboring.",
+		"ai.reset":        "Yangi suhbat boshlandi.",
+		"ai.confirm":      "✅ Tasdiqlash",
+		"ai.reject":       "✖️ Bekor qilish",
+		"ai.confirmed":    "✅ Bajarildi.",
+		"ai.rejected":     "Bekor qilindi. Hech narsa o‘zgarmadi.",
 	},
+}
+
+// botHelp describes what a plain message does on this instance.
+func (h *Handler) botHelp(lang string) string {
+	if h.TelegramAssistantEnabled() {
+		return botT(lang, "ai.help")
+	}
+	return botT(lang, "help")
 }
 
 func botT(lang, key string) string {
