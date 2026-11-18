@@ -5,15 +5,17 @@ description: Connect agents to tools and data sources with a shared mcp.json or 
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-## Connect a Claude account to a hosted Agora workspace
+## Connect Claude or ChatGPT to Agora
 
 In Claude, add a custom web connector with the HTTPS `/mcp` URL supplied by the Agora operator. For a personal account, open **Customize → Connectors**. A Team owner can add a connector in **Organization settings → Connectors**.
 
-Choose **Sign in now → Use your own OAuth client**. Enter client ID `agora-claude` and leave the client secret blank. Each person connects individually. On the consent page, enter a personal access token created under **Agora Settings → Personal Access Tokens**, then choose **Authorize Claude**. Comments use that member’s identity. Connector credentials last one day. Reconnect to renew access, or revoke the underlying token in Agora to disconnect immediately.
+Choose **Sign in now → Use your own OAuth client**. Enter client ID `agora-claude` and leave the client secret blank. Each person connects individually. On the consent page, enter a personal access token created under **Agora Settings → Personal Access Tokens**, select one of your workspaces, then choose **Authorize Claude**. Comments use that member’s identity. Connector credentials last one day. Reconnect to renew access, or revoke the underlying token in Agora to disconnect immediately.
+
+For a custom ChatGPT app, use the same MCP URL, select OAuth, and enter client ID `agora-chatgpt`. Leave the client secret blank. The registered redirect is `https://chatgpt.com/connector_platform_oauth_redirect`. In the consent page, choose the workspace to connect.
 
 Test with “Read my Agora workspace.” Use `list_comments` to read recent threads, `comment_issue` to post a comment, and `summarize_comments` to summarize a discussion. `download_attachment` accepts an issue or comment attachment ID, returns a download link that opens when signed in to Agora, and includes the bytes inline for files up to 512 KiB.
 
-Operators can build the service with `go build -o agora-mcp ./cmd/agora-mcp` from `server/`. Set `AGORA_API_URL` to the Agora HTTPS origin and `AGORA_WORKSPACE_ID` to the workspace UUID. Configure a stable base64-encoded 32-byte secret in `AGORA_MCP_OAUTH_KEY`. Render supplies the HTTPS issuer via `RENDER_EXTERNAL_URL`. For other hosts set `AGORA_MCP_PUBLIC_URL`. The executable listens on `PORT` (default 8080), serves MCP at `/mcp`, and exposes `/healthz` for hosting health checks.
+Operators can build the service with `go build -o agora-mcp ./cmd/agora-mcp` from `server/`. Set `AGORA_API_URL` to the Agora HTTPS origin. One deployment serves all workspaces on that instance. Each connection is scoped to the workspace the member selects. Configure a stable base64-encoded 32-byte secret in `AGORA_MCP_OAUTH_KEY`. Render supplies the HTTPS issuer via `RENDER_EXTERNAL_URL`. For other hosts set `AGORA_MCP_PUBLIC_URL`. The executable listens on `PORT` (default 8080), serves MCP at `/mcp`, and exposes `/healthz` for hosting health checks.
 
 ## Connect Claude Code and other clients to Agora
 

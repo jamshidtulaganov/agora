@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	handler, err := agoramcp.NewMemberConnector(issuer, os.Getenv("AGORA_API_URL"), os.Getenv("AGORA_WORKSPACE_ID"), version, key)
+	handler, err := agoramcp.NewMemberConnector(issuer, os.Getenv("AGORA_API_URL"), version, key)
 	if err != nil {
 		log.Fatal(err)
 	}

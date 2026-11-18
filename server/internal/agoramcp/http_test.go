@@ -49,12 +49,13 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 	old := http.DefaultTransport
 	http.DefaultTransport = api.Client().Transport
 	defer func() { http.DefaultTransport = old }()
-	handler, err := NewRemoteHandler(api.URL, workspaceID, "test")
+	handler, err := newRemoteHandler(api.URL, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	send := func(token, method, params string) (int, string) {
 		req := httptest.NewRequest("POST", "https://connector.example/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":`+params+`}`))
+		req.Header.Set("X-Workspace-ID", workspaceID)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("MCP-Protocol-Version", "2025-11-25")

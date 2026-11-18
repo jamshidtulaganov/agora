@@ -14,15 +14,18 @@ import (
 	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
-// NewRemoteHandler shares the workspace tool implementations with stdio. Each
+func memberClient(apiURL, workspace, pat string) *cli.APIClient {
+	client := cli.NewAPIClient(apiURL, workspace, pat)
+	client.HTTPClient.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("unexpected API redirect") }
+	return client
+}
+
+// newRemoteHandler shares the workspace tool implementations with stdio. Each
 // request authenticates independently, including discovery and initialization.
-func NewRemoteHandler(apiURL, workspaceID, version string) (http.Handler, error) {
+func newRemoteHandler(apiURL, version string) (http.Handler, error) {
 	u, err := url.Parse(apiURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("AGORA_API_URL must be an HTTPS URL without credentials, query or fragment")
-	}
-	if _, err := util.ParseUUID(workspaceID); err != nil {
-		return nil, errors.New("AGORA_WORKSPACE_ID must be a UUID")
 	}
 	type callerKey struct{}
 	host := mcp.NewServer(&mcp.Implementation{Name: "agora", Version: version}, &mcp.ServerOptions{
@@ -32,8 +35,10 @@ func NewRemoteHandler(apiURL, workspaceID, version string) (http.Handler, error)
 		if !t.Annotations.ReadOnly && t.Name != "comment_issue" {
 			continue
 		}
-		spec := &mcp.Tool{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema, Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint: t.Annotations.ReadOnly, IdempotentHint: t.Annotations.Idempotent, DestructiveHint: &t.Annotations.Destructive,
+		label := strings.ReplaceAll(t.Name, "_", " ")
+		title := strings.ToUpper(label[:1]) + label[1:]
+		spec := &mcp.Tool{Title: title, Name: t.Name, Description: t.Description, InputSchema: t.InputSchema, Annotations: &mcp.ToolAnnotations{
+			Title: title, OpenWorldHint: &t.Annotations.OpenWorld, ReadOnlyHint: t.Annotations.ReadOnly, IdempotentHint: t.Annotations.Idempotent, DestructiveHint: &t.Annotations.Destructive,
 		}}
 		host.AddTool(spec, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
@@ -58,8 +63,13 @@ func NewRemoteHandler(apiURL, workspaceID, version string) (http.Handler, error)
 			http.Error(w, "An Agora personal access token is required", http.StatusUnauthorized)
 			return
 		}
-		client := cli.NewAPIClient(apiURL, workspaceID, token)
-		client.HTTPClient.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("unexpected API redirect") }
+		// OAuth overwrites this header from the authenticated workspace grant.
+		workspaceID := r.Header.Get("X-Workspace-ID")
+		if _, err := util.ParseUUID(workspaceID); err != nil {
+			http.Error(w, "Missing authorized workspace", 401)
+			return
+		}
+		client := memberClient(apiURL, workspaceID, token)
 		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 		defer cancel()
 		if err := client.GetJSON(ctx, "/api/workspaces/"+workspaceID, nil); err != nil {
