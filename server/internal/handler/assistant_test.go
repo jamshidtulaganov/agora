@@ -59,7 +59,8 @@ func addAssistantTestMember(t *testing.T, workspaceID, userID, role string) {
 }
 
 // newAssistantTestIssue creates an issue with an explicit creator and an
-// optional direct member assignee (pass "" for unassigned).
+// optional direct member assignee (pass "" for unassigned). The issue counts
+// as created by the assistant for that creator.
 func newAssistantTestIssue(t *testing.T, workspaceID, title, creatorID, assigneeID string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -76,6 +77,11 @@ func newAssistantTestIssue(t *testing.T, workspaceID, title, creatorID, assignee
 		RETURNING id
 	`, workspaceID, title, creatorID, assigneeType, assignee).Scan(&issueID); err != nil {
 		t.Fatalf("insert issue %q: %v", title, err)
+	}
+	// Record assistant provenance for the creator, as create_issue does: the
+	// assistant refuses to delete an issue it did not create for that user.
+	if _, err := testPool.Exec(ctx, `INSERT INTO assistant_issue_creation (issue_id, user_id) VALUES ($1, $2)`, issueID, creatorID); err != nil {
+		t.Fatalf("record assistant provenance for %q: %v", title, err)
 	}
 	return issueID
 }
