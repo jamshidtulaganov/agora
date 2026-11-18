@@ -15,7 +15,7 @@ const claimTelegramAssistantDelivery = `-- name: ClaimTelegramAssistantDelivery 
 UPDATE telegram_assistant_delivery
 SET delivered_at = now()
 WHERE run_id = $1 AND delivered_at IS NULL
-RETURNING run_id, chat_id, lang, delivered_at, created_at
+RETURNING run_id, chat_id, reply_to_message_id, lang, delivered_at, created_at
 `
 
 // At most once: a replayed run_finished event finds delivered_at already set.
@@ -25,6 +25,7 @@ func (q *Queries) ClaimTelegramAssistantDelivery(ctx context.Context, runID pgty
 	err := row.Scan(
 		&i.RunID,
 		&i.ChatID,
+		&i.ReplyToMessageID,
 		&i.Lang,
 		&i.DeliveredAt,
 		&i.CreatedAt,
@@ -33,28 +34,39 @@ func (q *Queries) ClaimTelegramAssistantDelivery(ctx context.Context, runID pgty
 }
 
 const clearTelegramAssistantSession = `-- name: ClearTelegramAssistantSession :exec
-DELETE FROM telegram_assistant_session WHERE user_id = $1
+DELETE FROM telegram_assistant_session WHERE user_id = $1 AND chat_id = $2
 `
 
-func (q *Queries) ClearTelegramAssistantSession(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, clearTelegramAssistantSession, userID)
+type ClearTelegramAssistantSessionParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	ChatID string      `json:"chat_id"`
+}
+
+func (q *Queries) ClearTelegramAssistantSession(ctx context.Context, arg ClearTelegramAssistantSessionParams) error {
+	_, err := q.db.Exec(ctx, clearTelegramAssistantSession, arg.UserID, arg.ChatID)
 	return err
 }
 
 const createTelegramAssistantDelivery = `-- name: CreateTelegramAssistantDelivery :exec
-INSERT INTO telegram_assistant_delivery (run_id, chat_id, lang)
-VALUES ($1, $2, $3)
+INSERT INTO telegram_assistant_delivery (run_id, chat_id, reply_to_message_id, lang)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (run_id) DO NOTHING
 `
 
 type CreateTelegramAssistantDeliveryParams struct {
-	RunID  pgtype.UUID `json:"run_id"`
-	ChatID string      `json:"chat_id"`
-	Lang   string      `json:"lang"`
+	RunID            pgtype.UUID `json:"run_id"`
+	ChatID           string      `json:"chat_id"`
+	ReplyToMessageID int64       `json:"reply_to_message_id"`
+	Lang             string      `json:"lang"`
 }
 
 func (q *Queries) CreateTelegramAssistantDelivery(ctx context.Context, arg CreateTelegramAssistantDeliveryParams) error {
-	_, err := q.db.Exec(ctx, createTelegramAssistantDelivery, arg.RunID, arg.ChatID, arg.Lang)
+	_, err := q.db.Exec(ctx, createTelegramAssistantDelivery,
+		arg.RunID,
+		arg.ChatID,
+		arg.ReplyToMessageID,
+		arg.Lang,
+	)
 	return err
 }
 
@@ -86,11 +98,16 @@ func (q *Queries) GetAssistantRunReply(ctx context.Context, id pgtype.UUID) (str
 const getTelegramAssistantSession = `-- name: GetTelegramAssistantSession :one
 SELECT s.id, s.user_id, s.title, s.focus_workspace_id, s.summary, s.created_at, s.updated_at FROM telegram_assistant_session t
 JOIN assistant_session s ON s.id = t.session_id
-WHERE t.user_id = $1 AND s.user_id = t.user_id
+WHERE t.user_id = $1 AND t.chat_id = $2 AND s.user_id = t.user_id
 `
 
-func (q *Queries) GetTelegramAssistantSession(ctx context.Context, userID pgtype.UUID) (AssistantSession, error) {
-	row := q.db.QueryRow(ctx, getTelegramAssistantSession, userID)
+type GetTelegramAssistantSessionParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	ChatID string      `json:"chat_id"`
+}
+
+func (q *Queries) GetTelegramAssistantSession(ctx context.Context, arg GetTelegramAssistantSessionParams) (AssistantSession, error) {
+	row := q.db.QueryRow(ctx, getTelegramAssistantSession, arg.UserID, arg.ChatID)
 	var i AssistantSession
 	err := row.Scan(
 		&i.ID,
@@ -100,6 +117,24 @@ func (q *Queries) GetTelegramAssistantSession(ctx context.Context, userID pgtype
 		&i.Summary,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTelegramTrackedChat = `-- name: GetTelegramTrackedChat :one
+SELECT chat_id, workspace_id, title, role, enabled_by, created_at FROM telegram_tracked_chat WHERE chat_id = $1
+`
+
+func (q *Queries) GetTelegramTrackedChat(ctx context.Context, chatID int64) (TelegramTrackedChat, error) {
+	row := q.db.QueryRow(ctx, getTelegramTrackedChat, chatID)
+	var i TelegramTrackedChat
+	err := row.Scan(
+		&i.ChatID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Role,
+		&i.EnabledBy,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -146,18 +181,203 @@ func (q *Queries) ListPendingAssistantOperationsByRun(ctx context.Context, runID
 	return items, nil
 }
 
+const listTelegramChatMessagesSince = `-- name: ListTelegramChatMessagesSince :many
+SELECT chat_id, message_id, sender_id, sender_name, text, sent_at FROM telegram_chat_message
+WHERE chat_id = $1 AND sent_at >= $2
+ORDER BY sent_at DESC, message_id DESC
+LIMIT $3
+`
+
+type ListTelegramChatMessagesSinceParams struct {
+	ChatID int64              `json:"chat_id"`
+	SentAt pgtype.Timestamptz `json:"sent_at"`
+	Limit  int32              `json:"limit"`
+}
+
+// Newest first so the caller keeps the most recent N and reverses.
+func (q *Queries) ListTelegramChatMessagesSince(ctx context.Context, arg ListTelegramChatMessagesSinceParams) ([]TelegramChatMessage, error) {
+	rows, err := q.db.Query(ctx, listTelegramChatMessagesSince, arg.ChatID, arg.SentAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TelegramChatMessage{}
+	for rows.Next() {
+		var i TelegramChatMessage
+		if err := rows.Scan(
+			&i.ChatID,
+			&i.MessageID,
+			&i.SenderID,
+			&i.SenderName,
+			&i.Text,
+			&i.SentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTelegramTrackedChatsForUser = `-- name: ListTelegramTrackedChatsForUser :many
+SELECT c.chat_id, c.workspace_id, c.title, c.role, c.enabled_by, c.created_at FROM telegram_tracked_chat c
+JOIN member m ON m.workspace_id = c.workspace_id
+WHERE m.user_id = $1
+ORDER BY c.title ASC, c.chat_id ASC
+`
+
+// Only groups of workspaces the person belongs to. Group membership itself is
+// checked against Telegram at read time.
+func (q *Queries) ListTelegramTrackedChatsForUser(ctx context.Context, userID pgtype.UUID) ([]TelegramTrackedChat, error) {
+	rows, err := q.db.Query(ctx, listTelegramTrackedChatsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TelegramTrackedChat{}
+	for rows.Next() {
+		var i TelegramTrackedChat
+		if err := rows.Scan(
+			&i.ChatID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Role,
+			&i.EnabledBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneTelegramChatMessages = `-- name: PruneTelegramChatMessages :exec
+DELETE FROM telegram_chat_message WHERE chat_id = $1 AND sent_at < $2
+`
+
+type PruneTelegramChatMessagesParams struct {
+	ChatID int64              `json:"chat_id"`
+	SentAt pgtype.Timestamptz `json:"sent_at"`
+}
+
+func (q *Queries) PruneTelegramChatMessages(ctx context.Context, arg PruneTelegramChatMessagesParams) error {
+	_, err := q.db.Exec(ctx, pruneTelegramChatMessages, arg.ChatID, arg.SentAt)
+	return err
+}
+
+const recordTelegramChatMessage = `-- name: RecordTelegramChatMessage :exec
+INSERT INTO telegram_chat_message (chat_id, message_id, sender_id, sender_name, text, sent_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_id, message_id) DO UPDATE SET text = EXCLUDED.text
+`
+
+type RecordTelegramChatMessageParams struct {
+	ChatID     int64              `json:"chat_id"`
+	MessageID  int64              `json:"message_id"`
+	SenderID   int64              `json:"sender_id"`
+	SenderName string             `json:"sender_name"`
+	Text       string             `json:"text"`
+	SentAt     pgtype.Timestamptz `json:"sent_at"`
+}
+
+// An edited message arrives with the same id; keep the latest text.
+func (q *Queries) RecordTelegramChatMessage(ctx context.Context, arg RecordTelegramChatMessageParams) error {
+	_, err := q.db.Exec(ctx, recordTelegramChatMessage,
+		arg.ChatID,
+		arg.MessageID,
+		arg.SenderID,
+		arg.SenderName,
+		arg.Text,
+		arg.SentAt,
+	)
+	return err
+}
+
 const setTelegramAssistantSession = `-- name: SetTelegramAssistantSession :exec
-INSERT INTO telegram_assistant_session (user_id, session_id)
-VALUES ($1, $2)
-ON CONFLICT (user_id) DO UPDATE SET session_id = EXCLUDED.session_id, created_at = now()
+INSERT INTO telegram_assistant_session (user_id, chat_id, session_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, chat_id) DO UPDATE SET session_id = EXCLUDED.session_id, created_at = now()
 `
 
 type SetTelegramAssistantSessionParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
+	ChatID    string      `json:"chat_id"`
 	SessionID pgtype.UUID `json:"session_id"`
 }
 
 func (q *Queries) SetTelegramAssistantSession(ctx context.Context, arg SetTelegramAssistantSessionParams) error {
-	_, err := q.db.Exec(ctx, setTelegramAssistantSession, arg.UserID, arg.SessionID)
+	_, err := q.db.Exec(ctx, setTelegramAssistantSession, arg.UserID, arg.ChatID, arg.SessionID)
 	return err
+}
+
+const setTelegramTrackedChatRole = `-- name: SetTelegramTrackedChatRole :execrows
+UPDATE telegram_tracked_chat SET role = $2 WHERE chat_id = $1
+`
+
+type SetTelegramTrackedChatRoleParams struct {
+	ChatID int64  `json:"chat_id"`
+	Role   string `json:"role"`
+}
+
+func (q *Queries) SetTelegramTrackedChatRole(ctx context.Context, arg SetTelegramTrackedChatRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setTelegramTrackedChatRole, arg.ChatID, arg.Role)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const trackTelegramChat = `-- name: TrackTelegramChat :one
+INSERT INTO telegram_tracked_chat (chat_id, workspace_id, title, enabled_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title
+WHERE telegram_tracked_chat.workspace_id = EXCLUDED.workspace_id
+RETURNING chat_id, workspace_id, title, role, enabled_by, created_at
+`
+
+type TrackTelegramChatParams struct {
+	ChatID      int64       `json:"chat_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Title       string      `json:"title"`
+	EnabledBy   pgtype.UUID `json:"enabled_by"`
+}
+
+// A group belongs to one workspace. Re-running /track for the same workspace
+// refreshes the title; it never moves a group another workspace already owns.
+func (q *Queries) TrackTelegramChat(ctx context.Context, arg TrackTelegramChatParams) (TelegramTrackedChat, error) {
+	row := q.db.QueryRow(ctx, trackTelegramChat,
+		arg.ChatID,
+		arg.WorkspaceID,
+		arg.Title,
+		arg.EnabledBy,
+	)
+	var i TelegramTrackedChat
+	err := row.Scan(
+		&i.ChatID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Role,
+		&i.EnabledBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const untrackTelegramChat = `-- name: UntrackTelegramChat :execrows
+DELETE FROM telegram_tracked_chat WHERE chat_id = $1
+`
+
+func (q *Queries) UntrackTelegramChat(ctx context.Context, chatID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, untrackTelegramChat, chatID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

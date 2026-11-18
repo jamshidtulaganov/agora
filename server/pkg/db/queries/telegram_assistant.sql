@@ -1,19 +1,19 @@
 -- name: GetTelegramAssistantSession :one
 SELECT s.* FROM telegram_assistant_session t
 JOIN assistant_session s ON s.id = t.session_id
-WHERE t.user_id = $1 AND s.user_id = t.user_id;
+WHERE t.user_id = $1 AND t.chat_id = $2 AND s.user_id = t.user_id;
 
 -- name: SetTelegramAssistantSession :exec
-INSERT INTO telegram_assistant_session (user_id, session_id)
-VALUES ($1, $2)
-ON CONFLICT (user_id) DO UPDATE SET session_id = EXCLUDED.session_id, created_at = now();
+INSERT INTO telegram_assistant_session (user_id, chat_id, session_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, chat_id) DO UPDATE SET session_id = EXCLUDED.session_id, created_at = now();
 
 -- name: ClearTelegramAssistantSession :exec
-DELETE FROM telegram_assistant_session WHERE user_id = $1;
+DELETE FROM telegram_assistant_session WHERE user_id = $1 AND chat_id = $2;
 
 -- name: CreateTelegramAssistantDelivery :exec
-INSERT INTO telegram_assistant_delivery (run_id, chat_id, lang)
-VALUES ($1, $2, $3)
+INSERT INTO telegram_assistant_delivery (run_id, chat_id, reply_to_message_id, lang)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (run_id) DO NOTHING;
 
 -- name: ClaimTelegramAssistantDelivery :one
@@ -44,3 +44,45 @@ LIMIT 1;
 SELECT * FROM assistant_pending_operation
 WHERE run_id = $1 AND status = 'pending' AND expires_at > now()
 ORDER BY created_at ASC;
+
+-- name: TrackTelegramChat :one
+-- A group belongs to one workspace. Re-running /track for the same workspace
+-- refreshes the title; it never moves a group another workspace already owns.
+INSERT INTO telegram_tracked_chat (chat_id, workspace_id, title, enabled_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title
+WHERE telegram_tracked_chat.workspace_id = EXCLUDED.workspace_id
+RETURNING *;
+
+-- name: GetTelegramTrackedChat :one
+SELECT * FROM telegram_tracked_chat WHERE chat_id = $1;
+
+-- name: UntrackTelegramChat :execrows
+DELETE FROM telegram_tracked_chat WHERE chat_id = $1;
+
+-- name: ListTelegramTrackedChatsForUser :many
+-- Only groups of workspaces the person belongs to. Group membership itself is
+-- checked against Telegram at read time.
+SELECT c.* FROM telegram_tracked_chat c
+JOIN member m ON m.workspace_id = c.workspace_id
+WHERE m.user_id = $1
+ORDER BY c.title ASC, c.chat_id ASC;
+
+-- name: RecordTelegramChatMessage :exec
+-- An edited message arrives with the same id; keep the latest text.
+INSERT INTO telegram_chat_message (chat_id, message_id, sender_id, sender_name, text, sent_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_id, message_id) DO UPDATE SET text = EXCLUDED.text;
+
+-- name: ListTelegramChatMessagesSince :many
+-- Newest first so the caller keeps the most recent N and reverses.
+SELECT * FROM telegram_chat_message
+WHERE chat_id = $1 AND sent_at >= $2
+ORDER BY sent_at DESC, message_id DESC
+LIMIT $3;
+
+-- name: PruneTelegramChatMessages :exec
+DELETE FROM telegram_chat_message WHERE chat_id = $1 AND sent_at < $2;
+
+-- name: SetTelegramTrackedChatRole :execrows
+UPDATE telegram_tracked_chat SET role = $2 WHERE chat_id = $1;

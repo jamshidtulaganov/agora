@@ -60,7 +60,7 @@ func ReviewToolAllowed(name string) bool {
 		ToolCreateArtifact, ToolUpdateArtifact:
 		return true
 	default:
-		return IsZohoTool(name)
+		return IsZohoTool(name) || IsTelegramTool(name)
 	}
 }
 

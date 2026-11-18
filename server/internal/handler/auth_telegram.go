@@ -192,16 +192,20 @@ type telegramUpdate struct {
 	Message  *struct {
 		MessageID int64  `json:"message_id"`
 		Text      string `json:"text"`
-		From      *struct {
+		// Date is the unix time the message was sent.
+		Date int64 `json:"date"`
+		From *struct {
 			ID           int64  `json:"id"`
 			IsBot        bool   `json:"is_bot"`
 			FirstName    string `json:"first_name"`
+			LastName     string `json:"last_name"`
 			Username     string `json:"username"`
 			LanguageCode string `json:"language_code"`
 		} `json:"from"`
 		Chat *struct {
-			ID   int64  `json:"id"`
-			Type string `json:"type"`
+			ID    int64  `json:"id"`
+			Type  string `json:"type"`
+			Title string `json:"title"`
 		} `json:"chat"`
 		ReplyToMessage *struct {
 			MessageID int64  `json:"message_id"`

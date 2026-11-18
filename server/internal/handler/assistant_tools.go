@@ -338,6 +338,12 @@ func (h *Handler) assistantDispatch(ctx context.Context, caller assistantCaller,
 		if assistant.IsZohoTool(name) {
 			return h.assistantZohoTool(ctx, caller, name, args)
 		}
+		// Recorded Telegram group chats, read-only — offered to a run only
+		// when one of the person's workspaces tracks a group
+		// (assistant_telegram.go).
+		if assistant.IsTelegramTool(name) {
+			return h.assistantTelegramTool(ctx, caller, name, args)
+		}
 		// Hard allowlist: an unknown name is either model hallucination or a
 		// stale catalog. Both are the model's problem to correct, not ours.
 		return nil, fmt.Errorf("unknown tool %q", name)

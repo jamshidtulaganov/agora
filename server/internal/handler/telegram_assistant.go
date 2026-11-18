@@ -49,6 +49,23 @@ func (h *Handler) TelegramAssistantEnabled() bool {
 	return h.telegramBot != nil && h.Assistant != nil && assistantEnabled()
 }
 
+// telegramAssistantRequest is one message for the Assistant from Telegram.
+type telegramAssistantRequest struct {
+	UserID string
+	// ChatID is where the answer goes and which conversation the turn joins:
+	// the person's own id in private, the group id in a group.
+	ChatID string
+	// ReplyTo is the group message being answered; 0 in private.
+	ReplyTo int64
+	Lang    string
+	Text    string
+	// Title names a conversation opened for this chat.
+	Title string
+	// Workspace pins the run to a workspace (a group's own). Zero leaves the
+	// conversation's focus as it is.
+	Workspace pgtype.UUID
+}
+
 // telegramAssistantTurn sends one private message to the person's Assistant
 // conversation. It reports false when the Assistant is not available to this
 // person, so the caller can fall back to the create-task wizard.
@@ -60,43 +77,62 @@ func (h *Handler) telegramAssistantTurn(ctx context.Context, tgID, lang, text st
 	if userID == "" {
 		return false
 	}
-	if len(text) > assistantMessageMaxLen {
-		h.botSend(ctx, tgID, botT(lang, "ai.toolong"))
-		return true
+	h.telegramAssistantStart(ctx, telegramAssistantRequest{
+		UserID: userID, ChatID: tgID, Lang: lang, Text: text, Title: "Telegram",
+	})
+	return true
+}
+
+// telegramAssistantStart starts the run and records where its answer goes.
+// Every outcome the person should hear about is said in the chat.
+func (h *Handler) telegramAssistantStart(ctx context.Context, req telegramAssistantRequest) {
+	say := func(key string) {
+		if req.ReplyTo > 0 {
+			_ = h.telegramBot.SendMessageReply(ctx, req.ChatID, botT(req.Lang, key), req.ReplyTo)
+			return
+		}
+		h.botSend(ctx, req.ChatID, botT(req.Lang, key))
 	}
-	session, err := h.telegramAssistantSession(ctx, userID)
-	if err != nil {
-		slog.Warn("telegram assistant: session failed", "user_id", userID, "error", err)
-		h.botSend(ctx, tgID, botT(lang, "ai.failed"))
-		return true
+	if len(req.Text) > assistantMessageMaxLen {
+		say("ai.toolong")
+		return
 	}
-	mode, err := assistant.ResolveRunMode("", text)
+	session, err := h.telegramAssistantSession(ctx, req)
 	if err != nil {
-		h.botSend(ctx, tgID, botT(lang, "ai.failed"))
-		return true
+		slog.Warn("telegram assistant: session failed", "user_id", req.UserID, "error", err)
+		say("ai.failed")
+		return
+	}
+	mode, err := assistant.ResolveRunMode("", req.Text)
+	if err != nil {
+		say("ai.failed")
+		return
 	}
 	runContext := assistant.RunContext{WorkspaceID: uuidToPtr(session.FocusWorkspaceID), Mode: mode}
-	accepted, err := h.startAssistantRun(ctx, session, userID, text, nil, "", runContext, []byte(`{}`))
+	if req.Workspace.Valid {
+		runContext.WorkspaceID = uuidToPtr(req.Workspace)
+	}
+	accepted, err := h.startAssistantRun(ctx, session, req.UserID, req.Text, nil, "", runContext, []byte(`{}`))
 	if errors.Is(err, assistant.ErrRunInProgress) {
-		h.botSend(ctx, tgID, botT(lang, "ai.busy"))
-		return true
+		say("ai.busy")
+		return
 	}
 	if err != nil {
-		slog.Warn("telegram assistant: start run failed", "user_id", userID, "error", err)
-		h.botSend(ctx, tgID, botT(lang, "ai.failed"))
-		return true
+		slog.Warn("telegram assistant: start run failed", "user_id", req.UserID, "error", err)
+		say("ai.failed")
+		return
 	}
 	runID, err := util.ParseUUID(accepted.Run.ID)
 	if err != nil {
-		return true
+		return
 	}
 	if err := h.Queries.CreateTelegramAssistantDelivery(ctx, db.CreateTelegramAssistantDeliveryParams{
-		RunID: runID, ChatID: tgID, Lang: lang,
+		RunID: runID, ChatID: req.ChatID, ReplyToMessageID: req.ReplyTo, Lang: req.Lang,
 	}); err != nil {
 		slog.Warn("telegram assistant: record delivery failed", "run_id", accepted.Run.ID, "error", err)
-		return true
+		return
 	}
-	_ = h.telegramBot.SendChatAction(ctx, tgID, "typing")
+	_ = h.telegramBot.SendChatAction(ctx, req.ChatID, "typing")
 
 	// A run can end before its delivery row exists (an unconfigured provider
 	// fails at once). The claim makes this second attempt harmless.
@@ -106,53 +142,57 @@ func (h *Handler) telegramAssistantTurn(ctx context.Context, tgID, lang, text st
 	).Scan(&finished); err == nil && finished {
 		h.DeliverTelegramAssistantRun(ctx, accepted.Run.ID, "")
 	}
-	return true
 }
 
-// telegramAssistantSession returns the person's current Telegram conversation,
-// opening one when there is none.
-func (h *Handler) telegramAssistantSession(ctx context.Context, userID string) (db.AssistantSession, error) {
-	user := parseUUID(userID)
-	session, err := h.Queries.GetTelegramAssistantSession(ctx, user)
+// telegramAssistantSession returns the person's current conversation in this
+// chat, opening one when there is none.
+func (h *Handler) telegramAssistantSession(ctx context.Context, req telegramAssistantRequest) (db.AssistantSession, error) {
+	user := parseUUID(req.UserID)
+	session, err := h.Queries.GetTelegramAssistantSession(ctx, db.GetTelegramAssistantSessionParams{UserID: user, ChatID: req.ChatID})
 	if err == nil {
 		return session, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return db.AssistantSession{}, err
 	}
-	// With a single workspace there is nothing to choose, so focus it; with
+	// A group's conversation belongs to the group's workspace. In private,
+	// with a single workspace there is nothing to choose, so focus it; with
 	// several, the Assistant asks or infers from the request.
-	var focus pgtype.UUID
-	if workspaces, err := h.Queries.ListWorkspaces(ctx, user); err == nil && len(workspaces) == 1 {
-		focus = workspaces[0].ID
+	focus := req.Workspace
+	if !focus.Valid {
+		if workspaces, err := h.Queries.ListWorkspaces(ctx, user); err == nil && len(workspaces) == 1 {
+			focus = workspaces[0].ID
+		}
 	}
 	session, err = h.Queries.CreateAssistantSession(ctx, db.CreateAssistantSessionParams{
-		UserID: user, Title: "Telegram", FocusWorkspaceID: focus,
+		UserID: user, Title: req.Title, FocusWorkspaceID: focus,
 	})
 	if err != nil {
 		return db.AssistantSession{}, err
 	}
 	if err := h.Queries.SetTelegramAssistantSession(ctx, db.SetTelegramAssistantSessionParams{
-		UserID: user, SessionID: session.ID,
+		UserID: user, ChatID: req.ChatID, SessionID: session.ID,
 	}); err != nil {
 		return db.AssistantSession{}, err
 	}
 	return session, nil
 }
 
-// telegramAssistantReset forgets the current conversation. The session stays
-// in the web app; the next message simply opens a new one.
-func (h *Handler) telegramAssistantReset(ctx context.Context, tgID, lang string) {
+// telegramAssistantReset forgets the person's conversation in a chat. The
+// session stays in the web app; the next message simply opens a new one.
+func (h *Handler) telegramAssistantReset(ctx context.Context, tgID, chatID, lang string) {
 	userID, _ := h.userIDByExternalIdentity(ctx, providerTelegram, tgID)
 	if userID == "" {
 		h.botSendOpen(ctx, tgID, botT(lang, "notlinked"), botT(lang, "open.btn"))
 		return
 	}
-	if err := h.Queries.ClearTelegramAssistantSession(ctx, parseUUID(userID)); err != nil {
-		h.botSend(ctx, tgID, botT(lang, "ai.failed"))
+	if err := h.Queries.ClearTelegramAssistantSession(ctx, db.ClearTelegramAssistantSessionParams{
+		UserID: parseUUID(userID), ChatID: chatID,
+	}); err != nil {
+		h.botSend(ctx, chatID, botT(lang, "ai.failed"))
 		return
 	}
-	h.botSend(ctx, tgID, botT(lang, "ai.reset"))
+	h.botSend(ctx, chatID, botT(lang, "ai.reset"))
 }
 
 // DeliverTelegramAssistantRun posts a finished run's answer to the chat that
@@ -181,15 +221,15 @@ func (h *Handler) DeliverTelegramAssistantRun(ctx context.Context, runID, runErr
 		if runError != "" {
 			reply += "\n" + runError
 		}
-		h.botSend(ctx, delivery.ChatID, reply)
+		_ = h.telegramBot.SendMessageReply(ctx, delivery.ChatID, reply, delivery.ReplyToMessageID)
 		return
 	}
 	for _, part := range splitTelegramText(reply, telegramAssistantChunk) {
-		if err := h.telegramBot.SendMarkdown(ctx, delivery.ChatID, part); err != nil {
+		if err := h.telegramBot.SendMarkdownReply(ctx, delivery.ChatID, part, delivery.ReplyToMessageID); err != nil {
 			// Unbalanced markup is rejected by Telegram; the plain text still
 			// carries the answer.
 			slog.Warn("telegram assistant: formatted send failed", "run_id", runID, "error", err)
-			h.botSend(ctx, delivery.ChatID, part)
+			_ = h.telegramBot.SendMessageReply(ctx, delivery.ChatID, part, delivery.ReplyToMessageID)
 		}
 	}
 
@@ -237,6 +277,12 @@ func (h *Handler) handleTelegramAssistantCallback(ctx context.Context, update te
 	}
 	status, body := h.invokeAsMember(ctx, userID, "", action, http.MethodPost,
 		"/api/assistant/operations/"+operationID+"/"+target, map[string]string{"id": operationID}, nil)
+
+	// In a group anyone can tap a card. A tap by someone the action does not
+	// belong to must leave the card standing for its owner.
+	if status == http.StatusNotFound {
+		return true
+	}
 
 	var text string
 	switch {

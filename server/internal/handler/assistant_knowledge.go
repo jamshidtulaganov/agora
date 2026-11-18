@@ -32,6 +32,10 @@ func (h *Handler) assistantRunExtras(ctx context.Context, userID string) ([]llm.
 		tools = append(tools, t...)
 		notes = append(notes, n)
 	}
+	if t, n := h.telegramRunExtras(ctx, userID); len(t) > 0 || n != "" {
+		tools = append(tools, t...)
+		notes = append(notes, n)
+	}
 	return tools, strings.Join(notes, "\n\n")
 }
 
