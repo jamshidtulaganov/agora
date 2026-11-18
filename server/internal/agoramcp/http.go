@@ -48,7 +48,12 @@ func newRemoteHandler(apiURL, version string) (http.Handler, error) {
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil
+			text, image, mimeType := splitInlineImage(data)
+			content := []mcp.Content{&mcp.TextContent{Text: text}}
+			if image != nil {
+				content = append(content, &mcp.ImageContent{Data: image, MIMEType: mimeType})
+			}
+			return &mcp.CallToolResult{Content: content}, nil
 		})
 	}
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return host }, &mcp.StreamableHTTPOptions{

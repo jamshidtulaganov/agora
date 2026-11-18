@@ -6,11 +6,20 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 const maxInlineAttachment = 512 << 10
+
+// Screenshots routinely exceed the generic limit and are only useful to a
+// model when delivered whole.
+const maxInlineImage = 3 << 20
+
+// Image formats MCP clients render as image blocks.
+var inlineImageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
 
 func (s *Server) downloadAttachment(ctx context.Context, id string) (json.RawMessage, error) {
 	var attachment struct {
@@ -34,7 +43,11 @@ func (s *Server) downloadAttachment(ctx context.Context, id string) (json.RawMes
 	}
 	link := s.client.BaseURL + path + "/download"
 	result := map[string]any{"filename": attachment.Filename, "content_type": attachment.ContentType, "size_bytes": attachment.Size, "download_url": link}
-	if attachment.Size > maxInlineAttachment {
+	limit := maxInlineAttachment
+	if strings.HasPrefix(attachment.ContentType, "image/") {
+		limit = maxInlineImage
+	}
+	if attachment.Size > int64(limit) {
 		return json.Marshal(result)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
@@ -61,12 +74,40 @@ func (s *Server) downloadAttachment(ctx context.Context, id string) (json.RawMes
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New("Agora could not download the attachment")
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxInlineAttachment+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return nil, errors.New("attachment download was interrupted")
 	}
-	if len(data) <= maxInlineAttachment {
+	// Classify by the bytes; the stored content type is uploader-supplied.
+	kind, _, _ := strings.Cut(http.DetectContentType(data), ";")
+	switch {
+	case len(data) > limit:
+	case inlineImageTypes[kind]:
+		result["content_base64"], result["inline_image_type"] = data, kind
+	case len(data) > maxInlineAttachment:
+	case strings.HasPrefix(kind, "text/") && utf8.Valid(data):
+		result["content_text"] = string(data)
+	default:
 		result["content_base64"] = data
 	}
 	return json.Marshal(result)
+}
+
+// splitInlineImage separates an inline image from a download result so the
+// client receives an image block rather than base64 inside JSON text. It
+// returns the result unchanged when there is no inline image.
+func splitInlineImage(result json.RawMessage) (text string, image []byte, mimeType string) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(result, &fields) != nil || json.Unmarshal(fields["inline_image_type"], &mimeType) != nil || !inlineImageTypes[mimeType] {
+		return string(result), nil, ""
+	}
+	if json.Unmarshal(fields["content_base64"], &image) != nil || len(image) == 0 {
+		return string(result), nil, ""
+	}
+	delete(fields, "content_base64")
+	meta, err := json.Marshal(fields)
+	if err != nil {
+		return string(result), nil, ""
+	}
+	return string(meta), image, mimeType
 }
