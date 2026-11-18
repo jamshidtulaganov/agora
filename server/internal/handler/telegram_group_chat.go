@@ -51,7 +51,17 @@ const (
 // group: a command, something addressed to the bot, or conversation to record.
 func (h *Handler) processTelegramGroupMessage(ctx context.Context, update telegramUpdate) {
 	msg := update.Message
-	if msg == nil || msg.From == nil || msg.Chat == nil || msg.From.IsBot {
+	if msg == nil || msg.Chat == nil {
+		return
+	}
+	// Someone left or was removed: their reading window closes with them.
+	if left := msg.LeftChatMember; left != nil {
+		_ = h.Queries.ForgetTelegramChatParticipant(ctx, db.ForgetTelegramChatParticipantParams{
+			ChatID: msg.Chat.ID, TelegramUserID: left.ID,
+		})
+		return
+	}
+	if msg.From == nil || msg.From.IsBot {
 		return
 	}
 	text := strings.TrimSpace(msg.Text)

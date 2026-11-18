@@ -433,6 +433,124 @@ func TestAssistantRoomModeIsPinnedAndReadOnly(t *testing.T) {
 	}
 }
 
+// roomTool runs one tool the way a group turn does: in room mode, pinned to a
+// workspace, inside the conversation bound to a chat.
+func roomTool(t *testing.T, userID, workspaceID, sessionID, tool, args string) (map[string]any, error) {
+	t.Helper()
+	ctx := assistant.WithFocusWorkspace(assistant.WithRunMode(t.Context(), assistant.RunModeRoom), workspaceID)
+	raw, err := testHandler.Execute(ctx, userID, sessionID, tool, json.RawMessage(args))
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode %s result: %v", tool, err)
+	}
+	return out, nil
+}
+
+// A room turn reads its own room only, even when the asker is in another
+// tracked group of the same workspace.
+func TestAssistantRoomReadsOnlyItsOwnChat(t *testing.T) {
+	calls := telegramAssistantBot(t)
+	telegramAssistantService(t, &scriptedToolChat{})
+	userID, workspaceID, tgID := telegramAssistantUser(t, "tg-room-own-chat", "TGW", true)
+	roomA, roomB := telegramTestGroup(t), telegramTestGroup(t)
+	for _, chat := range []int64{roomA, roomB} {
+		testHandler.processBotMessage(t.Context(), groupText(t, chat, tgID, "Ada", "/track"))
+		awaitTelegramMessage(t, calls)
+	}
+	testHandler.processBotMessage(t.Context(), groupText(t, roomA, tgID, "Ada", "said in room A"))
+	testHandler.processBotMessage(t.Context(), groupText(t, roomB, tgID, "Ada", "said in room B"))
+
+	// The conversation a turn in room A runs in.
+	session := newAssistantTestSession(t, userID)
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO telegram_assistant_session (user_id, chat_id, session_id) VALUES ($1, $2, $3)`,
+		userID, fmt.Sprint(roomA), session); err != nil {
+		t.Fatalf("bind session: %v", err)
+	}
+
+	own, err := roomTool(t, userID, workspaceID, session, assistant.ToolReadTelegramChat, fmt.Sprintf(`{"chat_id":"%d"}`, roomA))
+	if err != nil || !strings.Contains(fmt.Sprint(own["transcript"]), "said in room A") {
+		t.Fatalf("the room's own history: %v %v", own, err)
+	}
+	if _, err := roomTool(t, userID, workspaceID, session, assistant.ToolReadTelegramChat, fmt.Sprintf(`{"chat_id":"%d"}`, roomB)); err == nil {
+		t.Fatal("a turn in room A read room B")
+	}
+	// Outside a room the same person reads both.
+	if _, err := executeAssistantSessionTool(t, userID, session, assistant.ToolReadTelegramChat, fmt.Sprintf(`{"chat_id":"%d"}`, roomB)); err != nil {
+		t.Fatalf("private read of room B: %v", err)
+	}
+	// A conversation not bound to any chat is no room at all.
+	unbound := newAssistantTestSession(t, userID)
+	if _, err := roomTool(t, userID, workspaceID, unbound, assistant.ToolReadTelegramChat, fmt.Sprintf(`{"chat_id":"%d"}`, roomA)); err == nil {
+		t.Fatal("a room turn with no bound chat read a group")
+	}
+}
+
+// "All my workspaces" does not exist in a room.
+func TestAssistantRoomActivityDigestStaysInTheWorkspace(t *testing.T) {
+	userID, workspaceID, _ := telegramAssistantUser(t, "tg-room-digest", "TGQ", false)
+	other := newAssistantTestWorkspace(t, "tg-room-digest-other", "TGK")
+	addAssistantTestMember(t, other, userID, "owner")
+	session := newAssistantTestSession(t, userID)
+
+	digest, err := roomTool(t, userID, workspaceID, session, assistant.ToolActivityDigest, `{}`)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	raw, _ := json.Marshal(digest)
+	if strings.Contains(string(raw), "tg-room-digest-other") || !strings.Contains(string(raw), `"workspaces_checked":["tg-room-digest-ws"]`) {
+		t.Fatalf("a room digest did not stay in its workspace: %s", raw)
+	}
+	if _, err := roomTool(t, userID, workspaceID, session, assistant.ToolActivityDigest, `{"workspace_id":"`+other+`"}`); err == nil {
+		t.Fatal("a room digest was pointed at another workspace")
+	}
+	// Outside a room the same call covers both.
+	all, err := executeAssistantSessionTool(t, userID, session, assistant.ToolActivityDigest, `{}`)
+	if raw, _ := json.Marshal(all); err != nil || !strings.Contains(string(raw), "tg-room-digest-other") {
+		t.Fatalf("private digest: %s %v", raw, err)
+	}
+}
+
+// Leaving closes the window; coming back does not reopen what was missed.
+func TestAssistantTelegramHistoryForgetsSomeoneWhoLeft(t *testing.T) {
+	calls := telegramAssistantBot(t)
+	telegramAssistantService(t, &scriptedToolChat{})
+	userID, _, tgID := telegramAssistantUser(t, "tg-history-left", "TGL", true)
+	chatID := telegramTestGroup(t)
+	testHandler.processBotMessage(t.Context(), groupText(t, chatID, tgID, "Ada", "/track"))
+	awaitTelegramMessage(t, calls)
+	testHandler.processBotMessage(t.Context(), groupText(t, chatID, tgID, "Ada", "before leaving"))
+	session := newAssistantTestSession(t, userID)
+	args := fmt.Sprintf(`{"chat_id":"%d"}`, chatID)
+	seen := func() (n int) {
+		testPool.QueryRow(t.Context(), `SELECT count(*) FROM telegram_chat_participant WHERE chat_id = $1 AND telegram_user_id = $2`, chatID, tgID).Scan(&n)
+		return n
+	}
+	if seen() != 1 {
+		t.Fatal("a participant was not noted")
+	}
+
+	// Telegram's own service message.
+	testHandler.processBotMessage(t.Context(), decodeDecisionUpdate(t, fmt.Sprintf(
+		`{"message":{"message_id":77,"from":{"id":%d},"left_chat_member":{"id":%d},"chat":{"id":%d,"type":"supergroup"}}}`, tgID, tgID, chatID)))
+	if seen() != 0 {
+		t.Fatal("leaving the group kept the reading window open")
+	}
+	if _, err := executeAssistantSessionTool(t, userID, session, assistant.ToolReadTelegramChat, args); err == nil {
+		t.Fatal("someone who left read the group")
+	}
+
+	// Seen again, then found gone by Telegram at read time: forgotten again.
+	testHandler.processBotMessage(t.Context(), groupText(t, chatID, tgID, "Ada", "back"))
+	telegramTestMembership.Store("kicked")
+	if _, err := executeAssistantSessionTool(t, userID, session, assistant.ToolReadTelegramChat, args); err == nil || seen() != 0 {
+		t.Fatalf("a removed member kept access (err %v, seen %d)", err, seen())
+	}
+}
+
 func TestTelegramTranscriptKeepsTheNewestWhenTooLarge(t *testing.T) {
 	at := func(minutes int) pgtype.Timestamptz {
 		return pgtype.Timestamptz{Time: time.Date(2026, 1, 2, 10, minutes, 0, 0, time.UTC), Valid: true}

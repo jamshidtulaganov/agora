@@ -194,6 +194,11 @@ type telegramUpdate struct {
 		Text      string `json:"text"`
 		// Date is the unix time the message was sent.
 		Date int64 `json:"date"`
+		// LeftChatMember is set on the service message Telegram posts when
+		// someone leaves or is removed from a group.
+		LeftChatMember *struct {
+			ID int64 `json:"id"`
+		} `json:"left_chat_member"`
 		From *struct {
 			ID           int64  `json:"id"`
 			IsBot        bool   `json:"is_bot"`

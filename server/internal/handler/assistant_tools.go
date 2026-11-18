@@ -1262,7 +1262,16 @@ func (h *Handler) assistantActivityDigest(ctx context.Context, caller assistantC
 	since := pgtype.Timestamptz{Time: from, Valid: true}
 
 	var scope []db.Workspace
-	if wsID := strings.TrimSpace(args.WorkspaceID); wsID != "" {
+	wsID := strings.TrimSpace(args.WorkspaceID)
+	// A room turn has no "all my workspaces": without an id it means the
+	// room's own. assistantMembership refuses when there is none to pin to.
+	if wsID == "" && assistant.RunModeFrom(ctx) == assistant.RunModeRoom {
+		wsID = assistant.FocusWorkspaceFrom(ctx)
+		if wsID == "" {
+			return nil, errAssistantNoAccess
+		}
+	}
+	if wsID != "" {
 		ws, _, err := h.assistantMembership(ctx, caller.UUID, wsID)
 		if err != nil {
 			return nil, err

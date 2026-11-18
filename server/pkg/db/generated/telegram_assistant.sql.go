@@ -70,6 +70,20 @@ func (q *Queries) CreateTelegramAssistantDelivery(ctx context.Context, arg Creat
 	return err
 }
 
+const forgetTelegramChatParticipant = `-- name: ForgetTelegramChatParticipant :exec
+DELETE FROM telegram_chat_participant WHERE chat_id = $1 AND telegram_user_id = $2
+`
+
+type ForgetTelegramChatParticipantParams struct {
+	ChatID         int64 `json:"chat_id"`
+	TelegramUserID int64 `json:"telegram_user_id"`
+}
+
+func (q *Queries) ForgetTelegramChatParticipant(ctx context.Context, arg ForgetTelegramChatParticipantParams) error {
+	_, err := q.db.Exec(ctx, forgetTelegramChatParticipant, arg.ChatID, arg.TelegramUserID)
+	return err
+}
+
 const getAssistantRunReply = `-- name: GetAssistantRunReply :one
 SELECT m.content FROM assistant_run r
 JOIN assistant_message u ON u.id = r.message_id
