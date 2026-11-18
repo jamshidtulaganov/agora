@@ -12,6 +12,7 @@ import (
 )
 
 func TestMemberOAuth(t *testing.T) {
+	const otherWorkspace = "00000000-0000-4000-8000-000000000003"
 	const origin = "https://connector.example"
 	allowed := map[string]bool{"mul_alice": true, "mul_bob": true}
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,9 +21,19 @@ func TestMemberOAuth(t *testing.T) {
 			http.Error(w, "forbidden", 403)
 			return
 		}
+		workspace := workspaceID
+		if member == "mul_bob" {
+			workspace = otherWorkspace
+		}
+		if r.URL.Path != "/api/workspaces" && r.Header.Get("X-Workspace-ID") != workspace {
+			http.Error(w, "not a member", 403)
+			return
+		}
 		switch r.URL.Path {
-		case "/api/workspaces/" + workspaceID:
-			json.NewEncoder(w).Encode(map[string]string{"id": workspaceID})
+		case "/api/workspaces":
+			json.NewEncoder(w).Encode([]map[string]string{{"id": workspace, "name": "Team", "slug": "team"}})
+		case "/api/workspaces/" + workspace:
+			json.NewEncoder(w).Encode(map[string]string{"id": workspace})
 		case "/api/issues/" + issueID:
 			io.WriteString(w, "{}")
 		case "/api/issues/" + issueID + "/comments":
@@ -36,7 +47,7 @@ func TestMemberOAuth(t *testing.T) {
 	http.DefaultTransport = api.Client().Transport
 	defer func() { http.DefaultTransport = old }()
 	newService := func() http.Handler {
-		h, err := NewMemberConnector(origin, api.URL, workspaceID, "test", make([]byte, 32))
+		h, err := NewMemberConnector(origin, api.URL, "test", make([]byte, 32))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,10 +63,11 @@ func TestMemberOAuth(t *testing.T) {
 		h.ServeHTTP(rec, r)
 		return rec
 	}
-	link := func(member string) string {
+	link := func(member, clientID, workspace string) string {
 		t.Helper()
+		callback := clients[clientID].Callback
 		verifier := strings.Repeat("z", 48)
-		values := url.Values{"response_type": {"code"}, "client_id": {claudeClient}, "redirect_uri": {claudeCallback}, "scope": {scope}, "state": {"opaque-state"}, "resource": {origin + "/mcp"}, "code_challenge_method": {"S256"}, "code_challenge": {digest(verifier)}}
+		values := url.Values{"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {callback}, "scope": {scope}, "state": {"opaque-state"}, "resource": {origin + "/mcp"}, "code_challenge_method": {"S256"}, "code_challenge": {digest(verifier)}}
 		path := "/authorize?" + values.Encode()
 		get := request("GET", path, "", nil)
 		match := regexp.MustCompile(`name="csrf" value="([^"]+)"`).FindStringSubmatch(get.Body.String())
@@ -71,11 +83,23 @@ func TestMemberOAuth(t *testing.T) {
 			}
 			return ""
 		}
+		ticket := regexp.MustCompile(`name="ticket" value="([^"]+)"`).FindStringSubmatch(authorize.Body.String())
+		if authorize.Code != 200 || len(ticket) != 2 || !strings.Contains(authorize.Body.String(), workspace) || strings.Contains(authorize.Body.String(), member) {
+			t.Fatal("invalid workspace chooser")
+		}
+		form.Del("pat")
+		form.Set("ticket", ticket[1])
+		form.Set("workspace", "00000000-0000-4000-8000-000000000004")
+		if request("POST", path, form.Encode(), headers).Code != 403 {
+			t.Fatal("unavailable workspace accepted")
+		}
+		form.Set("workspace", workspace)
+		authorize = request("POST", path, form.Encode(), headers)
 		loc, err := url.Parse(authorize.Header().Get("Location"))
-		if err != nil || authorize.Code != 303 || loc.Query().Get("state") != "opaque-state" || loc.Query().Get("code") == "" {
+		if err != nil || authorize.Code != 303 || loc.Scheme+"://"+loc.Host+loc.Path != callback || loc.Query().Get("state") != "opaque-state" || loc.Query().Get("code") == "" {
 			t.Fatalf("authorization failed: %d", authorize.Code)
 		}
-		exchange := url.Values{"grant_type": {"authorization_code"}, "client_id": {claudeClient}, "redirect_uri": {claudeCallback}, "code": {loc.Query().Get("code")}, "code_verifier": {"invalid"}}
+		exchange := url.Values{"grant_type": {"authorization_code"}, "client_id": {clientID}, "redirect_uri": {callback}, "code": {loc.Query().Get("code")}, "code_verifier": {"invalid"}}
 		if r := request("POST", "/token", exchange.Encode(), headers); r.Code != 400 {
 			t.Fatal("accepted invalid verifier")
 		}
@@ -92,11 +116,11 @@ func TestMemberOAuth(t *testing.T) {
 		}
 		return token.Token
 	}
-	alice, bob := link("mul_alice"), link("mul_bob")
-	link("mul_nonmember")
+	alice, bob := link("mul_alice", claudeClient, workspaceID), link("mul_bob", chatGPTClient, otherWorkspace)
+	link("mul_nonmember", claudeClient, workspaceID)
 	h = newService() // Existing grants survive a free service restart.
 	comment := func(token string) *httptest.ResponseRecorder {
-		return request("POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`, map[string]string{"Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"})
+		return request("POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`, map[string]string{"X-Workspace-ID": "ignored", "Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"})
 	}
 	for member, token := range map[string]string{"alice": alice, "bob": bob} {
 		res := comment(token)
