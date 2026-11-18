@@ -9,7 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 个人账户在 **Customize → Connectors** 添加自定义 Web 连接器；Team 所有者在 **Organization settings → Connectors** 添加。填写管理员提供的 HTTPS 地址，保留末尾的 `/mcp`。
 
-使用令牌时，在 Agora 的 **Settings → Personal Access Tokens** 创建令牌。在 Claude 中选择 **No sign in**，添加名为 `Authorization` 的请求头，值为 `Bearer YOUR_AGORA_PAT`。Team 成员共用该请求头，评论也以令牌所有者的身份发布。团队应使用具有适当工作区权限的专用 Agora 账户。
+每位成员在 Claude 中选择 **Sign in now → Use your own OAuth client**，客户端 ID 填 `agora-claude`，密钥留空。在连接器授权页面输入自己的 Agora 个人访问令牌（在 Agora 的 **Settings → Personal Access Tokens** 创建），然后授权。评论以该成员自己的身份发布。授权有效期为一天，之后可重新连接。在 Agora 撤销令牌可立即停止访问。
 
 `list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 512 KiB 的附件还会直接返回文件内容。
 
