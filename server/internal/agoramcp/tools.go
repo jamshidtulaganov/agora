@@ -77,7 +77,9 @@ func tools(writes bool) []tool {
 		"query": text("Search text or issue identifier"), "limit": integer(1, 50), "offset": integer(0, 1000000), "include_closed": {Type: "boolean"},
 	}, []string{"query"}, false)
 	add("get_issue", "Read an issue, its description, attachments, and labels. Use search_issues to resolve a human-readable issue key to its UUID.", map[string]field{"issue_id": uuid("Issue ID")}, []string{"issue_id"}, false)
-	add("list_comments", "Read the latest comments on an issue (default 50).", map[string]field{"issue_id": uuid("Issue ID"), "limit": integer(1, 100)}, []string{"issue_id"}, false)
+	add("list_comments", "Read the most recently active comment threads (default 50). Supply comment_id to read its thread and up to limit recent replies.", map[string]field{"issue_id": uuid("Issue ID"), "comment_id": uuid("Optional thread anchor"), "limit": integer(1, 100)}, []string{"issue_id"}, false)
+	add("summarize_comments", "Summarize decisions, open questions and actions in an issue discussion using the workspace summary service. If the service is unavailable, returns labeled recent excerpts with comment IDs for the client to summarize.", map[string]field{"issue_id": uuid("Issue ID")}, []string{"issue_id"}, false)
+	add("download_attachment", "Download a file attached to a visible issue or comment. Returns the authenticated download link and inline base64 for files up to 512 KiB.", map[string]field{"attachment_id": uuid("Attachment ID from get_issue or list_comments")}, []string{"attachment_id"}, false)
 	add("list_knowledge", "List workspace knowledge documents and processing status.", nil, nil, false)
 	add("search_knowledge", "Search workspace knowledge for expected behavior and requirements. Returns snippets, source IDs, and citation references; use get_knowledge for full evidence.", map[string]field{"query": text("Knowledge search text"), "limit": integer(1, 20)}, []string{"query"}, false)
 	add("get_knowledge", "Read a workspace knowledge document and its extracted sections.", map[string]field{"document_id": uuid("Document ID")}, []string{"document_id"}, false)
@@ -127,6 +129,13 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (js
 	}
 	path, method := "", "GET"
 	var body map[string]any
+	// The REST visibility check runs on issue reads. Apply it before POSTs
+	// that read or add to a discussion on behalf of a connector user.
+	if name == "comment_issue" || name == "summarize_comments" {
+		if err := s.client.GetJSON(ctx, "/api/issues/"+str("issue_id"), nil); err != nil {
+			return nil, apiError(err)
+		}
+	}
 	switch name {
 	case "get_workspace":
 		path = "/api/workspaces/" + s.client.WorkspaceID
@@ -161,9 +170,18 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (js
 	case "list_comments":
 		q := url.Values{}
 		page(q, "limit", 50)
-		q.Set("tail", q.Get("limit"))
+		if str("comment_id") != "" {
+			q.Set("thread", str("comment_id"))
+			q.Set("tail", q.Get("limit"))
+		} else {
+			q.Set("recent", q.Get("limit"))
+		}
 		q.Del("limit")
 		path = "/api/issues/" + str("issue_id") + "/comments?" + q.Encode()
+	case "download_attachment":
+		return s.downloadAttachment(ctx, str("attachment_id"))
+	case "summarize_comments":
+		return s.summarizeComments(ctx, "/api/issues/"+str("issue_id"))
 	case "list_knowledge":
 		path = "/api/knowledge"
 	case "search_knowledge":

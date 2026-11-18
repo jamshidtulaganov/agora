@@ -5,6 +5,14 @@ description: 通过共享 mcp.json 或智能体专用覆盖，将智能体连接
 
 import { Callout } from "fumadocs-ui/components/callout";
 
+## 在 Claude 中连接托管的 Agora 工作区
+
+个人账户在 **Customize → Connectors** 添加自定义 Web 连接器；Team 所有者在 **Organization settings → Connectors** 添加。填写管理员提供的 HTTPS 地址，保留末尾的 `/mcp`。
+
+使用令牌时，在 Agora 的 **Settings → Personal Access Tokens** 创建令牌。在 Claude 中选择 **No sign in**，添加名为 `Authorization` 的请求头，值为 `Bearer YOUR_AGORA_PAT`。Team 成员共用该请求头，评论也以令牌所有者的身份发布。团队应使用具有适当工作区权限的专用 Agora 账户。
+
+`list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 512 KiB 的附件还会直接返回文件内容。
+
 ## 将 Claude Code 等客户端连接到 Agora
 
 `agora mcp serve` 通过本地 stdio 将当前工作区的 issue、项目、评论和知识库提供给 MCP 客户端。它与下方的外部连接器方向相反：客户端读取 Agora，而不是 Agora 智能体调用外部工具。
@@ -34,12 +42,12 @@ Claude Desktop、Cursor 等支持 `mcpServers` JSON 的客户端使用：
 
 CLI 复用已保存的登录和服务器 URL。`--profile` 可选择独立配置；也支持 `--server-url`、`AGORA_SERVER_URL`、`AGORA_WORKSPACE_ID` 和 `AGORA_TOKEN`。不要把 token 放进提交到仓库的 JSON 或命令参数，也不要在 MCP 协议流中执行交互式登录。
 
-默认提供 **14 个只读工具**：
+默认提供 **16 个只读工具**：
 
 | 范围 | 工具 |
 | --- | --- |
 | 工作区与项目 | `get_workspace`、`list_projects`、`get_project` |
-| Issue 与讨论 | `list_issues`、`search_issues`、`get_issue`、`list_comments` |
+| Issue 与讨论 | `list_issues`、`search_issues`、`get_issue`、`list_comments`、`summarize_comments`、`download_attachment` |
 | 知识与需求 | `list_knowledge`、`search_knowledge`、`get_knowledge`、`list_project_knowledge` |
 | 分配信息 | `list_labels`、`list_members`、`list_agents` |
 
@@ -51,7 +59,7 @@ CLI 复用已保存的登录和服务器 URL。`--profile` 可选择独立配置
 
 仅需审查建议时保留只读默认值，例如：“对照 Agora 知识库检查此行为，区分已确认的 bug、回归风险和缺失证据，建议 issue 但不要创建。”`list_project_knowledge` 仅返回已审核的 `active` 知识；搜索结果含来源 ID 和引用，确认需求前请阅读原文。智能体列表仅包含分配信息，不返回运行时配置或 MCP 凭据。
 
-此服务使用本地 stdio 连接 Agora REST API，不是托管的 HTTP/OAuth MCP 端点；支持初始化、工具发现与调用、ping、取消和请求超时。`agora mcp qa` 仍是独立的测试运行器。
+CLI 通过本地 stdio 连接 Agora REST API，支持初始化、工具发现与调用、ping、取消和请求超时。`agora mcp qa` 仍是独立的测试运行器。
 
 ## 将 Agora 智能体连接到外部工具
 
