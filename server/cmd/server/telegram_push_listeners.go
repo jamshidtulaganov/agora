@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/jamshidtulaganov/agora/server/internal/events"
 	"github.com/jamshidtulaganov/agora/server/internal/handler"
@@ -24,6 +25,20 @@ func registerTelegramPushListeners(bus *events.Bus, h *handler.Handler) {
 	if !h.TelegramPushEnabled() {
 		return
 	}
+	// An Assistant run that started in a Telegram private chat answers there.
+	// Detached: the Bot API call must not sit on the run's finalizer.
+	bus.Subscribe(protocol.EventAssistantRunFinished, func(e events.Event) {
+		payload, ok := e.Payload.(protocol.AssistantRunFinishedPayload)
+		if !ok {
+			return
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			h.DeliverTelegramAssistantRun(ctx, payload.RunID, payload.Error)
+		}()
+	})
+
 	bus.Subscribe(protocol.EventInboxNew, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
