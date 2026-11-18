@@ -41,8 +41,14 @@ type rpcResponse struct {
 }
 
 type toolResult struct {
-	Content []textContent `json:"content"`
-	IsError bool          `json:"isError"`
+	Content []any `json:"content"`
+	IsError bool  `json:"isError"`
+}
+
+type imageContent struct {
+	Type     string `json:"type"`
+	Data     []byte `json:"data"`
+	MimeType string `json:"mimeType"`
 }
 
 type textContent struct {
@@ -194,10 +200,15 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 				defer cancel()
 				defer func() { callsMu.Lock(); delete(calls, string(id)); callsMu.Unlock() }()
 				data, err := s.call(callCtx, name, args)
-				result := toolResult{Content: []textContent{{Type: "text", Text: string(data)}}}
+				var result toolResult
 				if err != nil {
-					result.IsError = true
-					result.Content[0].Text = err.Error()
+					result = toolResult{Content: []any{textContent{Type: "text", Text: err.Error()}}, IsError: true}
+				} else {
+					text, image, mimeType := splitInlineImage(data)
+					result.Content = []any{textContent{Type: "text", Text: text}}
+					if image != nil {
+						result.Content = append(result.Content, imageContent{Type: "image", Data: image, MimeType: mimeType})
+					}
 				}
 				respond(id, result, nil)
 			}(req.ID, params.Name, params.Arguments)

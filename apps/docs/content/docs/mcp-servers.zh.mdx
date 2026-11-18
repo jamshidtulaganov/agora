@@ -13,7 +13,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 每位成员在 Claude 中选择 **Sign in now → Use your own OAuth client**，客户端 ID 填 `agora-claude`，密钥留空。在连接器授权页面输入自己的 Agora 个人访问令牌（在 Agora 的 **Settings → Personal Access Tokens** 创建），选择所属工作区后授权。评论以该成员自己的身份发布。授权有效期为一天，之后可重新连接。在 Agora 撤销令牌可立即停止访问。
 
-`list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 512 KiB 的附件还会直接返回文件内容。
+`list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 3 MiB 的 PNG、JPEG、GIF、WebP 图片会以图片形式返回，助手可以直接查看；其他不超过 512 KiB 的附件会直接返回文件内容，可读文本以文本形式返回。
 
 ## 将 Claude Code 等客户端连接到 Agora
 

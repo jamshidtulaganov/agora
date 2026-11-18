@@ -36,9 +36,9 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 			lastAuthor = token
 			io.WriteString(w, `{"content":"hello"}`)
 		case "/api/attachments/" + issueID:
-			json.NewEncoder(w).Encode(map[string]any{"workspace_id": workspaceID, "issue_id": issueID, "filename": "report.txt", "size_bytes": 2})
+			json.NewEncoder(w).Encode(map[string]any{"workspace_id": workspaceID, "issue_id": issueID, "filename": "shot.png", "content_type": "image/png", "size_bytes": 8})
 		case "/api/attachments/" + issueID + "/download":
-			io.WriteString(w, "ok")
+			io.WriteString(w, "\x89PNG\r\n\x1a\n")
 		default:
 			t.Errorf("unexpected upstream path %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -84,7 +84,7 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 		t.Fatal("unexpected remote write tool")
 	}
 	download := `{"name":"download_attachment","arguments":{"attachment_id":"` + issueID + `"}}`
-	if _, body := send("mul_reader", "tools/call", download); !strings.Contains(body, "b2s=") {
+	if _, body := send("mul_reader", "tools/call", download); !strings.Contains(body, `"type":"image"`) || !strings.Contains(body, `"mimeType":"image/png"`) || !strings.Contains(body, `"data":"iVBORw0KGgo="`) || strings.Contains(body, "content_base64") {
 		t.Fatalf("download: %s", body)
 	}
 	comment := `{"name":"comment_issue","arguments":{"issue_id":"` + issueID + `","content":"hello"}}`
