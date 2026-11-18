@@ -113,7 +113,9 @@ func TestAPIRequests(t *testing.T) {
 		{"list_issues", `{"limit":10,"offset":20,"project_id":"` + issueID + `"}`, "GET", "/api/issues?limit=10&offset=20&project_id=" + issueID + "&workspace_id=" + workspaceID, ""},
 		{"search_issues", `{"query":"a & b","include_closed":true}`, "GET", "/api/issues/search?include_closed=true&limit=20&offset=0&q=a+%26+b&workspace_id=" + workspaceID, ""},
 		{"get_issue", `{"issue_id":"` + issueID + `"}`, "GET", "/api/issues/" + issueID, ""},
-		{"list_comments", `{"issue_id":"` + issueID + `"}`, "GET", "/api/issues/" + issueID + "/comments?tail=50", ""},
+		{"list_comments", `{"issue_id":"` + issueID + `"}`, "GET", "/api/issues/" + issueID + "/comments?recent=50", ""},
+		{"list_comments", `{"issue_id":"` + issueID + `","comment_id":"` + issueID + `","limit":3}`, "GET", "/api/issues/" + issueID + "/comments?tail=3&thread=" + issueID, ""},
+		{"summarize_comments", `{"issue_id":"` + issueID + `"}`, "POST", "/api/issues/" + issueID + "/comments/summarize", ""},
 		{"search_knowledge", `{"query":"expected behavior"}`, "GET", "/api/knowledge/search?limit=10&q=expected+behavior", ""},
 		{"list_project_knowledge", `{"project_id":"` + issueID + `"}`, "GET", "/api/projects/" + issueID + "/knowledge/items?status=active", ""},
 		{"create_issue", `{"title":"Bug","description":"Evidence","project_id":"` + issueID + `"}`, "POST", "/api/issues", `{"title":"Bug","status":"backlog","description":"Evidence","project_id":"` + issueID + `"}`},
@@ -125,6 +127,10 @@ func TestAPIRequests(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := testServer(t, true, func(w http.ResponseWriter, r *http.Request) {
+				if (tc.name == "comment_issue" || tc.name == "summarize_comments") && r.Method == "GET" && r.URL.Path == "/api/issues/"+issueID {
+					w.WriteHeader(200)
+					return
+				}
 				if r.Method != tc.method || r.URL.RequestURI() != tc.path {
 					t.Errorf("request = %s %s, want %s %s", r.Method, r.URL.RequestURI(), tc.method, tc.path)
 				}
@@ -248,5 +254,25 @@ func TestConfigurationAndAPIErrors(t *testing.T) {
 	s := testServer(t, false, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) })
 	if _, err := s.call(context.Background(), "list_projects", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("permission error = %v", err)
+	}
+}
+
+func TestSummaryWhenModelUnavailable(t *testing.T) {
+	s := testServer(t, false, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RequestURI() {
+		case "/api/issues/" + issueID:
+			io.WriteString(w, "{}")
+		case "/api/issues/" + issueID + "/comments/summarize":
+			w.WriteHeader(503)
+		case "/api/issues/" + issueID + "/comments?recent=5&summary=true":
+			io.WriteString(w, `[{"id":"c1","content":"Approved for Friday."}]`)
+		default:
+			t.Error("unexpected route", r.URL)
+			http.NotFound(w, r)
+		}
+	})
+	out, err := s.call(context.Background(), "summarize_comments", json.RawMessage(`{"issue_id":"`+issueID+`"}`))
+	if err != nil || !bytes.Contains(out, []byte("Approved for Friday. [c1]")) || !bytes.Contains(out, []byte("recent_comment_excerpts")) {
+		t.Fatalf("result %s, error %v", out, err)
 	}
 }
