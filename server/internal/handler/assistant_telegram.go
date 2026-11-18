@@ -9,6 +9,9 @@ package handler
 //   - Telegram: the person is in that group RIGHT NOW, asked of Telegram at
 //     read time. Someone removed from the group loses the history with it, and
 //     a workspace colleague who was never in the room cannot read it at all.
+//
+// And it is bounded in time: a person reads only what was said since the bot
+// first saw them in the group, so joining late does not hand over the past.
 
 import (
 	"context"
@@ -107,6 +110,16 @@ func (h *Handler) assistantTelegramTool(ctx context.Context, caller assistantCal
 		}
 	}
 	readable := h.telegramChatsReadableBy(ctx, caller.UUID)
+	// A room turn reads only groups of the workspace it was started for.
+	if assistant.RunModeFrom(ctx) == assistant.RunModeRoom {
+		focus, kept := assistant.FocusWorkspaceFrom(ctx), readable[:0]
+		for _, chat := range readable {
+			if uuidToString(chat.WorkspaceID) == focus {
+				kept = append(kept, chat)
+			}
+		}
+		readable = kept
+	}
 
 	if name == assistant.ToolListTelegramChats {
 		type chatRow struct {
@@ -142,6 +155,17 @@ func (h *Handler) assistantTelegramTool(ctx context.Context, caller assistantCal
 		hours = min(*args.Hours, telegramHistoryMaxHours)
 	}
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
+	// Nobody reads what was said before the bot first saw them in the group;
+	// someone it has never seen there reads nothing yet.
+	firstSeen, err := h.Queries.GetTelegramChatParticipantFirstSeen(ctx, db.GetTelegramChatParticipantFirstSeenParams{
+		ChatID: chatID, TelegramUserID: h.telegramIDForUser(ctx, caller.UUID),
+	})
+	if err != nil {
+		return nil, errors.New("you have not written in that Telegram group since it was connected; send a message there first")
+	}
+	if firstSeen.Time.After(since) {
+		since = firstSeen.Time
+	}
 	messages, err := h.Queries.ListTelegramChatMessagesSince(ctx, db.ListTelegramChatMessagesSinceParams{
 		ChatID: chatID,
 		SentAt: pgtype.Timestamptz{Time: since, Valid: true},

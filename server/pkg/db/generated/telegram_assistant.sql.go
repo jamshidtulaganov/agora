@@ -121,6 +121,23 @@ func (q *Queries) GetTelegramAssistantSession(ctx context.Context, arg GetTelegr
 	return i, err
 }
 
+const getTelegramChatParticipantFirstSeen = `-- name: GetTelegramChatParticipantFirstSeen :one
+SELECT first_seen_at FROM telegram_chat_participant
+WHERE chat_id = $1 AND telegram_user_id = $2
+`
+
+type GetTelegramChatParticipantFirstSeenParams struct {
+	ChatID         int64 `json:"chat_id"`
+	TelegramUserID int64 `json:"telegram_user_id"`
+}
+
+func (q *Queries) GetTelegramChatParticipantFirstSeen(ctx context.Context, arg GetTelegramChatParticipantFirstSeenParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getTelegramChatParticipantFirstSeen, arg.ChatID, arg.TelegramUserID)
+	var first_seen_at pgtype.Timestamptz
+	err := row.Scan(&first_seen_at)
+	return first_seen_at, err
+}
+
 const getTelegramTrackedChat = `-- name: GetTelegramTrackedChat :one
 SELECT chat_id, workspace_id, title, role, enabled_by, created_at FROM telegram_tracked_chat WHERE chat_id = $1
 `
@@ -297,6 +314,23 @@ func (q *Queries) RecordTelegramChatMessage(ctx context.Context, arg RecordTeleg
 		arg.Text,
 		arg.SentAt,
 	)
+	return err
+}
+
+const seeTelegramChatParticipant = `-- name: SeeTelegramChatParticipant :exec
+INSERT INTO telegram_chat_participant (chat_id, telegram_user_id, first_seen_at)
+VALUES ($1, $2, $3)
+ON CONFLICT (chat_id, telegram_user_id) DO NOTHING
+`
+
+type SeeTelegramChatParticipantParams struct {
+	ChatID         int64              `json:"chat_id"`
+	TelegramUserID int64              `json:"telegram_user_id"`
+	FirstSeenAt    pgtype.Timestamptz `json:"first_seen_at"`
+}
+
+func (q *Queries) SeeTelegramChatParticipant(ctx context.Context, arg SeeTelegramChatParticipantParams) error {
+	_, err := q.db.Exec(ctx, seeTelegramChatParticipant, arg.ChatID, arg.TelegramUserID, arg.FirstSeenAt)
 	return err
 }
 

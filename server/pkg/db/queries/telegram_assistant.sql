@@ -86,3 +86,12 @@ DELETE FROM telegram_chat_message WHERE chat_id = $1 AND sent_at < $2;
 
 -- name: SetTelegramTrackedChatRole :execrows
 UPDATE telegram_tracked_chat SET role = $2 WHERE chat_id = $1;
+
+-- name: SeeTelegramChatParticipant :exec
+INSERT INTO telegram_chat_participant (chat_id, telegram_user_id, first_seen_at)
+VALUES ($1, $2, $3)
+ON CONFLICT (chat_id, telegram_user_id) DO NOTHING;
+
+-- name: GetTelegramChatParticipantFirstSeen :one
+SELECT first_seen_at FROM telegram_chat_participant
+WHERE chat_id = $1 AND telegram_user_id = $2;

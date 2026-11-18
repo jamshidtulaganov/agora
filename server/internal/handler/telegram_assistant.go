@@ -64,6 +64,10 @@ type telegramAssistantRequest struct {
 	// Workspace pins the run to a workspace (a group's own). Zero leaves the
 	// conversation's focus as it is.
 	Workspace pgtype.UUID
+	// Mode is set by the caller for a turn whose policy does not depend on
+	// its text (a group turn is always RunModeRoom). Empty resolves it from
+	// the text, as the web composer does.
+	Mode assistant.RunMode
 }
 
 // telegramAssistantTurn sends one private message to the person's Assistant
@@ -103,7 +107,7 @@ func (h *Handler) telegramAssistantStart(ctx context.Context, req telegramAssist
 		say("ai.failed")
 		return
 	}
-	mode, err := assistant.ResolveRunMode("", req.Text)
+	mode, err := assistant.ResolveRunMode(req.Mode, req.Text)
 	if err != nil {
 		say("ai.failed")
 		return
