@@ -312,6 +312,18 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 		var modeErr error
 		runMode, modeErr = ResolveRunMode(snapshot.Mode, "")
 		if modeErr != nil { return RunStatusFailed, "this message's mode is invalid" }
+		// A room turn's prompt names only the room's workspace: the roster of
+		// everything else the person belongs to is not the room's to read.
+		if runMode == RunModeRoom {
+			pinned := uc.Workspaces[:0]
+			for _, ws := range uc.Workspaces {
+				if focus.Valid && ws.ID == util.UUIDToString(focus) {
+					pinned = append(pinned, ws)
+				}
+			}
+			uc.Workspaces = pinned
+			systemText = buildSystemPrompt(uc, session.Summary)
+		}
 		if contextText := snapshot.Prompt(); contextText != "" {
 			systemText += "\n\n" + contextText
 		}
@@ -334,7 +346,9 @@ func (s *Service) runLoop(ctx context.Context, sessionID, runID, userID string) 
 	if s.RunExtras != nil {
 		extra, note := s.RunExtras(ctx, userID)
 		tools = append(tools, extra...)
-		if note != "" {
+		// The notes describe personal sources and other workspaces; a room
+		// turn gets the tools its mode allows and none of that text.
+		if note != "" && runMode != RunModeRoom {
 			systemText += "\n\n" + note
 		}
 	}

@@ -74,6 +74,26 @@ func (h *Handler) telegramIDForUser(ctx context.Context, userID pgtype.UUID) int
 	return id
 }
 
+// telegramRoomChat is the Telegram group the current run is answering in, or
+// 0. It is read from the conversation's own binding rather than from anything
+// the model supplies.
+func (h *Handler) telegramRoomChat(ctx context.Context) int64 {
+	exec := assistantExecutionFrom(ctx)
+	if exec == nil {
+		return 0
+	}
+	session, err := util.ParseUUID(exec.sessionID)
+	if err != nil {
+		return 0
+	}
+	var chat string
+	if err := h.DB.QueryRow(ctx, `SELECT chat_id FROM telegram_assistant_session WHERE session_id = $1`, session).Scan(&chat); err != nil {
+		return 0
+	}
+	id, _ := strconv.ParseInt(chat, 10, 64)
+	return id
+}
+
 // telegramChatsReadableBy returns the tracked groups the person may read:
 // their workspaces' groups that Telegram confirms they are in.
 func (h *Handler) telegramChatsReadableBy(ctx context.Context, userID pgtype.UUID) []db.TelegramTrackedChat {
@@ -91,9 +111,19 @@ func (h *Handler) telegramChatsReadableBy(ctx context.Context, userID pgtype.UUI
 	readable := make([]db.TelegramTrackedChat, 0, len(chats))
 	for _, chat := range chats {
 		// An error is not a yes: a chat we could not verify stays unreadable.
-		if in, err := h.telegramBot.IsChatMember(ctx, strconv.FormatInt(chat.ChatID, 10), telegramID); err == nil && in {
-			readable = append(readable, chat)
+		in, err := h.telegramBot.IsChatMember(ctx, strconv.FormatInt(chat.ChatID, 10), telegramID)
+		if err != nil {
+			continue
 		}
+		if !in {
+			// Gone from the group: forget when we first saw them, so coming
+			// back later does not reopen what was said while they were away.
+			_ = h.Queries.ForgetTelegramChatParticipant(ctx, db.ForgetTelegramChatParticipantParams{
+				ChatID: chat.ChatID, TelegramUserID: telegramID,
+			})
+			continue
+		}
+		readable = append(readable, chat)
 	}
 	return readable
 }
@@ -110,11 +140,12 @@ func (h *Handler) assistantTelegramTool(ctx context.Context, caller assistantCal
 		}
 	}
 	readable := h.telegramChatsReadableBy(ctx, caller.UUID)
-	// A room turn reads only groups of the workspace it was started for.
+	// A room turn reads only the room it is answering in. Another group of
+	// the same workspace has its own members, who are not this room's readers.
 	if assistant.RunModeFrom(ctx) == assistant.RunModeRoom {
-		focus, kept := assistant.FocusWorkspaceFrom(ctx), readable[:0]
+		room, kept := h.telegramRoomChat(ctx), readable[:0]
 		for _, chat := range readable {
-			if uuidToString(chat.WorkspaceID) == focus {
+			if room != 0 && chat.ChatID == room {
 				kept = append(kept, chat)
 			}
 		}

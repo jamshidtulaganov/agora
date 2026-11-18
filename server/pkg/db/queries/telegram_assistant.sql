@@ -95,3 +95,6 @@ ON CONFLICT (chat_id, telegram_user_id) DO NOTHING;
 -- name: GetTelegramChatParticipantFirstSeen :one
 SELECT first_seen_at FROM telegram_chat_participant
 WHERE chat_id = $1 AND telegram_user_id = $2;
+
+-- name: ForgetTelegramChatParticipant :exec
+DELETE FROM telegram_chat_participant WHERE chat_id = $1 AND telegram_user_id = $2;
