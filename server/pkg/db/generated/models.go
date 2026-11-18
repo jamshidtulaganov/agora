@@ -1385,6 +1385,12 @@ type TelegramChatMessage struct {
 	SentAt     pgtype.Timestamptz `json:"sent_at"`
 }
 
+type TelegramChatParticipant struct {
+	ChatID         int64              `json:"chat_id"`
+	TelegramUserID int64              `json:"telegram_user_id"`
+	FirstSeenAt    pgtype.Timestamptz `json:"first_seen_at"`
+}
+
 type TelegramChatSession struct {
 	AgentID        pgtype.UUID        `json:"agent_id"`
 	ChatID         string             `json:"chat_id"`

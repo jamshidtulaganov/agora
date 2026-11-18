@@ -427,6 +427,12 @@ func (h *Handler) assistantMembership(ctx context.Context, userUUID pgtype.UUID,
 	if err != nil {
 		return db.Workspace{}, "", errors.New("workspace_id must be a workspace UUID from list_workspaces")
 	}
+	// A room turn sees exactly the workspace it was started for. Membership
+	// of another workspace does not carry it across: what the turn reads is
+	// posted to a shared chat.
+	if assistant.RunModeFrom(ctx) == assistant.RunModeRoom && uuidToString(wsUUID) != assistant.FocusWorkspaceFrom(ctx) {
+		return db.Workspace{}, "", errAssistantNoAccess
+	}
 	member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      userUUID,
 		WorkspaceID: wsUUID,
