@@ -2770,3 +2770,191 @@ export const EMPTY_ISSUE_CHANGE_PATCH: IssueChangePatchResponse = {
   patch: null,
   reason: "",
 };
+
+// ---------------------------------------------------------------------------
+// Workspace subscription (plan, trial, usage) — GET /api/workspaces/{id}/subscription
+// ---------------------------------------------------------------------------
+//
+// Plan and status are server-driven strings: unknown values are kept as-is and
+// rendered with a generic fallback, never rejected. Limits use -1 for
+// "unlimited". The fallback is the permissive state (Team, not enforced), so a
+// malformed response can never show a paying team a "you're on Free" page.
+
+const SubscriptionLimitsSchema = z.object({
+  automations: z.number().catch(-1),
+  report_schedules: z.number().catch(-1),
+  autopilots: z.number().catch(-1),
+}).loose();
+
+const SubscriptionPlanSchema = z.object({
+  id: z.string().catch(""),
+  price_monthly_cents: z.number().catch(0),
+  price_yearly_cents: z.number().catch(0),
+  limits: SubscriptionLimitsSchema.catch({ automations: -1, report_schedules: -1, autopilots: -1 }),
+}).loose();
+
+export const WorkspaceSubscriptionSchema = z.object({
+  enforced: z.boolean().catch(false),
+  plan: z.string().catch("team"),
+  purchased_plan: z.string().catch("team"),
+  status: z.string().catch("active"),
+  billing_interval: z.string().catch(""),
+  seats_paid: z.number().catch(0),
+  trial_ends_at: z.string().nullable().catch(null),
+  trial_days_left: z.number().catch(0),
+  current_period_end: z.string().nullable().catch(null),
+  grace_ends_at: z.string().nullable().catch(null),
+  limits: SubscriptionLimitsSchema.catch({ automations: -1, report_schedules: -1, autopilots: -1 }),
+  usage: z.object({
+    seats: z.number().catch(0),
+    automations: z.number().catch(0),
+    report_schedules: z.number().catch(0),
+    autopilots: z.number().catch(0),
+  }).loose().catch({ seats: 0, automations: 0, report_schedules: 0, autopilots: 0 }),
+  plans: z.array(SubscriptionPlanSchema).nullable().catch([]).transform((v) => v ?? []),
+  contact: z.string().catch(""),
+}).loose();
+
+export type WorkspaceSubscription = z.infer<typeof WorkspaceSubscriptionSchema>;
+export type SubscriptionPlan = z.infer<typeof SubscriptionPlanSchema>;
+
+export const EMPTY_WORKSPACE_SUBSCRIPTION: WorkspaceSubscription = {
+  enforced: false,
+  plan: "team",
+  purchased_plan: "team",
+  status: "active",
+  billing_interval: "",
+  seats_paid: 0,
+  trial_ends_at: null,
+  trial_days_left: 0,
+  current_period_end: null,
+  grace_ends_at: null,
+  limits: { automations: -1, report_schedules: -1, autopilots: -1 },
+  usage: { seats: 0, automations: 0, report_schedules: 0, autopilots: 0 },
+  plans: [],
+  contact: "",
+};
+
+// ---------------------------------------------------------------------------
+// Platform admin (/admin) — GET /api/admin/overview
+// ---------------------------------------------------------------------------
+// Operator-only. Malformed rows degrade field by field; a bad row never blanks
+// the whole page.
+
+const AdminUserSchema = z.object({
+  id: z.string().catch(""),
+  name: z.string().catch(""),
+  email: z.string().catch(""),
+  created_at: z.string().nullable().catch(null),
+  last_login_at: z.string().nullable().catch(null),
+  last_active_at: z.string().nullable().catch(null),
+  workspaces: z
+    .array(z.object({ slug: z.string().catch(""), name: z.string().catch(""), role: z.string().catch("") }).loose())
+    .nullable()
+    .catch([])
+    .transform((v) => v ?? []),
+}).loose();
+
+const AdminWorkspaceSchema = z.object({
+  id: z.string().catch(""),
+  name: z.string().catch(""),
+  slug: z.string().catch(""),
+  created_at: z.string().nullable().catch(null),
+  members: z.number().catch(0),
+  owner_email: z.string().catch(""),
+  last_active_at: z.string().nullable().catch(null),
+  provider: z.string().catch(""),
+  note: z.string().catch(""),
+  subscription: z.object({
+    enforced: z.boolean().catch(false),
+    plan: z.string().catch(""),
+    purchased_plan: z.string().catch(""),
+    status: z.string().catch(""),
+    billing_interval: z.string().catch(""),
+    seats_paid: z.number().catch(0),
+    trial_ends_at: z.string().nullable().catch(null),
+    trial_days_left: z.number().catch(0),
+    current_period_end: z.string().nullable().catch(null),
+    grace_ends_at: z.string().nullable().catch(null),
+  }).loose().catch({
+    enforced: false, plan: "", purchased_plan: "", status: "", billing_interval: "", seats_paid: 0,
+    trial_ends_at: null, trial_days_left: 0, current_period_end: null, grace_ends_at: null,
+  }),
+}).loose();
+
+const AdminSummarySchema = z.object({
+  users: z.number().catch(0),
+  active_users_7d: z.number().catch(0),
+  active_users_30d: z.number().catch(0),
+  new_users_7d: z.number().catch(0),
+  workspaces: z.number().catch(0),
+  trialing: z.number().catch(0),
+  trials_ending_7d: z.number().catch(0),
+  paying: z.number().catch(0),
+  past_due: z.number().catch(0),
+  free: z.number().catch(0),
+  est_monthly_revenue_cents: z.number().catch(0),
+}).loose();
+
+const EMPTY_ADMIN_SUMMARY = {
+  users: 0, active_users_7d: 0, active_users_30d: 0, new_users_7d: 0, workspaces: 0,
+  trialing: 0, trials_ending_7d: 0, paying: 0, past_due: 0, free: 0, est_monthly_revenue_cents: 0,
+};
+
+export const AdminOverviewSchema = z.object({
+  summary: AdminSummarySchema.catch(EMPTY_ADMIN_SUMMARY),
+  users: z.array(AdminUserSchema).nullable().catch([]).transform((v) => v ?? []),
+  workspaces: z.array(AdminWorkspaceSchema).nullable().catch([]).transform((v) => v ?? []),
+}).loose();
+
+export type AdminOverview = z.infer<typeof AdminOverviewSchema>;
+export type AdminUser = z.infer<typeof AdminUserSchema>;
+export type AdminWorkspace = z.infer<typeof AdminWorkspaceSchema>;
+
+export const EMPTY_ADMIN_OVERVIEW: AdminOverview = {
+  summary: EMPTY_ADMIN_SUMMARY,
+  users: [],
+  workspaces: [],
+};
+
+// GET /api/admin/growth — daily series + sign-up funnel by marketing source.
+const AdminFunnelRowSchema = z.object({
+  key: z.string().catch(""),
+  signups: z.number().catch(0),
+  owns_workspace: z.number().catch(0),
+  paying: z.number().catch(0),
+}).loose();
+
+const funnelList = z.array(AdminFunnelRowSchema).nullable().catch([]).transform((v) => v ?? []);
+
+export const AdminGrowthSchema = z.object({
+  days: z
+    .array(z.object({
+      day: z.string().catch(""),
+      signups: z.number().catch(0),
+      active_users: z.number().catch(0),
+      new_workspaces: z.number().catch(0),
+    }).loose())
+    .nullable()
+    .catch([])
+    .transform((v) => v ?? []),
+  signups: z.number().catch(0),
+  attributed: z.number().catch(0),
+  sources: funnelList,
+  campaigns: funnelList,
+  referrers: funnelList,
+  landing_pages: funnelList,
+}).loose();
+
+export type AdminGrowth = z.infer<typeof AdminGrowthSchema>;
+export type AdminFunnelRow = z.infer<typeof AdminFunnelRowSchema>;
+
+export const EMPTY_ADMIN_GROWTH: AdminGrowth = {
+  days: [],
+  signups: 0,
+  attributed: 0,
+  sources: [],
+  campaigns: [],
+  referrers: [],
+  landing_pages: [],
+};

@@ -1,0 +1,112 @@
+{
+  "title": "管理",
+  "subtitle": "使用此 Agora 的所有人：成员、工作区和套餐。",
+  "loading": "加载中…",
+  "not_found": "页面不存在。",
+  "error": "加载失败，请重试。",
+  "refresh": "刷新",
+  "search_placeholder": "搜索姓名、邮箱或工作区",
+  "tabs": {
+    "growth": "增长",
+    "marketing": "营销",
+    "workspaces": "工作区",
+    "users": "用户"
+  },
+  "summary": {
+    "users": "用户",
+    "active_7d": "近 7 天活跃",
+    "new_7d": "近 7 天新增",
+    "workspaces": "工作区",
+    "trialing": "试用中",
+    "trials_ending": "7 天内试用到期",
+    "paying": "付费",
+    "past_due": "付款逾期",
+    "free": "Free",
+    "revenue": "预估月收入",
+    "of": "共 {{total}}"
+  },
+  "users": {
+    "name": "姓名",
+    "email": "邮箱",
+    "workspaces": "工作区",
+    "signed_up": "注册时间",
+    "last_login": "最近登录",
+    "last_active": "最近活跃",
+    "never": "从未",
+    "empty": "暂无用户。"
+  },
+  "workspaces": {
+    "name": "工作区",
+    "owner": "所有者",
+    "members": "成员",
+    "plan": "套餐",
+    "ends": "到期 / 付费至",
+    "last_active": "最近活跃",
+    "actions": "",
+    "change": "更改套餐",
+    "empty": "暂无工作区。",
+    "days_left": "剩余 {{days}} 天",
+    "grandfathered": "老用户"
+  },
+  "plan": {
+    "free": "Free",
+    "team": "Team",
+    "enterprise": "Enterprise"
+  },
+  "status": {
+    "trialing": "试用",
+    "active": "有效",
+    "past_due": "逾期",
+    "trial_expired": "试用结束",
+    "expired": "已到期",
+    "canceled": "已取消"
+  },
+  "dialog": {
+    "title": "更改套餐：{{name}}",
+    "mode": "新套餐",
+    "modes": {
+      "team": "Team（付费）",
+      "enterprise": "Enterprise（付费）",
+      "trial": "Team 试用",
+      "free": "Free"
+    },
+    "interval": "计费周期",
+    "interval_none": "未设置",
+    "month": "按月",
+    "year": "按年",
+    "seats": "已付席位",
+    "until": "付费至",
+    "until_hint": "留空表示无到期日。",
+    "trial_until": "试用结束日期",
+    "note": "备注",
+    "note_placeholder": "例如发票号",
+    "cancel": "取消",
+    "save": "保存",
+    "saved": "套餐已更改。",
+    "failed": "无法更改套餐。"
+  },
+  "growth": {
+    "range": "{{days}} 天",
+    "range_label": "时间范围",
+    "signups": "每日注册",
+    "active_users": "每日活跃人数",
+    "new_workspaces": "每日新工作区",
+    "peak": "峰值 {{count}}"
+  },
+  "marketing": {
+    "attributed": "{{total}} 个注册中有 {{attributed}} 个来源已知。",
+    "sources": "来源 / 媒介",
+    "campaigns": "推广活动",
+    "referrers": "来源网站",
+    "landing_pages": "首个页面",
+    "source": "来源",
+    "signups": "注册",
+    "workspace": "工作区",
+    "paying": "付费",
+    "empty": "此期间没有注册。",
+    "direct": "直接访问 / 未知",
+    "no_campaign": "无活动",
+    "unknown_page": "未知",
+    "tip": "给链接加上标记即可在这里看到，例如："
+  }
+}

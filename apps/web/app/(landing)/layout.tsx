@@ -29,11 +29,28 @@ const jsonLd = {
       operatingSystem: "Web",
       description:
         "A task board for your whole company, with AI agents working next to your people.",
-      offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-      },
+      // Keep in sync with server/internal/billing Catalog and the landing
+      // PricingSection: Free, and Team at $12/member/month billed yearly.
+      offers: [
+        {
+          "@type": "Offer",
+          name: "Free",
+          price: "0",
+          priceCurrency: "USD",
+        },
+        {
+          "@type": "Offer",
+          name: "Team",
+          price: "12",
+          priceCurrency: "USD",
+          priceSpecification: {
+            "@type": "UnitPriceSpecification",
+            price: "12",
+            priceCurrency: "USD",
+            unitText: "member per month, billed yearly",
+          },
+        },
+      ],
     },
   ],
 };

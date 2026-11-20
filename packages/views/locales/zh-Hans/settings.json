@@ -48,7 +48,8 @@
       "github": "GitHub",
       "integrations": "集成",
       "labs": "实验室",
-      "members": "成员"
+      "members": "成员",
+      "billing": "账单"
     }
   },
   "account": {
@@ -866,5 +867,38 @@
     "toast_preview_failed": "无法读取来源",
     "toast_started": "导入已开始",
     "toast_start_failed": "无法开始导入"
+  },
+  "billing": {
+    "loading": "加载中…",
+    "title": "套餐与账单",
+    "plans": {
+      "free": "Free",
+      "team": "Team",
+      "enterprise": "Enterprise"
+    },
+    "trial_badge": "免费试用",
+    "days_left": "剩余 {{days}} 天",
+    "trial_ends": "Team 试用将于 {{date}} 结束。之后如未升级，工作区将转为 Free。",
+    "paid_through": "已付费至 {{date}}。",
+    "past_due": "付款已逾期。Team 功能可继续使用至 {{date}}。",
+    "trial_expired": "Team 试用已结束，当前为 Free。",
+    "expired": "Team 套餐已到期，当前为 Free。",
+    "canceled": "Team 套餐已取消，当前为 Free。",
+    "free_note": "在 Free 上，事项、看板、成员、智能体和助手都可继续使用。仅超出 Free 限额的自动化会暂停。",
+    "usage": {
+      "members": "成员",
+      "automations": "自动化规则",
+      "report_schedules": "定时报告",
+      "autopilots": "自动化（定时与 webhook）"
+    },
+    "usage_of": "{{used}} / {{limit}}",
+    "unlimited": "不限",
+    "team_only": "仅限 Team",
+    "over_limit": "超出 Free 限额：最早创建的会运行，较新的已暂停。",
+    "agents_free": "智能体从不计为成员。",
+    "team_price": "按年付费每位成员每月 ${{yearly}}，按月付费 ${{monthly}}。",
+    "team_features": "不限数量的自动化规则、定时报告和自动化。",
+    "upgrade": "联系我们升级",
+    "upgrade_no_contact": "如需升级，请联系你们 Agora 的管理员。"
   }
 }

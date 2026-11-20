@@ -48,7 +48,8 @@
       "github": "GitHub",
       "integrations": "Integratsiyalar",
       "labs": "Labs",
-      "members": "A’zolar"
+      "members": "A’zolar",
+      "billing": "Tarif"
     }
   },
   "account": {
@@ -866,5 +867,38 @@
     "toast_preview_failed": "Manbani o'qib bo'lmadi",
     "toast_started": "Import boshlandi",
     "toast_start_failed": "Importni boshlab bo'lmadi"
+  },
+  "billing": {
+    "loading": "Yuklanmoqda…",
+    "title": "Tarif va to‘lov",
+    "plans": {
+      "free": "Free",
+      "team": "Team",
+      "enterprise": "Enterprise"
+    },
+    "trial_badge": "Sinov davri",
+    "days_left": "{{days}} kun qoldi",
+    "trial_ends": "Team sinov davri {{date}} kuni tugaydi. Shundan so‘ng, to‘lov qilinmasa, ish maydoni Free tarifiga o‘tadi.",
+    "paid_through": "{{date}} gacha to‘langan.",
+    "past_due": "To‘lov muddati o‘tgan. Team imkoniyatlari {{date}} gacha ishlaydi.",
+    "trial_expired": "Team sinov davri tugadi. Hozir sizda Free.",
+    "expired": "Team tarifi tugadi. Hozir sizda Free.",
+    "canceled": "Team tarifi bekor qilindi. Hozir sizda Free.",
+    "free_note": "Free tarifida ham vazifalar, doskalar, a’zolar, agentlar va Assistent ishlaydi. Faqat Free limitidan oshgan avtomatizatsiyalar to‘xtatiladi.",
+    "usage": {
+      "members": "A’zolar",
+      "automations": "Avtomatizatsiya qoidalari",
+      "report_schedules": "Jadval bo‘yicha hisobotlar",
+      "autopilots": "Autopilot’lar (jadval va webhook)"
+    },
+    "usage_of": "{{limit}} dan {{used}}",
+    "unlimited": "cheklovsiz",
+    "team_only": "Faqat Team tarifida",
+    "over_limit": "Free limitidan oshgan: eng eskilari ishlaydi, yangilari to‘xtatilgan.",
+    "agents_free": "Agentlar hech qachon a’zo sifatida hisoblanmaydi.",
+    "team_price": "Yillik to‘lovda har bir a’zo uchun oyiga ${{yearly}}, oylik to‘lovda ${{monthly}}.",
+    "team_features": "Cheklovsiz avtomatizatsiya qoidalari, jadval bo‘yicha hisobotlar va autopilot’lar.",
+    "upgrade": "Team ga o‘tish uchun bog‘laning",
+    "upgrade_no_contact": "Team ga o‘tish uchun Agora administratoringizga murojaat qiling."
   }
 }

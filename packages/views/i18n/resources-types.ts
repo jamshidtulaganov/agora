@@ -27,6 +27,7 @@ import type layout from "../locales/en/layout.json";
 import type usage from "../locales/en/usage.json";
 import type squads from "../locales/en/squads.json";
 import type billing from "../locales/en/billing.json";
+import type admin from "../locales/en/admin.json";
 import type assistant from "../locales/en/assistant.json";
 import type knowledge from "../locales/en/knowledge.json";
 import type departmentSetup from "../locales/en/department-setup.json";
@@ -71,6 +72,7 @@ declare global {
     usage: typeof usage;
     squads: typeof squads;
     billing: typeof billing;
+    admin: typeof admin;
     assistant: typeof assistant;
     knowledge: typeof knowledge;
     "department-setup": typeof departmentSetup;
