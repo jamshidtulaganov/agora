@@ -754,6 +754,13 @@ func (h *Handler) createZohoWorkspace(ctx context.Context, p *ZohoMigrateProject
 	}); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("add owner: %w", err)
 	}
+	// Operator-run migration for an existing customer: their workspaces are
+	// on Team, not a trial. Changed later only through admintool set-plan.
+	if _, err := qtx.SetWorkspaceSubscription(ctx, db.SetWorkspaceSubscriptionParams{
+		WorkspaceID: ws.ID, Plan: "team", Status: "active", Provider: "manual", Note: "zoho migration",
+	}); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("set plan: %w", err)
+	}
 	marker, err := json.Marshal(map[string]any{
 		zohoWorkspaceProjectKey: p.ZohoProjectID,
 		"zoho_project_key":      p.Key,

@@ -5,6 +5,9 @@
 //	admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...
 //	admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...
 //	admintool remove-members [--apply] --keep-file ROSTER.txt
+//	admintool set-plan [--apply] --workspace SLUG --plan team|enterprise|free [--interval month|year] [--seats N] [--until YYYY-MM-DD] [--note TEXT]
+//	admintool set-plan [--apply] --workspace SLUG --trial-until YYYY-MM-DD
+//	admintool show-plan --workspace SLUG
 package main
 
 import (
@@ -43,6 +46,10 @@ func main() {
 		err = addMembers(ctx, pool, os.Args[2:])
 	case "remove-members":
 		err = removeMembers(ctx, pool, os.Args[2:])
+	case "set-plan":
+		err = setPlan(ctx, pool, os.Args[2:])
+	case "show-plan":
+		err = showPlan(ctx, pool, os.Args[2:])
 	default:
 		usage()
 	}
@@ -208,7 +215,10 @@ func usage() {
 		"  admintool merge-users [--apply] KEEP_EMAIL:DROP_EMAIL ...\n"+
 		"  admintool add-members [--apply] --workspace SLUG --role member|admin|owner EMAIL ...\n"+
 		"  admintool remove-members [--apply] [--workspace SLUG | --all-workspaces] EMAIL ...\n"+
-		"  admintool remove-members [--apply] --keep-file ROSTER.txt")
+		"  admintool remove-members [--apply] --keep-file ROSTER.txt"+
+		"\n  admintool set-plan [--apply] --workspace SLUG --plan team|enterprise|free [--interval month|year] [--seats N] [--until YYYY-MM-DD] [--note TEXT]\n"+
+		"  admintool set-plan [--apply] --workspace SLUG --trial-until YYYY-MM-DD\n"+
+		"  admintool show-plan --workspace SLUG")
 	os.Exit(2)
 }
 

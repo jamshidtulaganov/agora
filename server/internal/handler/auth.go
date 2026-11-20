@@ -269,6 +269,14 @@ func isSixDigitCode(code string) bool {
 }
 
 func (h *Handler) issueJWT(user db.User) (string, error) {
+	// Every login path (code, Google, Telegram, CLI) ends here, so this is the
+	// one place that records a sign-in. Best effort: a failed stamp never
+	// blocks a login.
+	if h.Queries != nil && user.ID.Valid {
+		if err := h.Queries.TouchUserLastLogin(context.Background(), user.ID); err != nil {
+			slog.Debug("auth: stamp last login failed", "error", err)
+		}
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":   uuidToString(user.ID),
 		"email": user.Email,

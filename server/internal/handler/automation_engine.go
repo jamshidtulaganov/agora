@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/billing"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
@@ -82,6 +83,10 @@ func (h *Handler) runAutomationsForEvent(ctx context.Context, ev AutomationEvent
 		slog.Warn("automation: list rules failed", "error", err, "trigger", ev.Trigger)
 		return
 	}
+	if len(rules) == 0 {
+		return
+	}
+	rules = h.automationsWithinPlan(ctx, ev.Issue.WorkspaceID, rules)
 	if len(rules) == 0 {
 		return
 	}
@@ -333,4 +338,35 @@ func (h *Handler) recordAutomationRunWithMetadata(
 			"trigger_type":  ev.Trigger,
 		})
 	return row, createErr
+}
+
+// automationsWithinPlan drops the rules a plan limit does not let run. The
+// limit counts the workspace's enabled rules oldest-first, so which rules run
+// stays stable as events come in, and adding a rule never stops an older one.
+// Billing off, an unlimited plan, or a read error → every rule runs.
+func (h *Handler) automationsWithinPlan(ctx context.Context, workspaceID pgtype.UUID, rules []db.Automation) []db.Automation {
+	limit := billing.ForWorkspace(ctx, h.Queries, workspaceID).Limits.Automations
+	if limit < 0 {
+		return rules
+	}
+	allowed := map[pgtype.UUID]bool{}
+	if limit > 0 {
+		ids, err := h.Queries.ListAllowedAutomationIDs(ctx, db.ListAllowedAutomationIDsParams{WorkspaceID: workspaceID, Limit: int32(limit)})
+		if err != nil {
+			slog.Warn("automation: plan limit read failed; running all rules", "error", err)
+			return rules
+		}
+		for _, id := range ids {
+			allowed[id] = true
+		}
+	}
+	kept := make([]db.Automation, 0, len(rules))
+	for _, rule := range rules {
+		if allowed[rule.ID] {
+			kept = append(kept, rule)
+		} else {
+			slog.Info("automation: skipped by plan limit", "automation_id", uuidToString(rule.ID), "limit", limit)
+		}
+	}
+	return kept
 }

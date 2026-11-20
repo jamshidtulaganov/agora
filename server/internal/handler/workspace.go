@@ -2,15 +2,19 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/billing"
 	"github.com/jamshidtulaganov/agora/server/internal/logger"
 	obsmetrics "github.com/jamshidtulaganov/agora/server/internal/metrics"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
@@ -212,6 +216,16 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to add owner: "+err.Error())
+		return
+	}
+
+	// Every new workspace starts a Team trial. In the same transaction so a
+	// workspace never exists without its plan row.
+	if _, err := qtx.StartWorkspaceTrial(r.Context(), db.StartWorkspaceTrialParams{
+		WorkspaceID: ws.ID,
+		TrialEndsAt: pgtype.Timestamptz{Time: billing.TrialEnd(time.Now()), Valid: true},
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "failed to start trial")
 		return
 	}
 
