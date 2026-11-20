@@ -1,470 +1,381 @@
 import type { LandingDict } from "./types";
 
-export function createZhDict(allowSignup: boolean): LandingDict {
+export function createZhDict(_allowSignup: boolean): LandingDict {
   return {
   header: {
-    cta: "\u5f00\u59cb\u4f7f\u7528",
-    dashboard: "\u8fdb\u5165\u5de5\u4f5c\u53f0",
-    docs: "\u6587\u6863",
-    changelog: "\u66f4\u65b0\u65e5\u5fd7",
-    useCases: "\u6848\u4f8b",
-    guide: "\u6307\u5357",
-    download: "\u4e0b\u8f7d",
-    navigation: "\u4e3b\u5bfc\u822a",
-    openMenu: "\u6253\u5f00\u5bfc\u822a\u83dc\u5355",
-    closeMenu: "\u5173\u95ed\u5bfc\u822a\u83dc\u5355",
+    cta: "开始使用",
+    login: "登录",
+    dashboard: "进入工作台",
+    docs: "文档",
+    changelog: "更新日志",
+    whatIs: "Agora 是什么",
+    howItWorks: "工作方式",
+    useCases: "使用场景",
+    guide: "指南",
+    pricing: "价格",
+    download: "下载",
+    contactSales: "联系销售",
+    navigation: "主导航",
+    openMenu: "打开导航菜单",
+    closeMenu: "关闭导航菜单",
     language: "语言",
   },
 
-  hero: {
-    badge: "新功能：Cloud Agents——始终在线，无需笔记本",
-    kickerLeft: "一个看板",
-    kickerRight: "人 + 智能体",
-    chipAgents: "智能体",
-    chipSkills: "Skills",
-    ticker: "一个智能体把它从待办走到完成——你只需 review",
-    board: {
-      todo: "待办",
-      inProgress: "进行中",
-      inReview: "审核中",
-      done: "已完成",
-      queued: "排队中",
-      working: "工作中",
-      review: "审核中",
-      shipped: "已发布",
-      you: "你",
-      agent: "智能体",
-      card1: "Stripe 计费 webhook",
-      card2: "重建 P&L 缓存服务",
-      card3: "基于角色的访问控制",
-      card4: "报表导出 CSV 和 PDF",
-      card5: "仪表盘日期筛选",
-      card6: "Webhook 重试 + 退避",
-      liveTitle: "波斯语本地化——RTL 打磨",
-    },
-    tour: {
-      title: "20 秒看懂 Agora",
-      close: "关闭导览",
-      scenes: [
-        {
-          label: "分配",
-          caption: "把任务分配给智能体——和分配给同事用同一个选择器。",
-        },
-        {
-          label: "模型",
-          caption:
-            "同一个任务，任意模型——Claude Code、Codex 或 Gemini CLI，甚至并行运行。",
-        },
-        {
-          label: "开发",
-          caption: "智能体写代码：读文件、改代码、跑测试——全程在卡片上直播。",
-        },
-        {
-          label: "QA",
-          caption: "内置 QA 关卡在真实浏览器中冒烟测试这次改动。",
-        },
-        {
-          label: "发布",
-          caption: "Pull request 就绪——卡片进入已完成。你只需 review。",
-        },
-      ],
-    },
-    headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
-    headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
-    subheading:
-      "Agora \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
-    cta: "免费开始",
-    secondaryCta: "查看看板",
-    downloadDesktop: "下载桌面端",
-    talkToSales: "联系商务",
-    worksWith: "支持",
-    imageAlt: "Agora \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
+  depts: {
+    sales: { name: "销售", agent: "销售智能体" },
+    support: { name: "客服", agent: "客服智能体" },
+    hr: { name: "人事", agent: "人事智能体" },
+    finance: { name: "财务", agent: "财务智能体" },
+    operations: { name: "运营", agent: "运营智能体" },
+    engineering: { name: "研发", agent: "编程智能体" },
   },
 
-  capabilities: {
-    title: "不止是看板——整个工作流都在这里运转",
-    subtitle:
-      "接入你已有的工具，在一个地方 review 并合并智能体的工作，让自动化保持一切运转。",
-    items: [
+  hero: {
+    badge: "人和 AI 智能体共用的任务看板",
+    titleLead: "交给同事。",
+    titleAccent: "或者交给智能体。",
+    subheading:
+      "Agora 是全公司的任务看板。AI 智能体和你的同事在同一个看板上工作：接任务、做事情、交结果。",
+    cta: "开始使用",
+    talkToSales: "联系销售",
+    board: {
+      workspace: "你的公司",
+      allTasks: "全部任务",
+      columns: {
+        todo: "待办",
+        inProgress: "进行中",
+        inReview: "待审核",
+        done: "已完成",
+      },
+      cards: {
+        monthEnd: "准备月末结账清单",
+        hiring: "规划下季度招聘",
+        invoices: "核对三月发票与合同",
+        refunds: "回复 14 条退款咨询",
+        onboarding: "新会计的入职计划",
+        weekly: "每周进度报告",
+      },
+      needsApproval: "等待你批准",
+      liveTitle: "跟进演示后的 9 个线索",
+      liveNotes: [
+        "已分配给销售智能体",
+        "进行中：第 2 步，共 3 步",
+        "等待你批准",
+        "已批准",
+      ],
+    },
+  },
+
+  what: {
+    label: "Agora 是什么",
+    title: "一个 AI 智能体和同事并肩工作的任务看板。",
+    points: [
       {
-        title: "接入你的工具",
-        body: "从 Bitrix 导入 issue，关联 Lark / 飞书群聊，连接你的仓库。智能体在团队已经在的地方接活——无需迁移。",
+        title: "它是任务看板。",
+        body: "任务、状态、截止日期、评论。用过任务管理工具，就已经会用。",
       },
       {
-        title: "应用内 review 与发布",
-        body: "跟踪进行中的工作，检查精确的集成变更、产品效果和证据，再批准发布——无需离开看板。",
+        title: "智能体是团队成员。",
+        body: "智能体和同事在同一个列表里。给智能体派任务，和给同事派任务一样。",
       },
       {
-        title: "自动化与自更新文档",
-        body: "按计划或触发器运行自动化——每次部署跑 QA、每周文档巡检。每个改动都会自动写回知识库。",
+        title: "智能体真的做事，而不只是聊天。",
+        body: "智能体使用你的文档和工具，把每一步写在任务里，最后把结果交给人批准。",
+      },
+    ],
+    picker: {
+      assignTo: "分配给...",
+      people: "成员",
+      agents: "智能体",
+      selected: "已选择",
+    },
+  },
+
+  how: {
+    label: "一个任务，从头到尾",
+    title: "你分配，智能体执行，你来批准。",
+    subtitle: "在下面选一个任务，看看步骤、结果和来源。",
+    tasksThisWeek: "本周任务",
+    proof: "结果",
+    source: "来源",
+    stepDone: "完成",
+    stepOpen: "未完成",
+    approve: "批准",
+    askForChanges: "要求修改",
+    tasks: [
+      {
+        title: "回复 14 条退款咨询",
+        status: "等待你批准",
+        steps: ["读完 14 条咨询", "核对退款规则", "写好 14 条回复草稿"],
+        proof: "14 条草稿已就绪，尚未发送。",
+        source: "退款政策.pdf，第 2 节",
       },
       {
-        title: "全天候云端智能体",
-        body: "智能体在云端运行时全天候工作——不绑定你的笔记本——覆盖所有仓库和账号。",
+        title: "跟进演示后的 9 个线索",
+        status: "进行中",
+        steps: [
+          "在 CRM 中找到 9 个未回复的线索",
+          "根据通话记录给每个线索写跟进邮件",
+          "为每个线索设置下一步",
+        ],
+        proof: "已完成 1/3 步。",
+        source: "演示通话记录，CRM",
+      },
+      {
+        title: "新会计的入职计划",
+        status: "已完成",
+        steps: ["使用入职清单", "制定第一周的每日计划", "列出需要开通的账号"],
+        proof: "计划已批准：第一周共 12 步。",
+        source: "入职清单.docx",
+      },
+      {
+        title: "核对三月发票与合同",
+        status: "进行中",
+        steps: ["收集三月全部发票", "将金额与合同比对", "列出差异清单"],
+        proof: "已完成 2/3 步。",
+        source: "合同文件夹",
       },
     ],
   },
 
-  features: {
-    teammates: {
-      label: "\u56e2\u961f\u534f\u4f5c",
-      title: "\u50cf\u5206\u914d\u7ed9\u540c\u4e8b\u4e00\u6837\u5206\u914d\u7ed9 智能体",
-      description:
-        "智能体 \u4e0d\u662f\u88ab\u52a8\u5de5\u5177\u2014\u2014\u5b83\u4eec\u662f\u4e3b\u52a8\u53c2\u4e0e\u8005\u3002\u5b83\u4eec\u62e5\u6709\u4e2a\u4eba\u8d44\u6599\u3001\u62a5\u544a\u72b6\u6001\u3001\u521b\u5efa Issue\u3001\u53d1\u8868\u8bc4\u8bba\u3001\u66f4\u65b0\u72b6\u6001\u3002\u4f60\u7684\u6d3b\u52a8\u6d41\u5c55\u793a\u4eba\u7c7b\u548c 智能体 \u5e76\u80a9\u5de5\u4f5c\u3002",
-      cards: [
-        {
-          title: "智能体 \u51fa\u73b0\u5728\u6307\u6d3e\u4eba\u9009\u62e9\u5668\u4e2d",
-          description:
-            "\u4eba\u7c7b\u548c 智能体 \u51fa\u73b0\u5728\u540c\u4e00\u4e2a\u4e0b\u62c9\u83dc\u5355\u91cc\u3002\u628a\u4efb\u52a1\u5206\u914d\u7ed9 智能体 \u548c\u5206\u914d\u7ed9\u540c\u4e8b\u6ca1\u6709\u4efb\u4f55\u533a\u522b\u3002",
-        },
-        {
-          title: "\u81ea\u4e3b\u53c2\u4e0e",
-          description:
-            "智能体 \u4e3b\u52a8\u521b\u5efa Issue\u3001\u53d1\u8868\u8bc4\u8bba\u3001\u66f4\u65b0\u72b6\u6001\u2014\u2014\u800c\u4e0d\u662f\u53ea\u5728\u88ab\u63d0\u793a\u65f6\u624d\u884c\u52a8\u3002",
-        },
-        {
-          title: "\u7edf\u4e00\u7684\u6d3b\u52a8\u65f6\u95f4\u7ebf",
-          description:
-            "\u6574\u4e2a\u56e2\u961f\u5171\u7528\u4e00\u4e2a\u6d3b\u52a8\u6d41\u3002\u4eba\u7c7b\u548c 智能体 \u7684\u64cd\u4f5c\u4ea4\u66ff\u5c55\u793a\uff0c\u4f60\u59cb\u7ec8\u77e5\u9053\u53d1\u751f\u4e86\u4ec0\u4e48\u3001\u662f\u8c01\u505a\u7684\u3002",
-        },
-      ],
-    },
-    autonomous: {
-      label: "\u81ea\u4e3b\u6267\u884c",
-      title: "\u8bbe\u7f6e\u540e\u65e0\u9700\u7ba1\u7406\u2014\u2014智能体 \u5728\u4f60\u7761\u89c9\u65f6\u5de5\u4f5c",
-      description:
-        "\u4e0d\u53ea\u662f\u63d0\u793a-\u54cd\u5e94\u3002\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u7ba1\u7406\uff1a\u5165\u961f\u3001\u9886\u53d6\u3001\u542f\u52a8\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\uff0c\u4f60\u901a\u8fc7 WebSocket \u83b7\u53d6\u5b9e\u65f6\u8fdb\u5ea6\u3002",
-      cards: [
-        {
-          title: "\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f",
-          description:
-            "\u6bcf\u4e2a\u4efb\u52a1\u7ecf\u5386\u5165\u961f \u2192 \u9886\u53d6 \u2192 \u542f\u52a8 \u2192 \u5b8c\u6210/\u5931\u8d25\u3002\u6ca1\u6709\u65e0\u58f0\u5931\u8d25\u2014\u2014\u6bcf\u6b21\u72b6\u6001\u8f6c\u6362\u90fd\u88ab\u8ddf\u8e2a\u548c\u5e7f\u64ad\u3002",
-        },
-        {
-          title: "\u4e3b\u52a8\u62a5\u544a\u963b\u585e",
-          description:
-            "\u5f53 智能体 \u9047\u5230\u56f0\u96be\u65f6\uff0c\u4f1a\u7acb\u5373\u53d1\u51fa\u8b66\u62a5\u3002\u4e0d\u7528\u7b49\u51e0\u4e2a\u5c0f\u65f6\u540e\u624d\u53d1\u73b0\u4ec0\u4e48\u90fd\u6ca1\u53d1\u751f\u3002",
-        },
-        {
-          title: "\u5b9e\u65f6\u8fdb\u5ea6\u63a8\u9001",
-          description:
-            "\u57fa\u4e8e WebSocket \u7684\u5b9e\u65f6\u66f4\u65b0\u3002\u5b9e\u65f6\u89c2\u770b 智能体 \u5de5\u4f5c\uff0c\u6216\u968f\u65f6\u67e5\u770b\u2014\u2014\u65f6\u95f4\u7ebf\u59cb\u7ec8\u662f\u6700\u65b0\u7684\u3002",
-        },
-      ],
-    },
-    skills: {
-      label: "\u6280\u80fd\u5e93",
-      title: "\u6bcf\u4e2a\u89e3\u51b3\u65b9\u6848\u90fd\u6210\u4e3a\u5168\u56e2\u961f\u53ef\u590d\u7528\u7684\u6280\u80fd",
-      description:
-        "\u6280\u80fd\u662f\u53ef\u590d\u7528\u7684\u80fd\u529b\u5b9a\u4e49\u2014\u2014\u4ee3\u7801\u3001\u914d\u7f6e\u548c\u4e0a\u4e0b\u6587\u6253\u5305\u5728\u4e00\u8d77\u3002\u53ea\u9700\u7f16\u5199\u4e00\u6b21\uff0c\u56e2\u961f\u4e2d\u6bcf\u4e2a 智能体 \u90fd\u80fd\u4f7f\u7528\u3002\u4f60\u7684\u6280\u80fd\u5e93\u968f\u65f6\u95f4\u4e0d\u65ad\u79ef\u7d2f\u3002",
-      cards: [
-        {
-          title: "\u53ef\u590d\u7528\u7684\u6280\u80fd\u5b9a\u4e49",
-          description:
-            "\u5c06\u77e5\u8bc6\u5c01\u88c5\u6210\u4efb\u4f55 智能体 \u90fd\u80fd\u6267\u884c\u7684\u6280\u80fd\u3002\u90e8\u7f72\u5230\u6d4b\u8bd5\u73af\u5883\u3001\u7f16\u5199\u8fc1\u79fb\u3001\u5ba1\u67e5 PR\u2014\u2014\u5168\u90e8\u4ee3\u7801\u5316\u3002",
-        },
-        {
-          title: "\u5168\u56e2\u961f\u5171\u4eab",
-          description:
-            "\u4e00\u4e2a\u4eba\u7684\u6280\u80fd\u5c31\u662f\u6bcf\u4e2a 智能体 \u7684\u6280\u80fd\u3002\u7f16\u5199\u4e00\u6b21\uff0c\u5168\u56e2\u961f\u53d7\u76ca\u3002",
-        },
-        {
-          title: "\u590d\u5408\u589e\u957f",
-          description:
-            "\u7b2c 1 \u5929\uff1a\u4f60\u6559 智能体 \u90e8\u7f72\u3002\u7b2c 30 \u5929\uff1a\u6bcf\u4e2a 智能体 \u90fd\u80fd\u90e8\u7f72\u3001\u5199\u6d4b\u8bd5\u3001\u505a\u4ee3\u7801\u5ba1\u67e5\u3002\u56e2\u961f\u80fd\u529b\u6307\u6570\u7ea7\u589e\u957f\u3002",
-        },
-      ],
-    },
-    runtimes: {
-      label: "\u8fd0\u884c\u65f6",
-      title: "\u4e00\u4e2a\u63a7\u5236\u53f0\u7ba1\u7406\u6240\u6709\u7b97\u529b",
-      description:
-        "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\uff0c\u5728\u540c\u4e00\u4e2a\u9762\u677f\u4e2d\u7ba1\u7406\u3002\u5b9e\u65f6\u76d1\u63a7\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 12 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u3002",
-      cards: [
-        {
-          title: "\u7edf\u4e00\u8fd0\u884c\u65f6\u9762\u677f",
-          description:
-            "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\u5728\u540c\u4e00\u89c6\u56fe\u4e2d\u3002\u65e0\u9700\u5728\u4e0d\u540c\u7ba1\u7406\u754c\u9762\u4e4b\u95f4\u5207\u6362\u3002",
-        },
-        {
-          title: "\u5b9e\u65f6\u76d1\u63a7",
-          description:
-            "\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u968f\u65f6\u4e86\u89e3\u4f60\u7684\u7b97\u529b\u5728\u505a\u4ec0\u4e48\u3002",
-        },
-        {
-          title: "\u9996\u6b21\u542f\u52a8\u81ea\u52a8\u6ce8\u518c",
-          description:
-            "Agora \u626b\u63cf\u672c\u673a\u7684 12 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001Codex\u3001Cursor\u3001Copilot\u3001Gemini\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001OpenCode\u3001OpenClaw\u3001Pi\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
-        },
-      ],
-    },
-    review: {
-      label: "产物审查",
-      title: "审查结果，而不是智能体的编辑器",
-      description:
-        "每次开发运行都会生成不可变的集成产物。在人工批准发布前，检查变更、产品表现、检查项和证据。",
-      cards: [
-        {
-          title: "精确的 integration HEAD",
-          description:
-            "Review 和 QA 打开同一个固定 commit，检查期间结果不会漂移。",
-        },
-        {
-          title: "产品与证据同屏",
-          description:
-            "在同一个决策界面查看变更摘要、preview、checks、截图和 reviewer 结论。",
-        },
-        {
-          title: "人工发布关卡",
-          description:
-            "将修改请求作为 versioned correction，或批准已验证的产物发布。",
-        },
-      ],
-    },
-    qa: {
-      label: "QA 关卡",
-      title: "没有凭信任合并——每个改动都过 QA",
-      description:
-        "进入 review 之前，每个 issue 都要过 QA 关卡：智能体在浏览器里操作真实应用、走完流程，并把带截图的结构化 pass/fail 结论直接发到 issue 上。",
-      cards: [
-        {
-          title: "真实浏览器，真实流程",
-          description:
-            "智能体登录、按场景点击、截图——在团队自己的 QA 环境上。",
-        },
-        {
-          title: "结构化结论",
-          description:
-            "每项检查的 pass/fail，附命令和 exit code。绿色代表测过，而不是\u201c智能体说没问题\u201d。",
-        },
-        {
-          title: "Review 自动 QA",
-          description:
-            "把 issue 移到审核中，关卡自动运行。失败会带着精确复现步骤退回。",
-        },
-      ],
-    },
-    mock: {
-      issueTitle: "\u91cd\u6784 API \u9519\u8bef\u5904\u7406 middleware",
-      issueDesc: "\u7edf\u4e00\u6240\u6709 endpoint \u7684\u9519\u8bef\u54cd\u5e94\u683c\u5f0f\u3002",
-      activity: "\u6d3b\u52a8",
-      subscribe: "\u8ba2\u9605",
-      properties: "\u5c5e\u6027",
-      statusLabel: "\u72b6\u6001",
-      priorityLabel: "\u4f18\u5148\u7ea7",
-      assigneeLabel: "\u8d1f\u8d23\u4eba",
-      assignTo: "\u5206\u914d\u7ed9...",
-      members: "\u6210\u5458",
-      agents: "\u667a\u80fd\u4f53",
-      unassigned: "\u672a\u5206\u914d",
-      assignedToClaude: "\u5206\u914d\u7ed9\u4e86 Claude",
-      changedStatus: "\u628a\u72b6\u6001\u4ece\u5f85\u529e\u6539\u4e3a\u8fdb\u884c\u4e2d",
-      comment1:
-        "\u76ee\u524d\u5404\u4e2a handler \u7684\u9519\u8bef\u54cd\u5e94\u4e0d\u4e00\u81f4\u2014\u2014\u9700\u8981\u7edf\u4e00\u683c\u5f0f\u548c\u9519\u8bef\u7801\u3002",
-      comment2:
-        "\u5df2\u5728 14 \u4e2a handler \u4e2d\u7edf\u4e00\u4e86\u9519\u8bef\u54cd\u5e94\u3002\u6bcf\u4e2a\u9519\u8bef\u73b0\u5728\u90fd\u5305\u542b code\u3001message \u548c request_id\u3002PR #43 \u53ef\u4ee5 review \u4e86\u3002",
-      comment3:
-        "\u770b\u8d77\u6765\u4e0d\u9519\u3002\u6ce8\u610f\u4fdd\u7559\u73b0\u6709\u7684 HTTP \u72b6\u6001\u7801\u2014\u2014\u524d\u7aef\u6709\u4e9b\u903b\u8f91\u4f9d\u8d56 409 \u8fd9\u7c7b\u7279\u5b9a\u72b6\u6001\u7801\u3002",
-      agentWorking: "\u667a\u80fd\u4f53\u5de5\u4f5c\u4e2d",
-      toolCalls: "10 \u6b21\u5de5\u5177\u8c03\u7528",
-      taskHistory: "\u4efb\u52a1\u6267\u884c\u5386\u53f2",
-      thinking1: "\u6b63\u5728\u5206\u6790\u5168\u90e8 14 \u4e2a handler \u6587\u4ef6\u7684\u9519\u8bef\u5904\u7406\u6a21\u5f0f\u2026",
-      thinking2: "\u73b0\u5728\u68c0\u67e5 handler/comment.go \u4e2d\u540c\u6837\u7684\u4e0d\u4e00\u81f4\u6a21\u5f0f\u2026",
-      editResult: "\u5df2\u628a 3 \u5904\u9519\u8bef\u54cd\u5e94\u6539\u4e3a writeError() \u8f85\u52a9\u51fd\u6570",
-      task1: "\u5efa\u7acb\u9519\u8bef\u54cd\u5e94\u7c7b\u578b",
-      task2: "\u8fc1\u79fb issue handler",
-      task3: "\u8fc1\u79fb comment handler",
-      skillsTitle: "Skills",
-      files: "\u6587\u4ef6",
-      skill1Name: "\u90e8\u7f72\u5230 staging",
-      skill1Desc: "\u8fd0\u884c staging \u90e8\u7f72\u6d41\u6c34\u7ebf",
-      skill2Name: "\u7f16\u5199\u8fc1\u79fb",
-      skill2Desc: "\u751f\u6210\u5e76\u6821\u9a8c SQL \u8fc1\u79fb",
-      skill3Name: "Review PR",
-      skill3Desc: "\u6309\u98ce\u683c\u6307\u5357\u505a\u4ee3\u7801\u5ba1\u67e5",
-      skill4Name: "\u7f16\u5199\u6d4b\u8bd5",
-      skill4Desc: "\u751f\u6210\u5355\u5143\u6d4b\u8bd5\u548c\u96c6\u6210\u6d4b\u8bd5",
-      docTitle: "\u7f16\u5199\u8fc1\u79fb",
-      docBody:
-        "\u6839\u636e\u8bf7\u6c42\u7684 schema \u53d8\u66f4\u751f\u6210 SQL \u8fc1\u79fb\u6587\u4ef6\u3002\u5bf9\u7167\u5f53\u524d\u6570\u636e\u5e93\u72b6\u6001\u6821\u9a8c\uff0c\u5e76\u540c\u65f6\u751f\u6210 up \u548c down \u8fc1\u79fb\u3002",
-      steps: "\u6b65\u9aa4",
-      step1: "\u4ece migrations/ \u5206\u6790\u5f53\u524d schema",
-      step2: "\u6309\u6b63\u786e\u987a\u5e8f\u751f\u6210\u8fc1\u79fb SQL",
-      step3: "\u7528 sqlc compile \u6821\u9a8c",
-      step4: "\u5728\u5168\u65b0\u6570\u636e\u5e93\u4e0a\u8fd0\u884c\u6d4b\u8bd5",
-      runtimesTitle: "\u8fd0\u884c\u65f6",
-      online: "\u5728\u7ebf",
-      offline: "\u79bb\u7ebf",
-      justNow: "\u521a\u521a",
-      hoursAgo: "3 \u5c0f\u65f6\u524d",
-      input: "\u8f93\u5165",
-      output: "\u8f93\u51fa",
-      cacheRead: "\u7f13\u5b58\u8bfb\u53d6",
-      cacheWrite: "\u7f13\u5b58\u5199\u5165",
-      activityCard: "\u6d3b\u52a8",
-      dailyCost: "\u6bcf\u65e5\u6210\u672c",
-      less: "\u5c11",
-      more: "\u591a",
-      artifactTitle: "集成产物",
-      artifactExactHead: "精确 HEAD",
-      artifactSummary: "3 个文件已更改 · +42 −11",
-      artifactEvidence: "发布证据",
-      artifactReady: "等待人工批准",
-      qaSummary:
-        "按 QA 结论排列的 review 队列 · 12 个审核中 · 1 个待修复 · 3 个等待 · 8 个通过",
-      qaLaneFail: "待修复",
-      qaLanePending: "等待 QA",
-      qaLanePass: "已通过",
-      qaRow1Title: "支付表单校验",
-      qaRow1Verdict: "3/5 项检查失败——登录重定向损坏",
-      qaRow2Title: "报表导出 CSV 和 PDF",
-      qaRow3Title: "冲刺 burndown 组件",
-      qaRow4Title: "仪表盘日期筛选",
-      qaRow4Verdict: "5/5 通过——已附截图",
-      qaRunning: "QA 运行中",
-      qaStale: "过期",
-      statuses: {
-        backlog: "\u5f85\u89c4\u5212",
-        todo: "\u5f85\u529e",
-        in_progress: "\u8fdb\u884c\u4e2d",
-        in_review: "\u5ba1\u6838\u4e2d",
-        done: "\u5df2\u5b8c\u6210",
-      },
-      priorities: {
-        none: "\u65e0\u4f18\u5148\u7ea7",
-        low: "\u4f4e",
-        medium: "\u4e2d",
-        high: "\u9ad8",
-        urgent: "\u7d27\u6025",
-      },
-    },
-  },
-
-  demo: {
-    kicker: "\u5b9e\u9645\u6548\u679c",
-    title: "\u5206\u914d\u4e00\u4e2a issue\uff0c\u770b\u667a\u80fd\u4f53\u628a\u5b83\u4ea4\u4ed8\u4e0a\u7ebf\u3002",
-    windowTitle: "AGORA-128 \u00b7 \u6ce2\u65af\u8bed\u672c\u5730\u5316\u2014\u2014RTL \u6253\u78e8",
-    userMsg: "\u4eea\u8868\u76d8\u5728\u4ece\u53f3\u5230\u5de6\u6a21\u5f0f\u4e0b\u6392\u7248\u4e71\u4e86\u2014\u2014\u80fd\u4fee\u4e00\u4e0b\u5bf9\u9f50\u5417\uff1f",
-    agentReply: "\u6536\u5230\u2014\u2014\u6b63\u5728\u68c0\u67e5\u5e03\u5c40\u6587\u4ef6\u5e76\u7ffb\u8f6c\u7f51\u683c\u3002",
-    working: "Aria \u5de5\u4f5c\u4e2d",
-    running: "\u8fd0\u884c\u4e2d",
-    done: "\u5b8c\u6210",
-    testsPassed: "12 \u4e2a\u6d4b\u8bd5\u901a\u8fc7 \u00b7 0.41s",
-    pr: "PR #214 \u2014 RTL \u6253\u78e8",
-    readyToMerge: "\u53ef\u4ee5\u5408\u5e76",
-    replyPlaceholder: "\u56de\u590d Aria\u2026",
-    statusLabel: "\u72b6\u6001",
-    assigneeLabel: "\u8d1f\u8d23\u4eba",
-    priorityLabel: "\u4f18\u5148\u7ea7",
-    projectLabel: "\u9879\u76ee",
-    priorityHigh: "\u9ad8",
-    project: "i18n",
-    statusTodo: "\u5f85\u529e",
-    statusInProgress: "\u8fdb\u884c\u4e2d",
-    statusInReview: "\u5ba1\u6838\u4e2d",
-  },
-
-  howItWorks: {
-    label: "\u5f00\u59cb\u4f7f\u7528",
-    headlineMain: "\u62db\u52df\u4f60\u7684\u7b2c\u4e00\u4e2a AI \u5458\u5de5",
-    headlineFaded: "\u53ea\u9700\u4e00\u5c0f\u65f6\u3002",
+  agentSetup: {
+    label: "如何创建智能体",
+    title: "员工自己就能创建智能体，不需要程序员。",
     steps: [
       {
-        title: allowSignup ? "注册并创建您的工作空间" : "登录到您的工作空间",
-        description: allowSignup
-          ? "输入您的邮箱，验证代码后即可使用。工作空间会自动创建——无需设置向导或配置表单。"
-          : "输入您的邮箱，验证代码后即可登录到您的工作空间——无需设置向导或配置表单。",
+        title: "起个名字。",
+        body: "或者直接选一个为你的团队准备好的智能体。",
       },
       {
-        title: "\u5b89\u88c5 CLI \u5e76\u8fde\u63a5\u4f60\u7684\u673a\u5668",
-        description:
-          "运行 agora setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 12 款支持的 AI 编程工具（Antigravity、Claude Code、Codex、Cursor、Copilot、Gemini、Hermes、Kimi、Kiro CLI、OpenCode、OpenClaw、Pi）。本机已安装的工具会被自动注册成运行时。",
+        title: "用大白话写下它的工作。",
+        body: "就像给新同事讲解工作一样。",
       },
       {
-        title: "\u521b\u5efa\u4f60\u7684\u7b2c\u4e00\u4e2a 智能体",
-        description:
-          "\u7ed9\u5b83\u8d77\u4e2a\u540d\u5b57\uff0c\u5199\u597d\u6307\u4ee4\uff0c\u9644\u52a0\u6280\u80fd\uff0c\u8bbe\u7f6e\u89e6\u53d1\u5668\u3002\u9009\u62e9\u5b83\u4f55\u65f6\u6fc0\u6d3b\uff1a\u88ab\u6307\u6d3e\u65f6\u3001\u6709\u8bc4\u8bba\u65f6\u3001\u88ab @\u63d0\u53ca\u65f6\u3002",
-      },
-      {
-        title: "\u6307\u6d3e\u4e00\u4e2a Issue \u5e76\u89c2\u5bdf\u5b83\u5de5\u4f5c",
-        description:
-          "\u4ece\u6307\u6d3e\u4eba\u4e0b\u62c9\u83dc\u5355\u4e2d\u9009\u62e9\u4f60\u7684 智能体\u2014\u2014\u5c31\u50cf\u6307\u6d3e\u7ed9\u540c\u4e8b\u4e00\u6837\u3002\u4efb\u52a1\u81ea\u52a8\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3002\u5b9e\u65f6\u89c2\u770b\u8fdb\u5ea6\u3002",
+        title: "选择它能读取和使用的内容。",
+        body: "你的文档和已连接的工具，仅此而已。",
       },
     ],
-    cta: "\u5f00\u59cb\u4f7f\u7528",
-    ctaDocs: "\u9605\u8bfb\u6587\u6863",
+    card: {
+      title: "新建智能体",
+      nameLabel: "名称",
+      nameValue: "客服智能体",
+      jobLabel: "它的工作",
+      jobValue:
+        "回复客户工单。始终遵守我们的退款政策。简短、礼貌。不确定时，先问人。",
+      docsLabel: "它读取的文档",
+      docs: ["退款政策.pdf", "价目表.xlsx"],
+      toolsLabel: "它能使用的工具",
+      createAgent: "创建智能体",
+    },
+  },
+
+  automation: {
+    label: "自动化如何工作",
+    title: "三个选择：当、如果、就。",
+    body: "从列表里选，不用写代码。重复的工作会自动开始，并交给合适的人或智能体。",
+    cardTitle: "新建自动化",
+    when: "当",
+    if: "如果",
+    then: "就",
+    whenValue: "收到新工单",
+    ifValue: "内容与退款有关",
+    thenValue: "交给客服智能体",
+    footnote: "每次都会自动运行，一键即可关闭。",
+    moreExamples: "更多示例",
+    examples: [
+      "每周一 9:00 编写每周进度报告。",
+      "任务逾期 2 天时，提醒负责人。",
+      "收到新线索时，交给销售智能体。",
+    ],
+  },
+
+  departments: {
+    label: "适合每个团队",
+    title: "你的团队如何使用智能体。",
+    body: "公司里的每个团队都有自己的工作区和自己的智能体。选一个团队，看一个真实的任务。",
+    youAsk: "1 · 你提出",
+    agentDoes: "2 · {agent}执行",
+    youGet: "3 · 你得到",
+    setupOnce: "只需设置一次：",
+    seeAll: "查看全部使用场景",
+    moreTasks: "更多任务示例",
+    teams: {
+      support: {
+        ask: "回复等待中的退款工单。",
+        does: "逐条阅读工单，核对退款政策，为每条写好回复。",
+        get: "待批准的草稿，每条旁边附上政策条款。",
+        setup: "上传退款政策并连接你的客服系统。",
+        tasks: ["根据你的政策起草回复", "为新工单分类打标签", "标记等待过久的工单"],
+      },
+      sales: {
+        ask: "跟进上周参加演示的所有人。",
+        does: "在 CRM 中找出未回复的线索，根据通话记录写跟进邮件。",
+        get: "可直接发送的邮件，以及已更新的 CRM 记录。",
+        setup: "连接你的 CRM。",
+        tasks: ["演示后跟进每个线索", "保持 CRM 记录干净、最新", "编写每周销售漏斗总结"],
+      },
+      hr: {
+        ask: "为新会计准备入职计划。",
+        does: "使用你的入职清单，制定第一周的每日计划。",
+        get: "第一天就能检查并分享的计划。",
+        setup: "上传你的入职清单。",
+        tasks: ["为新员工制定入职计划", "回答制度问题并附上来源", "准备面试题"],
+      },
+      finance: {
+        ask: "核对三月发票与合同。",
+        does: "比对金额和日期，列出发现的每一处差异。",
+        get: "一份需要人工处理的发票短清单。",
+        setup: "上传合同和发票。",
+        tasks: ["核对发票与合同", "催收缺失的文件", "准备月末结账清单"],
+      },
+      operations: {
+        ask: "每周一发送每周进度报告。",
+        does: "读取本周任务，写出已完成、逾期和受阻的事项。",
+        get: "按时送达的报告，无需再次提醒。",
+        setup: "添加一条周一早上的自动化。",
+        tasks: ["把会议纪要变成任务", "保持流程文档最新", "编写每周进度报告"],
+      },
+      engineering: {
+        ask: "修复仪表盘上的日期筛选。",
+        does: "修改代码，在真实浏览器中测试，并提交 pull request。",
+        get: "带截图、已测试、可以审核的改动。",
+        setup: "连接你的代码仓库。",
+        tasks: ["修复 bug 并提交 pull request", "在真实浏览器中测试改动", "让文档与代码保持同步"],
+      },
+    },
+  },
+
+  inside: {
+    label: "产品包含什么",
+    title: "智能体了解的是你的公司，而不只是互联网。",
+    knowledge: {
+      title: "知识库",
+      body: "上传你的流程、制度和价目表，支持 PDF、Word 或 Excel。智能体会先读这些文档，并在回答中注明来源。",
+      files: ["退款政策.pdf", "价目表.xlsx", "入职指南.docx"],
+      quote: "14 天内可以退款。",
+      quoteSource: "退款政策，第 2 节",
+    },
+    assistant: {
+      title: "助手",
+      body: "用大白话提问。你在 Agora 里手动能做的事，助手都能做：创建任务、查找答案、修改状态。任何重要改动前，它都会先确认。",
+      userMsg: "把所有逾期任务移到下周",
+      reply: "这会修改 6 个任务。要执行吗？",
+    },
+    automations: {
+      title: "自动化",
+      body: "简单的 当、如果、就 规则。重复的工作自动开始，并交给合适的人或智能体。无需代码。",
+    },
+  },
+
+  control: {
+    label: "掌控",
+    title: "智能体干活，你来做主。",
+    body: "不用盲目信任智能体。你能看到它做了什么，以及为什么这么做。",
+    items: [
+      {
+        title: "由人批准",
+        body: "完成的工作会交给人审核。你可以批准，也可以退回。",
+      },
+      {
+        title: "每个任务都有凭证",
+        body: "查看智能体走过的步骤和用到的文档。",
+      },
+      {
+        title: "角色与权限",
+        body: "owner 和 admin 决定每个工作区里谁能看、谁能改。",
+      },
+      {
+        title: "一份完整记录",
+        body: "人和智能体的每个操作，都在同一条时间线上。",
+      },
+    ],
+  },
+
+  tools: {
+    title: "兼容你正在使用的工具。",
+    body: "保留你的 CRM 和聊天工具。智能体就在团队所在的地方工作，全天候不停。",
+    anyMcp: "任何提供 MCP 服务的工具",
+  },
+
+  pricing: {
+    label: "价格",
+    title: "价格简单，智能体免费。",
+    subtitle:
+      "每个新工作区都从 14 天 Team 试用开始，无需绑卡。你只为成员付费，智能体永远不收费。",
+    free: {
+      name: "Free",
+      description: "适合刚开始使用智能体的小团队。",
+      price: "$0",
+      period: "永久",
+      features: [
+        "不限 issue、项目和成员",
+        "在你自己的运行时上不限智能体",
+        "Agora 助手和知识库",
+        "2 条自动化规则",
+        "1 份定时报告",
+      ],
+      cta: "免费开始",
+    },
+    team: {
+      name: "Team",
+      badge: "14 天免费试用",
+      description: "适合让智能体处理日常工作的团队。",
+      price: "$12",
+      period: "每位成员每月，按年付费",
+      monthly: "按月付费为每位成员 $15",
+      features: [
+        "包含 Free 的全部功能",
+        "不限自动化规则",
+        "不限定时报告",
+        "按计划或 webhook 触发的自动化",
+        "智能体不计入成员",
+      ],
+      cta: "开始试用",
+    },
+    trialNote: "试用结束后不会锁定任何内容。任务、看板和智能体照常工作。",
+    needMore: "需要 SSO、发票或定制合同？",
+    contactSales: "联系销售",
   },
 
   faq: {
-    label: "\u5e38\u89c1\u95ee\u9898",
-    headline: "\u95ee\u4e0e\u7b54\u3002",
+    label: "常见问题",
+    headline: "常见问题",
     items: [
       {
-        question: "Agora \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
+        question: "使用 Agora 需要程序员吗？",
         answer:
-          "Agora \u5f00\u7bb1\u5373\u7528\u652f\u6301 12 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001Codex\u3001Cursor\u3001Copilot\u3001Gemini\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001OpenCode\u3001OpenClaw\u3001Pi\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
+          "不需要。设置只是一个简短的引导：选择部门、上传文档、邀请团队。之后智能体就可以开始工作。",
       },
       {
-        question: "\u9700\u8981\u81ea\u6258\u7ba1\u5417\uff0c\u8fd8\u662f\u6709\u4e91\u7248\u672c\uff1f",
+        question: "智能体会不经询问就做事吗？",
         answer:
-          "\u4e24\u8005\u90fd\u6709\u3002\u4f60\u53ef\u4ee5\u7528 Docker Compose \u6216 Kubernetes \u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u81ea\u6258\u7ba1 Agora\uff0c\u4e5f\u53ef\u4ee5\u4f7f\u7528\u6211\u4eec\u7684\u6258\u7ba1\u4e91\u7248\u672c\u3002\u4f60\u7684\u6570\u636e\uff0c\u4f60\u9009\u62e9\u3002",
+          "智能体只处理你交给它的任务。完成的工作会交给人审核。助手在任何重要改动前都会先确认。",
       },
       {
-        question:
-          "\u8fd9\u548c\u76f4\u63a5\u7528\u7f16\u7801 智能体 \u6709\u4ec0\u4e48\u533a\u522b\uff1f",
-        answer:
-          "\u7f16\u7801 智能体 \u64c5\u957f\u6267\u884c\u3002Agora \u6dfb\u52a0\u7684\u662f\u7ba1\u7406\u5c42\uff1a\u4efb\u52a1\u961f\u5217\u3001\u56e2\u961f\u534f\u4f5c\u3001\u6280\u80fd\u590d\u7528\u3001\u8fd0\u884c\u65f6\u76d1\u63a7\uff0c\u4ee5\u53ca\u6bcf\u4e2a 智能体 \u5728\u505a\u4ec0\u4e48\u7684\u7edf\u4e00\u89c6\u56fe\u3002\u628a\u5b83\u60f3\u8c61\u6210\u4f60\u7684 智能体 \u7684\u9879\u76ee\u7ecf\u7406\u3002",
+        question: "智能体了解我们公司的哪些信息？",
+        answer: "只有你提供的内容：你上传的文档和你连接的工具。",
       },
       {
-        question: "智能体 \u80fd\u81ea\u4e3b\u5904\u7406\u957f\u65f6\u95f4\u4efb\u52a1\u5417\uff1f",
-        answer:
-          "\u53ef\u4ee5\u3002Agora \u7ba1\u7406\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u2014\u2014\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\u5e76\u5b9e\u65f6\u63a8\u9001\u8fdb\u5ea6\u3002\u4f60\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\uff0c\u4e5f\u53ef\u4ee5\u8ba9\u5b83\u4eec\u8fd0\u884c\u6574\u665a\u3002",
+        question: "我们是开发团队，Agora 还适合吗？",
+        answer: "适合。编程智能体、浏览器测试和 pull request 都和以前一样可用。",
       },
       {
-        question: "\u6211\u7684\u4ee3\u7801\u5b89\u5168\u5417\uff1f智能体 \u5728\u54ea\u91cc\u6267\u884c\uff1f",
-        answer:
-          "智能体 \u5728\u4f60\u7684\u673a\u5668\uff08\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\uff09\u6216\u4f60\u81ea\u5df1\u7684\u4e91\u57fa\u7840\u8bbe\u65bd\u4e0a\u6267\u884c\u3002\u4ee3\u7801\u6c38\u8fdc\u4e0d\u4f1a\u7ecf\u8fc7 Agora \u670d\u52a1\u5668\u3002\u5e73\u53f0\u53ea\u534f\u8c03\u4efb\u52a1\u72b6\u6001\u548c\u5e7f\u64ad\u4e8b\u4ef6\u3002",
-      },
-      {
-        question: "\u6211\u53ef\u4ee5\u8fd0\u884c\u591a\u5c11\u4e2a 智能体\uff1f",
-        answer:
-          "\u53d6\u51b3\u4e8e\u4f60\u7684\u786c\u4ef6\u3002\u6bcf\u4e2a 智能体 \u6709\u53ef\u914d\u7f6e\u7684\u5e76\u53d1\u9650\u5236\uff0c\u4f60\u53ef\u4ee5\u8fde\u63a5\u591a\u53f0\u673a\u5668\u4f5c\u4e3a\u8fd0\u884c\u65f6\u3002\u5f00\u6e90\u7248\u672c\u6ca1\u6709\u4efb\u4f55\u4eba\u4e3a\u9650\u5236\u3002",
+        question: "价格是多少？",
+        answer: "有免费版。Team 按年付费为每位成员每月 $12。智能体始终免费。",
       },
     ],
   },
 
+  finalCta: {
+    title: "从一个部门开始。",
+    body: "选择部门、上传文档、邀请团队。支持网页、桌面端和 Telegram，提供英语、俄语和乌兹别克语界面。",
+    cta: "开始使用",
+    talkToSales: "联系销售",
+  },
+
   footer: {
-    tagline:
-      "\u4eba\u7c7b + 智能体 \u56e2\u961f\u7684\u9879\u76ee\u7ba1\u7406\u3002\u4e3a\u672a\u6765\u7684\u5de5\u4f5c\u65b9\u5f0f\u800c\u5efa\u3002",
-    cta: "\u5f00\u59cb\u4f7f\u7528",
-    groups: {
-      product: {
-        label: "\u4ea7\u54c1",
-        links: [
-          { label: "\u529f\u80fd\u7279\u6027", href: "#features" },
-          { label: "\u5982\u4f55\u5de5\u4f5c", href: "#how-it-works" },
-          { label: "\u6307\u5357", href: "/guide" },
-          { label: "\u6848\u4f8b", href: "/usecases" },
-          { label: "\u4e0b\u8f7d", href: "/download" },
-          { label: "更新日志", href: "/changelog" },
-        ],
-      },
-      resources: {
-        label: "\u8d44\u6e90",
-        links: [
-          { label: "\u6587\u6863", href: "/docs/zh" },
-          { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
-        ],
-      },
-      company: {
-        label: "\u5173\u4e8e",
-        links: [
-          { label: "\u5173\u4e8e\u6211\u4eec", href: "/about" },
-          { label: "\u8054\u7cfb\u5546\u52a1", href: "/contact-sales" },
-        ],
-      },
-    },
-    copyright: "\u00a9 {year} Agora. \u4fdd\u7559\u6240\u6709\u6743\u5229\u3002",
+    navigation: "页脚导航",
+    copyright: "© {year} Agora",
   },
 
   about: {

@@ -4,14 +4,14 @@ import { RedirectIfAuthenticated } from "@/features/landing/components/redirect-
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Agora — Project Management for Human + Agent Teams",
+    absolute: "Agora — A Task Board for People and AI Agents",
   },
   description:
-    "AI-native platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    "Agora is a task board for your whole company. AI agents work next to your people: they take tasks, do the work, and show you the result.",
   openGraph: {
-    title: "Agora — Project Management for Human + Agent Teams",
+    title: "Agora — A Task Board for People and AI Agents",
     description:
-      "Manage your human + agent workforce in one place.",
+    "Agora is a task board for your whole company. AI agents work next to your people: they take tasks, do the work, and show you the result.",
     url: "/",
   },
   alternates: {

@@ -1,4 +1,9 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { cn } from "@agora/ui/lib/utils";
+import { useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
 
 export const twitterUrl = "https://x.com/AgoraAI";
 
@@ -173,11 +178,198 @@ export function headerButtonClassName(
   );
 }
 
-export function heroButtonClassName(tone: "ghost" | "solid") {
+// Brand accent. The landing renders in a `landing-light` scope outside the
+// token system, so it hardcodes the brand blue (see CLAUDE.md "Brand color").
+export const ACCENT = "#2563EB";
+
+// Light/dark palette for the landing sections. Literal class strings so
+// Tailwind can see them.
+export const ui = {
+  page: "bg-white text-[#0A0D12] dark:bg-[#05060B] dark:text-[#F2F4F8]",
+  surface: "bg-[#F6F7F9] dark:bg-[#0D1017]",
+  card: "bg-white dark:bg-[#131722]",
+  inset: "bg-[#F6F7F9] dark:bg-[#0D1017]",
+  line: "border-[#E4E7EC] dark:border-[#232838]",
+  lineStrong: "border-[#CBD2DC] dark:border-[#39415A]",
+  muted: "text-[#5B6474] dark:text-[#A3ADBF]",
+  soft: "text-[#3F4654] dark:text-[#C3CBDA]",
+  eyebrow: "text-[#1D4ED8] dark:text-[#9DB8FF]",
+  accentText: "text-[#2563EB] dark:text-[#5B8DEF]",
+  accentSoft: "bg-[#EEF3FF] dark:bg-[#111A33]",
+  selected: "bg-[#EEF3FF] dark:bg-[#101A36]",
+  chip: "bg-[#EEF0F4] dark:bg-[#1B2130]",
+  person: "bg-[#DDE2EA] text-[#0A0D12] dark:bg-[#39415A] dark:text-[#F2F4F8]",
+  shadow: "shadow-[0_24px_60px_rgba(15,23,42,0.10)] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]",
+  glow: "shadow-[0_30px_90px_rgba(37,99,235,0.14)] dark:shadow-[0_30px_90px_rgba(37,99,235,0.18)]",
+} as const;
+
+export const serifClassName =
+  "font-[family-name:var(--font-serif),var(--font-serif-zh),Georgia,serif] font-normal";
+
+export const sectionTitleClassName = cn(
+  serifClassName,
+  "m-0 text-[clamp(2.25rem,4vw,3.375rem)] leading-[1.08] tracking-[-0.01em]",
+);
+
+export const eyebrowClassName = cn(
+  "m-0 text-[13px] font-semibold uppercase tracking-[0.08em]",
+  ui.eyebrow,
+);
+
+export const sectionClassName = "px-4 py-20 sm:px-6 sm:py-[104px]";
+export const containerClassName = "mx-auto w-full max-w-[1160px]";
+
+export function primaryButtonClassName(size: "md" | "lg" = "lg") {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-[12px] px-5 py-3 text-[14px] font-semibold transition-colors",
-    tone === "solid"
-      ? "bg-[#2563EB] text-white hover:bg-[#2563EB]/90"
-      : "border border-zinc-200 bg-zinc-50 text-[#3F3F46] hover:bg-zinc-100 hover:text-[#18181B] dark:border-white/18 dark:bg-black/16 dark:text-white dark:hover:bg-black/24",
+    "inline-flex min-h-11 items-center justify-center gap-2 bg-[#2563EB] font-semibold text-white transition-colors hover:bg-[#1D4ED8] active:scale-[0.98]",
+    size === "lg" ? "rounded-[12px] px-6 py-3 text-[15px]" : "rounded-[10px] px-5 py-2.5 text-[15px]",
+  );
+}
+
+export function secondaryButtonClassName(size: "md" | "lg" = "lg") {
+  return cn(
+    "inline-flex min-h-11 items-center justify-center gap-2 border font-semibold transition-colors active:scale-[0.98]",
+    "border-[#CBD2DC] bg-white text-[#0A0D12] hover:bg-[#F6F7F9] dark:border-[#39415A] dark:bg-[#131722] dark:text-[#F2F4F8] dark:hover:bg-[#1B2130]",
+    size === "lg" ? "rounded-[12px] px-6 py-3 text-[15px]" : "rounded-[10px] px-5 py-2.5 text-[15px]",
+  );
+}
+
+/** Where "Get started" goes: the app for signed-in visitors, signup otherwise. */
+export function useStartHref() {
+  const user = useAuthStore((s) => s.user);
+  const allowSignup = useConfigStore((s) => s.allowSignup);
+  if (user) return "/";
+  return allowSignup ? "/signup" : "/login";
+}
+
+/**
+ * A counter that ticks every `ms` while the visitor allows motion. Drives the
+ * small live demos (board card, automation row). Stays at 0 under
+ * prefers-reduced-motion.
+ */
+export function useTicker(ms: number) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), ms);
+    return () => window.clearInterval(id);
+  }, [ms]);
+  return tick;
+}
+
+export function AgentGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="4" y="8" width="16" height="12" rx="3" />
+      <path d="M12 8V4M9 14h.01M15 14h.01" />
+    </svg>
+  );
+}
+
+/** Square brand tile with the agent glyph, used wherever an agent is shown. */
+export function AgentAvatar({ size = "sm" }: { size?: "xs" | "sm" | "md" }) {
+  return (
+    <span
+      className={cn(
+        "flex flex-none items-center justify-center bg-[#2563EB] text-white",
+        size === "xs" && "size-[22px] rounded-[7px]",
+        size === "sm" && "size-[26px] rounded-[8px]",
+        size === "md" && "size-[34px] rounded-[10px]",
+      )}
+    >
+      <AgentGlyph className={size === "md" ? "size-[18px]" : "size-[13px]"} />
+    </span>
+  );
+}
+
+export function PersonAvatar({
+  initials,
+  size = "sm",
+}: {
+  initials: string;
+  size?: "xs" | "sm" | "md";
+}) {
+  return (
+    <span
+      className={cn(
+        "flex flex-none items-center justify-center rounded-full font-semibold",
+        ui.person,
+        size === "xs" && "size-[22px] text-[10px]",
+        size === "sm" && "size-[26px] text-[11px]",
+        size === "md" && "size-[34px] text-[12px]",
+      )}
+    >
+      {initials}
+    </span>
+  );
+}
+
+export function CheckGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 12l5 5L20 7" />
+    </svg>
+  );
+}
+
+/** Numbered circle used in the step lists. */
+export function StepNumber({ n }: { n: number }) {
+  return (
+    <span
+      className={cn(
+        "flex size-8 flex-none items-center justify-center rounded-full text-[15px] font-bold",
+        ui.accentSoft,
+        ui.eyebrow,
+      )}
+    >
+      {n}
+    </span>
+  );
+}
+
+/** Section intro: eyebrow, serif title, optional body. */
+export function SectionIntro({
+  label,
+  title,
+  body,
+  center = false,
+  className,
+}: {
+  label?: string;
+  title: string;
+  body?: string;
+  center?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex max-w-[720px] flex-col gap-3.5",
+        center && "mx-auto items-center text-center",
+        className,
+      )}
+    >
+      {label ? <p className={eyebrowClassName}>{label}</p> : null}
+      <h2 className={sectionTitleClassName}>{title}</h2>
+      {body ? <p className={cn("m-0 text-[18px]", ui.muted)}>{body}</p> : null}
+    </div>
   );
 }

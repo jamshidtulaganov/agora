@@ -28,7 +28,7 @@ const jsonLd = {
       applicationCategory: "ProjectManagement",
       operatingSystem: "Web",
       description:
-        "AI-native project management platform that turns coding agents into real teammates.",
+        "A task board for your whole company, with AI agents working next to your people.",
       offers: {
         "@type": "Offer",
         price: "0",
