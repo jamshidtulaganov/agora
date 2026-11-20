@@ -48,7 +48,8 @@
       "github": "GitHub",
       "integrations": "Интеграции",
       "labs": "Labs",
-      "members": "Участники"
+      "members": "Участники",
+      "billing": "Тариф"
     }
   },
   "account": {
@@ -866,5 +867,38 @@
     "toast_preview_failed": "Не удалось прочитать источник",
     "toast_started": "Импорт запущен",
     "toast_start_failed": "Не удалось запустить импорт"
+  },
+  "billing": {
+    "loading": "Загрузка…",
+    "title": "Тариф и оплата",
+    "plans": {
+      "free": "Free",
+      "team": "Team",
+      "enterprise": "Enterprise"
+    },
+    "trial_badge": "Пробный период",
+    "days_left": "осталось дней: {{days}}",
+    "trial_ends": "Пробный период Team заканчивается {{date}}. После этого пространство перейдёт на Free, если вы не оплатите тариф.",
+    "paid_through": "Оплачено до {{date}}.",
+    "past_due": "Оплата просрочена. Функции Team работают до {{date}}.",
+    "trial_expired": "Пробный период Team закончился. Сейчас у вас Free.",
+    "expired": "Тариф Team закончился. Сейчас у вас Free.",
+    "canceled": "Тариф Team отменён. Сейчас у вас Free.",
+    "free_note": "Задачи, доски, участники, агенты и Ассистент работают и на Free. Приостанавливаются только автоматизации сверх лимитов Free.",
+    "usage": {
+      "members": "Участники",
+      "automations": "Правила автоматизации",
+      "report_schedules": "Отчёты по расписанию",
+      "autopilots": "Autopilot’ы (по расписанию и webhook)"
+    },
+    "usage_of": "{{used}} из {{limit}}",
+    "unlimited": "без ограничений",
+    "team_only": "Только на Team",
+    "over_limit": "Больше лимита Free: работают самые старые, новые приостановлены.",
+    "agents_free": "Агенты никогда не считаются участниками.",
+    "team_price": "${{yearly}} за участника в месяц при оплате за год или ${{monthly}} при помесячной оплате.",
+    "team_features": "Без ограничений: правила автоматизации, отчёты по расписанию и autopilot’ы.",
+    "upgrade": "Связаться для перехода на Team",
+    "upgrade_no_contact": "Чтобы перейти на Team, обратитесь к администратору вашей Agora."
   }
 }

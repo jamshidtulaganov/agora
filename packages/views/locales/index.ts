@@ -24,6 +24,7 @@ import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
 import enSquads from "./en/squads.json";
 import enBilling from "./en/billing.json";
+import enAdmin from "./en/admin.json";
 import enAssistant from "./en/assistant.json";
 import enKnowledge from "./en/knowledge.json";
 import enDepartmentSetup from "./en/department-setup.json";
@@ -52,6 +53,7 @@ import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
 import zhHansSquads from "./zh-Hans/squads.json";
 import zhHansBilling from "./zh-Hans/billing.json";
+import zhHansAdmin from "./zh-Hans/admin.json";
 import zhHansAssistant from "./zh-Hans/assistant.json";
 import zhHansKnowledge from "./zh-Hans/knowledge.json";
 import zhHansDepartmentSetup from "./zh-Hans/department-setup.json";
@@ -80,6 +82,7 @@ import uzUsage from "./uz/usage.json";
 import uzUi from "./uz/ui.json";
 import uzSquads from "./uz/squads.json";
 import uzBilling from "./uz/billing.json";
+import uzAdmin from "./uz/admin.json";
 import uzAssistant from "./uz/assistant.json";
 import uzKnowledge from "./uz/knowledge.json";
 import uzDepartmentSetup from "./uz/department-setup.json";
@@ -108,6 +111,7 @@ import ruUsage from "./ru/usage.json";
 import ruUi from "./ru/ui.json";
 import ruSquads from "./ru/squads.json";
 import ruBilling from "./ru/billing.json";
+import ruAdmin from "./ru/admin.json";
 import ruAssistant from "./ru/assistant.json";
 import ruKnowledge from "./ru/knowledge.json";
 import ruDepartmentSetup from "./ru/department-setup.json";
@@ -142,6 +146,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: enUi,
     squads: enSquads,
     billing: enBilling,
+    admin: enAdmin,
     assistant: enAssistant,
     knowledge: enKnowledge,
     "department-setup": enDepartmentSetup,
@@ -172,6 +177,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: zhHansUi,
     squads: zhHansSquads,
     billing: zhHansBilling,
+    admin: zhHansAdmin,
     assistant: zhHansAssistant,
     knowledge: zhHansKnowledge,
     "department-setup": zhHansDepartmentSetup,
@@ -202,6 +208,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: uzUi,
     squads: uzSquads,
     billing: uzBilling,
+    admin: uzAdmin,
     assistant: uzAssistant,
     knowledge: uzKnowledge,
     "department-setup": uzDepartmentSetup,
@@ -232,6 +239,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: ruUi,
     squads: ruSquads,
     billing: ruBilling,
+    admin: ruAdmin,
     assistant: ruAssistant,
     knowledge: ruKnowledge,
     "department-setup": ruDepartmentSetup,

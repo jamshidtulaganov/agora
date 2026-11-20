@@ -1,0 +1,112 @@
+{
+  "title": "Admin",
+  "subtitle": "Ushbu Agora’dan foydalanayotganlar: odamlar, ish maydonlari va tariflar.",
+  "loading": "Yuklanmoqda…",
+  "not_found": "Sahifa topilmadi.",
+  "error": "Yuklab bo‘lmadi. Qayta urinib ko‘ring.",
+  "refresh": "Yangilash",
+  "search_placeholder": "Ism, email yoki ish maydoni bo‘yicha qidirish",
+  "tabs": {
+    "growth": "O‘sish",
+    "marketing": "Marketing",
+    "workspaces": "Ish maydonlari",
+    "users": "Foydalanuvchilar"
+  },
+  "summary": {
+    "users": "Foydalanuvchilar",
+    "active_7d": "So‘nggi 7 kunda faol",
+    "new_7d": "So‘nggi 7 kunda yangi",
+    "workspaces": "Ish maydonlari",
+    "trialing": "Sinov davrida",
+    "trials_ending": "7 kunda sinovi tugaydi",
+    "paying": "To‘lovchilar",
+    "past_due": "To‘lov kechikkan",
+    "free": "Free",
+    "revenue": "Taxminiy oylik daromad",
+    "of": "{{total}} dan"
+  },
+  "users": {
+    "name": "Ism",
+    "email": "Email",
+    "workspaces": "Ish maydonlari",
+    "signed_up": "Ro‘yxatdan o‘tgan",
+    "last_login": "Oxirgi kirish",
+    "last_active": "Oxirgi faollik",
+    "never": "Hech qachon",
+    "empty": "Foydalanuvchilar yo‘q."
+  },
+  "workspaces": {
+    "name": "Ish maydoni",
+    "owner": "Egasi",
+    "members": "A’zolar",
+    "plan": "Tarif",
+    "ends": "Tugashi / to‘langan sana",
+    "last_active": "Oxirgi faollik",
+    "actions": "",
+    "change": "Tarifni o‘zgartirish",
+    "empty": "Ish maydonlari yo‘q.",
+    "days_left": "{{days}} kun qoldi",
+    "grandfathered": "eski mijoz"
+  },
+  "plan": {
+    "free": "Free",
+    "team": "Team",
+    "enterprise": "Enterprise"
+  },
+  "status": {
+    "trialing": "Sinov",
+    "active": "Faol",
+    "past_due": "Kechikkan",
+    "trial_expired": "Sinov tugagan",
+    "expired": "Muddati o‘tgan",
+    "canceled": "Bekor qilingan"
+  },
+  "dialog": {
+    "title": "Tarifni o‘zgartirish: {{name}}",
+    "mode": "Yangi tarif",
+    "modes": {
+      "team": "Team (pullik)",
+      "enterprise": "Enterprise (pullik)",
+      "trial": "Team sinovi",
+      "free": "Free"
+    },
+    "interval": "To‘lov",
+    "interval_none": "Ko‘rsatilmagan",
+    "month": "Oylik",
+    "year": "Yillik",
+    "seats": "To‘langan o‘rinlar",
+    "until": "To‘langan sana",
+    "until_hint": "Tugash sanasisiz bo‘lsa, bo‘sh qoldiring.",
+    "trial_until": "Sinov tugash sanasi",
+    "note": "Izoh",
+    "note_placeholder": "masalan, hisob-faktura raqami",
+    "cancel": "Bekor qilish",
+    "save": "Saqlash",
+    "saved": "Tarif o‘zgartirildi.",
+    "failed": "Tarifni o‘zgartirib bo‘lmadi."
+  },
+  "growth": {
+    "range": "{{days}} kun",
+    "range_label": "Davr",
+    "signups": "Kunlik ro‘yxatdan o‘tishlar",
+    "active_users": "Kunlik faol odamlar",
+    "new_workspaces": "Kunlik yangi ish maydonlari",
+    "peak": "eng ko‘pi {{count}}"
+  },
+  "marketing": {
+    "attributed": "{{total}} ta ro‘yxatdan o‘tishdan {{attributed}} tasining manbasi ma’lum.",
+    "sources": "Manba / kanal",
+    "campaigns": "Kampaniyalar",
+    "referrers": "Yo‘naltirgan saytlar",
+    "landing_pages": "Birinchi sahifa",
+    "source": "Manba",
+    "signups": "Ro‘yxatdan o‘tganlar",
+    "workspace": "Ish maydoni",
+    "paying": "To‘lovchilar",
+    "empty": "Bu davrda ro‘yxatdan o‘tganlar yo‘q.",
+    "direct": "To‘g‘ridan-to‘g‘ri / noma’lum",
+    "no_campaign": "Kampaniyasiz",
+    "unknown_page": "Noma’lum",
+    "tip": "Bu yerda ko‘rinishi uchun havolalarga belgi qo‘shing, masalan:"
+  }
+}

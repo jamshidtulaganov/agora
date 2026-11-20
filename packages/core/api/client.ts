@@ -439,6 +439,15 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  WorkspaceSubscriptionSchema,
+  EMPTY_WORKSPACE_SUBSCRIPTION,
+  type WorkspaceSubscription,
+  AdminOverviewSchema,
+  EMPTY_ADMIN_OVERVIEW,
+  type AdminOverview,
+  AdminGrowthSchema,
+  EMPTY_ADMIN_GROWTH,
+  type AdminGrowth,
   McpCredentialStatusSchema,
   McpCredentialListSchema,
   EMPTY_MCP_CREDENTIAL_LIST,
@@ -4008,6 +4017,52 @@ export class ApiClient {
 
   // Figma credential — one PAT per workspace so agents can read Figma designs
   // referenced by issues. The token is write-only; status carries last4 only.
+  /** First-touch marketing attribution; the server keeps only the first one. */
+  async postMyAttribution(data: {
+    source: string;
+    medium: string;
+    campaign: string;
+    referrer: string;
+    landing_path: string;
+    first_seen_at: string;
+  }): Promise<void> {
+    await this.fetch<unknown>("/api/me/attribution", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAdminGrowth(days: number): Promise<AdminGrowth> {
+    const raw = await this.fetch<unknown>(`/api/admin/growth?days=${days}`);
+    return parseWithFallback(raw, AdminGrowthSchema, EMPTY_ADMIN_GROWTH, {
+      endpoint: "GET /api/admin/growth",
+    });
+  }
+
+  async getAdminOverview(): Promise<AdminOverview> {
+    const raw = await this.fetch<unknown>("/api/admin/overview");
+    return parseWithFallback(raw, AdminOverviewSchema, EMPTY_ADMIN_OVERVIEW, {
+      endpoint: "GET /api/admin/overview",
+    });
+  }
+
+  async setAdminWorkspaceSubscription(
+    workspaceId: string,
+    change: { mode: string; interval?: string; seats?: number; until?: string; trial_until?: string; note?: string },
+  ): Promise<void> {
+    await this.fetch<unknown>(`/api/admin/workspaces/${workspaceId}/subscription`, {
+      method: "PUT",
+      body: JSON.stringify(change),
+    });
+  }
+
+  async getWorkspaceSubscription(workspaceId: string): Promise<WorkspaceSubscription> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/subscription`);
+    return parseWithFallback(raw, WorkspaceSubscriptionSchema, EMPTY_WORKSPACE_SUBSCRIPTION, {
+      endpoint: "GET /api/workspaces/{id}/subscription",
+    });
+  }
+
   async getFigmaCredentialStatus(workspaceId: string): Promise<FigmaCredentialStatus> {
     const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/figma-credential`);
     return parseWithFallback(raw, FigmaCredentialStatusSchema, EMPTY_FIGMA_CREDENTIAL_STATUS, {

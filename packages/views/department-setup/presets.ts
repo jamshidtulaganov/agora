@@ -15,7 +15,6 @@ export const SIMPLE_VISIBLE_NAV: readonly NavKey[] = [
   "assistant",
   "issues",
   "projects",
-  "knowledge",
 ];
 
 /**

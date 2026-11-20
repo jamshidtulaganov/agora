@@ -48,7 +48,8 @@
       "github": "GitHub",
       "integrations": "Integrations",
       "labs": "Labs",
-      "members": "Members"
+      "members": "Members",
+      "billing": "Billing"
     }
   },
   "account": {
@@ -866,5 +867,38 @@
     "toast_preview_failed": "Could not read the source",
     "toast_started": "Import started",
     "toast_start_failed": "Could not start the import"
+  },
+  "billing": {
+    "loading": "Loading…",
+    "title": "Plan & billing",
+    "plans": {
+      "free": "Free",
+      "team": "Team",
+      "enterprise": "Enterprise"
+    },
+    "trial_badge": "Free trial",
+    "days_left": "{{days}} days left",
+    "trial_ends": "Your Team trial ends on {{date}}. After that the workspace moves to Free unless you upgrade.",
+    "paid_through": "Paid through {{date}}.",
+    "past_due": "Payment is overdue. Team features keep working until {{date}}.",
+    "trial_expired": "Your Team trial has ended. You are on Free now.",
+    "expired": "Your Team plan has ended. You are on Free now.",
+    "canceled": "Your Team plan was canceled. You are on Free now.",
+    "free_note": "Issues, boards, members, agents and the Assistant keep working on Free. Only automations above the Free limits are paused.",
+    "usage": {
+      "members": "Members",
+      "automations": "Automation rules",
+      "report_schedules": "Scheduled reports",
+      "autopilots": "Autopilots (schedule and webhook)"
+    },
+    "usage_of": "{{used}} of {{limit}}",
+    "unlimited": "unlimited",
+    "team_only": "Team plan only",
+    "over_limit": "Over the Free limit: the oldest ones run, the newest are paused.",
+    "agents_free": "Agents are never counted as members.",
+    "team_price": "${{yearly}} per member a month, billed yearly, or ${{monthly}} billed monthly.",
+    "team_features": "Unlimited automation rules, scheduled reports and autopilots.",
+    "upgrade": "Contact us to upgrade",
+    "upgrade_no_contact": "To upgrade, contact the person who runs your Agora."
   }
 }

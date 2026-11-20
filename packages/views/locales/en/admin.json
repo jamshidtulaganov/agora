@@ -1,0 +1,112 @@
+{
+  "title": "Admin",
+  "subtitle": "Everyone using this Agora: people, workspaces and plans.",
+  "loading": "Loading…",
+  "not_found": "Page not found.",
+  "error": "Could not load. Try again.",
+  "refresh": "Refresh",
+  "search_placeholder": "Search name, email or workspace",
+  "tabs": {
+    "growth": "Growth",
+    "marketing": "Marketing",
+    "workspaces": "Workspaces",
+    "users": "Users"
+  },
+  "summary": {
+    "users": "Users",
+    "active_7d": "Active last 7 days",
+    "new_7d": "New last 7 days",
+    "workspaces": "Workspaces",
+    "trialing": "On trial",
+    "trials_ending": "Ending in 7 days",
+    "paying": "Paying",
+    "past_due": "Payment overdue",
+    "free": "Free",
+    "revenue": "Est. monthly revenue",
+    "of": "of {{total}}"
+  },
+  "users": {
+    "name": "Name",
+    "email": "Email",
+    "workspaces": "Workspaces",
+    "signed_up": "Signed up",
+    "last_login": "Last login",
+    "last_active": "Last active",
+    "never": "Never",
+    "empty": "No users."
+  },
+  "workspaces": {
+    "name": "Workspace",
+    "owner": "Owner",
+    "members": "Members",
+    "plan": "Plan",
+    "ends": "Ends / paid until",
+    "last_active": "Last active",
+    "actions": "",
+    "change": "Change plan",
+    "empty": "No workspaces.",
+    "days_left": "{{days}} d left",
+    "grandfathered": "grandfathered"
+  },
+  "plan": {
+    "free": "Free",
+    "team": "Team",
+    "enterprise": "Enterprise"
+  },
+  "status": {
+    "trialing": "Trial",
+    "active": "Active",
+    "past_due": "Overdue",
+    "trial_expired": "Trial ended",
+    "expired": "Expired",
+    "canceled": "Canceled"
+  },
+  "dialog": {
+    "title": "Change plan: {{name}}",
+    "mode": "New plan",
+    "modes": {
+      "team": "Team (paid)",
+      "enterprise": "Enterprise (paid)",
+      "trial": "Team trial",
+      "free": "Free"
+    },
+    "interval": "Billing",
+    "interval_none": "Not set",
+    "month": "Monthly",
+    "year": "Yearly",
+    "seats": "Seats paid",
+    "until": "Paid until",
+    "until_hint": "Leave empty for no end date.",
+    "trial_until": "Trial ends on",
+    "note": "Note",
+    "note_placeholder": "e.g. invoice number",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saved": "Plan changed.",
+    "failed": "Could not change the plan."
+  },
+  "growth": {
+    "range": "{{days}} days",
+    "range_label": "Time range",
+    "signups": "Sign-ups per day",
+    "active_users": "Active people per day",
+    "new_workspaces": "New workspaces per day",
+    "peak": "peak {{count}}"
+  },
+  "marketing": {
+    "attributed": "{{attributed}} of {{total}} sign-ups have a known source.",
+    "sources": "Source / medium",
+    "campaigns": "Campaigns",
+    "referrers": "Referring sites",
+    "landing_pages": "First page",
+    "source": "Source",
+    "signups": "Sign-ups",
+    "workspace": "Workspace",
+    "paying": "Paying",
+    "empty": "No sign-ups in this period.",
+    "direct": "Direct / unknown",
+    "no_campaign": "No campaign",
+    "unknown_page": "Unknown",
+    "tip": "Tag your links so they show up here, for example:"
+  }
+}

@@ -11,6 +11,7 @@ import {
   FlaskConical,
   Bell,
   Plug,
+  CreditCard,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@agora/ui/components/ui/tabs";
@@ -26,6 +27,7 @@ import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { LabsTab } from "./labs-tab";
 import { NotificationsTab } from "./notifications-tab";
+import { BillingTab } from "./billing-tab";
 import { useT } from "../../i18n";
 
 const ACCOUNT_TAB_KEYS = ["profile", "preferences", "notifications", "tokens"] as const;
@@ -43,6 +45,7 @@ const WORKSPACE_TAB_KEYS = [
   "integrations",
   "labs",
   "members",
+  "billing",
 ] as const;
 const WORKSPACE_TAB_VALUES = {
   general: "workspace",
@@ -51,6 +54,7 @@ const WORKSPACE_TAB_VALUES = {
   integrations: "integrations",
   labs: "labs",
   members: "members",
+  billing: "billing",
 } as const;
 const WORKSPACE_TAB_ICONS = {
   general: Settings,
@@ -59,6 +63,7 @@ const WORKSPACE_TAB_ICONS = {
   integrations: Plug,
   labs: FlaskConical,
   members: Users,
+  billing: CreditCard,
 } as const;
 
 const DEFAULT_TAB = "profile";
@@ -177,6 +182,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
           <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
           <TabsContent value="labs"><LabsTab /></TabsContent>
           <TabsContent value="members"><MembersTab /></TabsContent>
+          <TabsContent value="billing"><BillingTab /></TabsContent>
           {extraAccountTabs?.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
           ))}

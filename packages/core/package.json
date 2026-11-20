@@ -136,7 +136,8 @@
     "./qa/queries": "./qa/queries.ts",
     "./qa/steps": "./qa/steps.ts",
     "./qa/templates": "./qa/templates.ts",
-    "./qa/step-run": "./qa/step-run.ts"
+    "./qa/step-run": "./qa/step-run.ts",
+    "./platform-admin": "./platform-admin/index.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

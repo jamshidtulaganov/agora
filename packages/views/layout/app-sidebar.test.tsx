@@ -237,7 +237,6 @@ describe("PinRow", () => {
 const WORKSPACE_NAV_KEYS = [
   "issues",
   "projects",
-  "knowledge",
   "autopilots",
   "automations",
   "agents",
@@ -369,7 +368,7 @@ describe("team sidebar", () => {
     expect(hrefs).not.toContain("/acme/runtimes");
     // Their own list doesn't apply while the team's does.
     expect(hrefs).toContain("/acme/usage");
-    expect(hrefs).toContain("/acme/knowledge");
+    expect(hrefs).toContain("/acme/issues");
     expect(hrefs).toContain("/acme/settings");
   });
 

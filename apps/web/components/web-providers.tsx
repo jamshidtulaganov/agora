@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo } from "react";
 import { CoreProvider } from "@agora/core/platform";
+import { FirstTouchTracker } from "./first-touch-tracker";
 import { createBrowserCookieLocaleAdapter } from "@agora/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@agora/core/i18n";
 import { useWelcomeStore } from "@agora/core/onboarding";
@@ -87,6 +88,7 @@ export function WebProviders({
       <Suspense fallback={null}>
         <PageviewTracker />
       </Suspense>
+      <FirstTouchTracker />
       <WebNavigationProvider>{children}</WebNavigationProvider>
     </CoreProvider>
   );
