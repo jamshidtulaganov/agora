@@ -7,8 +7,8 @@ import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
-import { docsHrefForLocale, localeLabels, locales, useLocale, type Locale } from "../i18n";
-import { headerButtonClassName } from "./shared";
+import { localeLabels, locales, useLocale, type Locale } from "../i18n";
+import { headerButtonClassName, useStartHref } from "./shared";
 
 // Compact code shown on the switcher button; the dropdown uses the full
 // localeLabels names.
@@ -24,18 +24,20 @@ export function LandingHeader({
 }: {
   variant?: "dark" | "light" | "auto";
 }) {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const user = useAuthStore((s) => s.user);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // Guide is the on-ramp; Docs is the depth behind it. The docs href is
-  // locale-aware because the docs site serves zh under its own prefix.
+  // Anchor links point at "/#..." so they also work from the other public
+  // pages that share this header.
   const navLinks = [
+    { href: "/#what", label: t.header.whatIs },
+    { href: "/#how", label: t.header.howItWorks },
     { href: "/guide", label: t.header.guide },
-    { href: docsHrefForLocale(locale), label: t.header.docs },
     { href: "/usecases", label: t.header.useCases },
+    { href: "/#pricing", label: t.header.pricing },
     { href: "/download", label: t.header.download },
   ];
-  const ctaHref = user ? "/" : "/login";
+  const startHref = useStartHref();
   const ctaLabel = user ? t.header.dashboard : t.header.cta;
 
   return (
@@ -44,7 +46,9 @@ export function LandingHeader({
         "relative inset-x-0 top-0 z-30",
         variant === "light"
           ? "border-b border-[#0a0d12]/8 bg-white"
-          : "absolute bg-transparent",
+          : variant === "auto"
+            ? "border-b border-[#E4E7EC] bg-white dark:border-[#232838] dark:bg-[#05060B]"
+            : "absolute bg-transparent",
       )}
     >
       <div className="mx-auto flex h-[76px] max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -70,7 +74,7 @@ export function LandingHeader({
 
           <nav
             aria-label={t.header.navigation}
-            className="hidden items-center gap-1 md:flex"
+            className="hidden items-center gap-1 xl:flex"
           >
             {navLinks.map((link) => (
               <Link
@@ -106,7 +110,7 @@ export function LandingHeader({
             onClick={() => setIsMenuOpen((open) => !open)}
             className={cn(
               headerButtonClassName("ghost", variant),
-              "px-3 md:hidden",
+              "px-3 xl:hidden",
             )}
           >
             {isMenuOpen ? (
@@ -115,9 +119,17 @@ export function LandingHeader({
               <Menu className="size-4" aria-hidden />
             )}
           </button>
+          {user ? null : (
+            <Link
+              href="/login"
+              className={cn(navLinkClassName(variant), "hidden xl:inline-flex")}
+            >
+              {t.header.login}
+            </Link>
+          )}
           <Link
-            href={ctaHref}
-            className={headerButtonClassName("solid", variant)}
+            href={startHref}
+            className={cn(headerButtonClassName("solid", variant), "hidden sm:inline-flex")}
           >
             {ctaLabel}
           </Link>
@@ -127,7 +139,7 @@ export function LandingHeader({
       {isMenuOpen ? (
         <div
           className={cn(
-            "absolute left-4 right-4 top-[calc(100%+8px)] z-50 rounded-[14px] border p-2 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:hidden",
+            "absolute left-4 right-4 top-[calc(100%+8px)] z-50 rounded-[14px] border p-2 shadow-[0_18px_60px_rgba(0,0,0,0.18)] xl:hidden",
             variant === "auto"
               ? "border-[#0a0d12]/10 bg-white text-[#0a0d12] dark:border-white/14 dark:bg-[#070a10]/95 dark:text-white"
               : variant === "dark"
@@ -146,6 +158,22 @@ export function LandingHeader({
                 {link.label}
               </Link>
             ))}
+            {user ? null : (
+              <Link
+                href="/login"
+                onClick={() => setIsMenuOpen(false)}
+                className={mobileNavLinkClassName(variant)}
+              >
+                {t.header.login}
+              </Link>
+            )}
+            <Link
+              href={startHref}
+              onClick={() => setIsMenuOpen(false)}
+              className={cn(headerButtonClassName("solid", variant), "mt-1 sm:hidden")}
+            >
+              {ctaLabel}
+            </Link>
           </nav>
         </div>
       ) : null}
@@ -237,7 +265,7 @@ function LanguageSwitcher({
 
 function navLinkClassName(variant: "dark" | "light" | "auto") {
   return cn(
-    "inline-flex h-9 items-center rounded-[9px] px-3 text-[13px] font-medium transition-colors",
+    "inline-flex h-9 items-center whitespace-nowrap rounded-[9px] px-3 text-[13px] font-medium transition-colors",
     variant === "auto"
       ? "text-[#0a0d12]/62 hover:bg-[#0a0d12]/5 hover:text-[#0a0d12] dark:text-white/72 dark:hover:bg-white/8 dark:hover:text-white"
       : variant === "dark"

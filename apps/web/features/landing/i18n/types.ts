@@ -26,217 +26,189 @@ export function isZhLocale(locale: Locale): boolean {
   return locale === "zh-Hans";
 }
 
-type FeatureSection = {
-  label: string;
-  title: string;
-  description: string;
-  cards: { title: string; description: string }[];
-};
+// The six departments the landing shows. Keys are locale-invariant; names
+// and agent names come from the dictionary.
+export type LandingDeptKey =
+  | "sales"
+  | "support"
+  | "hr"
+  | "finance"
+  | "operations"
+  | "engineering";
 
-// Strings rendered inside the coded product mockups (features section +
-// autoplay demo). Member/agent names are NOT here — they are locale-invariant
-// constants in the components.
-type FeaturesMock = {
-  issueTitle: string;
-  issueDesc: string;
-  activity: string;
-  subscribe: string;
-  properties: string;
-  statusLabel: string;
-  priorityLabel: string;
-  assigneeLabel: string;
-  assignTo: string;
-  members: string;
-  agents: string;
-  unassigned: string;
-  assignedToClaude: string;
-  changedStatus: string;
-  comment1: string;
-  comment2: string;
-  comment3: string;
-  agentWorking: string;
-  toolCalls: string;
-  taskHistory: string;
-  thinking1: string;
-  thinking2: string;
-  editResult: string;
-  task1: string;
-  task2: string;
-  task3: string;
-  skillsTitle: string;
-  files: string;
-  skill1Name: string;
-  skill1Desc: string;
-  skill2Name: string;
-  skill2Desc: string;
-  skill3Name: string;
-  skill3Desc: string;
-  skill4Name: string;
-  skill4Desc: string;
-  docTitle: string;
-  docBody: string;
-  steps: string;
-  step1: string;
-  step2: string;
-  step3: string;
-  step4: string;
-  runtimesTitle: string;
-  online: string;
-  offline: string;
-  justNow: string;
-  hoursAgo: string;
-  input: string;
-  output: string;
-  cacheRead: string;
-  cacheWrite: string;
-  activityCard: string;
-  dailyCost: string;
-  less: string;
-  more: string;
-  artifactTitle: string;
-  artifactExactHead: string;
-  artifactSummary: string;
-  artifactEvidence: string;
-  artifactReady: string;
-  qaSummary: string;
-  qaLaneFail: string;
-  qaLanePending: string;
-  qaLanePass: string;
-  qaRow1Title: string;
-  qaRow1Verdict: string;
-  qaRow2Title: string;
-  qaRow3Title: string;
-  qaRow4Title: string;
-  qaRow4Verdict: string;
-  qaRunning: string;
-  qaStale: string;
-  statuses: Record<
-    "backlog" | "todo" | "in_progress" | "in_review" | "done",
-    string
-  >;
-  priorities: Record<"none" | "low" | "medium" | "high" | "urgent", string>;
-};
-
-type FooterGroup = {
-  label: string;
-  links: { label: string; href: string }[];
-};
+type TitledText = { title: string; body: string };
 
 export type ContactSalesOption = { value: string; label: string };
 
 export type LandingDict = {
   header: {
     cta: string;
+    login: string;
     dashboard: string;
     docs: string;
     changelog: string;
+    whatIs: string;
+    howItWorks: string;
     useCases: string;
     guide: string;
+    pricing: string;
     download: string;
+    contactSales: string;
     navigation: string;
     openMenu: string;
     closeMenu: string;
     language: string;
   };
+  depts: Record<LandingDeptKey, { name: string; agent: string }>;
   hero: {
     badge: string;
-    kickerLeft: string;
-    kickerRight: string;
-    headlineLine1: string;
-    headlineLine2: string;
+    titleLead: string;
+    titleAccent: string;
     subheading: string;
     cta: string;
-    secondaryCta: string;
-    downloadDesktop: string;
     talkToSales: string;
-    worksWith: string;
-    imageAlt: string;
-    chipAgents: string;
-    chipSkills: string;
-    ticker: string;
     board: {
-      todo: string;
-      inProgress: string;
-      inReview: string;
-      done: string;
-      queued: string;
-      working: string;
-      review: string;
-      shipped: string;
-      you: string;
-      agent: string;
-      card1: string;
-      card2: string;
-      card3: string;
-      card4: string;
-      card5: string;
-      card6: string;
+      workspace: string;
+      allTasks: string;
+      columns: { todo: string; inProgress: string; inReview: string; done: string };
+      cards: {
+        monthEnd: string;
+        hiring: string;
+        invoices: string;
+        refunds: string;
+        onboarding: string;
+        weekly: string;
+      };
+      needsApproval: string;
       liveTitle: string;
-    };
-    tour: {
-      title: string;
-      close: string;
-      scenes: { label: string; caption: string }[];
+      // Four stages of the animated card: assigned, working, review, approved.
+      liveNotes: [string, string, string, string];
     };
   };
-  capabilities: {
+  what: {
+    label: string;
+    title: string;
+    points: [TitledText, TitledText, TitledText];
+    picker: { assignTo: string; people: string; agents: string; selected: string };
+  };
+  how: {
+    label: string;
     title: string;
     subtitle: string;
-    items: { title: string; body: string }[];
+    tasksThisWeek: string;
+    proof: string;
+    source: string;
+    stepDone: string;
+    stepOpen: string;
+    approve: string;
+    askForChanges: string;
+    // Exactly four tasks; the component pairs them with fixed assignee data.
+    tasks: [HowTask, HowTask, HowTask, HowTask];
   };
-  features: {
-    teammates: FeatureSection;
-    autonomous: FeatureSection;
-    review: FeatureSection;
-    qa: FeatureSection;
-    skills: FeatureSection;
-    runtimes: FeatureSection;
-    mock: FeaturesMock;
-  };
-  demo: {
-    kicker: string;
-    title: string;
-    windowTitle: string;
-    userMsg: string;
-    agentReply: string;
-    working: string;
-    running: string;
-    done: string;
-    testsPassed: string;
-    pr: string;
-    readyToMerge: string;
-    replyPlaceholder: string;
-    statusLabel: string;
-    assigneeLabel: string;
-    priorityLabel: string;
-    projectLabel: string;
-    priorityHigh: string;
-    project: string;
-    statusTodo: string;
-    statusInProgress: string;
-    statusInReview: string;
-  };
-  howItWorks: {
+  agentSetup: {
     label: string;
-    headlineMain: string;
-    headlineFaded: string;
-    steps: { title: string; description: string }[];
-    cta: string;
-    ctaDocs: string;
+    title: string;
+    steps: [TitledText, TitledText, TitledText];
+    card: {
+      title: string;
+      nameLabel: string;
+      nameValue: string;
+      jobLabel: string;
+      jobValue: string;
+      docsLabel: string;
+      docs: string[];
+      toolsLabel: string;
+      createAgent: string;
+    };
+  };
+  automation: {
+    label: string;
+    title: string;
+    body: string;
+    cardTitle: string;
+    when: string;
+    if: string;
+    then: string;
+    whenValue: string;
+    ifValue: string;
+    thenValue: string;
+    footnote: string;
+    moreExamples: string;
+    examples: string[];
+  };
+  departments: {
+    label: string;
+    title: string;
+    body: string;
+    youAsk: string;
+    /** `{agent}` is replaced with the department's agent name. */
+    agentDoes: string;
+    youGet: string;
+    setupOnce: string;
+    seeAll: string;
+    moreTasks: string;
+    teams: Record<
+      LandingDeptKey,
+      { ask: string; does: string; get: string; setup: string; tasks: string[] }
+    >;
+  };
+  inside: {
+    label: string;
+    title: string;
+    knowledge: TitledText & { files: string[]; quote: string; quoteSource: string };
+    assistant: TitledText & { userMsg: string; reply: string };
+    automations: TitledText;
+  };
+  control: {
+    label: string;
+    title: string;
+    body: string;
+    items: TitledText[];
+  };
+  tools: {
+    title: string;
+    body: string;
+    anyMcp: string;
+  };
+  pricing: {
+    label: string;
+    title: string;
+    subtitle: string;
+    free: {
+      name: string;
+      description: string;
+      price: string;
+      period: string;
+      features: string[];
+      cta: string;
+    };
+    team: {
+      name: string;
+      badge: string;
+      description: string;
+      price: string;
+      period: string;
+      monthly: string;
+      features: string[];
+      cta: string;
+    };
+    trialNote: string;
+    needMore: string;
+    contactSales: string;
   };
   faq: {
     label: string;
     headline: string;
     items: { question: string; answer: string }[];
   };
-  footer: {
-    tagline: string;
+  finalCta: {
+    title: string;
+    body: string;
     cta: string;
-    groups: {
-      product: FooterGroup;
-      resources: FooterGroup;
-      company: FooterGroup;
-    };
+    talkToSales: string;
+  };
+  footer: {
+    navigation: string;
     copyright: string;
   };
   about: {
@@ -380,4 +352,12 @@ export type LandingDict = {
       invalidEmail: string;
     };
   };
+};
+
+type HowTask = {
+  title: string;
+  status: string;
+  steps: [string, string, string];
+  proof: string;
+  source: string;
 };

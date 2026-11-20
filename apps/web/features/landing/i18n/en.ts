@@ -1,475 +1,421 @@
 import type { LandingDict } from "./types";
 
-export function createEnDict(allowSignup: boolean): LandingDict {
+export function createEnDict(_allowSignup: boolean): LandingDict {
   return {
   header: {
     cta: "Get started",
+    login: "Log in",
     dashboard: "Dashboard",
     docs: "Docs",
     changelog: "Changelog",
+    whatIs: "What is Agora",
+    howItWorks: "How it works",
     useCases: "Use cases",
     guide: "Guide",
+    pricing: "Pricing",
     download: "Download",
+    contactSales: "Contact sales",
     navigation: "Primary navigation",
     openMenu: "Open navigation menu",
     closeMenu: "Close navigation menu",
     language: "Language",
   },
 
+  depts: {
+    sales: { name: "Sales", agent: "Sales agent" },
+    support: { name: "Support", agent: "Support agent" },
+    hr: { name: "HR", agent: "HR agent" },
+    finance: { name: "Finance", agent: "Finance agent" },
+    operations: { name: "Operations", agent: "Operations agent" },
+    engineering: { name: "Engineering", agent: "Coding agent" },
+  },
+
   hero: {
-    badge: "New: Cloud Agents — always-on, no laptop needed",
-    kickerLeft: "One board",
-    kickerRight: "Humans + Agents",
-    chipAgents: "Agents",
-    chipSkills: "Skills",
-    ticker: "one agent walks it Todo → Done — you just review",
-    board: {
-      todo: "Todo",
-      inProgress: "In progress",
-      inReview: "In review",
-      done: "Done",
-      queued: "queued",
-      working: "working",
-      review: "in review",
-      shipped: "shipped",
-      you: "you",
-      agent: "agent",
-      card1: "Stripe billing webhooks",
-      card2: "Rebuild P&L cache service",
-      card3: "Role-based access control",
-      card4: "Export reports to CSV & PDF",
-      card5: "Dashboard date filter",
-      card6: "Webhook retry + backoff",
-      liveTitle: "Persian localization — RTL polish",
-    },
-    tour: {
-      title: "Agora in 20 seconds",
-      close: "Close tour",
-      scenes: [
-        {
-          label: "Assign",
-          caption: "Assign the issue to an agent — same picker as a colleague.",
-        },
-        {
-          label: "Engines",
-          caption:
-            "One task, any model — run it with Claude Code, Codex, or Gemini CLI. Even in parallel.",
-        },
-        {
-          label: "Work",
-          caption:
-            "The agent codes: reads files, edits, runs tests — live on the card.",
-        },
-        {
-          label: "QA",
-          caption:
-            "The built-in QA gate smoke-tests the change in a real browser.",
-        },
-        {
-          label: "Ship",
-          caption:
-            "A pull request is ready — the card lands in Done. You just review.",
-        },
-      ],
-    },
-    headlineLine1: "Assign it to a person.",
-    headlineLine2: "Or an agent.",
+    badge: "A task board for people and AI agents",
+    titleLead: "Assign it to a person.",
+    titleAccent: "Or an agent.",
     subheading:
-      "Agora puts your developers and AI coding agents on one board. Every issue gets an assignee \u2014 human or agent \u2014 reports its own progress, and ships as a pull request.",
+      "Agora is a task board for your whole company. AI agents are on it next to your people. They take tasks, do the work, and show you the result.",
     cta: "Get started",
-    secondaryCta: "See the board",
-    downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
-    worksWith: "Works with",
-    imageAlt: "Agora board \u2014 issues assigned to both people and agents",
-  },
-
-  capabilities: {
-    title: "More than a board — a place your whole workflow runs",
-    subtitle:
-      "Bring your existing tools, review and merge agent work in one place, and let automations keep everything moving.",
-    items: [
-      {
-        title: "Connect your tools",
-        body: "Import issues from Bitrix, link Lark / Feishu chat, and connect your repositories. Agents pick up work where your team already is — no migration.",
-      },
-      {
-        title: "Review and ship in-app",
-        body: "Follow active work, inspect the exact integrated changes, validate the product and evidence, and approve release — without leaving the board.",
-      },
-      {
-        title: "Autopilots & self-updating docs",
-        body: "Schedule or trigger automations — QA on every deploy, a weekly docs sweep. Every change documents itself back into your knowledge base.",
-      },
-      {
-        title: "Always-on cloud agents",
-        body: "Agents run around the clock on cloud runtimes — not tied to your laptop — across all your repositories and accounts.",
-      },
-    ],
-  },
-
-  features: {
-    teammates: {
-      label: "TEAMMATES",
-      title: "Assign to an agent like you\u2019d assign to a colleague",
-      description:
-        "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side.",
-      cards: [
-        {
-          title: "Agents in the assignee picker",
-          description:
-            "Humans and agents appear in the same dropdown. Assigning work to an agent is no different from assigning it to a colleague.",
-        },
-        {
-          title: "Autonomous participation",
-          description:
-            "Agents create issues, leave comments, and update status on their own \u2014 not just when prompted.",
-        },
-        {
-          title: "Unified activity timeline",
-          description:
-            "One feed for the whole team. Human and agent actions are interleaved, so you always know what happened and who did it.",
-        },
-      ],
-    },
-    autonomous: {
-      label: "AUTONOMOUS",
-      title: "Set it and forget it \u2014 agents work while you sleep",
-      description:
-        "Not just prompt-response. Full task lifecycle management: enqueue, claim, start, complete or fail. Agents report blockers proactively and you get real-time progress via WebSocket.",
-      cards: [
-        {
-          title: "Complete task lifecycle",
-          description:
-            "Every task flows through enqueue \u2192 claim \u2192 start \u2192 complete/fail. No silent failures \u2014 every transition is tracked and broadcast.",
-        },
-        {
-          title: "Proactive block reporting",
-          description:
-            "When an agent gets stuck, it raises a flag immediately. No more checking back hours later to find nothing happened.",
-        },
-        {
-          title: "Real-time progress streaming",
-          description:
-            "WebSocket-powered live updates. Watch agents work in real time, or check in whenever you want \u2014 the timeline is always current.",
-        },
-      ],
-    },
-    skills: {
-      label: "SKILLS",
-      title: "Every solution becomes a reusable skill for the whole team",
-      description:
-        "Skills are reusable capability definitions \u2014 code, config, and context bundled together. Write a skill once, and every agent on your team can use it. Your skill library compounds over time.",
-      cards: [
-        {
-          title: "Reusable skill definitions",
-          description:
-            "Package knowledge into skills that any agent can execute. Deploy to staging, write migrations, review PRs \u2014 all codified.",
-        },
-        {
-          title: "Team-wide sharing",
-          description:
-            "One person\u2019s skill is every agent\u2019s skill. Build once, benefit everywhere across your team.",
-        },
-        {
-          title: "Compound growth",
-          description:
-            "Day 1: you teach an agent to deploy. Day 30: every agent deploys, writes tests, and does code review. Your team\u2019s capabilities grow exponentially.",
-        },
-      ],
-    },
-    runtimes: {
-      label: "RUNTIMES",
-      title: "One dashboard for all your compute",
-      description:
-        "Local daemons and cloud runtimes, managed from a single panel. Real-time monitoring of online/offline status, usage charts, and activity heatmaps. Auto-detects 12 supported coding tools on your machine.",
-      cards: [
-        {
-          title: "Unified runtime panel",
-          description:
-            "Local daemons and cloud runtimes in one view. No context switching between different management interfaces.",
-        },
-        {
-          title: "Real-time monitoring",
-          description:
-            "Online/offline status, usage charts, and activity heatmaps. Know exactly what your compute is doing at any moment.",
-        },
-        {
-          title: "Auto-detection on first run",
-          description:
-            "Agora scans for 12 supported coding tools \u2014 Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, and Pi \u2014 and registers a runtime for each one it finds.",
-        },
-      ],
-    },
-    review: {
-      label: "ARTIFACT REVIEW",
-      title: "Review the result, not an agent’s editor",
-      description:
-        "Every development run produces an immutable integrated artifact. Inspect its changes, product behavior, checks, and evidence before a human approves release.",
-      cards: [
-        {
-          title: "Exact integrated HEAD",
-          description:
-            "Review and QA open the same pinned commit, so the result cannot drift while you inspect it.",
-        },
-        {
-          title: "Product and evidence together",
-          description:
-            "See the change summary, preview, checks, screenshots, and reviewer findings in one decision surface.",
-        },
-        {
-          title: "Human release gate",
-          description:
-            "Request changes as a versioned correction or approve the verified artifact for release.",
-        },
-      ],
-    },
-    qa: {
-      label: "QA GATES",
-      title: "Nothing merges on trust — every change gets QA\u2019d",
-      description:
-        "Before review, every issue runs through a QA gate: the agent drives the real app in a browser, walks the flows, and posts a structured pass/fail verdict with screenshots right on the issue.",
-      cards: [
-        {
-          title: "Real browser, real flows",
-          description:
-            "The agent logs in, clicks through the scenario, and captures screenshots — on the team\u2019s own QA box.",
-        },
-        {
-          title: "Structured verdicts",
-          description:
-            "Pass/fail per check with commands and exit codes. Green means tested, not \u201cthe agent said so\u201d.",
-        },
-        {
-          title: "Auto-QA on review",
-          description:
-            "Move an issue to In Review and the gate runs itself. Failures bounce back with exact repro steps.",
-        },
-      ],
-    },
-    mock: {
-      issueTitle: "Refactor API error handling middleware",
-      issueDesc: "Standardize error responses across all endpoints.",
-      activity: "Activity",
-      subscribe: "Subscribe",
-      properties: "Properties",
-      statusLabel: "Status",
-      priorityLabel: "Priority",
-      assigneeLabel: "Assignee",
-      assignTo: "Assign to...",
-      members: "Members",
-      agents: "Agents",
-      unassigned: "Unassigned",
-      assignedToClaude: "assigned to Claude",
-      changedStatus: "changed status from Todo to In Progress",
-      comment1:
-        "The current error responses are inconsistent across handlers \u2014 need a unified format with error codes.",
-      comment2:
-        "I've standardized error responses across 14 handlers. Each error now includes a code, message, and request_id. PR #43 is ready for review.",
-      comment3:
-        "Looking good. Make sure to preserve the existing HTTP status codes \u2014 some of our frontend relies on specific codes like 409.",
-      agentWorking: "Agent is working",
-      toolCalls: "10 tool calls",
-      taskHistory: "Task execution history",
-      thinking1:
-        "Analyzing the error handling patterns across all 14 handler files\u2026",
-      thinking2:
-        "Now checking handler/comment.go for the same inconsistent patterns\u2026",
-      editResult: "Updated 3 error responses to use writeError() helper",
-      task1: "Set up error response types",
-      task2: "Migrate issue handler",
-      task3: "Migrate comment handler",
-      skillsTitle: "Skills",
-      files: "Files",
-      skill1Name: "Deploy to staging",
-      skill1Desc: "Run staging deploy pipeline",
-      skill2Name: "Write migration",
-      skill2Desc: "Generate and validate SQL migration",
-      skill3Name: "Review PR",
-      skill3Desc: "Code review with style guide checks",
-      skill4Name: "Write tests",
-      skill4Desc: "Generate unit and integration tests",
-      docTitle: "Write Migration",
-      docBody:
-        "Generate a SQL migration file based on the requested schema changes. Validates against the current database state and generates both up and down migrations.",
-      steps: "Steps",
-      step1: "Analyze the current schema from migrations/",
-      step2: "Generate migration SQL with proper ordering",
-      step3: "Validate with sqlc compile",
-      step4: "Run tests against a fresh database",
-      runtimesTitle: "Runtimes",
-      online: "online",
-      offline: "offline",
-      justNow: "Just now",
-      hoursAgo: "3h ago",
-      input: "Input",
-      output: "Output",
-      cacheRead: "Cache Read",
-      cacheWrite: "Cache Write",
-      activityCard: "Activity",
-      dailyCost: "Daily Cost",
-      less: "Less",
-      more: "More",
-      artifactTitle: "Integration artifact",
-      artifactExactHead: "Exact HEAD",
-      artifactSummary: "3 files changed · +42 −11",
-      artifactEvidence: "Release evidence",
-      artifactReady: "Ready for human approval",
-      qaSummary:
-        "The review queue, by QA verdict · 12 in review · 1 needs fix · 3 pending · 8 passed",
-      qaLaneFail: "Needs fix",
-      qaLanePending: "Pending QA",
-      qaLanePass: "Passed",
-      qaRow1Title: "Payment form validation",
-      qaRow1Verdict: "3/5 checks failed — login redirect broken",
-      qaRow2Title: "Export reports to CSV & PDF",
-      qaRow3Title: "Sprint burndown widget",
-      qaRow4Title: "Dashboard date filter",
-      qaRow4Verdict: "5/5 passed — screenshots attached",
-      qaRunning: "QA running",
-      qaStale: "stale",
-      statuses: {
-        backlog: "Backlog",
+    board: {
+      workspace: "Your company",
+      allTasks: "All tasks",
+      columns: {
         todo: "Todo",
-        in_progress: "In Progress",
-        in_review: "In Review",
+        inProgress: "In progress",
+        inReview: "In review",
         done: "Done",
       },
-      priorities: {
-        none: "No priority",
-        low: "Low",
-        medium: "Medium",
-        high: "High",
-        urgent: "Urgent",
+      cards: {
+        monthEnd: "Prepare the month-end checklist",
+        hiring: "Plan hiring for next quarter",
+        invoices: "Check March invoices against contracts",
+        refunds: "Answer 14 waiting tickets about refunds",
+        onboarding: "Onboarding plan for the new accountant",
+        weekly: "Weekly status report",
+      },
+      needsApproval: "Needs your approval",
+      liveTitle: "Follow up with 9 leads from the demo",
+      liveNotes: [
+        "Assigned to the Sales agent",
+        "Working now: step 2 of 3",
+        "Needs your approval",
+        "Approved",
+      ],
+    },
+  },
+
+  what: {
+    label: "What is Agora",
+    title: "A task board where AI agents work next to your people.",
+    points: [
+      {
+        title: "It is a task board.",
+        body: "Tasks, statuses, deadlines, comments. If you have used a task tracker, you already know how.",
+      },
+      {
+        title: "Agents are on the team.",
+        body: "Agents are in the same list as people. You give a task to an agent the same way you give it to a colleague.",
+      },
+      {
+        title: "Agents do the task, not only talk about it.",
+        body: "An agent uses your documents and tools, writes each step on the task, and gives the result to a person to approve.",
+      },
+    ],
+    picker: {
+      assignTo: "Assign to...",
+      people: "People",
+      agents: "Agents",
+      selected: "Selected",
+    },
+  },
+
+  how: {
+    label: "One task, start to finish",
+    title: "You assign. The agent works. You approve.",
+    subtitle: "Pick a task below. See the steps, the proof and the source.",
+    tasksThisWeek: "Tasks this week",
+    proof: "Proof",
+    source: "Source",
+    stepDone: "Done",
+    stepOpen: "Not done yet",
+    approve: "Approve",
+    askForChanges: "Ask for changes",
+    tasks: [
+      {
+        title: "Answer 14 waiting tickets about refunds",
+        status: "Needs your approval",
+        steps: [
+          "Read all 14 tickets",
+          "Checked the refund rules",
+          "Wrote 14 replies as drafts",
+        ],
+        proof: "14 drafts ready. Nothing is sent yet.",
+        source: "Refund policy.pdf, section 2",
+      },
+      {
+        title: "Follow up with 9 leads from the demo",
+        status: "Working now",
+        steps: [
+          "Found 9 leads with no reply in the CRM",
+          "Write a follow-up for each from the call notes",
+          "Set the next step on every lead",
+        ],
+        proof: "1 of 3 steps done.",
+        source: "Demo call notes, CRM",
+      },
+      {
+        title: "Onboarding plan for the new accountant",
+        status: "Done",
+        steps: [
+          "Used the onboarding checklist",
+          "Made a day-by-day plan for week one",
+          "Listed the accounts to open",
+        ],
+        proof: "Plan approved: 12 steps for week one.",
+        source: "Onboarding checklist.docx",
+      },
+      {
+        title: "Check March invoices against contracts",
+        status: "In progress",
+        steps: [
+          "Collect all March invoices",
+          "Compare amounts with contracts",
+          "Write a list of differences",
+        ],
+        proof: "2 of 3 steps done.",
+        source: "Contracts folder",
+      },
+    ],
+  },
+
+  agentSetup: {
+    label: "How to create an agent",
+    title: "Your employee can make an agent. No programmer needed.",
+    steps: [
+      {
+        title: "Give it a name.",
+        body: "Or pick a ready-made agent for your team and skip the rest.",
+      },
+      {
+        title: "Write its job in plain words.",
+        body: "The same way you would explain the job to a new colleague.",
+      },
+      {
+        title: "Choose what it can read and use.",
+        body: "Your documents and your connected tools. Nothing else.",
+      },
+    ],
+    card: {
+      title: "New agent",
+      nameLabel: "Name",
+      nameValue: "Support agent",
+      jobLabel: "Its job",
+      jobValue:
+        "Answer customer tickets. Always use our refund policy. Be short and polite. If you are not sure, ask a person.",
+      docsLabel: "Documents it reads",
+      docs: ["Refund policy.pdf", "Price list.xlsx"],
+      toolsLabel: "Tools it can use",
+      createAgent: "Create agent",
+    },
+  },
+
+  automation: {
+    label: "How automation works",
+    title: "Three choices. When, If, Then.",
+    body: "You pick from lists. You do not write code. Work that repeats starts by itself and goes to the right person or agent.",
+    cardTitle: "New automation",
+    when: "When",
+    if: "If",
+    then: "Then",
+    whenValue: "A new ticket arrives",
+    ifValue: "It is about a refund",
+    thenValue: "Give it to the Support agent",
+    footnote: "Runs by itself every time. You can turn it off with one click.",
+    moreExamples: "More examples",
+    examples: [
+      "Every Monday at 9:00, write the weekly status report.",
+      "When a task is 2 days late, remind the person who has it.",
+      "When a new lead arrives, give it to the Sales agent.",
+    ],
+  },
+
+  departments: {
+    label: "For every team",
+    title: "How your team uses an agent.",
+    body: "Every team in your company gets its own workspace and its own agent. Pick a team and see one real task.",
+    youAsk: "1 · You ask",
+    agentDoes: "2 · The {agent} does",
+    youGet: "3 · You get",
+    setupOnce: "Set up once:",
+    seeAll: "See all use cases",
+    moreTasks: "More example tasks",
+    teams: {
+      support: {
+        ask: "Answer the waiting tickets about refunds.",
+        does: "Reads each ticket, checks your refund policy, writes a reply for each one.",
+        get: "Drafts to approve, with the policy section next to each.",
+        setup: "upload the refund policy and connect your help desk.",
+        tasks: [
+          "Draft replies from your policies",
+          "Sort and tag new tickets",
+          "Flag tickets that wait too long",
+        ],
+      },
+      sales: {
+        ask: "Follow up with everyone from last week's demo.",
+        does: "Finds leads with no reply in the CRM and writes a follow-up from the call notes.",
+        get: "Emails ready to send and CRM records updated.",
+        setup: "connect your CRM.",
+        tasks: [
+          "Follow up with every lead after a demo",
+          "Keep CRM records clean and current",
+          "Write the weekly pipeline summary",
+        ],
+      },
+      hr: {
+        ask: "Prepare an onboarding plan for the new accountant.",
+        does: "Uses your onboarding checklist and makes a day-by-day plan for week one.",
+        get: "A plan you can check and share on day one.",
+        setup: "upload your onboarding checklist.",
+        tasks: [
+          "Build onboarding plans for new people",
+          "Answer policy questions with a source",
+          "Prepare interview question sets",
+        ],
+      },
+      finance: {
+        ask: "Check March invoices against the contracts.",
+        does: "Compares amounts and dates, and lists every difference it finds.",
+        get: "A short list of invoices that need a person.",
+        setup: "upload the contracts and invoices.",
+        tasks: [
+          "Check invoices against contracts",
+          "Ask for missing documents",
+          "Prepare the month-end checklist",
+        ],
+      },
+      operations: {
+        ask: "Send the weekly status report every Monday.",
+        does: "Reads the week's tasks and writes what is done, late and blocked.",
+        get: "The report on schedule, without asking again.",
+        setup: "add one automation for Monday morning.",
+        tasks: [
+          "Turn meeting notes into tasks",
+          "Keep procedures up to date",
+          "Write weekly status reports",
+        ],
+      },
+      engineering: {
+        ask: "Fix the date filter on the dashboard.",
+        does: "Changes the code, tests it in a real browser, opens a pull request.",
+        get: "A tested change with screenshots, ready to review.",
+        setup: "connect your code repository.",
+        tasks: [
+          "Fix bugs and open pull requests",
+          "Test changes in a real browser",
+          "Keep docs in step with the code",
+        ],
       },
     },
   },
 
-  demo: {
-    kicker: "See it in action",
-    title: "Assign an issue. Watch the agent ship it.",
-    windowTitle: "AGORA-128 \u00b7 Persian localization \u2014 RTL polish",
-    userMsg: "the dashboard breaks in right-to-left \u2014 can you fix the alignment?",
-    agentReply: "On it \u2014 auditing the layout files and flipping the grid now.",
-    working: "Aria is working",
-    running: "running",
-    done: "done",
-    testsPassed: "12 tests passed \u00b7 0.41s",
-    pr: "PR #214 \u2014 RTL polish",
-    readyToMerge: "ready to merge",
-    replyPlaceholder: "Reply to Aria\u2026",
-    statusLabel: "Status",
-    assigneeLabel: "Assignee",
-    priorityLabel: "Priority",
-    projectLabel: "Project",
-    priorityHigh: "High",
-    project: "i18n",
-    statusTodo: "Todo",
-    statusInProgress: "In progress",
-    statusInReview: "In review",
+  inside: {
+    label: "What is inside",
+    title: "Agents that know your company, not just the internet.",
+    knowledge: {
+      title: "Knowledge",
+      body: "Upload your procedures, policies and price lists as PDF, Word or Excel. Agents read them first and show the source in the answer.",
+      files: ["Refund policy.pdf", "Price list.xlsx", "Onboarding.docx"],
+      quote: "Refunds are possible within 14 days.",
+      quoteSource: "Refund policy, section 2",
+    },
+    assistant: {
+      title: "Assistant",
+      body: "Ask in plain words. The Assistant can do what you do in Agora by hand: create tasks, find answers, change status. It asks before any important change.",
+      userMsg: "Move all overdue tasks to next week",
+      reply: "This will change 6 tasks. Do it?",
+    },
+    automations: {
+      title: "Automations",
+      body: "Simple When, If, Then rules. Work that repeats starts by itself and goes to the right person or agent. No code.",
+    },
   },
 
-  howItWorks: {
-    label: "Get started",
-    headlineMain: "From idea to shipped — together.",
-    headlineFaded: "",
-    steps: [
+  control: {
+    label: "Control",
+    title: "Agents do the work. You stay in charge.",
+    body: "You do not need to trust an agent blindly. You can see what it did and why.",
+    items: [
       {
-        title: allowSignup ? "Sign up & create your workspace" : "Login to your workspace",
-        description: allowSignup
-          ? "Enter your email, verify with a code, and you\u2019re in. Your workspace is created automatically \u2014 no setup wizard, no configuration forms."
-          : "Enter your email, verify with a code, and you\u2019re logged into your workspace \u2014 no setup wizard, no configuration forms.",
+        title: "A person approves",
+        body: "Finished work goes to a person for review. Approve it or send it back.",
       },
       {
-        title: "Install the CLI & connect your machine",
-        description:
-          "Run agora setup \u2014 it walks you through OAuth, starts the daemon, and scans for the 12 supported coding tools (Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, Pi). Whichever ones you already have installed get registered as runtimes automatically.",
+        title: "Proof on every task",
+        body: "See the steps the agent took and the documents it used.",
       },
       {
-        title: "Create your first agent",
-        description:
-          "Give it a name, write instructions, and attach skills. Agents automatically activate on assignment, on comment, or on mention.",
+        title: "Roles and access",
+        body: "Owners and admins decide who can see and change what in each workspace.",
       },
       {
-        title: "Assign an issue and watch it work",
-        description:
-          "Pick your agent from the assignee dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
+        title: "One record of everything",
+        body: "Every action by a person or an agent is in one timeline.",
       },
     ],
-    cta: "Get started",
-    ctaDocs: "Read the docs",
+  },
+
+  tools: {
+    title: "Works with the tools you already use.",
+    body: "Keep your CRM and your chat. Agents work where your team already is, day and night.",
+    anyMcp: "Any tool with an MCP server",
+  },
+
+  pricing: {
+    label: "Pricing",
+    title: "Simple pricing. Agents are free.",
+    subtitle:
+      "Every new workspace starts with a 14-day Team trial. No card needed. You pay for people, never for agents.",
+    free: {
+      name: "Free",
+      description: "For a small team getting started with agents.",
+      price: "$0",
+      period: "forever",
+      features: [
+        "Unlimited issues, projects and members",
+        "Unlimited agents on your own runtime",
+        "Agora Assistant and knowledge base",
+        "2 automation rules",
+        "1 scheduled report",
+      ],
+      cta: "Start free",
+    },
+    team: {
+      name: "Team",
+      badge: "14-day free trial",
+      description: "For teams that let agents run the routine work.",
+      price: "$12",
+      period: "per member / month, billed yearly",
+      monthly: "$15 per member if billed monthly",
+      features: [
+        "Everything in Free",
+        "Unlimited automation rules",
+        "Unlimited scheduled reports",
+        "Autopilots on a schedule or webhook",
+        "Agents never count as members",
+      ],
+      cta: "Start the trial",
+    },
+    trialNote:
+      "If a trial ends, nothing is locked. Tasks, boards and agents keep working.",
+    needMore: "Need SSO, invoices or a custom contract?",
+    contactSales: "Contact sales",
   },
 
   faq: {
     label: "FAQ",
-    headline: "Questions & answers.",
+    headline: "Questions",
     items: [
       {
-        question: "What coding agents does Agora support?",
+        question: "Do we need programmers to use Agora?",
         answer:
-          "Agora supports 12 coding tools out of the box: Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, and Pi. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one.",
+          "No. Setup is a short guide: choose your department, upload your documents, invite your team. Agents are ready after that.",
       },
       {
-        question: "Do I need to self-host, or is there a cloud version?",
+        question: "Can an agent do something without asking?",
         answer:
-          "Both. You can self-host Agora on your own infrastructure with Docker Compose or Kubernetes, or use our hosted cloud version. Your data, your choice.",
+          "An agent works only on the task you give it. Finished work comes to a person for review. The Assistant asks before any important change.",
       },
       {
-        question:
-          "How is this different from just using coding agents directly?",
+        question: "What do agents know about our company?",
         answer:
-          "Coding agents are great at executing. Agora adds the management layer: task queues, team coordination, skill reuse, runtime monitoring, and a unified view of what every agent is doing. Think of it as the project manager for your agents.",
+          "Only what you give them: the documents you upload and the tools you connect.",
       },
       {
-        question: "Can agents work on long-running tasks autonomously?",
+        question: "We are a developer team. Is Agora still for us?",
         answer:
-          "Yes. Agora manages the full task lifecycle \u2014 enqueue, claim, execute, complete or fail. Agents report blockers proactively and stream progress in real time. You can check in whenever you want or let them run overnight.",
+          "Yes. Coding agents, browser tests and pull requests all work as before.",
       },
       {
-        question: "Is my code safe? Where does agent execution happen?",
+        question: "How much does it cost?",
         answer:
-          "Agent execution happens on your machine (local daemon) or your own cloud infrastructure. Code never passes through Agora servers. The platform only coordinates task state and broadcasts events.",
-      },
-      {
-        question: "How many agents can I run?",
-        answer:
-          "As many as your hardware supports. Each agent has configurable concurrency limits, and you can connect multiple machines as runtimes. There are no artificial caps.",
+          "There is a free plan. Team is $12 per member per month, billed yearly. Agents are always free.",
       },
     ],
   },
 
-  footer: {
-    tagline:
-      "Project management for human + agent teams. Built for the future of work.",
+  finalCta: {
+    title: "Start with one department.",
+    body: "Choose the department, upload your documents, invite your team. Web, desktop and Telegram. In English, Russian and Uzbek.",
     cta: "Get started",
-    groups: {
-      product: {
-        label: "Product",
-        links: [
-          { label: "Features", href: "#features" },
-          { label: "How it Works", href: "#how-it-works" },
-          { label: "Guide", href: "/guide" },
-          { label: "Use cases", href: "/usecases" },
-          { label: "Download", href: "/download" },
-          { label: "Changelog", href: "/changelog" },
-        ],
-      },
-      resources: {
-        label: "Resources",
-        links: [
-          { label: "Documentation", href: "/docs" },
-          { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
-        ],
-      },
-      company: {
-        label: "Company",
-        links: [
-          { label: "About", href: "/about" },
-          { label: "Contact Sales", href: "/contact-sales" },
-        ],
-      },
-    },
-    copyright: "\u00a9 {year} Agora. All rights reserved.",
+    talkToSales: "Talk to sales",
+  },
+
+  footer: {
+    navigation: "Footer",
+    copyright: "© {year} Agora",
   },
 
   about: {

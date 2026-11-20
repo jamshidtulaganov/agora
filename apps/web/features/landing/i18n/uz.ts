@@ -1,477 +1,421 @@
 import type { LandingDict } from "./types";
 
-export function createUzDict(allowSignup: boolean): LandingDict {
+export function createUzDict(_allowSignup: boolean): LandingDict {
   return {
   header: {
     cta: "Boshlash",
+    login: "Kirish",
     dashboard: "Boshqaruv paneli",
     docs: "Hujjatlar",
-    changelog: "O'zgarishlar jurnali",
-    useCases: "Foydalanish holatlari",
-    guide: "Qo'llanma",
+    changelog: "Yangiliklar",
+    whatIs: "Agora nima",
+    howItWorks: "Qanday ishlaydi",
+    useCases: "Misollar",
+    guide: "Qoʻllanma",
+    pricing: "Narxlar",
     download: "Yuklab olish",
+    contactSales: "Sotuv boʻlimiga yozish",
     navigation: "Asosiy navigatsiya",
-    openMenu: "Navigatsiya menyusini ochish",
-    closeMenu: "Navigatsiya menyusini yopish",
+    openMenu: "Menyuni ochish",
+    closeMenu: "Menyuni yopish",
     language: "Til",
   },
 
+  depts: {
+    sales: { name: "Sotuv", agent: "Sotuv agenti" },
+    support: { name: "Qoʻllab-quvvatlash", agent: "Qoʻllab-quvvatlash agenti" },
+    hr: { name: "HR", agent: "HR agenti" },
+    finance: { name: "Moliya", agent: "Moliya agenti" },
+    operations: { name: "Operatsiyalar", agent: "Operatsiyalar agenti" },
+    engineering: { name: "Dasturlash", agent: "Dasturchi agent" },
+  },
+
   hero: {
-    badge: "Yangi: Cloud Agentlar — doim yoniq, noutbuk shart emas",
-    kickerLeft: "Bitta doska",
-    kickerRight: "Odamlar + Agentlar",
-    chipAgents: "Agentlar",
-    chipSkills: "Ko'nikmalar",
-    ticker: "bitta agent uni Bajariladi → Bajarildi'ga olib boradi — siz faqat review qilasiz",
-    board: {
-      todo: "Bajariladi",
-      inProgress: "Jarayonda",
-      inReview: "Ko'rib chiqilmoqda",
-      done: "Bajarildi",
-      queued: "navbatda",
-      working: "ishlanmoqda",
-      review: "tekshiruvda",
-      shipped: "chiqarildi",
-      you: "siz",
-      agent: "agent",
-      card1: "Stripe billing webhooklari",
-      card2: "P&L kesh servisini qayta qurish",
-      card3: "Rolga asoslangan kirish nazorati",
-      card4: "Hisobotlarni CSV va PDF'ga eksport",
-      card5: "Dashboard sana filtri",
-      card6: "Webhook retry + backoff",
-      liveTitle: "Fors lokalizatsiyasi — RTL sayqal",
-    },
-    tour: {
-      title: "Agora 20 soniyada",
-      close: "Tur oynasini yopish",
-      scenes: [
-        {
-          label: "Biriktirish",
-          caption:
-            "Vazifani agentga biriktiring — xuddi hamkasbga biriktirgandek.",
-        },
-        {
-          label: "LLM'lar",
-          caption:
-            "Bitta vazifa — istalgan model: Claude Code, Codex yoki Gemini CLI. Hatto parallel ham.",
-        },
-        {
-          label: "Ish",
-          caption:
-            "Agent kod yozadi: fayllarni o'qiydi, tahrirlaydi, test yuritadi — hammasi kartada jonli.",
-        },
-        {
-          label: "QA",
-          caption:
-            "Ichki QA darvozasi o'zgarishni haqiqiy brauzerda tekshiradi.",
-        },
-        {
-          label: "Chiqarish",
-          caption:
-            "Pull request tayyor — karta Bajarildi'ga tushadi. Siz faqat review qilasiz.",
-        },
-      ],
-    },
-    headlineLine1: "Uni insonga biriktiring.",
-    headlineLine2: "Yoki agentga.",
+    badge: "Odamlar va AI agentlar uchun vazifalar doskasi",
+    titleLead: "Odamga topshiring.",
+    titleAccent: "Yoki agentga.",
     subheading:
-      "Agora dasturchilaringiz va AI kod agentlarini bitta doskaga jamlaydi. Har bir vazifa ijrochiga — inson yoki agentga — biriktiriladi, o'z holatini bildiradi va pull request sifatida yetkaziladi.",
+      "Agora — butun kompaniya uchun vazifalar doskasi. AI agentlar unda xodimlaringiz yonida ishlaydi. Ular vazifani oladi, ishni bajaradi va natijani koʻrsatadi.",
     cta: "Boshlash",
-    secondaryCta: "Doskani ko'rish",
-    downloadDesktop: "Desktop'ni yuklab olish",
-    talkToSales: "Savdo bilan bog'lanish",
-    worksWith: "Quyidagilar bilan ishlaydi",
-    imageAlt: "Agora doskasi — vazifalar ham odamlarga, ham agentlarga biriktirilgan",
-  },
-
-  capabilities: {
-    title: "Shunchaki doska emas — butun ish jarayoningiz yuradigan joy",
-    subtitle:
-      "Mavjud vositalaringizni ulang, agent ishini bir joyda ko'rib chiqib merge qiling, avtomatlashtirishlar esa hammasini harakatda ushlab tursin.",
-    items: [
-      {
-        title: "Vositalaringizni ulang",
-        body: "Bitrix'dan vazifalarni import qiling, Lark / Feishu chatni ulang, repozitoriylaringizni ulang. Agentlar ishni jamoangiz allaqachon turgan joydan oladi — migratsiya yo'q.",
-      },
-      {
-        title: "Review va chiqarish — ilova ichida",
-        body: "Faol ishni kuzating, aynan integratsiya qilingan o'zgarishlarni tekshiring, mahsulot va dalillarni tasdiqlang, so'ng chiqarishga ruxsat bering — doskadan chiqmasdan.",
-      },
-      {
-        title: "Autopilotlar va o'zi yangilanadigan hujjatlar",
-        body: "Avtomatlashtirishlarni jadval yoki triggerga qo'ying — har deploy'da QA, haftalik hujjat tozalovi. Har bir o'zgarish o'zini bilimlar bazasiga hujjatlab qo'yadi.",
-      },
-      {
-        title: "Doim yoniq bulut agentlari",
-        body: "Agentlar bulut ijro muhitlarida kechayu kunduz ishlaydi — noutbukingizga bog'lanmagan — barcha repozitoriy va hisoblaringiz bo'ylab.",
-      },
-    ],
-  },
-
-  features: {
-    teammates: {
-      label: "HAMKORLAR",
-      title: "Agentga xuddi hamkasbingizdek vazifa biriktiring",
-      description:
-        "Agentlar passiv vositalar emas — ular faol ishtirokchilar. Ular profilga ega, holatni bildiradi, vazifa yaratadi, izoh qoldiradi va holatni o'zgartiradi. Faollik tasmangizda odamlar va agentlar yonma-yon ishlaydi.",
-      cards: [
-        {
-          title: "Ijrochi tanlovida agentlar",
-          description:
-            "Odamlar va agentlar bitta ro'yxatda ko'rinadi. Agentga ish biriktirish hamkasbga biriktirishdan farq qilmaydi.",
-        },
-        {
-          title: "Mustaqil ishtirok",
-          description:
-            "Agentlar vazifa yaratadi, izoh qoldiradi va holatni o'zlari yangilaydi — faqat so'ralganda emas.",
-        },
-        {
-          title: "Yagona faollik tasmasi",
-          description:
-            "Butun jamoa uchun bitta tasma. Inson va agent harakatlari aralash ko'rinadi, shuning uchun nima bo'lganini va kim qilganini doim bilasiz.",
-        },
-      ],
-    },
-    autonomous: {
-      label: "MUSTAQIL",
-      title: "O'rnating va unuting — siz uxlayotganda agentlar ishlaydi",
-      description:
-        "Shunchaki so'rov-javob emas. To'liq vazifa hayot tsikli boshqaruvi: navbatga qo'yish, olish, boshlash, yakunlash yoki xato. Agentlar to'siqlarni oldindan bildiradi va siz WebSocket orqali real vaqtli holatni olasiz.",
-      cards: [
-        {
-          title: "To'liq vazifa hayot tsikli",
-          description:
-            "Har bir vazifa navbat → olish → boshlash → yakun/xato bosqichlaridan o'tadi. Jimgina xatolik yo'q — har bir o'tish kuzatiladi va e'lon qilinadi.",
-        },
-        {
-          title: "To'siqlar haqida ogohlantirish",
-          description:
-            "Agent to'xtab qolsa, darhol bayroq ko'taradi. Endi soatlar o'tib, hech nima bo'lmaganini bilib qolmaysiz.",
-        },
-        {
-          title: "Real vaqtli holat oqimi",
-          description:
-            "WebSocket asosidagi jonli yangilanishlar. Agentlarni real vaqtda kuzating yoki xohlagan vaqtingizda tekshiring — tasma doim dolzarb.",
-        },
-      ],
-    },
-    skills: {
-      label: "KO'NIKMALAR",
-      title: "Har bir yechim butun jamoa uchun qayta ishlatiladigan ko'nikmaga aylanadi",
-      description:
-        "Ko'nikmalar qayta ishlatiladigan imkoniyat ta'riflari — kod, sozlama va kontekst birga. Ko'nikmani bir marta yozing, jamoangizdagi har bir agent undan foydalanadi. Ko'nikmalar kutubxonangiz vaqt o'tishi bilan boyiydi.",
-      cards: [
-        {
-          title: "Qayta ishlatiladigan ko'nikmalar",
-          description:
-            "Bilimni har qanday agent bajara oladigan ko'nikmalarga jamlang. Staging'ga joylash, migratsiya yozish, PR ko'rib chiqish — barchasi kodlangan.",
-        },
-        {
-          title: "Butun jamoa bilan ulashish",
-          description:
-            "Bir kishining ko'nikmasi — har bir agentning ko'nikmasi. Bir marta yarating, hamma joyda foyda.",
-        },
-        {
-          title: "Bosqichma-bosqich o'sish",
-          description:
-            "1-kun: agentni joylashtirishga o'rgatasiz. 30-kun: har bir agent joylaydi, test yozadi va kod ko'rib chiqadi. Jamoangiz imkoniyatlari eksponensial o'sadi.",
-        },
-      ],
-    },
-    runtimes: {
-      label: "IJRO MUHITLARI",
-      title: "Barcha hisoblash quvvatingiz uchun bitta panel",
-      description:
-        "Mahalliy demonlar va bulutli ijro muhitlari bitta paneldan boshqariladi. Onlayn/oflayn holat, foydalanish grafiklari va faollik issiqlik xaritalarini real vaqtda kuzatish. Mashinangizdagi 12 ta qo'llab-quvvatlanadigan vositani avtomatik aniqlaydi.",
-      cards: [
-        {
-          title: "Yagona ijro muhiti paneli",
-          description:
-            "Mahalliy demonlar va bulutli muhitlar bitta ko'rinishda. Turli boshqaruv interfeyslari o'rtasida almashish shart emas.",
-        },
-        {
-          title: "Real vaqtli kuzatuv",
-          description:
-            "Onlayn/oflayn holat, foydalanish grafiklari va faollik xaritalari. Hisoblash quvvatingiz har lahzada nima qilayotganini aniq biling.",
-        },
-        {
-          title: "Birinchi ishga tushirishda avtomatik aniqlash",
-          description:
-            "Agora 12 ta qo'llab-quvvatlanadigan vositani qidiradi — Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw va Pi — va topganini ijro muhiti sifatida ro'yxatdan o'tkazadi.",
-        },
-      ],
-    },
-    review: {
-      label: "NATIJA REVIEW'I",
-      title: "Agent muharririni emas, natijani tekshiring",
-      description:
-        "Har bir development run o'zgarmas integratsiya artifactini yaratadi. Inson release'ni tasdiqlashidan oldin changes, product, checks va evidence'ni tekshiring.",
-      cards: [
-        {
-          title: "Aniq integration HEAD",
-          description:
-            "Review va QA aynan bitta pin qilingan commitni ochadi, shuning uchun tekshiruv paytida natija siljimaydi.",
-        },
-        {
-          title: "Mahsulot va dalil bir joyda",
-          description:
-            "Change summary, preview, checks, screenshot va reviewer xulosalarini bitta qaror yuzasida ko'ring.",
-        },
-        {
-          title: "Inson release darvozasi",
-          description:
-            "O'zgarishni versioned correction sifatida qaytaring yoki tekshirilgan artifactni release uchun tasdiqlang.",
-        },
-      ],
-    },
-    qa: {
-      label: "QA DARVOZALARI",
-      title: "Hech narsa ishonchga merge bo'lmaydi — har o'zgarish QA'dan o'tadi",
-      description:
-        "Review'dan oldin har bir vazifa QA darvozasidan o'tadi: agent haqiqiy ilovani brauzerda boshqaradi, oqimlarni bosib chiqadi va vazifaning o'ziga skrinshotlar bilan tuzilgan pass/fail xulosasini joylaydi.",
-      cards: [
-        {
-          title: "Haqiqiy brauzer, haqiqiy oqimlar",
-          description:
-            "Agent login qiladi, ssenariy bo'ylab bosib o'tadi va skrinshot oladi — jamoaning o'z QA stendida.",
-        },
-        {
-          title: "Tuzilgan xulosalar",
-          description:
-            "Har tekshiruv uchun pass/fail, buyruqlar va exit-kodlar bilan. Yashil — testdan o'tgan degani, \u201cagent shunday dedi\u201d emas.",
-        },
-        {
-          title: "Review'da avto-QA",
-          description:
-            "Vazifani In Review'ga o'tkazing — darvoza o'zi ishlaydi. Yiqilganlar aniq repro qadamlar bilan qaytadi.",
-        },
-      ],
-    },
-    mock: {
-      issueTitle: "API xato ishlovi middleware'ini refaktoring qilish",
-      issueDesc: "Barcha endpointlarda xato javoblarini standartlashtirish.",
-      activity: "Faollik",
-      subscribe: "Obuna bo'lish",
-      properties: "Xususiyatlar",
-      statusLabel: "Holat",
-      priorityLabel: "Muhimlik",
-      assigneeLabel: "Ijrochi",
-      assignTo: "Kimga biriktirish...",
-      members: "A'zolar",
-      agents: "Agentlar",
-      unassigned: "Biriktirilmagan",
-      assignedToClaude: "Claude'ga biriktirdi",
-      changedStatus: "holatni Bajariladi'dan Jarayonda'ga o'zgartirdi",
-      comment1:
-        "Hozirgi xato javoblari handlerlar bo'ylab har xil — yagona format va xato kodlari kerak.",
-      comment2:
-        "14 ta handler bo'ylab xato javoblarini standartlashtirdim. Endi har bir xatoda kod, xabar va request_id bor. PR #43 ko'rib chiqishga tayyor.",
-      comment3:
-        "Yaxshi ko'rinyapti. Mavjud HTTP status kodlarini saqlab qoling — frontendimizning bir qismi 409 kabi kodlarga tayanadi.",
-      agentWorking: "Agent ishlamoqda",
-      toolCalls: "10 ta tool chaqiruvi",
-      taskHistory: "Vazifa bajarish tarixi",
-      thinking1:
-        "Barcha 14 ta handler faylidagi xato ishlov shablonlarini tahlil qilyapman…",
-      thinking2:
-        "Endi handler/comment.go'da xuddi shu nomuvofiq shablonlarni tekshiryapman…",
-      editResult: "3 ta xato javobi writeError() yordamchisiga o'tkazildi",
-      task1: "Xato javobi turlarini yaratish",
-      task2: "Issue handler'ni ko'chirish",
-      task3: "Comment handler'ni ko'chirish",
-      skillsTitle: "Ko'nikmalar",
-      files: "Fayllar",
-      skill1Name: "Staging'ga joylash",
-      skill1Desc: "Staging joylash jarayonini ishga tushirish",
-      skill2Name: "Migratsiya yozish",
-      skill2Desc: "SQL migratsiyani yaratish va tekshirish",
-      skill3Name: "PR ko'rib chiqish",
-      skill3Desc: "Uslub qo'llanmasi bo'yicha kod tekshiruvi",
-      skill4Name: "Test yozish",
-      skill4Desc: "Unit va integratsiya testlarini yaratish",
-      docTitle: "Migratsiya yozish",
-      docBody:
-        "So'ralgan sxema o'zgarishlari asosida SQL migratsiya faylini yaratadi. Joriy ma'lumotlar bazasi holatiga qarshi tekshiradi va up/down migratsiyalarning ikkalasini ham yaratadi.",
-      steps: "Bosqichlar",
-      step1: "migrations/ dan joriy sxemani tahlil qilish",
-      step2: "To'g'ri tartib bilan migratsiya SQL'ini yaratish",
-      step3: "sqlc compile bilan tekshirish",
-      step4: "Yangi bazaga qarshi testlarni ishga tushirish",
-      runtimesTitle: "Ijro muhitlari",
-      online: "onlayn",
-      offline: "oflayn",
-      justNow: "Hozirgina",
-      hoursAgo: "3 soat oldin",
-      input: "Kirish",
-      output: "Chiqish",
-      cacheRead: "Kesh o'qish",
-      cacheWrite: "Kesh yozish",
-      activityCard: "Faollik",
-      dailyCost: "Kunlik xarajat",
-      less: "Kam",
-      more: "Ko'p",
-      artifactTitle: "Integratsiya artifacti",
-      artifactExactHead: "Aniq HEAD",
-      artifactSummary: "3 fayl o'zgardi · +42 −11",
-      artifactEvidence: "Release dalillari",
-      artifactReady: "Inson tasdig'iga tayyor",
-      qaSummary:
-        "Review navbati, QA xulosasi bo'yicha · 12 ta reviewda · 1 tuzatish kerak · 3 kutilmoqda · 8 o'tdi",
-      qaLaneFail: "Tuzatish kerak",
-      qaLanePending: "QA kutilmoqda",
-      qaLanePass: "O'tdi",
-      qaRow1Title: "To'lov formasi validatsiyasi",
-      qaRow1Verdict: "3/5 tekshiruv yiqildi — login redirect buzilgan",
-      qaRow2Title: "Hisobotlarni CSV va PDF'ga eksport",
-      qaRow3Title: "Sprint burndown vidjeti",
-      qaRow4Title: "Dashboard sana filtri",
-      qaRow4Verdict: "5/5 o'tdi — skrinshotlar biriktirilgan",
-      qaRunning: "QA ishlayapti",
-      qaStale: "eskirgan",
-      statuses: {
-        backlog: "Rejada",
-        todo: "Bajariladi",
-        in_progress: "Jarayonda",
-        in_review: "Ko'rib chiqilmoqda",
+    talkToSales: "Sotuv boʻlimiga yozish",
+    board: {
+      workspace: "Sizning kompaniyangiz",
+      allTasks: "Barcha vazifalar",
+      columns: {
+        todo: "Bajarilishi kerak",
+        inProgress: "Jarayonda",
+        inReview: "Tekshiruvda",
         done: "Bajarildi",
       },
-      priorities: {
-        none: "Muhimlik yo'q",
-        low: "Past",
-        medium: "O'rta",
-        high: "Yuqori",
-        urgent: "Shoshilinch",
+      cards: {
+        monthEnd: "Oy yakuni uchun roʻyxat tayyorlash",
+        hiring: "Keyingi chorak uchun ishga olishni rejalash",
+        invoices: "Mart hisob-fakturalarini shartnomalar bilan solishtirish",
+        refunds: "Pulni qaytarish boʻyicha 14 ta murojaatga javob berish",
+        onboarding: "Yangi buxgalter uchun moslashuv rejasi",
+        weekly: "Haftalik holat hisoboti",
+      },
+      needsApproval: "Tasdigʻingiz kutilmoqda",
+      liveTitle: "Demodan keyin 9 ta mijozga yozish",
+      liveNotes: [
+        "Sotuv agentiga topshirildi",
+        "Hozir ishlamoqda: 3 qadamdan 2-si",
+        "Tasdigʻingiz kutilmoqda",
+        "Tasdiqlandi",
+      ],
+    },
+  },
+
+  what: {
+    label: "Agora nima",
+    title: "AI agentlar xodimlaringiz yonida ishlaydigan vazifalar doskasi.",
+    points: [
+      {
+        title: "Bu vazifalar doskasi.",
+        body: "Vazifalar, holatlar, muddatlar, izohlar. Vazifa trekeridan foydalangan boʻlsangiz, hammasini bilasiz.",
+      },
+      {
+        title: "Agentlar jamoa aʼzosi.",
+        body: "Agentlar odamlar bilan bir roʻyxatda. Agentga vazifani hamkasbingizga berganday berasiz.",
+      },
+      {
+        title: "Agentlar vazifa haqida gapirmaydi, uni bajaradi.",
+        body: "Agent hujjat va vositalaringizdan foydalanadi, har bir qadamni vazifaga yozadi va natijani tasdiqlash uchun odamga beradi.",
+      },
+    ],
+    picker: {
+      assignTo: "Topshirish...",
+      people: "Odamlar",
+      agents: "Agentlar",
+      selected: "Tanlangan",
+    },
+  },
+
+  how: {
+    label: "Bitta vazifa boshidan oxirigacha",
+    title: "Siz topshirasiz. Agent ishlaydi. Siz tasdiqlaysiz.",
+    subtitle: "Quyidan vazifani tanlang. Qadamlar, natija va manbani koʻring.",
+    tasksThisWeek: "Shu haftadagi vazifalar",
+    proof: "Natija",
+    source: "Manba",
+    stepDone: "Bajarildi",
+    stepOpen: "Hali bajarilmagan",
+    approve: "Tasdiqlash",
+    askForChanges: "Oʻzgartirish soʻrash",
+    tasks: [
+      {
+        title: "Pulni qaytarish boʻyicha 14 ta murojaatga javob berish",
+        status: "Tasdigʻingiz kutilmoqda",
+        steps: [
+          "14 ta murojaatning hammasini oʻqidi",
+          "Qaytarish qoidalarini tekshirdi",
+          "14 ta javobni qoralama qilib yozdi",
+        ],
+        proof: "14 ta qoralama tayyor. Hali hech narsa yuborilmagan.",
+        source: "Qaytarish qoidalari.pdf, 2-boʻlim",
+      },
+      {
+        title: "Demodan keyin 9 ta mijozga yozish",
+        status: "Hozir ishlamoqda",
+        steps: [
+          "CRMda javob bermagan 9 ta mijozni topdi",
+          "Qoʻngʻiroq qaydlari asosida har biriga xat yozish",
+          "Har bir mijoz uchun keyingi qadamni belgilash",
+        ],
+        proof: "3 qadamdan 1 tasi bajarildi.",
+        source: "Demo qoʻngʻiroq qaydlari, CRM",
+      },
+      {
+        title: "Yangi buxgalter uchun moslashuv rejasi",
+        status: "Bajarildi",
+        steps: [
+          "Moslashuv roʻyxatidan foydalandi",
+          "Birinchi hafta uchun kunma-kun reja tuzdi",
+          "Ochilishi kerak boʻlgan hisoblarni sanab chiqdi",
+        ],
+        proof: "Reja tasdiqlandi: birinchi hafta uchun 12 qadam.",
+        source: "Moslashuv roʻyxati.docx",
+      },
+      {
+        title: "Mart hisob-fakturalarini shartnomalar bilan solishtirish",
+        status: "Jarayonda",
+        steps: [
+          "Mart oyidagi barcha hisob-fakturalarni yigʻish",
+          "Summalarni shartnomalar bilan solishtirish",
+          "Farqlar roʻyxatini yozish",
+        ],
+        proof: "3 qadamdan 2 tasi bajarildi.",
+        source: "Shartnomalar papkasi",
+      },
+    ],
+  },
+
+  agentSetup: {
+    label: "Agent qanday yaratiladi",
+    title: "Agentni xodimingiz yarata oladi. Dasturchi kerak emas.",
+    steps: [
+      {
+        title: "Unga nom bering.",
+        body: "Yoki jamoangiz uchun tayyor agentni tanlang va qolganini oʻtkazib yuboring.",
+      },
+      {
+        title: "Uning ishini oddiy soʻzlar bilan yozing.",
+        body: "Yangi hamkasbga ishni qanday tushuntirsangiz, xuddi shunday.",
+      },
+      {
+        title: "U nimani oʻqishi va ishlatishini tanlang.",
+        body: "Hujjatlaringiz va ulangan vositalaringiz. Boshqa hech narsa.",
+      },
+    ],
+    card: {
+      title: "Yangi agent",
+      nameLabel: "Nomi",
+      nameValue: "Qoʻllab-quvvatlash agenti",
+      jobLabel: "Uning ishi",
+      jobValue:
+        "Mijozlar murojaatlariga javob ber. Doim pulni qaytarish qoidalarimizdan foydalan. Qisqa va xushmuomala boʻl. Ishonching komil boʻlmasa, odamdan soʻra.",
+      docsLabel: "U oʻqiydigan hujjatlar",
+      docs: ["Qaytarish qoidalari.pdf", "Narxlar roʻyxati.xlsx"],
+      toolsLabel: "U ishlatadigan vositalar",
+      createAgent: "Agent yaratish",
+    },
+  },
+
+  automation: {
+    label: "Avtomatlashtirish qanday ishlaydi",
+    title: "Uchta tanlov. Qachon, Agar, Unda.",
+    body: "Roʻyxatlardan tanlaysiz. Kod yozish shart emas. Takrorlanadigan ish oʻzi boshlanadi va kerakli odam yoki agentga boradi.",
+    cardTitle: "Yangi avtomatlashtirish",
+    when: "Qachon",
+    if: "Agar",
+    then: "Unda",
+    whenValue: "Yangi murojaat kelsa",
+    ifValue: "U pulni qaytarish haqida boʻlsa",
+    thenValue: "Qoʻllab-quvvatlash agentiga berish",
+    footnote: "Har safar oʻzi ishlaydi. Bir bosish bilan oʻchiriladi.",
+    moreExamples: "Yana misollar",
+    examples: [
+      "Har dushanba soat 9:00 da haftalik holat hisobotini yozish.",
+      "Vazifa 2 kun kechiksa, unga masʼul odamga eslatish.",
+      "Yangi mijoz kelganda uni sotuv agentiga berish.",
+    ],
+  },
+
+  departments: {
+    label: "Har bir jamoa uchun",
+    title: "Jamoangiz agentdan qanday foydalanadi.",
+    body: "Kompaniyadagi har bir jamoa oʻz ish maydoni va oʻz agentiga ega boʻladi. Jamoani tanlang va bitta haqiqiy vazifani koʻring.",
+    youAsk: "1 · Siz soʻraysiz",
+    agentDoes: "2 · {agent} bajaradi",
+    youGet: "3 · Siz olasiz",
+    setupOnce: "Bir marta sozlang:",
+    seeAll: "Barcha misollar",
+    moreTasks: "Yana vazifa misollari",
+    teams: {
+      support: {
+        ask: "Pulni qaytarish boʻyicha kutayotgan murojaatlarga javob ber.",
+        does: "Har bir murojaatni oʻqiydi, qaytarish qoidalarini tekshiradi va har biriga javob yozadi.",
+        get: "Tasdiqlash uchun qoralamalar, har birining yonida qoida boʻlimi.",
+        setup: "qaytarish qoidalarini yuklang va yordam xizmatini ulang.",
+        tasks: [
+          "Qoidalaringiz asosida javob qoralamalari",
+          "Yangi murojaatlarni saralash va belgilash",
+          "Uzoq kutayotgan murojaatlarni belgilash",
+        ],
+      },
+      sales: {
+        ask: "Oʻtgan haftadagi demodan keyin hammaga yoz.",
+        does: "CRMda javob bermagan mijozlarni topadi va qoʻngʻiroq qaydlari asosida xat yozadi.",
+        get: "Yuborishga tayyor xatlar va yangilangan CRM yozuvlari.",
+        setup: "CRMingizni ulang.",
+        tasks: [
+          "Demodan keyin har bir mijozga yozish",
+          "CRM yozuvlarini toza va dolzarb saqlash",
+          "Haftalik savdo voronkasi xulosasi",
+        ],
+      },
+      hr: {
+        ask: "Yangi buxgalter uchun moslashuv rejasini tayyorla.",
+        does: "Moslashuv roʻyxatingizdan foydalanib, birinchi hafta uchun kunma-kun reja tuzadi.",
+        get: "Birinchi kuni tekshirib, ulashish mumkin boʻlgan reja.",
+        setup: "moslashuv roʻyxatingizni yuklang.",
+        tasks: [
+          "Yangi xodimlar uchun moslashuv rejalari",
+          "Qoidalar haqidagi savollarga manba bilan javob",
+          "Suhbat uchun savollar toʻplami",
+        ],
+      },
+      finance: {
+        ask: "Mart hisob-fakturalarini shartnomalar bilan solishtir.",
+        does: "Summa va sanalarni solishtiradi va topgan har bir farqni yozadi.",
+        get: "Odam koʻrishi kerak boʻlgan hisob-fakturalarning qisqa roʻyxati.",
+        setup: "shartnoma va hisob-fakturalarni yuklang.",
+        tasks: [
+          "Hisob-fakturalarni shartnomalar bilan solishtirish",
+          "Yetishmayotgan hujjatlarni soʻrash",
+          "Oy yakuni roʻyxatini tayyorlash",
+        ],
+      },
+      operations: {
+        ask: "Har dushanba haftalik holat hisobotini yubor.",
+        does: "Hafta vazifalarini oʻqiydi va nima bajarilgan, kechikkan va toʻxtab qolganini yozadi.",
+        get: "Qayta soʻramasdan, oʻz vaqtida hisobot.",
+        setup: "dushanba ertalabi uchun bitta avtomatlashtirish qoʻshing.",
+        tasks: [
+          "Uchrashuv qaydlaridan vazifalar",
+          "Reglamentlarni dolzarb saqlash",
+          "Haftalik holat hisobotlari",
+        ],
+      },
+      engineering: {
+        ask: "Dashborddagi sana filtrini tuzat.",
+        does: "Kodni oʻzgartiradi, haqiqiy brauzerda tekshiradi, pull request ochadi.",
+        get: "Skrinshotlar bilan tekshirilgan, koʻrib chiqishga tayyor oʻzgarish.",
+        setup: "kod repozitoriyingizni ulang.",
+        tasks: [
+          "Xatolarni tuzatish va pull request ochish",
+          "Oʻzgarishlarni haqiqiy brauzerda tekshirish",
+          "Hujjatlarni kod bilan bir xil saqlash",
+        ],
       },
     },
   },
 
-  demo: {
-    kicker: "Amalda ko'ring",
-    title: "Vazifa biriktiring. Agent uni yetkazishini kuzating.",
-    windowTitle: "AGORA-128 · Fors tili lokalizatsiyasi — RTL sayqal",
-    userMsg:
-      "dashboard o'ngdan-chapga rejimda buziladi — tekislashni tuzata olasanmi?",
-    agentReply: "Boshladim — layout fayllarini tekshirib, gridni ag'daryapman.",
-    working: "Aria ishlamoqda",
-    running: "bajarilmoqda",
-    done: "tayyor",
-    testsPassed: "12 ta test o'tdi · 0.41s",
-    pr: "PR #214 — RTL sayqal",
-    readyToMerge: "merge'ga tayyor",
-    replyPlaceholder: "Aria'ga javob yozing…",
-    statusLabel: "Holat",
-    assigneeLabel: "Ijrochi",
-    priorityLabel: "Muhimlik",
-    projectLabel: "Loyiha",
-    priorityHigh: "Yuqori",
-    project: "i18n",
-    statusTodo: "Bajariladi",
-    statusInProgress: "Jarayonda",
-    statusInReview: "Ko'rib chiqilmoqda",
+  inside: {
+    label: "Ichida nima bor",
+    title: "Agentlar faqat internetni emas, kompaniyangizni biladi.",
+    knowledge: {
+      title: "Bilimlar bazasi",
+      body: "Reglament, qoida va narxlar roʻyxatini PDF, Word yoki Excel koʻrinishida yuklang. Agentlar avval ularni oʻqiydi va javobda manbani koʻrsatadi.",
+      files: ["Qaytarish qoidalari.pdf", "Narxlar roʻyxati.xlsx", "Moslashuv.docx"],
+      quote: "Pulni 14 kun ichida qaytarish mumkin.",
+      quoteSource: "Qaytarish qoidalari, 2-boʻlim",
+    },
+    assistant: {
+      title: "Assistent",
+      body: "Oddiy soʻzlar bilan soʻrang. Assistent Agorada qoʻlda qiladigan ishlaringizni qiladi: vazifa yaratadi, javob topadi, holatni oʻzgartiradi. Muhim oʻzgarishdan oldin soʻraydi.",
+      userMsg: "Muddati oʻtgan barcha vazifalarni keyingi haftaga oʻtkaz",
+      reply: "Bu 6 ta vazifani oʻzgartiradi. Bajaraymi?",
+    },
+    automations: {
+      title: "Avtomatlashtirish",
+      body: "Oddiy Qachon, Agar, Unda qoidalari. Takrorlanadigan ish oʻzi boshlanadi va kerakli odam yoki agentga boradi. Kodsiz.",
+    },
   },
 
-  howItWorks: {
-    label: "Boshlash",
-    headlineMain: "G'oyadan yetkazib berishgacha — birga.",
-    headlineFaded: "",
-    steps: [
+  control: {
+    label: "Nazorat",
+    title: "Ishni agentlar qiladi. Qaror sizda.",
+    body: "Agentga koʻr-koʻrona ishonish shart emas. U nima qilganini va nega qilganini koʻrasiz.",
+    items: [
       {
-        title: allowSignup ? "Ro'yxatdan o'ting va ish maydoni yarating" : "Ish maydoningizga kiring",
-        description: allowSignup
-          ? "Email kiriting, kod bilan tasdiqlang — tayyor. Ish maydoningiz avtomatik yaratiladi — sozlash ustasi yo'q, shakl to'ldirish yo'q."
-          : "Email kiriting, kod bilan tasdiqlang va ish maydoningizga kirasiz — sozlash ustasi yo'q, shakl to'ldirish yo'q.",
+        title: "Odam tasdiqlaydi",
+        body: "Tayyor ish tekshirish uchun odamga boradi. Uni tasdiqlang yoki qaytaring.",
       },
       {
-        title: "CLI'ni o'rnating va mashinangizni ulang",
-        description:
-          "agora setup buyrug'ini ishga tushiring — u OAuth orqali o'tkazadi, demonni ishga tushiradi va 12 ta qo'llab-quvvatlanadigan vositani qidiradi (Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, Pi). O'rnatilgan vositalaringiz avtomatik ravishda ijro muhiti sifatida ro'yxatdan o'tadi.",
+        title: "Har bir vazifada isbot",
+        body: "Agent qilgan qadamlar va u ishlatgan hujjatlar koʻrinadi.",
       },
       {
-        title: "Birinchi agentingizni yarating",
-        description:
-          "Unga nom bering, ko'rsatmalar yozing va ko'nikmalar biriktiring. Agentlar biriktirilganda, izoh yoki eslatma bo'lganda avtomatik faollashadi.",
+        title: "Rollar va ruxsatlar",
+        body: "Egalar va administratorlar har bir ish maydonida kim nimani koʻrishi va oʻzgartirishini hal qiladi.",
       },
       {
-        title: "Vazifa biriktiring va u qanday ishlashini kuzating",
-        description:
-          "Ijrochi ro'yxatidan agentingizni tanlang — xuddi hamkasbga biriktirgandek. Vazifa navbatga qo'yiladi, olinadi va avtomatik bajariladi. Jarayonni real vaqtda kuzating.",
+        title: "Hamma narsa bir joyda",
+        body: "Odam yoki agentning har bir harakati bitta lentada.",
       },
     ],
-    cta: "Boshlash",
-    ctaDocs: "Hujjatlarni o'qish",
+  },
+
+  tools: {
+    title: "Sizda bor vositalar bilan ishlaydi.",
+    body: "CRM va chatingizni oʻzgartirmang. Agentlar jamoangiz bor joyda kechayu kunduz ishlaydi.",
+    anyMcp: "MCP serveri bor istalgan vosita",
+  },
+
+  pricing: {
+    label: "Narxlar",
+    title: "Oddiy narxlar. Agentlar bepul.",
+    subtitle:
+      "Har bir yangi ish maydoni 14 kunlik Team sinov davri bilan boshlanadi. Karta kerak emas. Siz agentlar uchun emas, odamlar uchun toʻlaysiz.",
+    free: {
+      name: "Free",
+      description: "Agentlar bilan ishlashni boshlayotgan kichik jamoa uchun.",
+      price: "$0",
+      period: "doimiy",
+      features: [
+        "Cheksiz vazifalar, loyihalar va aʼzolar",
+        "Oʻz muhitingizda cheksiz agentlar",
+        "Agora Assistant va bilimlar bazasi",
+        "2 ta avtomatlashtirish qoidasi",
+        "1 ta jadval boʻyicha hisobot",
+      ],
+      cta: "Bepul boshlash",
+    },
+    team: {
+      name: "Team",
+      badge: "14 kun bepul",
+      description: "Odatiy ishni agentlarga topshiradigan jamoalar uchun.",
+      price: "$12",
+      period: "har bir aʼzo uchun oyiga, yillik toʻlovda",
+      monthly: "Oylik toʻlovda har bir aʼzo uchun $15",
+      features: [
+        "Free’dagi hamma narsa",
+        "Cheksiz avtomatlashtirish qoidalari",
+        "Cheksiz jadval boʻyicha hisobotlar",
+        "Jadval yoki webhook boʻyicha avtopilotlar",
+        "Agentlar aʼzo hisoblanmaydi",
+      ],
+      cta: "Sinovni boshlash",
+    },
+    trialNote:
+      "Sinov davri tugasa, hech narsa bloklanmaydi. Vazifalar, doskalar va agentlar ishlashda davom etadi.",
+    needMore: "SSO, hisob-faktura yoki alohida shartnoma kerakmi?",
+    contactSales: "Sotuv boʻlimiga yozing",
   },
 
   faq: {
-    label: "SAVOL-JAVOB",
-    headline: "Savollar va javoblar.",
+    label: "Savollar",
+    headline: "Savollar",
     items: [
       {
-        question: "Agora qaysi kod agentlarini qo'llab-quvvatlaydi?",
+        question: "Agoradan foydalanish uchun dasturchi kerakmi?",
         answer:
-          "Agora 12 ta vositani darhol qo'llab-quvvatlaydi: Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw va Pi. Demon o'rnatilgan CLI'laringizni avtomatik aniqlaydi va har biri uchun ijro muhiti ro'yxatdan o'tkazadi. Ochiq kodli bo'lgani uchun o'z backendlaringizni ham qo'shishingiz mumkin.",
+          "Yoʻq. Sozlash — qisqa qoʻllanma: boʻlimni tanlang, hujjatlarni yuklang, jamoani taklif qiling. Shundan keyin agentlar tayyor.",
       },
       {
-        question: "Self-host kerakmi yoki bulutli versiya bormi?",
+        question: "Agent soʻramasdan biror narsa qila oladimi?",
         answer:
-          "Ikkalasi ham. Agora'ni o'z infratuzilmangizda Docker Compose yoki Kubernetes bilan joylashingiz yoki bulutli versiyamizdan foydalanishingiz mumkin. Ma'lumotlaringiz — sizning tanlovingiz.",
+          "Agent faqat siz bergan vazifa ustida ishlaydi. Tayyor ish tekshirish uchun odamga keladi. Assistent har qanday muhim oʻzgarishdan oldin soʻraydi.",
       },
       {
-        question:
-          "Bu kod agentlaridan to'g'ridan-to'g'ri foydalanishdan nimasi bilan farq qiladi?",
+        question: "Agentlar kompaniyamiz haqida nimani biladi?",
         answer:
-          "Kod agentlari bajarishda zo'r. Agora boshqaruv qatlamini qo'shadi: vazifa navbatlari, jamoa muvofiqlashtiruvi, ko'nikmalarni qayta ishlatish, ijro muhitini kuzatish va har bir agent nima qilayotganining yagona ko'rinishi. Buni agentlaringiz uchun loyiha menejeri deb tasavvur qiling.",
+          "Faqat siz bergan narsani: yuklagan hujjatlaringiz va ulagan vositalaringiz.",
       },
       {
-        question: "Agentlar uzoq davom etadigan vazifalarni mustaqil bajara oladimi?",
+        question: "Biz dasturchilar jamoasimiz. Agora bizga ham mosmi?",
         answer:
-          "Ha. Agora to'liq vazifa tsiklini boshqaradi — navbat, olish, bajarish, yakunlash yoki xato. Agentlar to'siqlarni oldindan bildiradi va jarayonni real vaqtda uzatadi. Xohlagan vaqtingizda tekshirishingiz yoki tunda ishlatib qo'yishingiz mumkin.",
+          "Ha. Dasturchi agentlar, brauzer testlari va pull requestlar avvalgidek ishlaydi.",
       },
       {
-        question: "Kodim xavfsizmi? Agent ijrosi qayerda bo'ladi?",
+        question: "Narxi qancha?",
         answer:
-          "Agent ijrosi sizning mashinangizda (mahalliy demon) yoki o'z bulutli infratuzilmangizda bo'ladi. Kod hech qachon Agora serverlaridan o'tmaydi. Platforma faqat vazifa holatini muvofiqlashtiradi va hodisalarni uzatadi.",
-      },
-      {
-        question: "Nechta agent ishlata olaman?",
-        answer:
-          "Apparatingiz qancha qo'llab-quvvatlasa, shuncha. Har bir agentda sozlanadigan parallellik chegaralari bor va bir nechta mashinani ijro muhiti sifatida ulashingiz mumkin. Ochiq kodli versiyada sun'iy cheklovlar yo'q.",
+          "Bepul tarif bor. Team — yillik toʻlovda har bir aʼzo uchun oyiga $12. Agentlar doim bepul.",
       },
     ],
   },
 
-  footer: {
-    tagline:
-      "Inson va agent jamoalari uchun loyiha boshqaruvi. Kelajak ishi uchun yaratilgan.",
+  finalCta: {
+    title: "Bitta boʻlimdan boshlang.",
+    body: "Boʻlimni tanlang, hujjatlarni yuklang, jamoani taklif qiling. Veb, desktop va Telegram. Ingliz, rus va oʻzbek tillarida.",
     cta: "Boshlash",
-    groups: {
-      product: {
-        label: "Mahsulot",
-        links: [
-          { label: "Imkoniyatlar", href: "#features" },
-          { label: "Qanday ishlaydi", href: "#how-it-works" },
-          { label: "Qo'llanma", href: "/guide" },
-          { label: "Foydalanish holatlari", href: "/usecases" },
-          { label: "Yuklab olish", href: "/download" },
-          { label: "O'zgarishlar", href: "/changelog" },
-        ],
-      },
-      resources: {
-        label: "Resurslar",
-        links: [
-          { label: "Hujjatlar", href: "/docs" },
-          { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
-        ],
-      },
-      company: {
-        label: "Kompaniya",
-        links: [
-          { label: "Biz haqimizda", href: "/about" },
-          { label: "Savdo bilan bog'lanish", href: "/contact-sales" },
-        ],
-      },
-    },
-    copyright: "© {year} Agora. Barcha huquqlar himoyalangan.",
+    talkToSales: "Sotuv boʻlimiga yozish",
+  },
+
+  footer: {
+    navigation: "Pastki navigatsiya",
+    copyright: "© {year} Agora",
   },
 
   about: {

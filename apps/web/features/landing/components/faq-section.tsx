@@ -1,72 +1,98 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@agora/ui/lib/utils";
 import { useLocale } from "../i18n";
 import { Reveal } from "./reveal";
+import {
+  containerClassName,
+  sectionClassName,
+  sectionTitleClassName,
+  serifClassName,
+  ui,
+  useStartHref,
+} from "./shared";
 
 export function FAQSection() {
   const { t } = useLocale();
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section id="faq" className="bg-white text-[#18181B] dark:bg-[#05060b] dark:text-white">
-      <div className="mx-auto max-w-[860px] px-4 py-24 sm:px-6 sm:py-32 lg:py-40">
-        <Reveal className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71717A] dark:text-white/40">
-            {t.faq.label}
-          </p>
-          <h2 className="mt-4 font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem] lg:text-[4.2rem]">
-            {t.faq.headline}
-          </h2>
+    <section id="faq" className={sectionClassName}>
+      <div className={cn(containerClassName, "flex max-w-[800px] flex-col gap-8")}>
+        <Reveal>
+          <h2 className={sectionTitleClassName}>{t.faq.headline}</h2>
         </Reveal>
-
-        <div className="mt-14 divide-y divide-zinc-200 dark:divide-white/10 sm:mt-16">
-          {t.faq.items.map((faq, i) => (
-            <Reveal key={i} delay={i * 55}>
-              <button
-                type="button"
-                onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="flex w-full items-start justify-between gap-4 py-6 text-left"
+        <div className="flex flex-col gap-3">
+          {t.faq.items.map((item, i) => (
+            <Reveal key={item.question} delay={i * 50}>
+              <details
+                open={i === 0}
+                className={cn("group rounded-[14px] border px-5 py-1.5 sm:px-[22px]", ui.surface, ui.line)}
               >
-                <span className="text-[16px] font-semibold leading-snug text-[#18181B] dark:text-white sm:text-[17px]">
-                  {faq.question}
-                </span>
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-zinc-200 text-[#71717A] transition-transform dark:border-white/15 dark:text-white/40",
-                    openIndex === i && "rotate-45",
-                  )}
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-3.5 text-[18px] font-semibold [&::-webkit-details-marker]:hidden">
+                  {item.question}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "flex size-6 flex-none items-center justify-center rounded-full border transition-transform group-open:rotate-45",
+                      ui.lineStrong,
+                      ui.muted,
+                    )}
                   >
-                    <path d="M6 1v10M1 6h10" />
-                  </svg>
-                </span>
-              </button>
-              <div
-                className={cn(
-                  "grid transition-[grid-template-rows] duration-200 ease-out",
-                  openIndex === i ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                )}
-              >
-                <div className="overflow-hidden">
-                  <p className="pb-6 pr-12 text-[14px] leading-[1.7] text-[#3F3F46] dark:text-white/56 sm:text-[15px]">
-                    {faq.answer}
-                  </p>
-                </div>
-              </div>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M6 1v10M1 6h10" />
+                    </svg>
+                  </span>
+                </summary>
+                <p className={cn("m-0 mb-[18px]", ui.muted)}>{item.answer}</p>
+              </details>
             </Reveal>
           ))}
         </div>
       </div>
+    </section>
+  );
+}
+
+export function FinalCtaSection() {
+  const { t } = useLocale();
+  const startHref = useStartHref();
+  const c = t.finalCta;
+
+  return (
+    <section id="start" className="px-4 pb-20 sm:px-6 sm:pb-[104px]">
+      <Reveal
+        className={cn(
+          containerClassName,
+          "flex flex-wrap items-center gap-x-16 gap-y-8 rounded-[24px] bg-[#2563EB] p-[clamp(2rem,6vw,5rem)] text-white",
+        )}
+      >
+        <div className="flex min-w-0 flex-[1.4_1_380px] flex-col gap-3.5">
+          <h2
+            className={cn(
+              serifClassName,
+              "m-0 text-[clamp(1.875rem,3.6vw,3rem)] leading-[1.08] tracking-[-0.01em]",
+            )}
+          >
+            {c.title}
+          </h2>
+          <p className="m-0 text-[18px] text-white">{c.body}</p>
+        </div>
+        <div className="flex flex-[0_1_auto] flex-wrap gap-3">
+          <Link
+            href={startHref}
+            className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-white px-6 py-3 text-[15px] font-semibold text-[#05060B] transition-colors hover:bg-white/90"
+          >
+            {c.cta}
+          </Link>
+          <Link
+            href="/contact-sales"
+            className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-white px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-white/10"
+          >
+            {c.talkToSales}
+          </Link>
+        </div>
+      </Reveal>
     </section>
   );
 }

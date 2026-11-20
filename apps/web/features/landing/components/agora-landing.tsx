@@ -1,28 +1,37 @@
 "use client";
 
+import { cn } from "@agora/ui/lib/utils";
 import { LandingHeader } from "./landing-header";
 import { LandingHero } from "./landing-hero";
-import { ProductDemo } from "./product-demo";
-import { FeaturesSection } from "./features-section";
-import { CapabilitiesSection } from "./capabilities-section";
-import { HowItWorksSection } from "./how-it-works-section";
-import { FAQSection } from "./faq-section";
+import { WhatSection } from "./what-section";
+import { HowSection } from "./how-section";
+import { AgentSetupSection, AutomationSection } from "./agent-setup-section";
+import { DepartmentsSection } from "./departments-section";
+import { ControlSection, InsideSection, ToolsSection } from "./inside-section";
+import { PricingSection } from "./pricing-section";
+import { FAQSection, FinalCtaSection } from "./faq-section";
 import { LandingFooter } from "./landing-footer";
+import { ui } from "./shared";
 
 export function AgoraLanding() {
   return (
-    <>
-      <div className="relative">
-        <LandingHeader />
+    <div className={cn("min-h-full text-[16px] leading-[1.55]", ui.page)}>
+      <LandingHeader />
+      <main>
         <LandingHero />
-      </div>
-
-      <ProductDemo />
-      <FeaturesSection />
-      <CapabilitiesSection />
-      <HowItWorksSection />
-      <FAQSection />
+        <WhatSection />
+        <HowSection />
+        <AgentSetupSection />
+        <AutomationSection />
+        <DepartmentsSection />
+        <InsideSection />
+        <ControlSection />
+        <ToolsSection />
+        <PricingSection />
+        <FAQSection />
+        <FinalCtaSection />
+      </main>
       <LandingFooter />
-    </>
+    </div>
   );
 }
