@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jamshidtulaganov/agora/server/internal/assistant"
+	"github.com/jamshidtulaganov/agora/server/internal/billing"
 	"github.com/jamshidtulaganov/agora/server/internal/config"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
@@ -427,6 +428,15 @@ func (h *Handler) runReportSchedule(ctx context.Context, schedule db.AssistantRe
 	pin, err := h.Queries.GetAssistantArtifactPin(ctx, claimed.PinID)
 	if err != nil {
 		h.recordReportScheduleOutcome(ctx, claimed.ID, reportScheduleStatusFailed, "the pinned report is no longer available")
+		return
+	}
+	// Plan limit, checked after the claim so the slot still advances and the
+	// row says why it did not run instead of going silent.
+	limit := billing.ForWorkspace(ctx, h.Queries, pin.WorkspaceID).Limits.ReportSchedules
+	if !billing.Allowed(ctx, limit, claimed.ID, func(ctx context.Context, n int32) ([]pgtype.UUID, error) {
+		return h.Queries.ListAllowedReportScheduleIDs(ctx, db.ListAllowedReportScheduleIDsParams{WorkspaceID: pin.WorkspaceID, Limit: n})
+	}) {
+		h.recordReportScheduleOutcome(ctx, claimed.ID, reportScheduleStatusSkipped, "your plan's limit on scheduled reports is reached — upgrade to Team to run this one")
 		return
 	}
 	artifact, err := h.Queries.GetAssistantArtifact(ctx, pin.ArtifactID)

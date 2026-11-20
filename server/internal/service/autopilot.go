@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/billing"
 	"github.com/jamshidtulaganov/agora/server/internal/events"
 	"github.com/jamshidtulaganov/agora/server/internal/issueposition"
 	obsmetrics "github.com/jamshidtulaganov/agora/server/internal/metrics"
@@ -65,6 +66,9 @@ func (s *AutopilotService) DispatchAutopilot(
 ) (*db.AutopilotRun, error) {
 	if reason, skip := s.shouldSkipDispatch(ctx, autopilot); skip {
 		return s.recordSkippedRun(ctx, autopilot, triggerID, source, payload, reason)
+	}
+	if !s.withinPlan(ctx, autopilot, source) {
+		return s.recordSkippedRun(ctx, autopilot, triggerID, source, payload, "plan limit: autopilots run on a schedule or webhook only on the Team plan")
 	}
 
 	// Determine initial status based on execution mode.
@@ -1301,4 +1305,19 @@ func (s *AutopilotService) canCreatorAccessPrivateLeader(ctx context.Context, ap
 		return false
 	}
 	return member.Role == "owner" || member.Role == "admin"
+}
+
+// withinPlan reports whether the workspace's plan lets this autopilot run
+// unattended. A manual "Run now" is a human at the keyboard, which is never
+// gated; schedule, webhook and every other source are unattended automation,
+// the paid line. Recorded as a skipped run (not a failure) so the run list
+// says why, and the failure-rate auto-pause is not fed.
+func (s *AutopilotService) withinPlan(ctx context.Context, ap db.Autopilot, source string) bool {
+	if source == "manual" {
+		return true
+	}
+	limit := billing.ForWorkspace(ctx, s.Queries, ap.WorkspaceID).Limits.Autopilots
+	return billing.Allowed(ctx, limit, ap.ID, func(ctx context.Context, n int32) ([]pgtype.UUID, error) {
+		return s.Queries.ListAllowedAutopilotIDs(ctx, db.ListAllowedAutopilotIDsParams{WorkspaceID: ap.WorkspaceID, Limit: n})
+	})
 }

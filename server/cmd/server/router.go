@@ -579,11 +579,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Protected API routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(queries, patCache, cloudPATVerifier))
+		r.Use(middleware.TouchUserActivity(queries))
 		r.Use(middleware.RefreshCloudFrontCookies(cfSigner))
 
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// First-touch marketing attribution, posted once by the browser right
+		// after sign-up. Write-once; humans only.
+		r.With(handler.RequireHumanActor).Post("/api/me/attribution", h.PostMyAttribution)
 		// Permanent and credential-revoking: never allow an agent/task token to
 		// delete the human account it is acting on behalf of.
 		r.With(handler.RequireHumanActor).Delete("/api/me", h.DeleteMe)
@@ -803,6 +807,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// workspace context.
 		r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
 
+		// Platform admin (/admin page): the operator of this instance, set by
+		// AGORA_PLATFORM_ADMIN_EMAILS. Everyone else gets 404.
+		r.Route("/api/admin", func(r chi.Router) {
+			r.Use(h.RequirePlatformAdmin)
+			r.Get("/overview", h.GetAdminOverview)
+			r.Get("/growth", h.GetAdminGrowth)
+			r.Put("/workspaces/{id}/subscription", h.SetAdminWorkspaceSubscription)
+		})
+
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)
 			r.Post("/", h.CreateWorkspace)
@@ -839,6 +852,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// non-admins. The query never selects secret_encrypted —
 					// has_secret + last4 only, never the token.
 					r.Get("/mcp-credentials", h.ListMcpCredentials)
+					// Plan, trial and usage for the billing page. Read-only:
+					// no tenant-facing endpoint ever writes a plan.
+					r.Get("/subscription", h.GetWorkspaceSubscription)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {

@@ -1525,6 +1525,24 @@ type User struct {
 	HiddenNav             []byte             `json:"hidden_nav"`
 	WelcomeSentAt         pgtype.Timestamptz `json:"welcome_sent_at"`
 	HiddenNavCustomizedAt pgtype.Timestamptz `json:"hidden_nav_customized_at"`
+	LastLoginAt           pgtype.Timestamptz `json:"last_login_at"`
+	LastActiveAt          pgtype.Timestamptz `json:"last_active_at"`
+}
+
+type UserActivityDay struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Day    pgtype.Date `json:"day"`
+}
+
+type UserAttribution struct {
+	UserID       pgtype.UUID        `json:"user_id"`
+	Source       string             `json:"source"`
+	Medium       string             `json:"medium"`
+	Campaign     string             `json:"campaign"`
+	ReferrerHost string             `json:"referrer_host"`
+	LandingPath  string             `json:"landing_path"`
+	FirstSeenAt  pgtype.Timestamptz `json:"first_seen_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type UserDevServer struct {
@@ -1623,6 +1641,20 @@ type WorkspaceInvitation struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 	InviteeBitrixID pgtype.Text        `json:"invitee_bitrix_id"`
+}
+
+type WorkspaceSubscription struct {
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	Plan             string             `json:"plan"`
+	Status           string             `json:"status"`
+	BillingInterval  string             `json:"billing_interval"`
+	SeatsPaid        int32              `json:"seats_paid"`
+	TrialEndsAt      pgtype.Timestamptz `json:"trial_ends_at"`
+	CurrentPeriodEnd pgtype.Timestamptz `json:"current_period_end"`
+	Provider         string             `json:"provider"`
+	Note             string             `json:"note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ZohoAccount struct {
