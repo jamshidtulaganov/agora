@@ -21,7 +21,8 @@ export function ThemeToggle({
 
   useEffect(() => setMounted(true), []);
 
-  const isDark = resolvedTheme === "dark";
+  // Guarded by `mounted` too, so the aria-label matches the server render.
+  const isDark = mounted && resolvedTheme === "dark";
 
   return (
     <button
