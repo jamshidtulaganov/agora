@@ -108,7 +108,9 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		// same-origin, not no-referrer: under no-referrer browsers send
+		// "Origin: null" on the consent form POST, which the origin check rejects.
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self' https://claude.ai https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'")
 		mux.ServeHTTP(w, r)
@@ -150,7 +152,7 @@ func (o *memberOAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 8192)
 	cookie, err := r.Cookie(cookieName)
-	if err != nil || r.Header.Get("Origin") != o.issuer || r.ParseForm() != nil || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("csrf")), []byte(digest(cookie.Value+" "+q.Encode()))) != 1 {
+	if err != nil || !o.sameOriginPost(r) || r.ParseForm() != nil || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("csrf")), []byte(digest(cookie.Value+" "+q.Encode()))) != 1 {
 		http.Error(w, "Authorization form expired. Reconnect from your app.", 403)
 		return
 	}
@@ -259,6 +261,21 @@ func register(w http.ResponseWriter, r *http.Request) {
 	}
 	app := clients[matched]
 	jsonReply(w, 201, map[string]any{"client_id": matched, "client_id_issued_at": time.Now().Unix(), "client_name": app.Name, "redirect_uris": []string{app.Callback}, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "scope": scope})
+}
+
+// sameOriginPost reports whether a form POST came from this origin. Some
+// browsers send "Origin: null" (or omit it) under strict referrer policies;
+// Sec-Fetch-Site is set by the browser and cannot be forged by a page, so it
+// is accepted as proof in that case.
+func (o *memberOAuth) sameOriginPost(r *http.Request) bool {
+	switch origin := r.Header.Get("Origin"); origin {
+	case o.issuer:
+		return true
+	case "", "null":
+		return r.Header.Get("Sec-Fetch-Site") == "same-origin"
+	default:
+		return false
+	}
 }
 
 func (o *memberOAuth) validResource(resource string) bool {
