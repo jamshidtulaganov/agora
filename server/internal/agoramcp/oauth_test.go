@@ -133,3 +133,45 @@ func TestMemberOAuth(t *testing.T) {
 		t.Fatal("member access isolation failed")
 	}
 }
+
+func TestDynamicClientRegistration(t *testing.T) {
+	const origin = "https://connector.example"
+	h, err := NewMemberConnector(origin, "https://api.example", "test", make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(method, origin+path, strings.NewReader(body)))
+		return rec
+	}
+	var meta struct {
+		Registration string `json:"registration_endpoint"`
+	}
+	if json.Unmarshal(call("GET", "/.well-known/oauth-authorization-server", "").Body.Bytes(), &meta) != nil || meta.Registration != origin+"/register" {
+		t.Fatalf("metadata missing registration_endpoint: %q", meta.Registration)
+	}
+	cases := []struct {
+		body, client string
+		status       int
+	}{
+		{`{"redirect_uris":["` + claudeCallback + `"],"token_endpoint_auth_method":"none","client_name":"Claude"}`, claudeClient, 201},
+		{`{"redirect_uris":["` + chatGPTCallback + `"]}`, chatGPTClient, 201},
+		{`{"redirect_uris":["https://evil.example/cb"]}`, "", 400},
+		{`{"redirect_uris":["` + claudeCallback + `","https://evil.example/cb"]}`, "", 400},
+		{`{"redirect_uris":["` + claudeCallback + `","` + chatGPTCallback + `"]}`, "", 400},
+		{`{"redirect_uris":[]}`, "", 400},
+		{`{"redirect_uris":["` + claudeCallback + `"],"token_endpoint_auth_method":"client_secret_post"}`, "", 400},
+		{`not json`, "", 400},
+	}
+	for _, c := range cases {
+		rec := call("POST", "/register", c.body)
+		var reply struct {
+			ClientID string `json:"client_id"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &reply)
+		if rec.Code != c.status || reply.ClientID != c.client {
+			t.Errorf("register %s: got %d %q, want %d %q", c.body, rec.Code, reply.ClientID, c.status, c.client)
+		}
+	}
+}
