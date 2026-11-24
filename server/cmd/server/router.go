@@ -163,6 +163,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
+	mcpVersion := os.Getenv("RENDER_GIT_COMMIT")
+	if mcpVersion == "" {
+		mcpVersion = "dev"
+	}
+	assistantMCP := h.AssistantMCP(mcpVersion)
 	h.Metrics = opts.BusinessMetrics
 	h.TaskService.Metrics = opts.BusinessMetrics
 	h.IssueService.Metrics = opts.BusinessMetrics
@@ -617,6 +622,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/assistant/runs/{id}", h.GetAssistantRun)
 		r.Post("/api/assistant/runs/{id}/cancel", h.CancelAssistantRun)
 		r.Get("/api/assistant/availability", h.GetAssistantAvailability)
+		// The Assistant's tools over MCP for Claude / ChatGPT (via the agora-mcp
+		// connector, authenticated with the member's connector token). Human-only:
+		// it acts with the member's full role, like the Assistant itself.
+		r.With(handler.RequireHumanActor).Handle("/api/mcp", assistantMCP)
 		// Confirmation binding (docs/agora-assistant-final-plan.md §3). A
 		// destructive tool call parks a pending operation and returns
 		// needs_confirmation; THIS request — an authenticated one from the

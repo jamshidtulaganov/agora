@@ -15,9 +15,9 @@ function go(url: string) {
 }
 
 const ACCESS = [
-  { icon: Check, text: "See your workspaces, projects and issues" },
-  { icon: Check, text: "Read comments, attachments and knowledge" },
-  { icon: MessageSquare, text: "Create and update tasks and post comments as you, when you ask it to" },
+  { icon: Check, text: "See your workspaces, tasks, projects, agents and knowledge" },
+  { icon: MessageSquare, text: "Create and change tasks, projects, agents, automations and more, as you" },
+  { icon: Check, text: "Only what your role in each workspace allows" },
 ];
 
 /**
@@ -74,8 +74,8 @@ export function ConnectorConsentPage({ request }: { request: string }) {
               </ul>
               <p className="mt-4 flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                 <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                It asks before every change and can&apos;t delete anything. It
-                sees only the workspaces you belong to.
+                Deleting or removing anything waits for you to confirm it here in
+                Agora. It sees only the workspaces you belong to.
               </p>
               {approve.isError && (
                 <p role="alert" className="mt-4 text-sm text-destructive">

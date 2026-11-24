@@ -685,7 +685,7 @@ export function ConnectAssistantsCard() {
     <section className="rounded-lg border border-brand/30 bg-brand/[0.04] p-5">
       <h2 className="text-sm font-medium">Use Agora in Claude or ChatGPT</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Members read, create and update tasks from their AI assistant, under their own name.
+        Members use Agora from their AI assistant: everything their role allows, under their own name.
       </p>
       <div className="mt-4 flex gap-2">
         <Input

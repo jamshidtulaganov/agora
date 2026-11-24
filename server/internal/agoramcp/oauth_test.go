@@ -2,7 +2,6 @@ package agoramcp
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,26 +25,15 @@ func TestMemberOAuth(t *testing.T) {
 			http.Error(w, "forbidden", 403)
 			return
 		}
-		workspace := workspaceID
-		if member == "mul_bob" {
-			workspace = otherWorkspace
+		if r.URL.Path != "/api/mcp" {
+			t.Errorf("connector called %s; it must only proxy to /api/mcp", r.URL.Path)
 		}
-		if r.URL.Path != "/api/workspaces" && r.Header.Get("X-Workspace-ID") != workspace {
-			http.Error(w, "not a member", 403)
-			return
+		for _, h := range []string{"Cookie", "Origin", "X-Workspace-ID"} {
+			if r.Header.Get(h) != "" {
+				t.Errorf("connector forwarded %s", h)
+			}
 		}
-		switch r.URL.Path {
-		case "/api/workspaces":
-			json.NewEncoder(w).Encode([]map[string]string{{"id": workspace, "name": "Team", "slug": "team"}})
-		case "/api/workspaces/" + workspace:
-			json.NewEncoder(w).Encode(map[string]string{"id": workspace})
-		case "/api/issues/" + issueID:
-			io.WriteString(w, "{}")
-		case "/api/issues/" + issueID + "/comments":
-			json.NewEncoder(w).Encode(map[string]string{"author": strings.TrimPrefix(member, "mul_")})
-		default:
-			http.NotFound(w, r)
-		}
+		json.NewEncoder(w).Encode(map[string]string{"author": strings.TrimPrefix(member, "mul_"), "client": r.Header.Get(connectorClientHeader)})
 	}))
 	defer api.Close()
 	old := http.DefaultTransport
@@ -160,30 +148,27 @@ func TestMemberOAuth(t *testing.T) {
 	}
 	alice, bob := link("mul_alice", claudeClient, workspaceID), link("mul_bob", chatGPTClient, otherWorkspace)
 	h = newService() // Existing grants survive a free service restart.
-	comment := func(token string) *httptest.ResponseRecorder {
-		return request("POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`, map[string]string{"X-Workspace-ID": "ignored", "Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"})
+	call := func(token string, extra map[string]string) *httptest.ResponseRecorder {
+		headers := map[string]string{"X-Workspace-ID": "ignored", "Cookie": "agora_auth=stolen", "Authorization": "Bearer " + token, "Content-Type": "application/json"}
+		for k, v := range extra {
+			headers[k] = v
+		}
+		return request("POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`, headers)
 	}
-	for member, token := range map[string]string{"alice": alice, "bob": bob} {
-		res := comment(token)
-		if res.Code != 200 || !strings.Contains(res.Body.String(), member) {
-			t.Errorf("comment author should be %s: %s", member, res.Body)
+	for member, want := range map[string][2]string{"alice": {alice, "Claude"}, "bob": {bob, "ChatGPT"}} {
+		res := call(want[0], nil)
+		if res.Code != 200 || !strings.Contains(res.Body.String(), `"author":"`+member+`"`) || !strings.Contains(res.Body.String(), `"client":"`+want[1]+`"`) {
+			t.Errorf("%s: upstream must see the member's own token and app: %d %s", member, res.Code, res.Body)
 		}
 	}
-	// Claude's and ChatGPT's servers send their own Origin. /mcp authenticates
-	// only by bearer header (no cookies), so a foreign Origin must not be refused.
+	// Claude's and ChatGPT's servers send their own Origin; it is dropped, not refused.
 	for _, from := range []string{"https://claude.ai", "https://chatgpt.com"} {
-		r := httptest.NewRequest("POST", origin+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`))
-		for k, v := range map[string]string{"Origin": from, "Sec-Fetch-Site": "cross-site", "Authorization": "Bearer " + alice, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"} {
-			r.Header.Set(k, v)
-		}
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, r)
-		if rec.Code != 200 {
-			t.Errorf("request with Origin %s refused: %d %s", from, rec.Code, rec.Body)
+		if res := call(alice, map[string]string{"Origin": from, "Sec-Fetch-Site": "cross-site"}); res.Code != 200 {
+			t.Errorf("request with Origin %s refused: %d %s", from, res.Code, res.Body)
 		}
 	}
 	allowed["mul_alice"] = false
-	if comment(alice).Code != 403 || comment(bob).Code != 200 || comment("mul_bob").Code != 401 {
+	if call(alice, nil).Code != 403 || call(bob, nil).Code != 200 || call("mul_bob", nil).Code != 401 {
 		t.Fatal("member access isolation failed")
 	}
 }
