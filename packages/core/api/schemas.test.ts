@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
+  ConnectorConsentSchema,
+  EMPTY_CONNECTOR_CONSENT,
   EMPTY_APP_CONFIG,
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
@@ -2808,5 +2810,22 @@ describe("IssueChangePatchResponseSchema", () => {
 
   it("keeps a reason this build has no sentence for, so the UI can default", () => {
     expect(parse({ patch: null, reason: "some_future_reason" }).reason).toBe("some_future_reason");
+  });
+});
+
+describe("ConnectorConsentSchema", () => {
+  it("degrades a malformed consent response to empty strings instead of throwing", () => {
+    const parsed = parseWithFallback(
+      { client_id: 7, client_name: null, cancel_url: ["x"] },
+      ConnectorConsentSchema,
+      EMPTY_CONNECTOR_CONSENT,
+      { endpoint: "GET /api/connector-consent" },
+    );
+    expect(parsed).toMatchObject({ client_id: "", client_name: "", cancel_url: "" });
+  });
+
+  it("keeps a well-formed response", () => {
+    const parsed = ConnectorConsentSchema.parse({ client_id: "agora-claude", client_name: "Claude", cancel_url: "https://x/cb" });
+    expect(parsed.client_name).toBe("Claude");
   });
 });

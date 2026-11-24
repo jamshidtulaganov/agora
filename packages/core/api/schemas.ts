@@ -384,6 +384,29 @@ export const AppConfigSchema = z.object({
   mcp_connector_url: OptionalStringSchema,
 }).loose();
 
+// "Connect Claude / ChatGPT" consent page (/oauth/connect). A missing field
+// degrades to an empty string; the page refuses to offer Allow without a
+// client name and both URLs it needs are validated before navigation.
+export interface ConnectorConsent {
+  client_id: string;
+  client_name: string;
+  cancel_url: string;
+}
+
+export const ConnectorConsentSchema = z.object({
+  client_id: z.string().catch(""),
+  client_name: z.string().catch(""),
+  cancel_url: z.string().catch(""),
+}).loose();
+
+export const EMPTY_CONNECTOR_CONSENT: ConnectorConsent = { client_id: "", client_name: "", cancel_url: "" };
+
+export const ConnectorApproveSchema = z.object({
+  redirect_url: z.string().catch(""),
+}).loose();
+
+export const EMPTY_CONNECTOR_APPROVE = { redirect_url: "" };
+
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
   cdn_domain: "",
   allow_signup: true,

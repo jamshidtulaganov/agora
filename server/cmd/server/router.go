@@ -1085,6 +1085,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Delete("/{id}", h.RevokePersonalAccessToken)
 		})
 
+		// "Connect Claude / ChatGPT" consent (Agora's /oauth/connect page).
+		// Human-only for the same reason as /api/tokens: approving mints a
+		// 90-day personal access token for the signed-in member.
+		r.Route("/api/connector-consent", func(r chi.Router) {
+			r.Use(handler.RequireHumanActor)
+			r.Get("/", h.GetConnectorConsent)
+			r.Post("/", h.ApproveConnectorConsent)
+		})
+
 		// Cloud Billing proxy. Same upstream service / port as
 		// cloud-runtime — agora-cloud's Fleet and Billing share
 		// :8080 and the same chi router. All routes here forward

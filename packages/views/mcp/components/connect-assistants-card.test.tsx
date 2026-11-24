@@ -22,11 +22,11 @@ describe("ConnectAssistantsCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows the connector URL and links to token settings", () => {
+  it("shows the connector URL and links to token settings for disconnecting", () => {
     configStore.getState().setRuntimeConfig({ mcpConnectorUrl: "https://mcp.example.com/mcp" });
     render(<ConnectAssistantsCard />);
     expect(screen.getByLabelText("Connector URL")).toHaveValue("https://mcp.example.com/mcp");
-    expect(screen.getByRole("link", { name: "personal access token" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Settings → Tokens" })).toHaveAttribute(
       "href",
       "/acme/settings?tab=tokens",
     );

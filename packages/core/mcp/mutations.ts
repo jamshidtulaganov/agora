@@ -67,3 +67,14 @@ export function useUpdateWorkspaceMcpConfig(workspaceId: string) {
     },
   });
 }
+
+/**
+ * Approve a "connect Claude / ChatGPT" request. The server mints a dedicated
+ * personal access token and returns the URL that hands it, sealed, back to
+ * the connector. Not optimistic: nothing to show until the server answers.
+ */
+export function useApproveConnectorConsent() {
+  return useMutation({
+    mutationFn: (request: string) => api.approveConnectorConsent(request),
+  });
+}

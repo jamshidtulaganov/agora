@@ -6,10 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jamshidtulaganov/agora/server/internal/connectauth"
+	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
 )
+
+const appOrigin = "https://app.example"
 
 func TestMemberOAuth(t *testing.T) {
 	const otherWorkspace = "00000000-0000-4000-8000-000000000003"
@@ -47,7 +52,7 @@ func TestMemberOAuth(t *testing.T) {
 	http.DefaultTransport = api.Client().Transport
 	defer func() { http.DefaultTransport = old }()
 	newService := func() http.Handler {
-		h, err := NewMemberConnector(origin, api.URL, "test", make([]byte, 32))
+		h, err := NewMemberConnector(origin, api.URL, appOrigin, "test", make([]byte, 32))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,33 +68,48 @@ func TestMemberOAuth(t *testing.T) {
 		h.ServeHTTP(rec, r)
 		return rec
 	}
+	box, _ := secretbox.New(make([]byte, 32))
+	// start runs Claude's /authorize and returns the sealed consent request
+	// Agora would receive, plus the browser's consent cookie.
+	start := func(clientID, verifier string) (connectauth.Request, string, url.Values) {
+		t.Helper()
+		values := url.Values{"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {clients[clientID].Callback}, "scope": {scope}, "state": {"opaque-state"}, "resource": {origin + "/mcp"}, "code_challenge_method": {"S256"}, "code_challenge": {digest(verifier)}}
+		res := request("GET", "/authorize?"+values.Encode(), "", nil)
+		loc, err := url.Parse(res.Header().Get("Location"))
+		if res.Code != 303 || err != nil || loc.Scheme+"://"+loc.Host+loc.Path != appOrigin+"/oauth/connect" {
+			t.Fatalf("authorize must send the member to Agora: %d %s", res.Code, res.Header().Get("Location"))
+		}
+		consent, err := connectauth.OpenRequest(box, loc.Query().Get("request"), time.Now())
+		if err != nil || consent.ClientName != clients[clientID].Name || !strings.HasPrefix(consent.Return, origin+"/authorize/callback?") {
+			t.Fatalf("consent request: %+v %v", consent, err)
+		}
+		return consent, res.Result().Cookies()[0].String(), values
+	}
+	// back simulates Agora returning to the connector after the member allows.
+	back := func(consent connectauth.Request, cookie, member string) *httptest.ResponseRecorder {
+		reply, err := connectauth.SealReply(box, member, consent.Binding, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request("GET", strings.TrimPrefix(consent.Return+"&reply="+url.QueryEscape(reply), origin), "", map[string]string{"Cookie": cookie})
+	}
 	link := func(member, clientID, workspace string) string {
 		t.Helper()
 		callback := clients[clientID].Callback
 		verifier := strings.Repeat("z", 48)
-		values := url.Values{"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {callback}, "scope": {scope}, "state": {"opaque-state"}, "resource": {origin + "/mcp"}, "code_challenge_method": {"S256"}, "code_challenge": {digest(verifier)}}
-		path := "/authorize?" + values.Encode()
-		get := request("GET", path, "", nil)
-		match := regexp.MustCompile(`name="csrf" value="([^"]+)"`).FindStringSubmatch(get.Body.String())
-		if get.Code != 200 || len(match) != 2 {
-			t.Fatalf("consent form: %d", get.Code)
+		consent, cookie, _ := start(clientID, verifier)
+		if r := back(consent, "", member); r.Code != 403 {
+			t.Fatalf("reply accepted without the starting browser's cookie: %d", r.Code)
 		}
-		form := url.Values{"csrf": {match[1]}, "pat": {member}}
-		headers := map[string]string{"Origin": origin, "Cookie": get.Result().Cookies()[0].String(), "Content-Type": "application/x-www-form-urlencoded"}
-		authorize := request("POST", path, form.Encode(), headers)
-		if !allowed[member] {
-			if authorize.Code != 403 {
-				t.Fatalf("nonmember accepted: %d", authorize.Code)
-			}
-			return ""
+		if r := back(consent, "__Host-agora-mcp-consent=other", member); r.Code != 403 {
+			t.Fatalf("reply accepted for another browser: %d", r.Code)
 		}
-		if strings.Contains(authorize.Body.String(), member) {
-			t.Fatal("token echoed back")
-		}
+		authorize := back(consent, cookie, member)
 		loc, err := url.Parse(authorize.Header().Get("Location"))
 		if err != nil || authorize.Code != 303 || loc.Scheme+"://"+loc.Host+loc.Path != callback || loc.Query().Get("state") != "opaque-state" || loc.Query().Get("code") == "" {
-			t.Fatalf("authorization failed: %d", authorize.Code)
+			t.Fatalf("authorization failed: %d %s", authorize.Code, authorize.Body)
 		}
+		headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
 		exchange := url.Values{"grant_type": {"authorization_code"}, "client_id": {clientID}, "redirect_uri": {callback}, "code": {loc.Query().Get("code")}, "code_verifier": {"invalid"}}
 		if r := request("POST", "/token", exchange.Encode(), headers); r.Code != 400 {
 			t.Fatal("accepted invalid verifier")
@@ -97,18 +117,48 @@ func TestMemberOAuth(t *testing.T) {
 		exchange.Set("code_verifier", verifier)
 		response := request("POST", "/token", exchange.Encode(), headers)
 		var token struct {
-			Token string `json:"access_token"`
+			Token   string `json:"access_token"`
+			Refresh string `json:"refresh_token"`
 		}
-		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &token) != nil || token.Token == "" || strings.Contains(response.Body.String(), member) {
-			t.Fatal("invalid token exchange")
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &token) != nil || token.Token == "" || token.Refresh == "" || strings.Contains(response.Body.String(), member) {
+			t.Fatalf("invalid token exchange: %s", response.Body)
 		}
 		if r := request("POST", "/token", exchange.Encode(), headers); r.Code != 400 {
 			t.Fatal("code reused")
 		}
-		return token.Token
+		refresh := url.Values{"grant_type": {"refresh_token"}, "client_id": {clientID}, "refresh_token": {token.Refresh}}
+		renewed := request("POST", "/token", refresh.Encode(), headers)
+		var again struct {
+			Token string `json:"access_token"`
+		}
+		if renewed.Code != 200 || json.Unmarshal(renewed.Body.Bytes(), &again) != nil || again.Token == "" {
+			t.Fatalf("refresh failed: %d %s", renewed.Code, renewed.Body)
+		}
+		other := chatGPTClient
+		if clientID == chatGPTClient {
+			other = claudeClient
+		}
+		refresh.Set("client_id", other)
+		if r := request("POST", "/token", refresh.Encode(), headers); r.Code != 400 {
+			t.Fatal("refresh token accepted for another client")
+		}
+		refresh.Set("client_id", clientID)
+		refresh.Set("refresh_token", token.Token)
+		if r := request("POST", "/token", refresh.Encode(), headers); r.Code != 400 {
+			t.Fatal("access token accepted as a refresh token")
+		}
+		return again.Token
+	}
+	// Denying on Agora returns access_denied to the app.
+	{
+		consent, cookie, _ := start(claudeClient, strings.Repeat("y", 48))
+		r := request("GET", strings.TrimPrefix(consent.Return+"&error=access_denied", origin), "", map[string]string{"Cookie": cookie})
+		loc, _ := url.Parse(r.Header().Get("Location"))
+		if r.Code != 303 || loc.Query().Get("error") != "access_denied" || loc.Query().Get("code") != "" || loc.Query().Get("state") != "opaque-state" {
+			t.Fatalf("deny: %d %s", r.Code, r.Header().Get("Location"))
+		}
 	}
 	alice, bob := link("mul_alice", claudeClient, workspaceID), link("mul_bob", chatGPTClient, otherWorkspace)
-	link("mul_nonmember", claudeClient, workspaceID)
 	h = newService() // Existing grants survive a free service restart.
 	comment := func(token string) *httptest.ResponseRecorder {
 		return request("POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`, map[string]string{"X-Workspace-ID": "ignored", "Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"})
@@ -140,7 +190,7 @@ func TestMemberOAuth(t *testing.T) {
 
 func TestDynamicClientRegistration(t *testing.T) {
 	const origin = "https://connector.example"
-	h, err := NewMemberConnector(origin, "https://api.example", "test", make([]byte, 32))
+	h, err := NewMemberConnector(origin, "https://api.example", appOrigin, "test", make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,40 +230,18 @@ func TestDynamicClientRegistration(t *testing.T) {
 	}
 }
 
-func TestConsentFormOrigin(t *testing.T) {
+func TestConnectorHeaders(t *testing.T) {
 	const origin = "https://connector.example"
-	o := &memberOAuth{issuer: origin}
-	cases := []struct {
-		origin, fetchSite string
-		ok                bool
-	}{
-		{origin, "", true},
-		{"null", "same-origin", true}, // Referrer-Policy no-referrer serializes Origin as null
-		{"", "same-origin", true},
-		{"null", "", false},
-		{"null", "cross-site", false},
-		{"", "", false},
-		{"https://evil.example", "same-origin", false},
+	if _, err := NewMemberConnector(origin, "https://api.example", "http://app.example", "test", make([]byte, 32)); err == nil {
+		t.Fatal("non-HTTPS app URL accepted")
 	}
-	for _, c := range cases {
-		r := httptest.NewRequest("POST", origin+"/authorize", nil)
-		if c.origin != "" {
-			r.Header.Set("Origin", c.origin)
-		}
-		if c.fetchSite != "" {
-			r.Header.Set("Sec-Fetch-Site", c.fetchSite)
-		}
-		if got := o.sameOriginPost(r); got != c.ok {
-			t.Errorf("Origin=%q Sec-Fetch-Site=%q: got %v, want %v", c.origin, c.fetchSite, got, c.ok)
-		}
-	}
-	h, err := NewMemberConnector(origin, "https://api.example", "test", make([]byte, 32))
+	h, err := NewMemberConnector(origin, "https://api.example", appOrigin, "test", make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", origin+"/healthz", nil))
 	if p := rec.Header().Get("Referrer-Policy"); p != "same-origin" {
-		t.Fatalf("Referrer-Policy %q makes browsers send Origin: null on the consent form", p)
+		t.Fatalf("Referrer-Policy %q leaks OAuth state to other sites", p)
 	}
 }
