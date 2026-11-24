@@ -56,8 +56,12 @@ func newRemoteHandler(apiURL, version string) (http.Handler, error) {
 			return &mcp.CallToolResult{Content: content}, nil
 		})
 	}
+	// No cross-origin protection: it guards cookie-authenticated endpoints
+	// against CSRF, but /mcp authenticates only by an explicit bearer header.
+	// Claude's and ChatGPT's servers send their own Origin, which it refused
+	// with 403 right after a successful sign-in.
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return host }, &mcp.StreamableHTTPOptions{
-		Stateless: true, JSONResponse: true, CrossOriginProtection: http.NewCrossOriginProtection(), MaxRequestBodyBytes: 1 << 20,
+		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20,
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
