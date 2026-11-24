@@ -175,3 +175,41 @@ func TestDynamicClientRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestConsentFormOrigin(t *testing.T) {
+	const origin = "https://connector.example"
+	o := &memberOAuth{issuer: origin}
+	cases := []struct {
+		origin, fetchSite string
+		ok                bool
+	}{
+		{origin, "", true},
+		{"null", "same-origin", true}, // Referrer-Policy no-referrer serializes Origin as null
+		{"", "same-origin", true},
+		{"null", "", false},
+		{"null", "cross-site", false},
+		{"", "", false},
+		{"https://evil.example", "same-origin", false},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("POST", origin+"/authorize", nil)
+		if c.origin != "" {
+			r.Header.Set("Origin", c.origin)
+		}
+		if c.fetchSite != "" {
+			r.Header.Set("Sec-Fetch-Site", c.fetchSite)
+		}
+		if got := o.sameOriginPost(r); got != c.ok {
+			t.Errorf("Origin=%q Sec-Fetch-Site=%q: got %v, want %v", c.origin, c.fetchSite, got, c.ok)
+		}
+	}
+	h, err := NewMemberConnector(origin, "https://api.example", "test", make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", origin+"/healthz", nil))
+	if p := rec.Header().Get("Referrer-Policy"); p != "same-origin" {
+		t.Fatalf("Referrer-Policy %q makes browsers send Origin: null on the consent form", p)
+	}
+}
