@@ -9,9 +9,9 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 个人账户在 **Customize → Connectors** 添加自定义 Web 连接器；Team 所有者在 **Organization settings → Connectors** 添加。填写管理员提供的 HTTPS 地址，保留末尾的 `/mcp`。
 
-同一个 MCP 地址可供此次 Agora 部署上的所有工作区使用，每次连接只访问成员选择的工作区。在 ChatGPT 中添加自定义应用时，使用相同的 MCP 地址，选择 OAuth，客户端 ID 填 `agora-chatgpt`，密钥留空。
+同一个 MCP 地址可供此次 Agora 部署上的所有工作区使用，每次连接可访问该成员所属的全部工作区。在 ChatGPT 中添加自定义应用时，使用相同的 MCP 地址，选择 OAuth，客户端 ID 填 `agora-chatgpt`，密钥留空。
 
-OAuth 字段留空即可，Claude 会自动注册客户端。如果你的 Claude 版本要求填写客户端 ID，填 `agora-claude`，密钥留空。在连接器授权页面输入自己的 Agora 个人访问令牌（在 Agora 的 **Settings → Personal Access Tokens** 创建），选择所属工作区后授权。评论以该成员自己的身份发布。授权有效期为一天，之后可重新连接。在 Agora 撤销令牌可立即停止访问。
+OAuth 字段留空即可，Claude 会自动注册客户端。如果你的 Claude 版本要求填写客户端 ID，填 `agora-claude`，密钥留空。在连接器授权页面输入自己的 Agora 个人访问令牌（在 Agora 的 **Settings → Personal Access Tokens** 创建）后授权。Claude 可以使用你所属的每个工作区：它先调用 `list_workspaces`，再在其他工具中传入 `workspace`（slug、名称或 ID）。只有一个工作区时会自动选择。在 Agora 中退出某个工作区后，访问会立即失效。评论以该成员自己的身份发布。授权有效期为一天，之后可重新连接。在 Agora 撤销令牌可立即停止访问。
 
 `list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 3 MiB 的 PNG、JPEG、GIF、WebP 图片会以图片形式返回，助手可以直接查看；其他不超过 512 KiB 的附件会直接返回文件内容，可读文本以文本形式返回。
 
