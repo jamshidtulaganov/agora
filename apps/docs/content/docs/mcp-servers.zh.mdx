@@ -11,7 +11,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 同一个 MCP 地址可供此次 Agora 部署上的所有工作区使用，每次连接可访问该成员所属的全部工作区。在 ChatGPT 中添加自定义应用时，使用相同的 MCP 地址，选择 OAuth，客户端 ID 填 `agora-chatgpt`，密钥留空。
 
-OAuth 字段留空即可，Claude 会自动注册客户端。如果你的 Claude 版本要求填写客户端 ID，填 `agora-claude`，密钥留空。Claude 会打开 Agora：按提示登录，确认 Claude 可执行的操作后点击 **Allow**。Agora 会为你创建名为“Claude connector”的令牌，在 **Settings → Tokens** 中撤销即可断开连接。Claude 可以使用你所属的每个工作区：它先调用 `list_workspaces`，再在其他工具中传入 `workspace`（slug、名称或 ID）。只有一个工作区时会自动选择。在 Agora 中退出某个工作区后，访问会立即失效。评论以该成员自己的身份发布。连接有效期为 90 天，期间 Claude 会在后台自动续期。
+OAuth 字段留空即可，Claude 会自动注册客户端。如果你的 Claude 版本要求填写客户端 ID，填 `agora-claude`，密钥留空。Claude 会打开 Agora：按提示登录，确认 Claude 可执行的操作后点击 **Allow**。Agora 会为你创建名为“Claude connector”的令牌，在 **Settings → Tokens** 中撤销即可断开连接。Claude 可以使用你所属的每个工作区：它先调用 `list_workspaces`，再在其他工具中传入 `workspace`（slug、名称或 ID）。只有一个工作区时会自动选择。在 Agora 中退出某个工作区后，访问会立即失效。Claude 获得与 Agora Assistant 相同的工具：在你每个工作区的角色权限范围内，可以完成你在 Agora 中能做的事（任务、项目、迭代、标签、智能体、小组、知识库、自动化、成员与设置）。删除、移除成员或执行导入不会直接执行：Claude 会给出一个链接，你需要在 Agora 中打开并点击 **Confirm**。评论以该成员自己的身份发布。连接有效期为 90 天，期间 Claude 会在后台自动续期。
 
 `list_comments` 可读取近期讨论或指定评论串，`comment_issue` 可发表评论，`summarize_comments` 可总结讨论。`download_attachment` 返回下载链接，登录 Agora 后可打开；不超过 3 MiB 的 PNG、JPEG、GIF、WebP 图片会以图片形式返回，助手可以直接查看；其他不超过 512 KiB 的附件会直接返回文件内容，可读文本以文本形式返回。
 

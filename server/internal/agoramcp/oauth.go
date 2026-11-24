@@ -50,6 +50,9 @@ type memberGrant struct {
 	Workspace string
 	PAT       string
 	Expires   int64
+	// Client is the app's display name (Claude, ChatGPT). Empty in grants
+	// issued before it existed.
+	Client string `json:",omitempty"`
 }
 
 type pendingCode struct {
@@ -72,7 +75,7 @@ type memberOAuth struct {
 // personal access token and returns it sealed. Only this layer handles
 // connector tokens; the upstream REST API receives the member PAT.
 func NewMemberConnector(issuer, api, app, version string, key []byte) (http.Handler, error) {
-	upstream, err := newRemoteHandler(api, version)
+	upstream, err := newRemoteHandler(api)
 	if err != nil {
 		return nil, err
 	}
@@ -112,12 +115,7 @@ func NewMemberConnector(issuer, api, app, version string, key []byte) (http.Hand
 		}
 		r = r.Clone(r.Context())
 		r.Header.Set("Authorization", "Bearer "+grant.PAT)
-		// Grants issued before multi-workspace access pin one workspace; newer
-		// grants cover every workspace the member belongs to.
-		r.Header.Del("X-Workspace-ID")
-		if grant.Workspace != "" {
-			r.Header.Set("X-Workspace-ID", grant.Workspace)
-		}
+		r.Header.Set(connectorClientHeader, grant.Client)
 		upstream.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
@@ -203,12 +201,12 @@ func (o *memberOAuth) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Authorization expired. Reconnect from your app.", 403)
 		return
 	}
-	access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", granted.Token, now.Add(grantLifetime).Unix()})
+	access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", granted.Token, now.Add(grantLifetime).Unix(), app.Name})
 	if err != nil {
 		http.Error(w, "Could not authorize", 500)
 		return
 	}
-	refresh, err := o.sealGrant(memberGrant{o.refreshAudience(q.Get("client_id")), "", granted.Token, now.Add(refreshLifetime).Unix()})
+	refresh, err := o.sealGrant(memberGrant{o.refreshAudience(q.Get("client_id")), "", granted.Token, now.Add(refreshLifetime).Unix(), app.Name})
 	if err != nil {
 		http.Error(w, "Could not authorize", 500)
 		return
@@ -293,7 +291,7 @@ func (o *memberOAuth) exchange(w http.ResponseWriter, r *http.Request) {
 			jsonReply(w, 400, map[string]string{"error": "invalid_grant"})
 			return
 		}
-		access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", grant.PAT, time.Now().Add(grantLifetime).Unix()})
+		access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", grant.PAT, time.Now().Add(grantLifetime).Unix(), app.Name})
 		if err != nil {
 			jsonReply(w, 500, map[string]string{"error": "server_error"})
 			return
