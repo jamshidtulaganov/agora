@@ -128,6 +128,19 @@ func TestMemberOAuth(t *testing.T) {
 			t.Errorf("comment author should be %s: %s", member, res.Body)
 		}
 	}
+	// Claude's and ChatGPT's servers send their own Origin. /mcp authenticates
+	// only by bearer header (no cookies), so a foreign Origin must not be refused.
+	for _, from := range []string{"https://claude.ai", "https://chatgpt.com"} {
+		r := httptest.NewRequest("POST", origin+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello"}}}`))
+		for k, v := range map[string]string{"Origin": from, "Sec-Fetch-Site": "cross-site", "Authorization": "Bearer " + alice, "Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-11-25"} {
+			r.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != 200 {
+			t.Errorf("request with Origin %s refused: %d %s", from, rec.Code, rec.Body)
+		}
+	}
 	allowed["mul_alice"] = false
 	if comment(alice).Code != 403 || comment(bob).Code != 200 || comment("mul_bob").Code != 401 {
 		t.Fatal("member access isolation failed")
