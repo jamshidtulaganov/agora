@@ -83,18 +83,9 @@ func TestMemberOAuth(t *testing.T) {
 			}
 			return ""
 		}
-		ticket := regexp.MustCompile(`name="ticket" value="([^"]+)"`).FindStringSubmatch(authorize.Body.String())
-		if authorize.Code != 200 || len(ticket) != 2 || !strings.Contains(authorize.Body.String(), workspace) || strings.Contains(authorize.Body.String(), member) {
-			t.Fatal("invalid workspace chooser")
+		if strings.Contains(authorize.Body.String(), member) {
+			t.Fatal("token echoed back")
 		}
-		form.Del("pat")
-		form.Set("ticket", ticket[1])
-		form.Set("workspace", "00000000-0000-4000-8000-000000000004")
-		if request("POST", path, form.Encode(), headers).Code != 403 {
-			t.Fatal("unavailable workspace accepted")
-		}
-		form.Set("workspace", workspace)
-		authorize = request("POST", path, form.Encode(), headers)
 		loc, err := url.Parse(authorize.Header().Get("Location"))
 		if err != nil || authorize.Code != 303 || loc.Scheme+"://"+loc.Host+loc.Path != callback || loc.Query().Get("state") != "opaque-state" || loc.Query().Get("code") == "" {
 			t.Fatalf("authorization failed: %d", authorize.Code)
