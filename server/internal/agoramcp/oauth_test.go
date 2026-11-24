@@ -229,4 +229,11 @@ func TestConnectorHeaders(t *testing.T) {
 	if p := rec.Header().Get("Referrer-Policy"); p != "same-origin" {
 		t.Fatalf("Referrer-Policy %q leaks OAuth state to other sites", p)
 	}
+	for path, mime := range map[string]string{"/favicon.ico": "image/png", "/favicon.svg": "image/svg+xml", "/icon-192.png": "image/png", "/icon-512.png": "image/png"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", origin+path, nil))
+		if rec.Code != 200 || rec.Header().Get("Content-Type") != mime || rec.Body.Len() < 100 || rec.Header().Get("Cache-Control") == "no-store" {
+			t.Errorf("%s: %d %q %d bytes cache=%q", path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len(), rec.Header().Get("Cache-Control"))
+		}
+	}
 }
