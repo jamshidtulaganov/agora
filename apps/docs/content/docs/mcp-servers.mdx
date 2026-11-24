@@ -9,7 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 In Claude, add a custom web connector with the HTTPS `/mcp` URL supplied by the Agora operator. For a personal account, open **Customize → Connectors**. A Team owner can add a connector in **Organization settings → Connectors**.
 
-Choose **Sign in now → Use your own OAuth client**. Enter client ID `agora-claude` and leave the client secret blank. Each person connects individually. On the consent page, enter a personal access token created under **Agora Settings → Personal Access Tokens**, select one of your workspaces, then choose **Authorize Claude**. Comments use that member’s identity. Connector credentials last one day. Reconnect to renew access, or revoke the underlying token in Agora to disconnect immediately.
+Leave the OAuth fields empty: Claude registers itself automatically. If your Claude version asks for a client ID, enter `agora-claude` and leave the client secret blank. Each person connects individually. On the consent page, enter a personal access token created under **Agora Settings → Personal Access Tokens**, select one of your workspaces, then choose **Authorize Claude**. Comments use that member’s identity. Connector credentials last one day. Reconnect to renew access, or revoke the underlying token in Agora to disconnect immediately.
 
 For a custom ChatGPT app, use the same MCP URL, select OAuth, and enter client ID `agora-chatgpt`. Leave the client secret blank. The registered redirect is `https://chatgpt.com/connector_platform_oauth_redirect`. In the consent page, choose the workspace to connect.
 

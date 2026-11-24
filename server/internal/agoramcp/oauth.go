@@ -86,8 +86,9 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", res)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", res)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		jsonReply(w, 200, map[string]any{"issuer": issuer, "authorization_response_iss_parameter_supported": true, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{scope}})
+		jsonReply(w, 200, map[string]any{"issuer": issuer, "authorization_response_iss_parameter_supported": true, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{scope}, "registration_endpoint": issuer + "/register"})
 	})
+	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("GET /authorize", o.authorize)
 	mux.HandleFunc("POST /authorize", o.authorize)
 	mux.HandleFunc("POST /token", o.exchange)
@@ -218,6 +219,46 @@ func (o *memberOAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, Path: "/", MaxAge: -1})
 	values := url.Values{"state": {q.Get("state")}, "code": {code}, "iss": {o.issuer}}
 	http.Redirect(w, r, app.Callback+"?"+values.Encode(), http.StatusSeeOther)
+}
+
+// register implements RFC 7591 dynamic client registration for the known
+// public clients only. It is stateless: a request whose redirect URIs all
+// match one fixed client gets that client's ID back, so Claude and ChatGPT can
+// connect without the member typing a client ID. Any other callback is refused.
+func register(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	var req struct {
+		RedirectURIs []string `json:"redirect_uris"`
+		AuthMethod   string   `json:"token_endpoint_auth_method"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
+		jsonReply(w, 400, map[string]string{"error": "invalid_client_metadata"})
+		return
+	}
+	if req.AuthMethod != "" && req.AuthMethod != "none" {
+		jsonReply(w, 400, map[string]string{"error": "invalid_client_metadata", "error_description": "only public clients with PKCE are supported"})
+		return
+	}
+	matched := ""
+	for _, uri := range req.RedirectURIs {
+		id := ""
+		for clientID, app := range clients {
+			if app.Callback == uri {
+				id = clientID
+			}
+		}
+		if id == "" || (matched != "" && matched != id) {
+			matched = ""
+			break
+		}
+		matched = id
+	}
+	if matched == "" {
+		jsonReply(w, 400, map[string]string{"error": "invalid_redirect_uri", "error_description": "redirect URI is not an allowed connector callback"})
+		return
+	}
+	app := clients[matched]
+	jsonReply(w, 201, map[string]any{"client_id": matched, "client_id_issued_at": time.Now().Unix(), "client_name": app.Name, "redirect_uris": []string{app.Callback}, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "scope": scope})
 }
 
 func (o *memberOAuth) validResource(resource string) bool {

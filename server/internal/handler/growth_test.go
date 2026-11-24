@@ -57,13 +57,17 @@ func TestBuildGrowth(t *testing.T) {
 	if g.Signups != 5 || g.Attributed != 3 {
 		t.Fatalf("totals: signups=%d attributed=%d", g.Signups, g.Attributed)
 	}
-	top := g.Sources[0]
-	if top.Key != "telegram / cpc" || top.Signups != 2 || top.OwnsWorkspace != 2 || top.Paying != 1 {
-		t.Fatalf("top source: %+v", top)
+	// telegram and (direct) tie at 2 signups; ties sort by key, so (direct)
+	// comes first. Look rows up by key instead of relying on that order.
+	if g.Sources[0].Key != directKey || g.Sources[1].Key != "telegram / cpc" {
+		t.Fatalf("source order: %+v", g.Sources)
 	}
 	keys := map[string]int{}
 	for _, s := range g.Sources {
 		keys[s.Key] = s.Signups
+		if s.Key == "telegram / cpc" && (s.Signups != 2 || s.OwnsWorkspace != 2 || s.Paying != 1) {
+			t.Fatalf("telegram source: %+v", s)
+		}
 	}
 	if keys["google.com / referral"] != 1 || keys[directKey] != 2 {
 		t.Fatalf("sources: %+v", g.Sources)
