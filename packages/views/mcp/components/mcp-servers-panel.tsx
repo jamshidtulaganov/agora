@@ -674,8 +674,8 @@ export function ConnectAssistantsCard() {
           Paste a{" "}
           <AppLink href={`${paths.settings()}?tab=tokens`} className="text-foreground underline underline-offset-2">
             personal access token
-          </AppLink>{" "}
-          and choose this workspace.
+          </AppLink>
+          . It can use all your workspaces.
         </>
       ),
     },

@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+const otherWorkspaceID = "00000000-0000-4000-8000-000000000005"
+
 func TestRemoteWorkspaceConnector(t *testing.T) {
 	var denied, writes int
 	var lastAuthor string
@@ -18,12 +20,18 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 			http.Error(w, "invalid", 401)
 			return
 		}
-		if r.Header.Get("X-Workspace-ID") != workspaceID {
-			t.Error("missing workspace scope")
+		if r.URL.Path == "/api/workspaces" {
+			list := []map[string]string{{"id": workspaceID, "name": "Team", "slug": "team"}}
+			if token == "Bearer mul_reader" {
+				list = append(list, map[string]string{"id": otherWorkspaceID, "name": "Ops", "slug": "ops"})
+			}
+			json.NewEncoder(w).Encode(list)
+			return
+		}
+		if got := r.Header.Get("X-Workspace-ID"); got != workspaceID {
+			t.Errorf("workspace scope %q on %s", got, r.URL.Path)
 		}
 		switch r.URL.Path {
-		case "/api/workspaces/" + workspaceID:
-			io.WriteString(w, "{}")
 		case "/api/issues/" + issueID:
 			if token == "Bearer mul_other" {
 				denied++
@@ -55,7 +63,6 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 	}
 	send := func(token, method, params string) (int, string) {
 		req := httptest.NewRequest("POST", "https://connector.example/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":`+params+`}`))
-		req.Header.Set("X-Workspace-ID", workspaceID)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("MCP-Protocol-Version", "2025-11-25")
@@ -83,18 +90,48 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 	if strings.Contains(body, "create_issue") {
 		t.Fatal("unexpected remote write tool")
 	}
-	download := `{"name":"download_attachment","arguments":{"attachment_id":"` + issueID + `"}}`
+	if !strings.Contains(body, "list_workspaces") || !strings.Contains(body, `"workspace"`) {
+		t.Fatalf("multi-workspace tools missing: %s", body)
+	}
+	if _, body := send("mul_reader", "tools/call", `{"name":"list_workspaces","arguments":{}}`); !strings.Contains(body, `\"slug\":\"team\"`) || !strings.Contains(body, `\"slug\":\"ops\"`) {
+		t.Fatalf("list_workspaces: %s", body)
+	}
+	// Two workspaces: the tool must be told which one, and only member ones resolve.
+	for _, ws := range []string{``, `,"workspace":"elsewhere"`} {
+		params := `{"name":"get_issue","arguments":{"issue_id":"` + issueID + `"` + ws + `}}`
+		if _, body := send("mul_reader", "tools/call", params); !strings.Contains(body, `"isError":true`) || !strings.Contains(body, "team (Team)") {
+			t.Fatalf("workspace choice %q: %s", ws, body)
+		}
+	}
+	download := `{"name":"download_attachment","arguments":{"attachment_id":"` + issueID + `","workspace":"Team"}}`
 	if _, body := send("mul_reader", "tools/call", download); !strings.Contains(body, `"type":"image"`) || !strings.Contains(body, `"mimeType":"image/png"`) || !strings.Contains(body, `"data":"iVBORw0KGgo="`) || strings.Contains(body, "content_base64") {
 		t.Fatalf("download: %s", body)
 	}
+	// mul_other has one workspace, so it is chosen without the argument.
 	comment := `{"name":"comment_issue","arguments":{"issue_id":"` + issueID + `","content":"hello"}}`
-	for _, params := range []string{download, comment, `{"name":"summarize_comments","arguments":{"issue_id":"` + issueID + `"}}`} {
+	for _, params := range []string{`{"name":"download_attachment","arguments":{"attachment_id":"` + issueID + `"}}`, comment, `{"name":"summarize_comments","arguments":{"issue_id":"` + issueID + `"}}`} {
 		if _, body := send("mul_other", "tools/call", params); !strings.Contains(body, `"isError":true`) {
 			t.Fatalf("inaccessible issue: %s", body)
 		}
 	}
-	if _, body := send("mul_reader", "tools/call", comment); !strings.Contains(body, "hello") {
+	if _, body := send("mul_reader", "tools/call", `{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello","workspace":"`+workspaceID+`"}}`); !strings.Contains(body, "hello") {
 		t.Fatalf("comment: %s", body)
+	}
+	// Grants issued before multi-workspace access pin one workspace.
+	pinned := func(token, ws string) (int, string) {
+		req := httptest.NewRequest("POST", "https://connector.example/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_workspaces","arguments":{}}}`))
+		for k, v := range map[string]string{"X-Workspace-ID": ws, "Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"} {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	if status, body := pinned("mul_reader", workspaceID); status != 200 || !strings.Contains(body, "team") || strings.Contains(body, "ops") {
+		t.Fatalf("pinned grant must see only its workspace: %d %s", status, body)
+	}
+	if status, _ := pinned("mul_other", otherWorkspaceID); status != 403 {
+		t.Fatalf("pinned grant to a non-member workspace: %d", status)
 	}
 	if denied != 3 || writes != 1 || lastAuthor != "Bearer mul_reader" {
 		t.Fatalf("denied %d writes %d author %s", denied, writes, lastAuthor)

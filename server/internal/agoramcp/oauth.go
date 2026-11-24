@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jamshidtulaganov/agora/server/internal/util"
 	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
 )
 
@@ -38,9 +37,9 @@ const scope = "agora.workspace"
 
 var verifierPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 var consent = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Agora to {{.Client}}</title>
-<main><h1>Connect Agora to {{.Client}}</h1><p>Choose the workspace {{.Client}} can read and post comments in under your name.</p>
-{{if not .Ticket}}<p>Open <a href="{{.Agora}}" target="_blank" rel="noreferrer">Agora</a>, sign in, and create a personal access token in Settings → Personal Access Tokens. Use a separate token for this connection. You can revoke it in Agora at any time.</p>{{end}}
-<form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}">{{if .Ticket}}<input type="hidden" name="ticket" value="{{.Ticket}}"><label>Workspace <select name="workspace" required>{{range .Workspaces}}<option value="{{.ID}}">{{.Name}} ({{.Slug}})</option>{{end}}</select></label> <button type="submit">Authorize {{.Client}}</button>{{else}}<label>Your Agora personal access token <input required type="password" name="pat" autocomplete="off"></label> <button type="submit">Find my workspaces</button>{{end}}</form></main></html>`))
+<main><h1>Connect Agora to {{.Client}}</h1><p>{{.Client}} will read your Agora workspaces and post comments under your name.</p>
+<p>Open <a href="{{.Agora}}" target="_blank" rel="noreferrer">Agora</a>, sign in, and create a personal access token in Settings → Personal Access Tokens. Use a separate token for this connection. You can revoke it in Agora at any time.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Your Agora personal access token <input required type="password" name="pat" autocomplete="off"></label> <button type="submit">Authorize {{.Client}}</button></form></main></html>`))
 
 type memberGrant struct {
 	Audience  string
@@ -95,14 +94,19 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		grant, ok := o.openGrant(token, o.issuer+"/mcp")
-		if !strings.EqualFold(scheme, "Bearer") || !ok || grant.Workspace == "" {
+		if !strings.EqualFold(scheme, "Bearer") || !ok {
 			w.Header().Set("WWW-Authenticate", o.challenge())
 			http.Error(w, "Connect your Agora account", 401)
 			return
 		}
 		r = r.Clone(r.Context())
 		r.Header.Set("Authorization", "Bearer "+grant.PAT)
-		r.Header.Set("X-Workspace-ID", grant.Workspace)
+		// Grants issued before multi-workspace access pin one workspace; newer
+		// grants cover every workspace the member belongs to.
+		r.Header.Del("X-Workspace-ID")
+		if grant.Workspace != "" {
+			r.Header.Set("X-Workspace-ID", grant.Workspace)
+		}
 		upstream.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
@@ -156,50 +160,22 @@ func (o *memberOAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Authorization form expired. Reconnect from your app.", 403)
 		return
 	}
-	csrf := r.PostForm.Get("csrf")
 	pat := strings.TrimSpace(r.PostForm.Get("pat"))
-	ticketAudience := o.issuer + "/authorize/" + csrf
+	if !strings.HasPrefix(pat, "mul_") || len(pat) > 256 {
+		http.Error(w, "Enter your Agora personal access token.", 400)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 	now := time.Now()
-	ticket := r.PostForm.Get("ticket")
-	if ticket == "" {
-		if !strings.HasPrefix(pat, "mul_") || len(pat) > 256 {
-			http.Error(w, "Enter your Agora personal access token.", 400)
-			return
-		}
-		var memberships []struct{ ID, Name, Slug string }
-		client := memberClient(o.api, "", pat)
-		if err := client.GetJSON(ctx, "/api/workspaces", &memberships); err != nil || len(memberships) == 0 {
-			http.Error(w, "No accessible Agora workspace found. Check your token and membership.", 403)
-			return
-		}
-		sealed, err := o.sealGrant(memberGrant{ticketAudience, "", pat, now.Add(5 * time.Minute).Unix()})
-		if err != nil {
-			http.Error(w, "Could not start workspace selection", 500)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = consent.Execute(w, map[string]any{"Client": app.Name, "Agora": o.api, "Ticket": sealed, "CSRF": csrf, "Workspaces": memberships})
+	var memberships []struct{ ID string }
+	if err := memberClient(o.api, "", pat).GetJSON(ctx, "/api/workspaces", &memberships); err != nil || len(memberships) == 0 {
+		http.Error(w, "No accessible Agora workspace found. Check your token and membership.", 403)
 		return
 	}
-	login, ok := o.openGrant(ticket, ticketAudience)
-	if !ok {
-		http.Error(w, "Workspace selection expired. Reconnect from your app.", 403)
-		return
-	}
-	workspace := r.PostForm.Get("workspace")
-	if _, err := util.ParseUUID(workspace); err != nil {
-		http.Error(w, "Choose an Agora workspace.", 400)
-		return
-	}
-	client := memberClient(o.api, workspace, login.PAT)
-	var membership struct{ ID string }
-	if err := client.GetJSON(ctx, "/api/workspaces/"+workspace, &membership); err != nil || membership.ID != workspace {
-		http.Error(w, "Workspace access denied.", 403)
-		return
-	}
-	sealed, err := o.sealGrant(memberGrant{o.issuer + "/mcp", workspace, login.PAT, now.Add(grantLifetime).Unix()})
+	// The grant covers all of the member's workspaces; /mcp re-reads the
+	// memberships on every request, so leaving a workspace takes effect at once.
+	sealed, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", pat, now.Add(grantLifetime).Unix()})
 	if err != nil {
 		http.Error(w, "Could not authorize", 500)
 		return
