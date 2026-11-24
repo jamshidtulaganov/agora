@@ -1,8 +1,10 @@
 package agoramcp
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,6 +118,19 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 	}
 	if _, body := send("mul_reader", "tools/call", `{"name":"comment_issue","arguments":{"issue_id":"`+issueID+`","content":"hello","workspace":"`+workspaceID+`"}}`); !strings.Contains(body, "hello") {
 		t.Fatalf("comment: %s", body)
+	}
+	// A hosting proxy may connect over loopback while Host is the public name.
+	{
+		req := httptest.NewRequest("POST", "https://connector.example/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+		for k, v := range map[string]string{"Authorization": "Bearer mul_reader", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"} {
+			req.Header.Set(k, v)
+		}
+		req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 10000}))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("loopback-proxied request refused: %d %s", rec.Code, rec.Body)
+		}
 	}
 	// Grants issued before multi-workspace access pin one workspace.
 	pinned := func(token, ws string) (int, string) {
