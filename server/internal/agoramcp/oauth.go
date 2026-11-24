@@ -1,14 +1,12 @@
 package agoramcp
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jamshidtulaganov/agora/server/internal/connectauth"
 	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
 )
 
@@ -33,13 +32,18 @@ var clients = map[string]connectorClient{
 }
 
 const grantLifetime = 24 * time.Hour
+
+// refreshLifetime matches the 90-day personal access token the consent mints,
+// so a connection lasts as long as its token without daily reconnects.
+const refreshLifetime = 90 * 24 * time.Hour
+
+// consentCookie binds the Agora consent round trip to the browser that started
+// it. Lax, not Strict: the browser returns from Agora's site with a top-level
+// navigation, on which Strict cookies are not sent.
+const consentCookie = "__Host-agora-mcp-consent"
 const scope = "agora.workspace"
 
 var verifierPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
-var consent = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Agora to {{.Client}}</title>
-<main><h1>Connect Agora to {{.Client}}</h1><p>{{.Client}} will read your Agora workspaces and post comments under your name.</p>
-<p>Open <a href="{{.Agora}}" target="_blank" rel="noreferrer">Agora</a>, sign in, and create a personal access token in Settings → Personal Access Tokens. Use a separate token for this connection. You can revoke it in Agora at any time.</p>
-<form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Your Agora personal access token <input required type="password" name="pat" autocomplete="off"></label> <button type="submit">Authorize {{.Client}}</button></form></main></html>`))
 
 type memberGrant struct {
 	Audience  string
@@ -52,19 +56,22 @@ type pendingCode struct {
 	ClientID  string
 	Challenge string
 	Access    string
+	Refresh   string
 	Expires   time.Time
 }
 
 type memberOAuth struct {
-	issuer, api string
-	box         *secretbox.Box
-	mu          sync.Mutex
-	codes       map[string]pendingCode
+	issuer, api, app string
+	box              *secretbox.Box
+	mu               sync.Mutex
+	codes            map[string]pendingCode
 }
 
-// NewMemberConnector wraps the MCP endpoint with per-member OAuth. Only this
-// layer handles connector tokens; the upstream REST API receives the member PAT.
-func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, error) {
+// NewMemberConnector wraps the MCP endpoint with per-member OAuth. Members sign
+// in on Agora itself (app) and approve the connection there; Agora mints a
+// personal access token and returns it sealed. Only this layer handles
+// connector tokens; the upstream REST API receives the member PAT.
+func NewMemberConnector(issuer, api, app, version string, key []byte) (http.Handler, error) {
 	upstream, err := newRemoteHandler(api, version)
 	if err != nil {
 		return nil, err
@@ -73,11 +80,15 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("connector issuer must be a public HTTPS origin")
 	}
+	a, err := url.Parse(app)
+	if err != nil || a.Scheme != "https" || a.Host == "" || a.User != nil || (a.Path != "" && a.Path != "/") || a.RawQuery != "" || a.Fragment != "" {
+		return nil, errors.New("Agora app URL must be a public HTTPS origin")
+	}
 	box, err := secretbox.New(key)
 	if err != nil {
 		return nil, err
 	}
-	o := &memberOAuth{issuer: issuer, api: api, box: box, codes: make(map[string]pendingCode)}
+	o := &memberOAuth{issuer: issuer, api: api, app: strings.TrimRight(app, "/"), box: box, codes: make(map[string]pendingCode)}
 	mux := http.NewServeMux()
 	res := func(w http.ResponseWriter, _ *http.Request) {
 		jsonReply(w, 200, map[string]any{"resource": issuer + "/mcp", "authorization_servers": []string{issuer}, "scopes_supported": []string{scope}, "bearer_methods_supported": []string{"header"}})
@@ -85,11 +96,11 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", res)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", res)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		jsonReply(w, 200, map[string]any{"issuer": issuer, "authorization_response_iss_parameter_supported": true, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{scope}, "registration_endpoint": issuer + "/register"})
+		jsonReply(w, 200, map[string]any{"issuer": issuer, "authorization_response_iss_parameter_supported": true, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{scope}, "registration_endpoint": issuer + "/register"})
 	})
 	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("GET /authorize", o.authorize)
-	mux.HandleFunc("POST /authorize", o.authorize)
+	mux.HandleFunc("GET /authorize/callback", o.callback)
 	mux.HandleFunc("POST /token", o.exchange)
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -112,11 +123,11 @@ func NewMemberConnector(issuer, api, version string, key []byte) (http.Handler, 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		// same-origin, not no-referrer: under no-referrer browsers send
-		// "Origin: null" on the consent form POST, which the origin check rejects.
+		// Redirects carry Claude's state and the sealed consent request; keep
+		// them out of Referer headers sent to other sites.
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self' https://claude.ai https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 		mux.ServeHTTP(w, r)
 	}), nil
 }
@@ -136,46 +147,68 @@ func digest(s string) string {
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
+// validAuthorize checks Claude's or ChatGPT's authorization parameters.
+func (o *memberOAuth) validAuthorize(q url.Values) (connectorClient, bool) {
+	app, registered := clients[q.Get("client_id")]
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(q.Get("code_challenge"))
+	ok := q.Get("response_type") == "code" && registered && q.Get("redirect_uri") == app.Callback && q.Get("code_challenge_method") == "S256" && err == nil && len(decoded) == 32 && q.Get("state") != "" && len(q.Get("state")) <= 2048 && o.validResource(q.Get("resource")) && (q.Get("scope") == "" || q.Get("scope") == scope)
+	return app, ok
+}
+
+// authorize sends the member to Agora's consent page with a sealed request
+// that names the app and where to come back to.
 func (o *memberOAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	clientID := q.Get("client_id")
-	app, registered := clients[clientID]
-	challenge := q.Get("code_challenge")
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(challenge)
-	if q.Get("response_type") != "code" || !registered || q.Get("redirect_uri") != app.Callback || q.Get("code_challenge_method") != "S256" || err != nil || len(decoded) != 32 || q.Get("state") == "" || len(q.Get("state")) > 2048 || !o.validResource(q.Get("resource")) || (q.Get("scope") != "" && q.Get("scope") != scope) {
+	app, ok := o.validAuthorize(q)
+	if !ok {
 		http.Error(w, "Invalid authorization request. Check the client ID, callback and PKCE settings.", 400)
 		return
 	}
-	const cookieName = "__Host-agora-mcp-consent"
-	if r.Method == http.MethodGet {
-		nonce := rand.Text()
-		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: nonce, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, Path: "/", MaxAge: 600})
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = consent.Execute(w, map[string]string{"Client": app.Name, "Agora": o.api, "CSRF": digest(nonce + " " + q.Encode())})
+	nonce := rand.Text()
+	request, err := connectauth.SealRequest(o.box, connectauth.Request{
+		ClientID: q.Get("client_id"), ClientName: app.Name,
+		Return:  o.issuer + "/authorize/callback?" + q.Encode(),
+		Binding: digest(nonce + " " + q.Encode()),
+	}, time.Now())
+	if err != nil {
+		http.Error(w, "Could not start authorization", 500)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8192)
-	cookie, err := r.Cookie(cookieName)
-	if err != nil || !o.sameOriginPost(r) || r.ParseForm() != nil || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("csrf")), []byte(digest(cookie.Value+" "+q.Encode()))) != 1 {
-		http.Error(w, "Authorization form expired. Reconnect from your app.", 403)
+	http.SetCookie(w, &http.Cookie{Name: consentCookie, Value: nonce, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: int(connectauth.RequestLifetime.Seconds())})
+	http.Redirect(w, r, o.app+"/oauth/connect?"+url.Values{"request": {request}}.Encode(), http.StatusSeeOther)
+}
+
+// callback receives the member's decision from Agora. An approval carries a
+// sealed token that must belong to this browser's consent cookie.
+func (o *memberOAuth) callback(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	reply, denied := q.Get("reply"), q.Get("error")
+	q.Del("reply")
+	q.Del("error")
+	app, ok := o.validAuthorize(q)
+	if !ok {
+		http.Error(w, "Invalid authorization request. Reconnect from your app.", 400)
 		return
 	}
-	pat := strings.TrimSpace(r.PostForm.Get("pat"))
-	if !strings.HasPrefix(pat, "mul_") || len(pat) > 256 {
-		http.Error(w, "Enter your Agora personal access token.", 400)
+	cookie, cookieErr := r.Cookie(consentCookie)
+	http.SetCookie(w, &http.Cookie{Name: consentCookie, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: -1})
+	if denied != "" {
+		values := url.Values{"state": {q.Get("state")}, "error": {"access_denied"}, "iss": {o.issuer}}
+		http.Redirect(w, r, app.Callback+"?"+values.Encode(), http.StatusSeeOther)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
-	defer cancel()
 	now := time.Now()
-	var memberships []struct{ ID string }
-	if err := memberClient(o.api, "", pat).GetJSON(ctx, "/api/workspaces", &memberships); err != nil || len(memberships) == 0 {
-		http.Error(w, "No accessible Agora workspace found. Check your token and membership.", 403)
+	granted, err := connectauth.OpenReply(o.box, reply, now)
+	if err != nil || cookieErr != nil || subtle.ConstantTimeCompare([]byte(granted.Binding), []byte(digest(cookie.Value+" "+q.Encode()))) != 1 || !strings.HasPrefix(granted.Token, "mul_") {
+		http.Error(w, "Authorization expired. Reconnect from your app.", 403)
 		return
 	}
-	// The grant covers all of the member's workspaces; /mcp re-reads the
-	// memberships on every request, so leaving a workspace takes effect at once.
-	sealed, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", pat, now.Add(grantLifetime).Unix()})
+	access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", granted.Token, now.Add(grantLifetime).Unix()})
+	if err != nil {
+		http.Error(w, "Could not authorize", 500)
+		return
+	}
+	refresh, err := o.sealGrant(memberGrant{o.refreshAudience(q.Get("client_id")), "", granted.Token, now.Add(refreshLifetime).Unix()})
 	if err != nil {
 		http.Error(w, "Could not authorize", 500)
 		return
@@ -192,11 +225,14 @@ func (o *memberOAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Please retry shortly", 503)
 		return
 	}
-	o.codes[digest(code)] = pendingCode{clientID, challenge, sealed, now.Add(2 * time.Minute)}
+	o.codes[digest(code)] = pendingCode{q.Get("client_id"), q.Get("code_challenge"), access, refresh, now.Add(2 * time.Minute)}
 	o.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, Path: "/", MaxAge: -1})
 	values := url.Values{"state": {q.Get("state")}, "code": {code}, "iss": {o.issuer}}
 	http.Redirect(w, r, app.Callback+"?"+values.Encode(), http.StatusSeeOther)
+}
+
+func (o *memberOAuth) refreshAudience(clientID string) string {
+	return o.issuer + "/refresh/" + clientID
 }
 
 // register implements RFC 7591 dynamic client registration for the known
@@ -239,21 +275,6 @@ func register(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 201, map[string]any{"client_id": matched, "client_id_issued_at": time.Now().Unix(), "client_name": app.Name, "redirect_uris": []string{app.Callback}, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "scope": scope})
 }
 
-// sameOriginPost reports whether a form POST came from this origin. Some
-// browsers send "Origin: null" (or omit it) under strict referrer policies;
-// Sec-Fetch-Site is set by the browser and cannot be forged by a page, so it
-// is accepted as proof in that case.
-func (o *memberOAuth) sameOriginPost(r *http.Request) bool {
-	switch origin := r.Header.Get("Origin"); origin {
-	case o.issuer:
-		return true
-	case "", "null":
-		return r.Header.Get("Sec-Fetch-Site") == "same-origin"
-	default:
-		return false
-	}
-}
-
 func (o *memberOAuth) validResource(resource string) bool {
 	return resource == "" || resource == o.issuer+"/mcp"
 }
@@ -266,6 +287,20 @@ func (o *memberOAuth) exchange(w http.ResponseWriter, r *http.Request) {
 	}
 	clientID := r.PostForm.Get("client_id")
 	app, registered := clients[clientID]
+	if r.PostForm.Get("grant_type") == "refresh_token" && registered {
+		grant, ok := o.openGrant(r.PostForm.Get("refresh_token"), o.refreshAudience(clientID))
+		if !ok {
+			jsonReply(w, 400, map[string]string{"error": "invalid_grant"})
+			return
+		}
+		access, err := o.sealGrant(memberGrant{o.issuer + "/mcp", "", grant.PAT, time.Now().Add(grantLifetime).Unix()})
+		if err != nil {
+			jsonReply(w, 500, map[string]string{"error": "server_error"})
+			return
+		}
+		jsonReply(w, 200, map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": int(grantLifetime.Seconds()) - 120, "scope": scope})
+		return
+	}
 	if r.PostForm.Get("grant_type") != "authorization_code" || !registered || r.PostForm.Get("redirect_uri") != app.Callback || !o.validResource(r.PostForm.Get("resource")) {
 		jsonReply(w, 400, map[string]string{"error": "invalid_request"})
 		return
@@ -283,7 +318,7 @@ func (o *memberOAuth) exchange(w http.ResponseWriter, r *http.Request) {
 		jsonReply(w, 400, map[string]string{"error": "invalid_grant"})
 		return
 	}
-	jsonReply(w, 200, map[string]any{"access_token": entry.Access, "token_type": "Bearer", "expires_in": int(grantLifetime.Seconds()) - 120, "scope": scope})
+	jsonReply(w, 200, map[string]any{"access_token": entry.Access, "refresh_token": entry.Refresh, "token_type": "Bearer", "expires_in": int(grantLifetime.Seconds()) - 120, "scope": scope})
 }
 
 func (o *memberOAuth) sealGrant(g memberGrant) (string, error) {
