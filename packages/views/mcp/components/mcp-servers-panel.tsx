@@ -2,10 +2,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Globe, Loader2, Lock, PackageOpen, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
+import { Copy, Globe, Loader2, Lock, PackageOpen, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useWorkspacePaths } from "@agora/core/paths";
+import { useConfigStore } from "@agora/core/config";
 import {
   agentListOptions,
   mcpCredentialsOptions,
@@ -232,66 +233,58 @@ export function McpServersPanel() {
     }
   }
 
+  const agentsWithServers = agents.filter(
+    (a) => a.mcp_config_redacted === true || listMcpServers(a.mcp_config).length > 0,
+  );
+  const agentsWithoutServers = agents.length - agentsWithServers.length;
+
   return (
     <div className="flex h-full flex-col">
-      <PageHeader className="justify-between px-5">
+      <PageHeader className="px-5">
         <div className="flex items-center gap-2">
           <Plug className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-medium">MCP servers</h1>
-          {agents.length > 0 && (
-            <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
-              {agents.length}
-            </span>
-          )}
+          <h1 className="text-sm font-medium">MCP</h1>
         </div>
       </PageHeader>
 
-      <div className="flex-1 overflow-auto p-5">
-        <p className="mb-4 text-sm text-muted-foreground">
-          Configure direct Model Context Protocol connections. Shared defaults
-          are merged into every agent&apos;s next task; agent-specific entries
-          remain available below and override shared servers with the same name.
-        </p>
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto w-full max-w-4xl space-y-10 p-5 md:p-8">
+        <ConnectAssistantsCard />
 
-        <div className="mb-6 grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg border border-primary/25 bg-primary/[0.035] p-4">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Plug className="size-4 text-primary" aria-hidden="true" />
-              MCP server
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
-                connection
-              </span>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              Connects an agent to one live tool or data source. Configure it
-              directly with a Claude Desktop/Cursor-compatible{" "}
-              <code className="font-mono">mcp.json</code> document.
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/15 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <PackageOpen className="size-4 text-muted-foreground" aria-hidden="true" />
-              Plugin
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                capability bundle
-              </span>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              Packages reusable skills and one or more MCP connectors, then
-              installs the whole capability onto selected agents as a unit.
-            </p>
-            <Button
-              variant="link"
-              size="sm"
-              className="mt-1 h-auto px-0"
-              render={<AppLink href={paths.plugins()} />}
-            >
-              Manage plugins
-            </Button>
-          </div>
+        <div>
+          <SectionHeading
+            title="Shared servers"
+            description="Every agent gets these tools on its next task."
+          />
+          <WorkspaceMcpConfigSection />
         </div>
 
-        <WorkspaceMcpConfigSection />
+        <div>
+          <SectionHeading
+            title="Agent servers"
+            description="Tools for selected agents only. A server with the same name as a shared one replaces it for that agent."
+            action={
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  render={<AppLink href={paths.plugins()} />}
+                >
+                  <PackageOpen className="h-3.5 w-3.5" />
+                  Plugins
+                </Button>
+                <Button
+                  variant={showAddForm ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setShowAddForm((v) => !v)}
+                  aria-expanded={showAddForm}
+                >
+                  {showAddForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                  {showAddForm ? "Close" : "Add server"}
+                </Button>
+              </div>
+            }
+          />
 
         {agentsQuery.isError && (
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -299,30 +292,8 @@ export function McpServersPanel() {
           </div>
         )}
 
-        <div className="mb-2">
-          <h2 className="text-sm font-medium">Agent-specific connections</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Add a server only to selected agents, or override a shared server by
-            using the same server name.
-          </p>
-        </div>
-
         {/* ---------------- Add MCP server form ---------------- */}
-        <section className="mb-8 rounded-md border border-border">
-          <button
-            type="button"
-            onClick={() => setShowAddForm((v) => !v)}
-            aria-expanded={showAddForm}
-            className="flex w-full items-center gap-2 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add MCP server
-            {showAddForm ? (
-              <ChevronDown className="ml-auto h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="ml-auto h-3.5 w-3.5" />
-            )}
-          </button>
+        <section className={showAddForm ? "mb-6 rounded-lg border border-border" : "hidden"}>
           {showAddForm && (
           <div className="space-y-4 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -609,7 +580,6 @@ export function McpServersPanel() {
         </section>
 
         {/* ---------------- Per-agent server list ---------------- */}
-        <h2 className="mb-2 text-sm font-medium">Configured servers</h2>
         {agentsQuery.isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -617,8 +587,8 @@ export function McpServersPanel() {
             ))}
           </div>
         ) : (
-          <div className="space-y-4">
-            {agents.map((agent) => (
+          <div className="space-y-3">
+            {agentsWithServers.map((agent) => (
               <AgentServers
                 key={agent.id}
                 agent={agent}
@@ -627,15 +597,123 @@ export function McpServersPanel() {
                 onRemove={(serverName) => deleteServer(agent, serverName)}
               />
             ))}
-            {agents.length === 0 && (
-              <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                No agents found.
+            {agentsWithServers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                {agents.length === 0
+                  ? "No agents in this workspace yet."
+                  : "No agent has its own servers. Shared servers above still apply to all of them."}
               </div>
+            ) : (
+              agentsWithoutServers > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {agentsWithoutServers} other agent{agentsWithoutServers === 1 ? "" : "s"} use
+                  {agentsWithoutServers === 1 ? "s" : ""} shared servers only.
+                </p>
+              )
             )}
           </div>
         )}
+        </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+function SectionHeading({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-sm font-medium">{title}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * Inbound direction: members use Agora from Claude or ChatGPT through this
+ * instance's connector. Hidden when the server reports no connector URL.
+ */
+export function ConnectAssistantsCard() {
+  const url = useConfigStore((s) => s.mcpConnectorUrl);
+  const paths = useWorkspacePaths();
+  if (!url) return null;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Connector URL copied");
+    } catch {
+      toast.error("Could not copy. Select the URL and copy it manually.");
+    }
+  }
+
+  const steps: { title: string; body: React.ReactNode }[] = [
+    {
+      title: "Add a custom connector",
+      body: "Claude: Settings → Connectors → Add custom connector. ChatGPT: create an app. Paste the URL.",
+    },
+    {
+      title: "Leave OAuth empty",
+      body: "No client ID or secret needed. The app registers itself.",
+    },
+    {
+      title: "Sign in with a token",
+      body: (
+        <>
+          Paste a{" "}
+          <AppLink href={`${paths.settings()}?tab=tokens`} className="text-foreground underline underline-offset-2">
+            personal access token
+          </AppLink>{" "}
+          and choose this workspace.
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <section className="rounded-lg border border-brand/30 bg-brand/[0.04] p-5">
+      <h2 className="text-sm font-medium">Use Agora in Claude or ChatGPT</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Members read issues and post comments from their AI assistant, under their own name.
+      </p>
+      <div className="mt-4 flex gap-2">
+        <Input
+          readOnly
+          value={url}
+          aria-label="Connector URL"
+          onFocus={(e) => e.currentTarget.select()}
+          className="bg-background font-mono text-xs"
+        />
+        <Button type="button" variant="outline" onClick={copy}>
+          <Copy className="h-3.5 w-3.5" />
+          Copy
+        </Button>
+      </div>
+      <ol className="mt-5 grid gap-4 sm:grid-cols-3">
+        {steps.map((step, i) => (
+          <li key={step.title} className="flex gap-3">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-medium text-brand-foreground">
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-medium">{step.title}</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -656,7 +734,7 @@ function AgentServers({
   const servers = useMemo(() => listMcpServers(agent.mcp_config), [agent.mcp_config]);
 
   return (
-    <div className="rounded-md border border-border">
+    <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-2">
         <span className="text-sm font-medium">{agent.name}</span>
         {redacted ? (

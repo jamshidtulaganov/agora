@@ -9,6 +9,8 @@ interface ConfigState {
   daemonServerUrl: string;
   daemonAppUrl: string;
   cliReleasesUrl: string;
+  // Public /mcp URL of the Claude/ChatGPT connector; "" when not deployed.
+  mcpConnectorUrl: string;
   // Self-host gate (#3433): when true, every "Create workspace" affordance
   // must be hidden. Defaults to false so unknown / older servers behave like
   // the managed-cloud case.
@@ -54,7 +56,7 @@ interface ConfigState {
     daemonServerUrl?: string;
     daemonAppUrl?: string;
   }) => void;
-  setRuntimeConfig: (config: { cliReleasesUrl?: string }) => void;
+  setRuntimeConfig: (config: { cliReleasesUrl?: string; mcpConnectorUrl?: string }) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
@@ -65,6 +67,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   daemonServerUrl: "",
   daemonAppUrl: "",
   cliReleasesUrl: "",
+  mcpConnectorUrl: "",
   workspaceCreationDisabled: false,
   telegramOnly: false,
   bitrixEnabled: false,
@@ -102,7 +105,8 @@ export const configStore = createStore<ConfigState>((set) => ({
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
-  setRuntimeConfig: ({ cliReleasesUrl = "" }) => set({ cliReleasesUrl }),
+  setRuntimeConfig: ({ cliReleasesUrl = "", mcpConnectorUrl = "" }) =>
+    set({ cliReleasesUrl, mcpConnectorUrl }),
 }));
 
 export function useConfigStore(): ConfigState;

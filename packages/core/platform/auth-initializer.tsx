@@ -89,6 +89,7 @@ export function AuthInitializer({
         });
         configStore.getState().setRuntimeConfig({
           cliReleasesUrl: cfg.cli_releases_url,
+          mcpConnectorUrl: cfg.mcp_connector_url,
         });
         if (cfg.posthog_key) {
           initAnalytics({

@@ -487,6 +487,21 @@ describe("AppConfigSchema (integration capability flags)", () => {
     expect(parsed.bitrix_enabled).toBe(false);
     expect(parsed.allow_signup).toBe(true);
   });
+
+  it("keeps the MCP connector URL and drops a non-string one", () => {
+    expect(
+      AppConfigSchema.parse({ cdn_domain: "", allow_signup: true, mcp_connector_url: "https://mcp.example.com/mcp" })
+        .mcp_connector_url,
+    ).toBe("https://mcp.example.com/mcp");
+    const malformed = parseWithFallback(
+      { cdn_domain: "", allow_signup: true, mcp_connector_url: 42 },
+      AppConfigSchema,
+      EMPTY_APP_CONFIG,
+      { endpoint: "GET /api/config" },
+    );
+    expect(malformed.mcp_connector_url ?? "").toBe("");
+    expect(malformed.allow_signup).toBe(true);
+  });
 });
 
 describe("ReleaseIntegrationListSchema (release-hub Thread B)", () => {
