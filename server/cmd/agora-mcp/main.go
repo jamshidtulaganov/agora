@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jamshidtulaganov/agora/server/internal/connectauth"
 	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
 
 	"github.com/jamshidtulaganov/agora/server/internal/agoramcp"
@@ -21,11 +22,17 @@ func main() {
 	if issuer == "" {
 		issuer = os.Getenv("AGORA_MCP_PUBLIC_URL")
 	}
-	key, err := secretbox.LoadKey("AGORA_MCP_OAUTH_KEY")
+	key, err := secretbox.LoadKey(connectauth.KeyEnv)
 	if err != nil {
 		log.Fatal(err)
 	}
-	handler, err := agoramcp.NewMemberConnector(issuer, os.Getenv("AGORA_API_URL"), version, key)
+	// AGORA_APP_URL is where members sign in and approve the connection. It
+	// defaults to the API origin, which on Render is the same web app.
+	app := os.Getenv("AGORA_APP_URL")
+	if app == "" {
+		app = os.Getenv("AGORA_API_URL")
+	}
+	handler, err := agoramcp.NewMemberConnector(issuer, os.Getenv("AGORA_API_URL"), app, version, key)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -668,14 +668,14 @@ export function ConnectAssistantsCard() {
       body: "No client ID or secret needed. The app registers itself.",
     },
     {
-      title: "Sign in with a token",
+      title: "Sign in and allow",
       body: (
         <>
-          Paste a{" "}
+          Agora asks you to approve the connection. Disconnect any time in{" "}
           <AppLink href={`${paths.settings()}?tab=tokens`} className="text-foreground underline underline-offset-2">
-            personal access token
+            Settings → Tokens
           </AppLink>
-          . It can use all your workspaces.
+          .
         </>
       ),
     },

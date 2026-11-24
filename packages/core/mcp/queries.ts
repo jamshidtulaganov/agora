@@ -34,3 +34,18 @@ export function workspaceMcpConfigOptions(workspaceId: string, enabled = true) {
     enabled: enabled && !!workspaceId,
   });
 }
+
+/**
+ * The "connect Claude / ChatGPT" request shown on Agora's consent page. The
+ * request is a sealed, single-use blob from the MCP connector; it never
+ * changes, and an expired one must not be retried.
+ */
+export function connectorConsentOptions(request: string) {
+  return queryOptions({
+    queryKey: ["connector-consent", request] as const,
+    queryFn: () => api.getConnectorConsent(request),
+    enabled: request.length > 0,
+    retry: false,
+    staleTime: Infinity,
+  });
+}

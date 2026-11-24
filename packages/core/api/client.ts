@@ -367,6 +367,11 @@ import {
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
   AppConfigSchema,
+  ConnectorConsentSchema,
+  ConnectorApproveSchema,
+  EMPTY_CONNECTOR_CONSENT,
+  EMPTY_CONNECTOR_APPROVE,
+  type ConnectorConsent,
   type AppConfigResponse,
   GroupedIssuesResponseSchema,
   ListIssuesResponseSchema,
@@ -2128,6 +2133,26 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/config");
     return parseWithFallback<AppConfigResponse>(raw, AppConfigSchema, EMPTY_APP_CONFIG, {
       endpoint: "GET /api/config",
+    });
+  }
+
+  // "Connect Claude / ChatGPT" consent
+  async getConnectorConsent(request: string): Promise<ConnectorConsent> {
+    const raw = await this.fetch<unknown>(
+      `/api/connector-consent?${new URLSearchParams({ request }).toString()}`,
+    );
+    return parseWithFallback<ConnectorConsent>(raw, ConnectorConsentSchema, EMPTY_CONNECTOR_CONSENT, {
+      endpoint: "GET /api/connector-consent",
+    });
+  }
+
+  async approveConnectorConsent(request: string): Promise<{ redirect_url: string }> {
+    const raw = await this.fetch<unknown>("/api/connector-consent", {
+      method: "POST",
+      body: JSON.stringify({ request }),
+    });
+    return parseWithFallback<{ redirect_url: string }>(raw, ConnectorApproveSchema, EMPTY_CONNECTOR_APPROVE, {
+      endpoint: "POST /api/connector-consent",
     });
   }
 
