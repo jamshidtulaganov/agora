@@ -119,6 +119,7 @@ func NewMemberConnector(issuer, api, app, version string, key []byte) (http.Hand
 		upstream.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
+	registerIcons(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		// Redirects carry Claude's state and the sealed consent request; keep
