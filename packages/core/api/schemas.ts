@@ -234,6 +234,7 @@ export interface AppConfigResponse {
   lark_enabled?: boolean;
   slack_enabled?: boolean;
   telegram_bots_enabled?: boolean;
+  mcp_connector_url?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +381,7 @@ export const AppConfigSchema = z.object({
   lark_enabled: BooleanWithDefaultSchema(false).optional(),
   slack_enabled: BooleanWithDefaultSchema(false).optional(),
   telegram_bots_enabled: BooleanWithDefaultSchema(false).optional(),
+  mcp_connector_url: OptionalStringSchema,
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {

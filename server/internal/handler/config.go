@@ -89,6 +89,10 @@ type AppConfig struct {
 	// bot's credential is sealed at rest, so without the key no install can
 	// succeed and the UI must not offer one.
 	TelegramBotsEnabled bool `json:"telegram_bots_enabled,omitempty"`
+	// MCPConnectorURL is the public /mcp URL of this instance's Claude/ChatGPT
+	// connector (cmd/agora-mcp), from AGORA_MCP_CONNECTOR_URL. The MCP page
+	// shows it with setup steps; omitted when the connector is not deployed.
+	MCPConnectorURL string `json:"mcp_connector_url,omitempty"`
 }
 
 const defaultCLIReleasesURL = "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest"
@@ -121,6 +125,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		// it would fail at the last step, after the operator has already pasted
 		// a live bot token.
 		TelegramBotsEnabled: strings.TrimSpace(os.Getenv("AGORA_TELEGRAM_SECRET_KEY")) != "",
+		MCPConnectorURL:     mcpConnectorURLFromEnv(),
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()
@@ -143,6 +148,18 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, config)
+}
+
+// mcpConnectorURLFromEnv returns AGORA_MCP_CONNECTOR_URL when it is an
+// absolute HTTPS URL. Claude and ChatGPT only accept HTTPS connectors, so any
+// other value would show members a URL that cannot work.
+func mcpConnectorURLFromEnv() string {
+	raw := normalizePublicURL(os.Getenv("AGORA_MCP_CONNECTOR_URL"))
+	u, err := url.Parse(raw)
+	if raw == "" || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return ""
+	}
+	return raw
 }
 
 func cliReleasesURLFromEnv() string {

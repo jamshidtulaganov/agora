@@ -319,3 +319,21 @@ func TestGetConfigExposesIntegrationCapabilityFlags(t *testing.T) {
 		t.Fatalf("lark_enabled: want true with AGORA_LARK_SECRET_KEY set (body=%s)", w.Body.String())
 	}
 }
+
+func TestMCPConnectorURLFromEnv(t *testing.T) {
+	cases := map[string]string{
+		"":                                      "",
+		"https://mcp.example.com/mcp":           "https://mcp.example.com/mcp",
+		"  https://mcp.example.com/mcp/  ":      "https://mcp.example.com/mcp",
+		"http://mcp.example.com/mcp":            "",
+		"mcp.example.com/mcp":                   "",
+		"https://user:pass@mcp.example.com/mcp": "",
+		"javascript:alert(1)":                   "",
+	}
+	for in, want := range cases {
+		t.Setenv("AGORA_MCP_CONNECTOR_URL", in)
+		if got := mcpConnectorURLFromEnv(); got != want {
+			t.Errorf("AGORA_MCP_CONNECTOR_URL=%q: got %q, want %q", in, got, want)
+		}
+	}
+}
