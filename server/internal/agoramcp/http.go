@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net/http"
 	"net/url"
@@ -22,6 +23,37 @@ func memberClient(apiURL, workspace, pat string) *cli.APIClient {
 	client := cli.NewAPIClient(apiURL, workspace, pat)
 	client.HTTPClient.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("unexpected API redirect") }
 	return client
+}
+
+// refusalLogger logs why the MCP transport refused a request (status and
+// the transport's short error text; never headers or credentials).
+type refusalLogger struct {
+	http.ResponseWriter
+	status int
+	logged bool
+}
+
+func (l *refusalLogger) WriteHeader(status int) {
+	l.status = status
+	l.ResponseWriter.WriteHeader(status)
+}
+
+func (l *refusalLogger) Write(b []byte) (int, error) {
+	if l.status >= 400 && !l.logged {
+		l.logged = true
+		msg := string(b)
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		log.Printf("mcp: transport refused: status=%d %s", l.status, strings.TrimSpace(msg))
+	}
+	return l.ResponseWriter.Write(b)
+}
+
+func (l *refusalLogger) Flush() {
+	if f, ok := l.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // membership is one workspace the authenticated member belongs to.
@@ -161,8 +193,11 @@ func newRemoteHandler(apiURL, version string) (http.Handler, error) {
 	// against CSRF, but /mcp authenticates only by an explicit bearer header.
 	// Claude's and ChatGPT's servers send their own Origin, which it refused
 	// with 403 right after a successful sign-in.
+	// DNS-rebinding protection is for MCP servers on a developer's machine. This
+	// is a public, authenticated service; behind a hosting proxy that connects
+	// over loopback it refused every request for the public host name.
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return host }, &mcp.StreamableHTTPOptions{
-		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20,
+		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20, DisableLocalhostProtection: true,
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -205,10 +240,11 @@ func newRemoteHandler(apiURL, version string) (http.Handler, error) {
 			workspaces = slices.DeleteFunc(workspaces, func(ws membership) bool { return ws.ID != pinned })
 		}
 		if len(workspaces) == 0 {
+			log.Printf("mcp: refused: no accessible workspace (pinned=%t)", pinned != "")
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
 		}
 		caller := &remoteCaller{apiURL: apiURL, token: token, version: version, workspaces: workspaces}
-		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, callerKey{}, caller)))
+		transport.ServeHTTP(&refusalLogger{ResponseWriter: w}, r.WithContext(context.WithValue(ctx, callerKey{}, caller)))
 	}), nil
 }
