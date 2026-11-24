@@ -145,7 +145,9 @@ export function AdminPage() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-svh bg-background">
+    // The root <body> is overflow-hidden (the app shell owns scrolling), so
+    // this full-page view must be its own scroll container.
+    <div className="h-svh overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-6xl space-y-6 p-4 md:p-8">{children}</div>
     </div>
   );
