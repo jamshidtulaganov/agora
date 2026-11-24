@@ -15,6 +15,7 @@ const otherWorkspaceID = "00000000-0000-4000-8000-000000000005"
 
 func TestRemoteWorkspaceConnector(t *testing.T) {
 	var denied, writes int
+	var createdStatus string
 	var lastAuthor string
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
@@ -41,6 +42,11 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 				return
 			}
 			io.WriteString(w, "{}")
+		case "/api/issues":
+			var created map[string]any
+			json.NewDecoder(r.Body).Decode(&created)
+			createdStatus, _ = created["status"].(string)
+			json.NewEncoder(w).Encode(map[string]any{"id": issueID, "title": created["title"], "status": createdStatus})
 		case "/api/issues/" + issueID + "/comments":
 			writes++
 			lastAuthor = token
@@ -84,13 +90,10 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 		t.Fatalf("initialize %d %s", status, body)
 	}
 	status, body := send("mul_reader", "tools/list", "{}")
-	for _, name := range []string{"download_attachment", "summarize_comments", "list_comments", "comment_issue"} {
+	for _, name := range []string{"download_attachment", "summarize_comments", "list_comments", "comment_issue", "create_issue", "update_issue"} {
 		if status != 200 || !strings.Contains(body, name) {
 			t.Fatalf("missing tool %s in %d %s", name, status, body)
 		}
-	}
-	if strings.Contains(body, "create_issue") {
-		t.Fatal("unexpected remote write tool")
 	}
 	if !strings.Contains(body, "list_workspaces") || !strings.Contains(body, `"workspace"`) {
 		t.Fatalf("multi-workspace tools missing: %s", body)
@@ -147,6 +150,10 @@ func TestRemoteWorkspaceConnector(t *testing.T) {
 	}
 	if status, _ := pinned("mul_other", otherWorkspaceID); status != 403 {
 		t.Fatalf("pinned grant to a non-member workspace: %d", status)
+	}
+	create := `{"name":"create_issue","arguments":{"title":"From Claude","workspace":"team"}}`
+	if _, body := send("mul_reader", "tools/call", create); !strings.Contains(body, "From Claude") || createdStatus != "backlog" {
+		t.Fatalf("create_issue must land in backlog of the chosen workspace: status=%q %s", createdStatus, body)
 	}
 	if denied != 3 || writes != 1 || lastAuthor != "Bearer mul_reader" {
 		t.Fatalf("denied %d writes %d author %s", denied, writes, lastAuthor)
